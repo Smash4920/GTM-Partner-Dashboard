@@ -75,10 +75,33 @@ changes.
 - Volumes and weights are tuned in
   [`src/data/mock/generate.ts`](src/data/mock/generate.ts)
 
-## Deployment (GitHub Pages)
+## Deployment
 
-1. Merge to `main` — the `deploy-pages.yml` workflow builds and publishes
-2. One-time: repo Settings → Pages → Source: **GitHub Actions**
-3. Live at `https://smash4920.github.io/GTM-Partner-Dashboard/`
+### Vercel (current path)
+
+The repo is private, so Vercel handles hosting and per-PR previews. One-time
+setup: import the repo at vercel.com (framework **Vite**, build
+`npm run build`, output `dist`), then enable **Settings → Deployment
+Protection → Vercel Authentication** so only authorized users can open the
+URLs. After that, every pull request gets its own preview URL automatically.
+
+Note that Vercel's Hobby (free) plan is limited to non-commercial use; a
+dashboard the GTM team actually relies on belongs on Pro.
+
+### GitHub Pages (manual, currently blocked)
+
+`deploy-pages.yml` is kept but runs only via **workflow_dispatch**. Pages
+cannot publish from a private repo on a GitHub Free plan — the deploy step
+fails with a 404. It becomes viable if the repo goes public or the account
+moves to Pro; then enable Settings → Pages → Source: **GitHub Actions** and
+run the workflow, which publishes to
+`https://smash4920.github.io/GTM-Partner-Dashboard/`.
+
+### Base path
+
+Assets resolve differently per host, so `vite.config.ts` picks the base path
+from the environment: `/` when `VERCEL` is set (Vercel serves at a domain
+root), and `/GTM-Partner-Dashboard/` otherwise (Pages serves project sites
+under the repo name). Set `BASE_PATH` to override for any other host.
 
 CI (`ci.yml`) runs lint + build on every pull request.
