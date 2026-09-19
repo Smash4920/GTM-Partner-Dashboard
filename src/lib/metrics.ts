@@ -92,6 +92,13 @@ export function activePartnerCount(
   return active.size;
 }
 
+/**
+ * Deal registration funnel. Every stage carries both a count and a dollar
+ * total, and the dollars are the partner-estimated deal value captured at
+ * submission — not the amount on the opportunity the registration became.
+ * Those two numbers diverge in a real CRM (the partner estimates, then sales
+ * sizes the deal), so they are deliberately never summed together.
+ */
 export interface RegistrationFunnel {
   submitted: number;
   submittedValue: number;
@@ -100,7 +107,9 @@ export interface RegistrationFunnel {
   converted: number;
   convertedValue: number;
   rejected: number;
+  rejectedValue: number;
   pending: number;
+  pendingValue: number;
 }
 
 export function registrationFunnel(registrations: DealRegistration[]): RegistrationFunnel {
@@ -110,14 +119,18 @@ export function registrationFunnel(registrations: DealRegistration[]): Registrat
   let converted = 0;
   let convertedValue = 0;
   let rejected = 0;
+  let rejectedValue = 0;
   let pending = 0;
+  let pendingValue = 0;
 
   for (const reg of registrations) {
     submittedValue += reg.amount;
     if (reg.status === 'pending') {
       pending += 1;
+      pendingValue += reg.amount;
     } else if (reg.status === 'rejected') {
       rejected += 1;
+      rejectedValue += reg.amount;
     } else {
       approved += 1;
       approvedValue += reg.amount;
@@ -136,7 +149,9 @@ export function registrationFunnel(registrations: DealRegistration[]): Registrat
     converted,
     convertedValue,
     rejected,
+    rejectedValue,
     pending,
+    pendingValue,
   };
 }
 

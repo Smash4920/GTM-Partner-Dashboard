@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import Card from '../components/Card';
+import FilterChips, { type ChipOption } from '../components/FilterChips';
 import KpiTile from '../components/KpiTile';
 import Leaderboard from '../components/Leaderboard';
 import LightCard from '../components/LightCard';
@@ -42,15 +43,26 @@ import {
 } from '../lib/metrics';
 
 type TypeFilter = OpportunityType | 'all';
+type FunnelMeasure = 'value' | 'count';
 
-const FILTERS: { id: TypeFilter; label: string }[] = [
-  { id: 'all', label: 'All' },
-  ...OPP_TYPES.map((type) => ({ id: type as TypeFilter, label: OPP_TYPE_META[type].label })),
+const TYPE_OPTIONS: ChipOption<TypeFilter>[] = [
+  { id: 'all', label: 'All', title: 'All opportunity types' },
+  ...OPP_TYPES.map((type) => ({
+    id: type as TypeFilter,
+    label: OPP_TYPE_META[type].label,
+    title: OPP_TYPE_META[type].description,
+  })),
+];
+
+const FUNNEL_MEASURE_OPTIONS: ChipOption<FunnelMeasure>[] = [
+  { id: 'value', label: 'Registered $', title: 'Partner-estimated deal value at submission' },
+  { id: 'count', label: 'Count', title: 'Number of registrations' },
 ];
 
 /** Internal GTM leadership view: every partner, the full registration → pipeline journey. */
 export default function LeadershipView({ data }: { data: DashboardData }) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [funnelMeasure, setFunnelMeasure] = useState<FunnelMeasure>('value');
 
   const opps = useMemo(
     () => filterByType(data.opportunities, typeFilter),
@@ -76,42 +88,60 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
   const coverage = coverageRatio(opps, data.targets);
   const remaining = remainingQuota(opps, data.targets);
 
-  const funnelRows: MetricBarRow[] = [
+  // One measure drives both the bar length and the printed number, so the
+  // panel never mixes registration counts with registered dollars.
+  const funnelStages: {
+    label: string;
+    count: number;
+    amount: number;
+    color: string;
+    dimmed?: boolean;
+  }[] = [
     {
       label: 'Submitted',
-      value: funnel.submitted,
-      displayValue: formatUsdCompact(funnel.submittedValue),
-      secondary: `${funnel.submitted} total`,
+      count: funnel.submitted,
+      amount: funnel.submittedValue,
       color: '#8a8380',
     },
     {
       label: 'Approved',
-      value: funnel.approved,
-      displayValue: formatUsdCompact(funnel.approvedValue),
-      secondary: `${funnel.approved} approved`,
+      count: funnel.approved,
+      amount: funnel.approvedValue,
       color: '#b8b3b0',
     },
     {
       label: 'Converted to opp',
-      value: funnel.converted,
-      displayValue: formatUsdCompact(funnel.convertedValue),
-      secondary: `${funnel.converted} converted`,
+      count: funnel.converted,
+      amount: funnel.convertedValue,
       color: '#a0ca92',
     },
     {
       label: 'Rejected',
-      value: funnel.rejected,
-      displayValue: `${funnel.rejected}`,
+      count: funnel.rejected,
+      amount: funnel.rejectedValue,
       color: '#4d4947',
       dimmed: true,
     },
     {
       label: 'Pending review',
-      value: funnel.pending,
-      displayValue: `${funnel.pending}`,
+      count: funnel.pending,
+      amount: funnel.pendingValue,
       color: '#ee6018',
     },
   ];
+
+  const funnelRows: MetricBarRow[] = funnelStages.map((stage) => ({
+    label: stage.label,
+    value: funnelMeasure === 'value' ? stage.amount : stage.count,
+    displayValue:
+      funnelMeasure === 'value' ? formatUsdCompact(stage.amount) : `${stage.count}`,
+    secondary:
+      funnelMeasure === 'value'
+        ? `${stage.count} regs`
+        : formatUsdCompact(stage.amount),
+    color: stage.color,
+    dimmed: stage.dimmed,
+  }));
 
   const stageRows: MetricBarRow[] = [
     ...stages.map((row) => ({
@@ -159,31 +189,12 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
             {formatDate(SNAPSHOT_DATE.toISOString())}
           </p>
         </div>
-        <div
-          className="flex flex-wrap items-center gap-1.5"
-          role="group"
-          aria-label="Filter by opportunity type"
-        >
-          {FILTERS.map((filter) => (
-            <button
-              key={filter.id}
-              type="button"
-              onClick={() => setTypeFilter(filter.id)}
-              title={
-                filter.id === 'all'
-                  ? 'All opportunity types'
-                  : OPP_TYPE_META[filter.id].description
-              }
-              className={`rounded border px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.06em] transition-colors duration-150 ${
-                typeFilter === filter.id
-                  ? 'border-ash bg-carbon text-bone'
-                  : 'border-transparent text-granite hover:text-stone'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
+        <FilterChips
+          options={TYPE_OPTIONS}
+          value={typeFilter}
+          onChange={setTypeFilter}
+          ariaLabel="Filter by opportunity type"
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -240,7 +251,20 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card
           title="Deal registration funnel"
-          subtitle="Partner-submitted, all time · not affected by the type filter"
+          subtitle={
+            funnelMeasure === 'value'
+              ? 'Partner-estimated value at submission · all time'
+              : 'Registration counts · all time'
+          }
+          action={
+            <FilterChips
+              options={FUNNEL_MEASURE_OPTIONS}
+              value={funnelMeasure}
+              onChange={setFunnelMeasure}
+              ariaLabel="Funnel measure"
+              size="xs"
+            />
+          }
         >
           <MetricBars rows={funnelRows} />
         </Card>
