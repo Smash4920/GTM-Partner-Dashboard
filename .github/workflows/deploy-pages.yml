@@ -1,8 +1,16 @@
+# Manual-only on purpose.
+#
+# GitHub Pages cannot publish from a private repo on a Free plan: the deploy
+# step fails with "Failed to create deployment (status: 404)". Previews now
+# come from Vercel instead. This workflow is kept so Pages remains one click
+# away if the repo goes public or the account moves to Pro; run it from the
+# Actions tab after enabling Settings -> Pages -> Source: GitHub Actions.
+#
+# Pages serves a project site under /<repo>/, which the Vite config handles
+# by defaulting the base path to /GTM-Partner-Dashboard/ when VERCEL is unset.
 name: Deploy to GitHub Pages
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
