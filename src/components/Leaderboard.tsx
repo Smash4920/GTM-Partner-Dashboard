@@ -3,7 +3,18 @@ import { formatPct, formatUsd } from '../lib/format';
 import type { LeaderboardRow } from '../lib/metrics';
 import Badge from './Badge';
 
-export default function Leaderboard({ rows, limit = 10 }: { rows: LeaderboardRow[]; limit?: number }) {
+interface LeaderboardProps {
+  rows: LeaderboardRow[];
+  limit?: number;
+  /** Closed-won column header; callers pass the selected fiscal phase. */
+  closedWonLabel?: string;
+}
+
+export default function Leaderboard({
+  rows,
+  limit = 10,
+  closedWonLabel = 'Closed-won',
+}: LeaderboardProps) {
   const top = rows.slice(0, limit);
   const th =
     'pb-2 font-mono text-[10px] uppercase tracking-[0.06em] text-granite';
@@ -14,7 +25,7 @@ export default function Leaderboard({ rows, limit = 10 }: { rows: LeaderboardRow
           <th className={`${th} pr-3 text-left`}>#</th>
           <th className={`${th} pr-3 text-left`}>Partner</th>
           <th className={`${th} pr-3 text-right`}>Open pipeline</th>
-          <th className={`${th} pr-3 text-right`}>Closed-won YTD</th>
+          <th className={`${th} pr-3 text-right`}>{closedWonLabel}</th>
           <th className={`${th} text-right`}>Win rate</th>
         </tr>
       </thead>
@@ -39,7 +50,7 @@ export default function Leaderboard({ rows, limit = 10 }: { rows: LeaderboardRow
               {formatUsd(row.openPipelineValue)}
             </td>
             <td className="py-2.5 pr-3 text-right text-bone tabular-nums">
-              {formatUsd(row.closedWonYtdValue)}
+              {formatUsd(row.closedWonValue)}
             </td>
             <td className="py-2.5 text-right text-stone tabular-nums">
               {formatPct(row.winRate)}

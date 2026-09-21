@@ -16,10 +16,13 @@ const pct = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 0,
 });
 
+// All dates in the data model are UTC calendar dates, so render in UTC:
+// without this, anyone west of UTC sees every date shifted one day early.
 const dateFmt = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   day: 'numeric',
   year: 'numeric',
+  timeZone: 'UTC',
 });
 
 export function formatUsd(value: number): string {

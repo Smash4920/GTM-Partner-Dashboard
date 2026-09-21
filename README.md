@@ -16,10 +16,14 @@ metric green for positive data.
 
 ### GTM Leadership (internal)
 
-- KPI row: open pipeline, closed-won YTD (with YoY delta), pipeline coverage vs.
-  remaining quota, deal-reg approval rate, registration → qualified-opportunity
-  conversion, win rate, active partners, average open deal size
-- Fiscal phase toggles: FY, Q1, Q2, Q3, Q4 for a February-start fiscal year
+- KPI row: open pipeline, closed-won for the selected phase (with a prior-year
+  delta), pipeline coverage vs. remaining quota, deal-reg approval rate,
+  registration → qualified-opportunity conversion, win rate, active partners,
+  average open deal size
+- Fiscal phase toggles: FY, Q1, Q2, Q3, Q4 for a February-start fiscal year.
+  Phase-filtered pipeline spans the whole selected phase — open deals
+  scheduled after the snapshot still count — while closed outcomes accrue only
+  through the snapshot
 - Partner Manager View: aggregate or partner-specific performance for a selected
   manager, with Salesforce-style Account.Partner_Manager__c assignments
 - Deal registration funnel: submitted → approved → converted, with rejected and
@@ -41,7 +45,8 @@ metric green for positive data.
 - Partner Strategists and Partner Engineers certified against goal
 - Deal registrations above a quarter-scoped opportunity table
 - Salesforce-shaped opportunity fields: client, Factory Account Director, stage,
-  forecasted revenue, and close date
+  forecasted revenue, and close date (actual close once closed, expected close
+  while open)
 - Their stage progression and revenue vs. their fiscal target
 
 ## Running locally
@@ -50,6 +55,7 @@ metric green for positive data.
 npm install
 npm run dev       # http://localhost:5173
 npm run lint
+npm test          # vitest: fiscal/metric helpers + the mock data contract
 npm run build     # type-checks, then bundles to dist/
 npm run preview
 ```
@@ -76,17 +82,19 @@ changes.
 
 ## Mock data
 
-- Deterministic: mulberry32, seed `20260918` — identical on every load and build
+- Deterministic: mulberry32, seed `20260918` — identical on every load, build,
+  and `generateDashboardData()` call
 - Fixed snapshot: 2026-09-18 (`SNAPSHOT_DATE`) so numbers never drift
 - 5 partner managers, each aligned to 5 partners through a Salesforce-style
   account relationship
-- 25 partners, 180 registrations, ~185 opportunities across FY27 fiscal phases
-  (February 2026 → January 2027)
-- 148 mock calendar meetings across the current and previous seven weeks
-- Approval rate ~85%, registration → opportunity conversion ~70%, win rate ~55%
-  of closed deals
+- 25 partners, 180 registrations, 213 opportunities — the FY27 book
+  (February 2026 → January 2027) plus a closed prior-year FY26 book that only
+  feeds the prior-year delta tiles — and 128 mock calendar meetings across the
+  current and previous seven weeks
+- Realized FY27 win rate: 20 of 44 closed deals won (~45%)
 - Volumes and weights are tuned in
-  [`src/data/mock/generate.ts`](src/data/mock/generate.ts)
+  [`src/data/mock/generate.ts`](src/data/mock/generate.ts); the exact volumes
+  and the data contract are pinned by `src/data/mock/generate.test.ts`
 
 ## Deployment
 
@@ -117,4 +125,5 @@ from the environment: `/` when `VERCEL` is set (Vercel serves at a domain
 root), and `/GTM-Partner-Dashboard/` otherwise (Pages serves project sites
 under the repo name). Set `BASE_PATH` to override for any other host.
 
-CI (`ci.yml`) runs lint + build on every pull request.
+CI (`ci.yml`) runs lint + test + build on every pull request and on every push
+to `main`.

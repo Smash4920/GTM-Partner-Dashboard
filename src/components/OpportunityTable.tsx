@@ -2,10 +2,24 @@ import { STAGE_META } from '../data/constants';
 import type { Opportunity } from '../data/types';
 import { formatDate, formatUsd } from '../lib/format';
 
+interface OpportunityTableProps {
+  opportunities: Opportunity[];
+  /** Shown when the fiscal-phase / motion filters empty the table. */
+  emptyMessage?: string;
+}
+
 /** Salesforce-shaped opportunity rows for the selected partner and phase. */
-export default function OpportunityTable({ opportunities }: { opportunities: Opportunity[] }) {
+export default function OpportunityTable({
+  opportunities,
+  emptyMessage = 'No opportunities in this phase.',
+}: OpportunityTableProps) {
   return (
-    <div className="max-h-[440px] overflow-auto">
+    <div
+      className="max-h-[440px] overflow-auto rounded-card focus:outline-none focus-visible:ring-1 focus-visible:ring-ash"
+      tabIndex={0}
+      role="region"
+      aria-label="Pipeline opportunities, scrollable"
+    >
       <table className="w-full min-w-[720px] text-sm">
         <thead className="sticky top-0 bg-canvas">
           <tr className="border-b border-carbon">
@@ -49,14 +63,17 @@ export default function OpportunityTable({ opportunities }: { opportunities: Opp
                 {formatUsd(opportunity.forecastedRevenue)}
               </td>
               <td className="py-3 text-right font-mono text-xs tabular-nums text-granite">
-                {formatDate(opportunity.expectedCloseDate)}
+                {/* Closed rows show the actual close date, matching Salesforce
+                    Opportunity.CloseDate semantics; open rows show the
+                    expected close. */}
+                {formatDate(opportunity.closedAt ?? opportunity.expectedCloseDate)}
               </td>
             </tr>
           ))}
           {opportunities.length === 0 && (
             <tr>
               <td colSpan={5} className="py-8 text-center text-sm text-granite">
-                No opportunities in this phase.
+                {emptyMessage}
               </td>
             </tr>
           )}

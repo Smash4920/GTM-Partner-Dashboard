@@ -1,4 +1,5 @@
-import { FISCAL_QUARTERS, MEETING_TYPES } from '../constants';
+import { FISCAL_QUARTERS, MEETING_TYPES, SNAPSHOT_DATE } from '../constants';
+import { quarterWindow, startOfWeekUtc } from '../../lib/fiscal';
 import type {
   ActivityMeeting,
   DealRegistration,
@@ -25,10 +26,15 @@ import { chance, mulberry32, pick, randInt, skewAmount, weightedPick } from './r
  * under your feet. Tune the *_COUNT / weight constants to reshape the story.
  */
 
-const rand = mulberry32(20260918);
+// Re-seeded at the start of every generateDashboardData() call so the book
+// is identical per call, not just per module load: a second provider, a test
+// run, or any future regeneration must see exactly the same numbers.
+const SEED = 20260918;
+let rand = mulberry32(SEED);
 
 const DAY = 86_400_000;
-const SNAPSHOT = new Date('2026-09-18T00:00:00Z');
+// One definition of the snapshot lives in constants.ts; alias it for brevity.
+const SNAPSHOT = SNAPSHOT_DATE;
 
 const ACCOUNT_MANAGERS = ['Dana Reyes', 'Marcus Webb', 'Priya Nair', 'Tom Alvarez', 'Ellie Chen'];
 const FACTORY_ACCOUNT_DIRECTORS = [
@@ -166,27 +172,13 @@ const EXTRA_COUNTS: Record<OpportunityType, number> = {
 
 // ---- date helpers -----------------------------------------------------------
 
-function quarterStart(quarter: string): Date {
-  const [fiscalYear, q] = quarter.replace('FY', '').split('-Q').map(Number) as [number, number];
-  const calendarYear = 2000 + fiscalYear - 1;
-  return new Date(Date.UTC(calendarYear, 1 + (q - 1) * 3, 1));
-}
-
-function nextQuarterStart(quarter: string): Date {
-  const [fiscalYear, q] = quarter.replace('FY', '').split('-Q').map(Number) as [number, number];
-  return q === 4
-    ? new Date(Date.UTC(2000 + fiscalYear, 1, 1))
-    : new Date(Date.UTC(2000 + fiscalYear - 1, 1 + q * 3, 1));
-}
-
 function iso(date: Date): string {
   return date.toISOString();
 }
 
 /** A random day inside the quarter, clamped to before the snapshot date. */
 function dateWithinQuarter(quarter: string): Date {
-  const start = quarterStart(quarter);
-  const end = nextQuarterStart(quarter);
+  const { start, end } = quarterWindow(quarter);
   const spanDays = Math.round((end.getTime() - start.getTime()) / DAY);
   let date = new Date(start.getTime() + randInt(rand, 0, spanDays - 1) * DAY);
   if (date.getTime() > SNAPSHOT.getTime() - DAY) {
@@ -399,6 +391,56 @@ function generateOpportunities(
   return opportunities;
 }
 
+/**
+ * Closed-only prior-year book across the FY26 quarters. These opportunities
+ * sit entirely outside FY27 phase windows, so current-period metrics never
+ * see them — they exist to feed the prior-year (YoY) delta tiles.
+ */
+function generatePriorYearOpportunities(partners: Partner[]): Opportunity[] {
+  const taken = new Set<string>();
+  const partnerWeights = partners.map(
+    (partner) => [partner, TIER_ACTIVITY[partner.tier]] as const,
+  );
+  const typeWeights: readonly (readonly [OpportunityType, number])[] = [
+    ['sell-with', 5],
+    ['sell-to', 3],
+    ['allocate', 2],
+  ];
+  const priorQuarters = ['FY26-Q1', 'FY26-Q2', 'FY26-Q3', 'FY26-Q4'] as const;
+  const opportunities: Opportunity[] = [];
+  let seq = 1;
+
+  for (const quarter of priorQuarters) {
+    const { start, end } = quarterWindow(quarter);
+    const spanDays = Math.round((end.getTime() - start.getTime()) / DAY);
+    for (let i = 0; i < 10; i += 1) {
+      const partner = weightedPick(rand, partnerWeights);
+      const oppType = weightedPick(rand, typeWeights);
+      const [minAmount, maxAmount] = AMOUNT_RANGES[oppType];
+      const closedAt = new Date(start.getTime() + randInt(rand, 0, spanDays - 1) * DAY);
+      const createdAt = new Date(closedAt.getTime() - randInt(rand, 60, 150) * DAY);
+      const expectedClose = new Date(closedAt.getTime() + randInt(rand, 0, 10) * DAY);
+      const won = chance(rand, 0.55);
+      opportunities.push({
+        id: `opp-prior-${String(seq).padStart(4, '0')}`,
+        partnerId: partner.id,
+        accountName: makeAccountName(taken),
+        oppType,
+        stage: won ? 'deal-desk-review' : weightedPick(rand, LOST_STAGE_WEIGHTS),
+        factoryAccountDirector: pick(rand, FACTORY_ACCOUNT_DIRECTORS),
+        forecastedRevenue: skewAmount(rand, minAmount, maxAmount),
+        createdAt: iso(createdAt),
+        expectedCloseDate: iso(expectedClose),
+        outcome: won ? 'won' : 'lost',
+        closedAt: iso(closedAt),
+      });
+      seq += 1;
+    }
+  }
+
+  return opportunities;
+}
+
 function generateTargets(partners: Partner[]): Target[] {
   const targets: Target[] = [];
   for (const partner of partners) {
@@ -417,7 +459,9 @@ function generateTargets(partners: Partner[]): Target[] {
 
 function generateActivities(partners: Partner[], partnerManagers: PartnerManager[]): ActivityMeeting[] {
   const activities: ActivityMeeting[] = [];
-  const snapshotWeek = new Date(Date.UTC(2026, 8, 14));
+  // Activity weeks anchor to the Monday of the snapshot week (fiscal.ts owns
+  // the week rule, so the generator and the tracker cannot drift apart).
+  const snapshotWeek = startOfWeekUtc(SNAPSHOT);
   const activityWeights = MEETING_TYPES.map((type, index) => [type, index < 3 ? 4 : 2] as const);
   let sequence = 1;
 
@@ -459,10 +503,14 @@ function generateCertifications(partners: Partner[]): PartnerCertification[] {
 }
 
 export function generateDashboardData(): DashboardData {
+  rand = mulberry32(SEED);
   const partnerManagers = generatePartnerManagers();
   const partners = generatePartners(partnerManagers);
   const registrations = generateRegistrations(partners);
-  const opportunities = generateOpportunities(partners, registrations);
+  const opportunities = [
+    ...generateOpportunities(partners, registrations),
+    ...generatePriorYearOpportunities(partners),
+  ];
   const targets = generateTargets(partners);
   const activities = generateActivities(partners, partnerManagers);
   const certifications = generateCertifications(partners);
