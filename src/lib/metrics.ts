@@ -7,12 +7,15 @@ import {
   OPP_TYPES,
   SNAPSHOT_DATE,
   STAGES,
+  WEEKLY_MEETING_GOAL,
+  WEEKLY_PIO_GOAL,
 } from '../data/constants';
 import type {
   ActivityMeeting,
   DashboardData,
   DealRegistration,
   FiscalPhase,
+  MeetingClassification,
   MeetingType,
   Opportunity,
   OpportunityStage,
@@ -467,6 +470,7 @@ export function weeklyActivity(
   activities: ActivityMeeting[],
   partnerManagerId?: string,
   partnerIds?: Set<string>,
+  classifications?: Record<string, MeetingClassification>,
 ): WeeklyActivityRow[] {
   const currentWeek = startOfWeekUtc(SNAPSHOT_DATE);
   return Array.from({ length: 8 }, (_, index) => {
@@ -479,11 +483,15 @@ export function weeklyActivity(
       const occurredAt = new Date(activity.occurredAt).getTime();
       const inWeek = occurredAt >= start.getTime() && occurredAt < end.getTime();
       const inManager = !partnerManagerId || activity.partnerManagerId === partnerManagerId;
-      const inPartner = !partnerIds || partnerIds.has(activity.partnerId);
+      // Classified meetings count toward the partner scope of the override.
+      const classification = classifications?.[activity.id];
+      const partnerId = classification?.partnerId ?? activity.partnerId;
+      const inPartner = !partnerIds || partnerIds.has(partnerId);
       return inWeek && inManager && inPartner;
     });
     for (const activity of filtered) {
-      byType[activity.type] = (byType[activity.type] ?? 0) + 1;
+      const type = classifications?.[activity.id]?.type ?? activity.type;
+      byType[type] = (byType[type] ?? 0) + 1;
     }
     return {
       weekStart: start.toISOString(),
@@ -492,6 +500,72 @@ export function weeklyActivity(
       byType,
     };
   });
+}
+
+export interface WeeklyGoalProgress {
+  meetings: number;
+  meetingsGoal: number;
+  /** Meetings classified as Partner-Identified Opportunity Interlocks. */
+  pioMeetings: number;
+  pioGoal: number;
+}
+
+/** Days remaining in the given fiscal quarter as of the snapshot date. */
+export function daysLeftInQuarter(quarter: string): number {
+  const { end } = quarterWindow(quarter);
+  return Math.max(0, Math.ceil((end.getTime() - SNAPSHOT_DATE.getTime()) / DAY));
+}
+
+/**
+ * Current-week meeting volume toward the weekly goal, optionally scoped to a
+ * partner manager and partner. Classified meetings use the manual override for
+ * both partner and call type; unclassified meetings keep their snapshot values.
+ */
+export function weeklyGoalProgress(
+  activities: ActivityMeeting[],
+  classifications: Record<string, MeetingClassification>,
+  partnerManagerId?: string,
+  partnerIds?: Set<string>,
+): WeeklyGoalProgress {
+  const weekStart = startOfWeekUtc(SNAPSHOT_DATE).getTime();
+  const weekEnd = weekStart + 7 * DAY;
+  let meetings = 0;
+  let pioMeetings = 0;
+  for (const activity of activities) {
+    const occurredAt = new Date(activity.occurredAt).getTime();
+    if (occurredAt < weekStart || occurredAt >= weekEnd) continue;
+    if (partnerManagerId && activity.partnerManagerId !== partnerManagerId) continue;
+    const classification = classifications?.[activity.id];
+    const partnerId = classification?.partnerId ?? activity.partnerId;
+    if (partnerIds && !partnerIds.has(partnerId)) continue;
+    meetings += 1;
+    if ((classification?.type ?? activity.type) === 'pio-interlock') pioMeetings += 1;
+  }
+  return {
+    meetings,
+    meetingsGoal: WEEKLY_MEETING_GOAL,
+    pioMeetings,
+    pioGoal: WEEKLY_PIO_GOAL,
+  };
+}
+
+/**
+ * The partner manager's current-week calendar meetings, oldest first. This is
+ * the raw "Google Calendar import" the manager works from in Log Meetings.
+ */
+export function currentWeekMeetings(
+  activities: ActivityMeeting[],
+  partnerManagerId: string,
+): ActivityMeeting[] {
+  const weekStart = startOfWeekUtc(SNAPSHOT_DATE);
+  const weekEnd = new Date(weekStart.getTime() + 7 * DAY);
+  return activities
+    .filter((activity) => {
+      if (activity.partnerManagerId !== partnerManagerId) return false;
+      const occurredAt = new Date(activity.occurredAt).getTime();
+      return occurredAt >= weekStart.getTime() && occurredAt < weekEnd.getTime();
+    })
+    .sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime());
 }
 
 /** Pending registrations, oldest first. Optionally scoped to one partner. */

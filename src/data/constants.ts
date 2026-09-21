@@ -132,6 +132,11 @@ export const MEETING_TYPE_META: Record<
     fullLabel: 'Interlock Cadence',
     color: '#b8b3b0',
   },
+  'deal-support': {
+    label: 'Deal Support',
+    fullLabel: 'Deal Support',
+    color: '#e8c76a',
+  },
   'technical-enablement': {
     label: 'Technical Enablement',
     fullLabel: 'Technical Enablement',
@@ -152,6 +157,13 @@ export const MEETING_TYPE_META: Record<
 export const MEETING_TYPES: MeetingType[] = Object.keys(
   MEETING_TYPE_META,
 ) as MeetingType[];
+
+/**
+ * Activity-tracking weekly goal: 10 classified partner meetings per manager
+ * per week, at least 3 of which are Partner-Identified Opportunity Interlocks.
+ */
+export const WEEKLY_MEETING_GOAL = 10;
+export const WEEKLY_PIO_GOAL = 3;
 
 /** Factory's functional accents, used only for data states. */
 export const WON_COLOR = '#a0ca92'; // metric green

@@ -1,20 +1,30 @@
 # GTM Partner Dashboard
 
-Mockup of a partner revenue pipeline dashboard for the GTM team. Two views over
-one data model: an internal **GTM Leadership** view aggregating all partner
-performance, and a **Partner Portal** view scoped to a single partner.
+Mockup of a partner revenue pipeline dashboard for the GTM team. Four pages over
+one data model, reached through a collapsible left sidebar: **Home** (ecosystem
+summary), **Partner Performance** (per-manager / per-partner drill-down),
+**Forecasting** (the VP's in-quarter view), and **Activity Tracking** (weekly
+meeting goals and calendar logging).
 
-![GTM Leadership view](docs/screenshots/leadership.png)
-![Partner Portal view](docs/screenshots/partner.png)
+![Home view](docs/screenshots/home.png)
+![Forecasting view](docs/screenshots/forecasting.png)
 
 The interface follows Factory's external brand system: near-black canvas
 (#101010), bone type (#EEEEEE), Geist / Geist Mono, 1px hairline borders, no
 shadows, and two functional accents only — signal orange for live status and
 metric green for positive data.
 
-## Views
+## Navigation
 
-### GTM Leadership (internal)
+A collapsible sidebar on the left carries the four pages; the icon in the upper
+left expands and collapses it to an icon rail.
+
+## Pages
+
+### Home
+
+High-level summary statistics for the whole partner ecosystem. Always scoped to
+**All Partners** — per-manager drill-downs live on Partner Performance.
 
 - KPI row: open pipeline, closed-won for the selected phase (with a prior-year
   delta), pipeline coverage vs. remaining quota, deal-reg approval rate,
@@ -24,8 +34,6 @@ metric green for positive data.
   Phase-filtered pipeline spans the whole selected phase — open deals
   scheduled after the snapshot still count — while closed outcomes accrue only
   through the snapshot
-- Partner Manager View: aggregate or partner-specific performance for a selected
-  manager, with Salesforce-style Account.Partner_Manager__c assignments
 - Deal registration funnel: submitted → approved → converted, with rejected and
   pending alongside
 - Pipeline by sales stage: Discovery → Scope → Tech Validation → Business Case →
@@ -34,20 +42,60 @@ metric green for positive data.
 - Pipeline by opportunity type: Sell To / Sell With / Allocate (the type filter
   applies to KPIs, stages, revenue, and the leaderboard)
 - Registrations awaiting review — the actionable queue
-- Weekly partner activity tracker with Google Calendar-style meeting types
+- Weekly partner activity tracker, fed by Activity Tracking classifications
 - Partner leaderboard
 
-### Partner Portal (partner-facing)
+### Partner Performance
 
-- Simulates the partner-scoped view; in production this sits behind partner SSO
-  and the picker does not exist
-- Shows Sell With and Allocate opportunities only — Sell To is internal-only
-- Partner Strategists and Partner Engineers certified against goal
-- Deal registrations above a quarter-scoped opportunity table
-- Salesforce-shaped opportunity fields: client, Factory Account Director, stage,
+Drill-down into specific partnership metrics. Two dropdowns on the right pick
+the scope: **Partner manager** (all managers or one) and **Partner** (All
+Partners aligned to that manager, or a single partner, via Salesforce-style
+`Account.Partner_Manager__c` assignments).
+
+- The same KPI row, registration funnel, stage breakdown, and revenue-vs-target
+  chart, all scoped to the selection
+- Meeting tracker alongside progress to the weekly goal for that scope
+- Salesforce-shaped opportunity table: client, Factory Account Director, stage,
   forecasted revenue, and close date (actual close once closed, expected close
   while open)
-- Their stage progression and revenue vs. their fiscal target
+- Pending registrations, scoped leaderboard, and — for a single partner —
+  Partner Strategist / Partner Engineer certification against goal
+
+### Forecasting
+
+The VP of Partnerships' in-quarter read on FY27-Q3.
+
+- Callout tiles: partner sourced pipeline, closed-won (with % attainment to the
+  quarterly goal), pipeline coverage to goal, average deal size, and days left
+  in the quarter
+- In-quarter opportunities grouped into a collapsible section per partner
+  manager; each header shows their opportunity count, open pipeline, and
+  closed-won, and expands to their book
+- Table fields: Client, Partner, Revenue Forecast, Opportunity Type, Stage,
+  Close Date, and Notes
+- **Revenue Forecast** and **Notes** each carry a pencil. An edited revenue
+  forecast overrides the Salesforce figure and immediately updates every metric
+  across the app, so a manager's number can differ from the CRM's. Notes never
+  render inline — they are stored as comments and appear on hover over the
+  comment icon
+
+### Activity Tracking
+
+Organized by partner manager and their assigned partners, with dropdowns for
+**Partner manager** and **Partner** (All Partners, each assigned partner, or
+**＋ Add partner…** to log a call with a new prospect mid-week).
+
+- Progress to weekly goal: 10 partner meetings per week, 3 of them Partner-
+  Identified Opportunity Interlocks, plus this week's split by call type
+- **Log Meetings** opens a Google Calendar-style weekly view of that manager's
+  calendar. Every call is a tile within its day carrying two dropdowns,
+  **Partner** and **Call Type**; Submit commits the classifications, which feed
+  the progress bars and the weekly activity charts
+- Call types: Discovery, PIO Interlock, PAO Interlock, Interlock Cadence, Deal
+  Support, Technical Enablement, GTM Enablement, and Partner Cadence
+
+In-app edits (revenue, notes, classifications, added prospects) live in React
+state for the session; a write-capable provider is the next step.
 
 ## Running locally
 
@@ -80,6 +128,11 @@ live, implement the interface against your CRM (HubSpot, Salesforce) or
 warehouse (Snowflake, Looker) and swap the provider in `App.tsx`. No view code
 changes.
 
+The interface is read-only. `App.tsx` layers the session's in-app edits —
+revenue overrides, notes, meeting classifications, and added prospects — on top
+of the provider's book before handing a single merged `DashboardData` to every
+page, so writes are the one thing a live provider still needs to add.
+
 ## Mock data
 
 - Deterministic: mulberry32, seed `20260918` — identical on every load, build,
@@ -89,8 +142,10 @@ changes.
   account relationship
 - 25 partners, 180 registrations, 213 opportunities — the FY27 book
   (February 2026 → January 2027) plus a closed prior-year FY26 book that only
-  feeds the prior-year delta tiles — and 128 mock calendar meetings across the
-  current and previous seven weeks
+  feeds the prior-year delta tiles — and 163 mock calendar meetings: a seeded
+  pool across the previous seven weeks, plus a full current week per partner
+  manager (7–12 calls each) so the weekly goal and Log Meetings have a real
+  calendar to work from
 - Realized FY27 win rate: 20 of 44 closed deals won (~45%)
 - Volumes and weights are tuned in
   [`src/data/mock/generate.ts`](src/data/mock/generate.ts); the exact volumes

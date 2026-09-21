@@ -40,3 +40,15 @@ export function formatPct(value: number): string {
 export function formatDate(iso: string): string {
   return dateFmt.format(new Date(iso));
 }
+
+// Meetings keep their UTC clock time for the calendar grid; no timezone math.
+const timeFmt = new Intl.DateTimeFormat('en-US', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'UTC',
+});
+
+export function formatTime(iso: string): string {
+  return timeFmt.format(new Date(iso));
+}

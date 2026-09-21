@@ -467,7 +467,14 @@ function generateActivities(partners: Partner[], partnerManagers: PartnerManager
 
   for (let weekIndex = 7; weekIndex >= 0; weekIndex -= 1) {
     const weekStart = new Date(snapshotWeek.getTime() - weekIndex * 7 * DAY);
-    const meetingsThisWeek = weekIndex === 0 ? 9 : randInt(rand, 12, 24);
+    // The current week is the one partner managers classify in Log Meetings,
+    // so give every manager a full week of their own calendar (the weekly
+    // goal is 10 meetings). Prior weeks are a single seeded pool across all
+    // managers, which reads as lighter activity further back.
+    const meetingsThisWeek =
+      weekIndex === 0
+        ? 0
+        : randInt(rand, 12, 24);
     for (let meetingIndex = 0; meetingIndex < meetingsThisWeek; meetingIndex += 1) {
       const partner = pick(rand, partners);
       const manager = partnerManagers.find((candidate) => candidate.id === partner.partnerManagerId);
@@ -480,6 +487,30 @@ function generateActivities(partners: Partner[], partnerManagers: PartnerManager
         partnerManagerId: manager?.id ?? partner.partnerManagerId,
         type: weightedPick(rand, activityWeights),
         occurredAt: iso(occurredAt),
+        durationMinutes: pick(rand, [30, 45, 60, 90]),
+      });
+      sequence += 1;
+    }
+  }
+
+  // Current week: one calendar per partner manager. Meetings land Mon–Fri
+  // between 09:00 and 16:00, mirroring a real Google Calendar import they
+  // will classify partner-by-partner.
+  for (const manager of partnerManagers) {
+    const roster = partners.filter((partner) => partner.partnerManagerId === manager.id);
+    const weekStart = snapshotWeek;
+    const meetingsThisWeek = randInt(rand, 7, 12);
+    for (let meetingIndex = 0; meetingIndex < meetingsThisWeek; meetingIndex += 1) {
+      const partner = pick(rand, roster);
+      const startedAt = new Date(
+        weekStart.getTime() + randInt(rand, 0, 4) * DAY + randInt(rand, 9, 16) * 3_600_000,
+      );
+      activities.push({
+        id: `meeting-${String(sequence).padStart(4, '0')}`,
+        partnerId: partner.id,
+        partnerManagerId: manager.id,
+        type: weightedPick(rand, activityWeights),
+        occurredAt: iso(startedAt),
         durationMinutes: pick(rand, [30, 45, 60, 90]),
       });
       sequence += 1;
