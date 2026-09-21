@@ -1,13 +1,20 @@
 import type { ReactNode } from 'react';
-import { ActivityIcon, ForecastIcon, HomeIcon, PartnersIcon } from './icons';
+import {
+  ActivityIcon,
+  ForecastIcon,
+  HomeIcon,
+  PartnersIcon,
+  PortalIcon,
+} from './icons';
 
-export type Route = 'home' | 'partners' | 'forecasting' | 'activity';
+export type Route = 'home' | 'partners' | 'forecasting' | 'activity' | 'partner-view';
 
 export const ROUTES: { id: Route; label: string; icon: (props: { className?: string }) => ReactNode }[] = [
   { id: 'home', label: 'Home', icon: HomeIcon },
   { id: 'partners', label: 'Partner Performance', icon: PartnersIcon },
   { id: 'forecasting', label: 'Forecasting', icon: ForecastIcon },
   { id: 'activity', label: 'Activity Tracking', icon: ActivityIcon },
+  { id: 'partner-view', label: 'Partner View', icon: PortalIcon },
 ];
 
 interface SidebarProps {

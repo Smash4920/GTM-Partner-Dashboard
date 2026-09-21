@@ -156,11 +156,16 @@ const LOST_STAGE_WEIGHTS: readonly (readonly [OpportunityStage, number])[] = [
   ['deal-desk-review', 3],
 ];
 
-/** Deal size ranges by opportunity type. */
+/**
+ * Deal-size ranges by opportunity type. The seeded book uses a broad ACV
+ * distribution centered around roughly $250k for open Q3 opportunities, with
+ * smaller co-sell deals and larger allocation motions creating realistic
+ * variance around that planning assumption.
+ */
 const AMOUNT_RANGES: Record<OpportunityType, readonly [number, number]> = {
-  'sell-with': [15_000, 300_000],
-  'sell-to': [10_000, 150_000],
-  allocate: [50_000, 500_000],
+  'sell-with': [80_000, 750_000],
+  'sell-to': [50_000, 450_000],
+  allocate: [125_000, 1_000_000],
 };
 
 /** Extra opportunities beyond converted registrations, by type. */

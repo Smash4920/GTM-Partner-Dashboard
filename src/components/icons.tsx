@@ -67,6 +67,16 @@ export function ActivityIcon({ className = base }: IconProps) {
   );
 }
 
+export function PortalIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...stroke} aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M3 8h18M8 4v4M16 4v4" />
+      <path d="M8 13h8M8 16h5" />
+    </svg>
+  );
+}
+
 export function PencilIcon({ className = base }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} {...stroke} aria-hidden="true">

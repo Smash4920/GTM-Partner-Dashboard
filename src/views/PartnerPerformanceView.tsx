@@ -403,10 +403,15 @@ export default function PartnerPerformanceView({
           />
         </LightCard>
         <Card
-          title="Leaderboard"
-          subtitle="Top partners in this scope by closed-won"
+          title="Partner leaderboard & enablement"
+          subtitle={`${uniquePartners} partner${uniquePartners === 1 ? '' : 's'} in this scope · certification counts show attainment below`}
         >
-          <Leaderboard rows={leaderboard} limit={5} closedWonLabel={`Closed-won ${phaseLabel}`} />
+          <Leaderboard
+            rows={leaderboard}
+            limit={uniquePartners}
+            closedWonLabel={`Closed-won ${phaseLabel}`}
+            certifications={data.certifications}
+          />
         </Card>
       </div>
 

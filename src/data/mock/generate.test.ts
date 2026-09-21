@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { FISCAL_QUARTERS, FISCAL_YEAR_START, SNAPSHOT_DATE } from '../constants';
-import { closedWonPriorYearForPhase, filterByPhase, phaseWindow } from '../../lib/metrics';
+import {
+  avgOpenDealSize,
+  closedWonPriorYearForPhase,
+  filterByPhase,
+  phaseWindow,
+} from '../../lib/metrics';
 import { generateDashboardData } from './generate';
 import { MockDataProvider } from './MockDataProvider';
 
@@ -124,6 +129,12 @@ describe('generateDashboardData', () => {
     // 20 of 44 closed FY27 deals won ≈ 45% realized win rate (README).
     expect(closed.length).toBe(44);
     expect(won).toBe(20);
+  });
+
+  it('models a roughly $250k ACV with variance in the open Q3 book', () => {
+    const average = avgOpenDealSize(filterByPhase(data.opportunities, 'q3'));
+    expect(average).toBeGreaterThan(225_000);
+    expect(average).toBeLessThan(275_000);
   });
 });
 

@@ -3,8 +3,9 @@
 Mockup of a partner revenue pipeline dashboard for the GTM team. Four pages over
 one data model, reached through a collapsible left sidebar: **Home** (ecosystem
 summary), **Partner Performance** (per-manager / per-partner drill-down),
-**Forecasting** (the VP's in-quarter view), and **Activity Tracking** (weekly
-meeting goals and calendar logging).
+**Forecasting** (the VP's in-quarter view), **Activity Tracking** (weekly
+meeting goals and calendar logging), and **Partner View** (the partner-facing
+sharing surface).
 
 ![Home view](docs/screenshots/home.png)
 ![Forecasting view](docs/screenshots/forecasting.png)
@@ -59,7 +60,9 @@ Partners aligned to that manager, or a single partner, via Salesforce-style
   forecasted revenue, and close date (actual close once closed, expected close
   while open)
 - Pending registrations, scoped leaderboard, and — for a single partner —
-  Partner Strategist / Partner Engineer certification against goal
+  Partner Strategist / Partner Engineer certification against goal. When the
+  scope includes multiple partners, the leaderboard shows each partner's
+  certified counts and attainment beneath the count.
 
 ### Forecasting
 
@@ -96,6 +99,18 @@ Organized by partner manager and their assigned partners, with dropdowns for
 
 In-app edits (revenue, notes, classifications, added prospects) live in React
 state for the session; a write-capable provider is the next step.
+
+### Partner View
+
+The partner-facing sharing surface, designed for a future partner SSO boundary.
+The picker simulates which partner is viewing the shared platform today.
+
+- Sell With and Allocate opportunities only; Sell To remains internal-only
+- Partner-scoped pipeline, closed-won, win rate, awaiting-review registrations,
+  opportunity details, revenue-vs-target trend, stage pipeline, and revenue
+  motion breakdown
+- Partner Strategist and Partner Engineer certification counts with goal
+  attainment
 
 ## Running locally
 
