@@ -14,6 +14,10 @@ export class MockDataProvider implements DataProvider {
     this.data = generateDashboardData();
   }
 
+  async listPartnerManagers() {
+    return this.data.partnerManagers;
+  }
+
   async listPartners() {
     return this.data.partners;
   }
@@ -28,5 +32,13 @@ export class MockDataProvider implements DataProvider {
 
   async getTargets() {
     return this.data.targets;
+  }
+
+  async listActivities() {
+    return this.data.activities;
+  }
+
+  async listCertifications() {
+    return this.data.certifications;
   }
 }

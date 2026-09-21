@@ -19,6 +19,9 @@ metric green for positive data.
 - KPI row: open pipeline, closed-won YTD (with YoY delta), pipeline coverage vs.
   remaining quota, deal-reg approval rate, registration → qualified-opportunity
   conversion, win rate, active partners, average open deal size
+- Fiscal phase toggles: FY, Q1, Q2, Q3, Q4 for a February-start fiscal year
+- Partner Manager View: aggregate or partner-specific performance for a selected
+  manager, with Salesforce-style Account.Partner_Manager__c assignments
 - Deal registration funnel: submitted → approved → converted, with rejected and
   pending alongside
 - Pipeline by sales stage: Discovery → Scope → Tech Validation → Business Case →
@@ -27,6 +30,7 @@ metric green for positive data.
 - Pipeline by opportunity type: Sell To / Sell With / Allocate (the type filter
   applies to KPIs, stages, revenue, and the leaderboard)
 - Registrations awaiting review — the actionable queue
+- Weekly partner activity tracker with Google Calendar-style meeting types
 - Partner leaderboard
 
 ### Partner Portal (partner-facing)
@@ -34,8 +38,11 @@ metric green for positive data.
 - Simulates the partner-scoped view; in production this sits behind partner SSO
   and the picker does not exist
 - Shows Sell With and Allocate opportunities only — Sell To is internal-only
-- Their registrations with status, their stage progression, and their revenue vs.
-  their quarterly target
+- Partner Strategists and Partner Engineers certified against goal
+- Deal registrations above a quarter-scoped opportunity table
+- Salesforce-shaped opportunity fields: client, Factory Account Director, stage,
+  forecasted revenue, and close date
+- Their stage progression and revenue vs. their fiscal target
 
 ## Running locally
 
@@ -54,10 +61,13 @@ The UI only talks to the `DataProvider` interface
 
 | Method                | Returns                 | Future source                              |
 | --------------------- | ----------------------- | ----------------------------------------- |
+| `listPartnerManagers()` | `PartnerManager[]`     | Salesforce Account owner alignment        |
 | `listPartners()`      | `Partner[]`             | PRM / CRM partner accounts                |
 | `listRegistrations()` | `DealRegistration[]`    | CRM "Deal Registration" custom object     |
-| `listOpportunities()` | `Opportunity[]`         | CRM opportunities (stages + `oppType`)    |
+| `listOpportunities()`  | `Opportunity[]`         | Salesforce opportunities                  |
 | `getTargets()`        | `Target[]`              | Quota objects or warehouse                |
+| `listActivities()`    | `ActivityMeeting[]`     | Google Calendar events                    |
+| `listCertifications()` | `PartnerCertification[]` | Partner enablement system               |
 
 `MockDataProvider` fills the seam with deterministic, seeded data today. To go
 live, implement the interface against your CRM (HubSpot, Salesforce) or
@@ -68,8 +78,11 @@ changes.
 
 - Deterministic: mulberry32, seed `20260918` — identical on every load and build
 - Fixed snapshot: 2026-09-18 (`SNAPSHOT_DATE`) so numbers never drift
-- 25 partners, 180 registrations, ~185 opportunities across 8 quarters
-  (2024-Q4 → 2026-Q3)
+- 5 partner managers, each aligned to 5 partners through a Salesforce-style
+  account relationship
+- 25 partners, 180 registrations, ~185 opportunities across FY27 fiscal phases
+  (February 2026 → January 2027)
+- 148 mock calendar meetings across the current and previous seven weeks
 - Approval rate ~85%, registration → opportunity conversion ~70%, win rate ~55%
   of closed deals
 - Volumes and weights are tuned in

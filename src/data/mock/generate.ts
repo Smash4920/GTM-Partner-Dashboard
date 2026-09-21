@@ -1,11 +1,14 @@
-import { QUARTERS } from '../constants';
+import { FISCAL_QUARTERS, MEETING_TYPES } from '../constants';
 import type {
+  ActivityMeeting,
   DealRegistration,
   DashboardData,
   Opportunity,
   OpportunityStage,
   OpportunityType,
   Partner,
+  PartnerCertification,
+  PartnerManager,
   PartnerTier,
   PartnerType,
   Region,
@@ -28,6 +31,21 @@ const DAY = 86_400_000;
 const SNAPSHOT = new Date('2026-09-18T00:00:00Z');
 
 const ACCOUNT_MANAGERS = ['Dana Reyes', 'Marcus Webb', 'Priya Nair', 'Tom Alvarez', 'Ellie Chen'];
+const FACTORY_ACCOUNT_DIRECTORS = [
+  'Maya Patel',
+  'Chris Alvarez',
+  'Jordan Kim',
+  'Morgan Lee',
+  'Sam Okafor',
+];
+
+const PARTNER_MANAGER_NAMES = [
+  'Alex Morgan',
+  'Jordan Lee',
+  'Taylor Chen',
+  'Casey Rivera',
+  'Riley Patel',
+];
 
 const PARTNER_NAMES = [
   'Northwind Solutions',
@@ -104,16 +122,12 @@ const TIER_TARGET_BASE: Record<PartnerTier, number> = {
 
 const REGISTRATION_COUNT = 180;
 
-/** Registration volume skews toward recent quarters. */
-const QUARTER_WEIGHTS: readonly (readonly [string, number])[] = [
-  ['2024-Q4', 2],
-  ['2025-Q1', 4],
-  ['2025-Q2', 6],
-  ['2025-Q3', 8],
-  ['2025-Q4', 10],
-  ['2026-Q1', 13],
-  ['2026-Q2', 16],
-  ['2026-Q3', 20],
+/** Activity skews toward the current fiscal year and current Q3 snapshot. */
+const MOCK_QUARTER_WEIGHTS: readonly (readonly [string, number])[] = [
+  ['FY26-Q4', 5],
+  ['FY27-Q1', 14],
+  ['FY27-Q2', 24],
+  ['FY27-Q3', 20],
 ];
 
 /** Stage distribution for open opportunities: fat at Discovery, thin at Deal Desk. */
@@ -153,13 +167,16 @@ const EXTRA_COUNTS: Record<OpportunityType, number> = {
 // ---- date helpers -----------------------------------------------------------
 
 function quarterStart(quarter: string): Date {
-  const [year, q] = quarter.split('-Q').map(Number) as [number, number];
-  return new Date(Date.UTC(year, (q - 1) * 3, 1));
+  const [fiscalYear, q] = quarter.replace('FY', '').split('-Q').map(Number) as [number, number];
+  const calendarYear = 2000 + fiscalYear - 1;
+  return new Date(Date.UTC(calendarYear, 1 + (q - 1) * 3, 1));
 }
 
 function nextQuarterStart(quarter: string): Date {
-  const [year, q] = quarter.split('-Q').map(Number) as [number, number];
-  return q === 4 ? new Date(Date.UTC(year + 1, 0, 1)) : new Date(Date.UTC(year, q * 3, 1));
+  const [fiscalYear, q] = quarter.replace('FY', '').split('-Q').map(Number) as [number, number];
+  return q === 4
+    ? new Date(Date.UTC(2000 + fiscalYear, 1, 1))
+    : new Date(Date.UTC(2000 + fiscalYear - 1, 1 + q * 3, 1));
 }
 
 function iso(date: Date): string {
@@ -180,7 +197,14 @@ function dateWithinQuarter(quarter: string): Date {
 
 // ---- generators -------------------------------------------------------------
 
-function generatePartners(): Partner[] {
+function generatePartnerManagers(): PartnerManager[] {
+  return PARTNER_MANAGER_NAMES.map((name, index) => ({
+    id: `pm-${String(index + 1).padStart(2, '0')}`,
+    name,
+  }));
+}
+
+function generatePartners(partnerManagers: PartnerManager[]): Partner[] {
   const tiers: readonly (readonly [PartnerTier, number])[] = [
     ['platinum', 3],
     ['gold', 6],
@@ -208,6 +232,8 @@ function generatePartners(): Partner[] {
     tier: weightedPick(rand, tiers),
     region: weightedPick(rand, regions),
     accountManager: pick(rand, ACCOUNT_MANAGERS),
+    // Salesforce Account.Partner_Manager__c is represented by this relationship.
+    partnerManagerId: partnerManagers[index % partnerManagers.length].id,
     joinedAt: iso(
       new Date(Date.UTC(2022 + randInt(rand, 0, 3), randInt(rand, 0, 11), randInt(rand, 1, 28))),
     ),
@@ -236,7 +262,7 @@ function generateRegistrations(partners: Partner[]): DealRegistration[] {
 
   for (let i = 0; i < REGISTRATION_COUNT; i += 1) {
     const partner = weightedPick(rand, partnerWeights);
-    const quarter = weightedPick(rand, QUARTER_WEIGHTS);
+    const quarter = weightedPick(rand, MOCK_QUARTER_WEIGHTS);
     const submittedAt = dateWithinQuarter(quarter);
     const registration: DealRegistration = {
       id: `reg-${String(i + 1).padStart(4, '0')}`,
@@ -303,7 +329,8 @@ function buildOpportunity(params: {
     accountName,
     oppType,
     stage: weightedPick(rand, OPEN_STAGE_WEIGHTS),
-    amount: skewAmount(rand, minAmount, maxAmount),
+    factoryAccountDirector: pick(rand, FACTORY_ACCOUNT_DIRECTORS),
+    forecastedRevenue: skewAmount(rand, minAmount, maxAmount),
     createdAt: iso(createdAt),
     expectedCloseDate: iso(expectedClose),
   };
@@ -355,7 +382,7 @@ function generateOpportunities(
   for (const [oppType, count] of Object.entries(EXTRA_COUNTS) as [OpportunityType, number][]) {
     for (let i = 0; i < count; i += 1) {
       const partner = weightedPick(rand, partnerWeights);
-      const quarter = weightedPick(rand, QUARTER_WEIGHTS);
+      const quarter = weightedPick(rand, MOCK_QUARTER_WEIGHTS);
       opportunities.push(
         buildOpportunity({
           id: `opp-${String(seq).padStart(4, '0')}`,
@@ -375,7 +402,7 @@ function generateOpportunities(
 function generateTargets(partners: Partner[]): Target[] {
   const targets: Target[] = [];
   for (const partner of partners) {
-    for (const quarter of QUARTERS) {
+    for (const quarter of FISCAL_QUARTERS) {
       const jitter = 0.85 + rand() * 0.3; // plus or minus 15%
       const base = TIER_TARGET_BASE[partner.tier] * jitter;
       targets.push({
@@ -388,10 +415,64 @@ function generateTargets(partners: Partner[]): Target[] {
   return targets;
 }
 
+function generateActivities(partners: Partner[], partnerManagers: PartnerManager[]): ActivityMeeting[] {
+  const activities: ActivityMeeting[] = [];
+  const snapshotWeek = new Date(Date.UTC(2026, 8, 14));
+  const activityWeights = MEETING_TYPES.map((type, index) => [type, index < 3 ? 4 : 2] as const);
+  let sequence = 1;
+
+  for (let weekIndex = 7; weekIndex >= 0; weekIndex -= 1) {
+    const weekStart = new Date(snapshotWeek.getTime() - weekIndex * 7 * DAY);
+    const meetingsThisWeek = weekIndex === 0 ? 9 : randInt(rand, 12, 24);
+    for (let meetingIndex = 0; meetingIndex < meetingsThisWeek; meetingIndex += 1) {
+      const partner = pick(rand, partners);
+      const manager = partnerManagers.find((candidate) => candidate.id === partner.partnerManagerId);
+      const occurredAt = new Date(
+        weekStart.getTime() + randInt(rand, 0, 4) * DAY + randInt(rand, 9, 16) * 3_600_000,
+      );
+      activities.push({
+        id: `meeting-${String(sequence).padStart(4, '0')}`,
+        partnerId: partner.id,
+        partnerManagerId: manager?.id ?? partner.partnerManagerId,
+        type: weightedPick(rand, activityWeights),
+        occurredAt: iso(occurredAt),
+        durationMinutes: pick(rand, [30, 45, 60, 90]),
+      });
+      sequence += 1;
+    }
+  }
+  return activities;
+}
+
+function generateCertifications(partners: Partner[]): PartnerCertification[] {
+  return partners.map((partner) => {
+    const partnerStrategistsGoal = randInt(rand, 3, 6);
+    const partnerEngineersGoal = randInt(rand, 4, 8);
+    return {
+      partnerId: partner.id,
+      partnerStrategistsCertified: randInt(rand, 1, partnerStrategistsGoal),
+      partnerStrategistsGoal,
+      partnerEngineersCertified: randInt(rand, 1, partnerEngineersGoal),
+      partnerEngineersGoal,
+    };
+  });
+}
+
 export function generateDashboardData(): DashboardData {
-  const partners = generatePartners();
+  const partnerManagers = generatePartnerManagers();
+  const partners = generatePartners(partnerManagers);
   const registrations = generateRegistrations(partners);
   const opportunities = generateOpportunities(partners, registrations);
   const targets = generateTargets(partners);
-  return { partners, registrations, opportunities, targets };
+  const activities = generateActivities(partners, partnerManagers);
+  const certifications = generateCertifications(partners);
+  return {
+    partnerManagers,
+    partners,
+    registrations,
+    opportunities,
+    targets,
+    activities,
+    certifications,
+  };
 }

@@ -1,5 +1,7 @@
 import type {
   DealRegistration,
+  FiscalPhase,
+  MeetingType,
   OpportunityStage,
   OpportunityType,
   PartnerTier,
@@ -86,19 +88,71 @@ export const REGISTRATION_STATUS_META: Record<
 /** Fixed snapshot date for all mock data. All relative ("today") logic uses this. */
 export const SNAPSHOT_DATE = new Date('2026-09-18T00:00:00Z');
 
-/** The eight quarters the mock data spans, oldest first. */
-export const QUARTERS = [
-  '2024-Q4',
-  '2025-Q1',
-  '2025-Q2',
-  '2025-Q3',
-  '2025-Q4',
-  '2026-Q1',
-  '2026-Q2',
-  '2026-Q3',
+/** Fiscal year starts in February. The snapshot is in FY27 Q3. */
+export const FISCAL_YEAR = 'FY27';
+export const FISCAL_QUARTERS = [
+  'FY27-Q1',
+  'FY27-Q2',
+  'FY27-Q3',
+  'FY27-Q4',
 ] as const;
-
+export const CURRENT_FISCAL_QUARTER = 'FY27-Q3';
+export const FISCAL_YEAR_START = new Date('2026-02-01T00:00:00Z');
 export const CURRENT_YEAR = 2026;
+
+export const FISCAL_PHASE_META: Record<
+  FiscalPhase,
+  { label: string; description: string; quarter?: string }
+> = {
+  fy: { label: 'FY', description: 'FY27 year to date' },
+  q1: { label: 'Q1', description: 'FY27 Q1 · Feb–Apr', quarter: 'FY27-Q1' },
+  q2: { label: 'Q2', description: 'FY27 Q2 · May–Jul', quarter: 'FY27-Q2' },
+  q3: { label: 'Q3', description: 'FY27 Q3 · Aug–Oct, through snapshot', quarter: 'FY27-Q3' },
+  q4: { label: 'Q4', description: 'FY27 Q4 · Nov–Jan', quarter: 'FY27-Q4' },
+};
+
+export const FISCAL_PHASES: FiscalPhase[] = ['fy', 'q1', 'q2', 'q3', 'q4'];
+
+export const MEETING_TYPE_META: Record<
+  MeetingType,
+  { label: string; fullLabel: string; color: string }
+> = {
+  discovery: { label: 'Discovery', fullLabel: 'Discovery', color: '#ee6018' },
+  'pio-interlock': {
+    label: 'PIO Interlock',
+    fullLabel: 'Partner-Identified Opportunity Interlock (PIO Interlock)',
+    color: '#a0ca92',
+  },
+  'pao-interlock': {
+    label: 'PAO Interlock',
+    fullLabel: 'Partner-Assisted Opportunity Interlock (PAO Interlock)',
+    color: '#eeeeee',
+  },
+  'interlock-cadence': {
+    label: 'Interlock Cadence',
+    fullLabel: 'Interlock Cadence',
+    color: '#b8b3b0',
+  },
+  'technical-enablement': {
+    label: 'Technical Enablement',
+    fullLabel: 'Technical Enablement',
+    color: '#8a8380',
+  },
+  'gtm-enablement': {
+    label: 'GTM Enablement',
+    fullLabel: 'GTM Enablement',
+    color: '#6e6b68',
+  },
+  'partner-cadence': {
+    label: 'Partner Cadence',
+    fullLabel: 'Partner Cadence',
+    color: '#4d4947',
+  },
+};
+
+export const MEETING_TYPES: MeetingType[] = Object.keys(
+  MEETING_TYPE_META,
+) as MeetingType[];
 
 /** Factory's functional accents, used only for data states. */
 export const WON_COLOR = '#a0ca92'; // metric green

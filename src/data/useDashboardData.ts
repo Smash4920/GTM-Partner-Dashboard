@@ -21,12 +21,33 @@ export function useDashboardData(provider: DataProvider): DashboardState {
       provider.listRegistrations(),
       provider.listOpportunities(),
       provider.getTargets(),
+      provider.listPartnerManagers(),
+      provider.listActivities(),
+      provider.listCertifications(),
     ])
-      .then(([partners, registrations, opportunities, targets]) => {
+      .then(
+        ([
+          partners,
+          registrations,
+          opportunities,
+          targets,
+          partnerManagers,
+          activities,
+          certifications,
+        ]) => {
         if (!alive) return;
-        setData({ partners, registrations, opportunities, targets });
+        setData({
+          partnerManagers,
+          partners,
+          registrations,
+          opportunities,
+          targets,
+          activities,
+          certifications,
+        });
         setLoading(false);
-      })
+        },
+      )
       .catch((err: unknown) => {
         if (!alive) return;
         setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
