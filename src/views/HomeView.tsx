@@ -20,7 +20,7 @@ import {
   STAGE_META,
   WON_COLOR,
 } from '../data/constants';
-import type { DashboardData, FiscalPhase, OpportunityType } from '../data/types';
+import type { DashboardData, FiscalPhase, MeetingClassification, OpportunityType } from '../data/types';
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 import {
   activePartnerCount,
@@ -50,7 +50,6 @@ import {
 
 type TypeFilter = OpportunityType | 'all';
 type FunnelMeasure = 'value' | 'count';
-type LeadershipScope = 'all' | 'manager';
 
 const TYPE_OPTIONS: ChipOption<TypeFilter>[] = [
   { id: 'all', label: 'All', title: 'All opportunity types' },
@@ -67,162 +66,72 @@ const PHASE_OPTIONS: ChipOption<FiscalPhase>[] = FISCAL_PHASES.map((phase) => ({
   title: FISCAL_PHASE_META[phase].description,
 }));
 
-const SCOPE_OPTIONS: ChipOption<LeadershipScope>[] = [
-  { id: 'all', label: 'All partners', title: 'Aggregate performance across the partner org' },
-  { id: 'manager', label: 'Partner Manager View', title: 'Performance for an assigned partner manager' },
-];
-
 const FUNNEL_MEASURE_OPTIONS: ChipOption<FunnelMeasure>[] = [
   { id: 'value', label: 'Registered $', title: 'Partner-estimated deal value at submission' },
   { id: 'count', label: 'Count', title: 'Number of registrations' },
 ];
 
-function targetForPhase(
-  targets: DashboardData['targets'],
-  phase: FiscalPhase,
-): number {
+function targetForPhase(targets: DashboardData['targets'], phase: FiscalPhase): number {
   return targetsForPhase(targets, phase).reduce((sum, target) => sum + target.revenueTarget, 0);
 }
 
-/** Internal GTM leadership view: every partner or one manager's assigned book. */
-export default function LeadershipView({ data }: { data: DashboardData }) {
+/**
+ * Home: high-level summary stats for the whole partner ecosystem. This is the
+ * aggregate landing view — always "All Partners", with fiscal phase and
+ * opportunity-type slicing only. Per-manager and per-partner drill-downs live
+ * in Partner Performance.
+ */
+export default function HomeView({
+  data,
+  classifications,
+}: {
+  data: DashboardData;
+  classifications: Record<string, MeetingClassification>;
+}) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [funnelMeasure, setFunnelMeasure] = useState<FunnelMeasure>('value');
   const [phase, setPhase] = useState<FiscalPhase>('q3');
-  const [scope, setScope] = useState<LeadershipScope>('all');
-  const [partnerManagerId, setPartnerManagerId] = useState(
-    () => data.partnerManagers[0]?.id ?? '',
-  );
-  const [partnerId, setPartnerId] = useState('all');
 
-  const selectedManager = data.partnerManagers.find(
-    (manager) => manager.id === partnerManagerId,
-  );
-  const managerPartners = useMemo(
-    () =>
-      data.partners.filter((partner) =>
-        scope === 'manager' ? partner.partnerManagerId === partnerManagerId : true,
-      ),
-    [data.partners, partnerManagerId, scope],
-  );
-  const selectedPartnerIds = useMemo(() => {
-    if (scope !== 'manager') return undefined;
-    if (partnerId === 'all') return new Set(managerPartners.map((partner) => partner.id));
-    return new Set([partnerId]);
-  }, [managerPartners, partnerId, scope]);
-  const scopedPartners = useMemo(
-    () =>
-      data.partners.filter(
-        (partner) => !selectedPartnerIds || selectedPartnerIds.has(partner.id),
-      ),
-    [data.partners, selectedPartnerIds],
-  );
-  // Scope (manager/partner) and type filtering happen before the phase
-  // filter, so prior-year comparisons and the all-quarter revenue chart can
-  // see the whole scoped book rather than just the selected phase.
-  const partnerScopeOpps = useMemo(
-    () =>
-      data.opportunities.filter(
-        (opportunity) => !selectedPartnerIds || selectedPartnerIds.has(opportunity.partnerId),
-      ),
-    [data.opportunities, selectedPartnerIds],
-  );
-  const scopedOpps = useMemo(
-    () => filterByType(partnerScopeOpps, typeFilter),
-    [partnerScopeOpps, typeFilter],
-  );
-  const phaseOpps = useMemo(
-    () => filterByPhase(partnerScopeOpps, phase),
-    [partnerScopeOpps, phase],
-  );
-  const opps = useMemo(
-    () => filterByPhase(scopedOpps, phase),
-    [scopedOpps, phase],
-  );
+  const scopedOpps = useMemo(() => filterByType(data.opportunities, typeFilter), [data.opportunities, typeFilter]);
+  const phaseOpps = useMemo(() => filterByPhase(data.opportunities, phase), [data.opportunities, phase]);
+  // The phase book for tables/charts: type-filtered and phase-filtered compute
+  // differently from the scoped book, matching the old LeadershipView seams.
+  const opps = useMemo(() => filterByPhase(scopedOpps, phase), [scopedOpps, phase]);
   const scopedRegistrations = useMemo(
-    () =>
-      filterRegistrationsByPhase(data.registrations, phase).filter(
-        (registration) => !selectedPartnerIds || selectedPartnerIds.has(registration.partnerId),
-      ),
-    [data.registrations, phase, selectedPartnerIds],
+    () => filterRegistrationsByPhase(data.registrations, phase),
+    [data.registrations, phase],
   );
-  const scopedTargets = useMemo(
-    () =>
-      data.targets.filter(
-        (target) => !selectedPartnerIds || selectedPartnerIds.has(target.partnerId),
-      ),
-    [data.targets, selectedPartnerIds],
-  );
-  const funnel = useMemo(
-    () => registrationFunnel(scopedRegistrations),
-    [scopedRegistrations],
-  );
+  const funnel = useMemo(() => registrationFunnel(scopedRegistrations), [scopedRegistrations]);
   const stages = useMemo(() => stageBreakdown(opps), [opps]);
   const outcomes = useMemo(() => outcomeTotals(opps), [opps]);
   const types = useMemo(() => typeBreakdown(phaseOpps), [phaseOpps]);
-  // The chart buckets by fiscal quarter itself, so it gets the scoped,
-  // type-filtered book *before* phase filtering — phase-filtered input would
-  // draw $0 for every quarter outside the selected phase.
   const quarterly = useMemo(
-    () => quarterlyClosedWonAndTarget(scopedOpps, scopedTargets),
-    [scopedOpps, scopedTargets],
+    () => quarterlyClosedWonAndTarget(scopedOpps, data.targets),
+    [scopedOpps, data.targets],
   );
   const leaderboard = useMemo(
-    () =>
-      partnerLeaderboard(
-        { ...data, opportunities: phaseOpps },
-        typeFilter,
-        selectedPartnerIds,
-        phase,
-      ),
-    [data, phase, phaseOpps, selectedPartnerIds, typeFilter],
+    () => partnerLeaderboard({ ...data, opportunities: phaseOpps }, typeFilter),
+    [data, phaseOpps, typeFilter],
   );
-  const pending = useMemo(
-    () => pendingRegistrations(scopedRegistrations),
-    [scopedRegistrations],
-  );
+  const pending = useMemo(() => pendingRegistrations(data.registrations), [data.registrations]);
   const activity = useMemo(
-    () =>
-      weeklyActivity(
-        data.activities,
-        scope === 'manager' ? partnerManagerId : undefined,
-        selectedPartnerIds,
-      ),
-    [data.activities, partnerManagerId, scope, selectedPartnerIds],
+    () => weeklyActivity(data.activities, undefined, undefined, classifications),
+    [data.activities, classifications],
   );
 
   const pipeline = openPipeline(opps);
   const won = closedWonForPhase(opps, phase);
-  // The prior-year comparison reads the scoped book *before* phase filtering:
-  // phase-filtered opportunities can never contain last year's close dates.
   const priorWon = closedWonPriorYearForPhase(scopedOpps, phase);
-  // Null when there is no prior-year revenue to compare against — a "+0%"
-  // delta would read as flat when it is actually unknown.
   const wonDelta = priorWon > 0 ? won / priorWon - 1 : null;
-  const target = targetForPhase(scopedTargets, phase);
+  const target = targetForPhase(data.targets, phase);
   const attainment = target > 0 ? won / target : 0;
-  const coverage = coverageRatio(opps, scopedTargets, phase);
-  const remaining = remainingQuota(opps, scopedTargets, phase);
+  const coverage = coverageRatio(opps, data.targets, phase);
+  const remaining = remainingQuota(opps, data.targets, phase);
   const phaseLabel = FISCAL_PHASE_META[phase].label;
-  // e.g. 'FY27 Q3' or 'FY27 to date' — scopes the closed-outcome labels.
   const outcomeScope = phase === 'fy' ? `${FISCAL_YEAR} to date` : `${FISCAL_YEAR} ${phaseLabel}`;
   const phaseDescription = FISCAL_PHASE_META[phase].description;
-  const selectedLabel =
-    scope === 'all'
-      ? 'All partners'
-      : partnerId === 'all'
-        ? selectedManager?.name ?? 'Partner manager'
-        : scopedPartners.find((partner) => partner.id === partnerId)?.name ?? 'Partner';
 
-  // One measure drives both the bar length and the printed number, so the
-  // panel never mixes registration counts with registered dollars.
-  const funnelStages: {
-    label: string;
-    count: number;
-    amount: number;
-    color: string;
-    dimmed?: boolean;
-  }[] = [
+  const funnelStages = [
     { label: 'Submitted', count: funnel.submitted, amount: funnel.submittedValue, color: '#8a8380' },
     { label: 'Approved', count: funnel.approved, amount: funnel.approvedValue, color: '#b8b3b0' },
     {
@@ -231,28 +140,15 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
       amount: funnel.convertedValue,
       color: '#a0ca92',
     },
-    {
-      label: 'Rejected',
-      count: funnel.rejected,
-      amount: funnel.rejectedValue,
-      color: '#4d4947',
-      dimmed: true,
-    },
-    {
-      label: 'Pending review',
-      count: funnel.pending,
-      amount: funnel.pendingValue,
-      color: '#ee6018',
-    },
+    { label: 'Rejected', count: funnel.rejected, amount: funnel.rejectedValue, color: '#4d4947', dimmed: true },
+    { label: 'Pending review', count: funnel.pending, amount: funnel.pendingValue, color: '#ee6018' },
   ];
 
   const funnelRows: MetricBarRow[] = funnelStages.map((stage) => ({
     label: stage.label,
     value: funnelMeasure === 'value' ? stage.amount : stage.count,
-    displayValue:
-      funnelMeasure === 'value' ? formatUsdCompact(stage.amount) : `${stage.count}`,
-    secondary:
-      funnelMeasure === 'value' ? `${stage.count} regs` : formatUsdCompact(stage.amount),
+    displayValue: funnelMeasure === 'value' ? formatUsdCompact(stage.amount) : `${stage.count}`,
+    secondary: funnelMeasure === 'value' ? `${stage.count} regs` : formatUsdCompact(stage.amount),
     color: stage.color,
     dimmed: stage.dimmed,
   }));
@@ -295,7 +191,7 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-signal">
-            {selectedLabel}
+            All Partners
           </p>
           <h1 className="mt-2 text-3xl tracking-tight text-bone">Partner revenue pipeline</h1>
           <p className="mt-1 text-sm text-granite">
@@ -316,66 +212,13 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
         </div>
         <div className="flex flex-col items-end gap-2">
           <FilterChips
-            options={SCOPE_OPTIONS}
-            value={scope}
-            onChange={(nextScope) => {
-              setScope(nextScope);
-              setPartnerId('all');
-            }}
-            ariaLabel="Select leadership scope"
-          />
-          {scope === 'manager' && (
-            <div className="flex flex-wrap justify-end gap-2">
-              <label className="flex items-center gap-2">
-                <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-                  Partner manager
-                </span>
-                <select
-                  value={partnerManagerId}
-                  onChange={(event) => {
-                    setPartnerManagerId(event.target.value);
-                    setPartnerId('all');
-                  }}
-                  className="rounded border border-ash bg-carbon px-3 py-1.5 text-sm text-bone focus:border-signal focus:outline-none"
-                >
-                  {data.partnerManagers.map((manager) => (
-                    <option key={manager.id} value={manager.id}>
-                      {manager.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-2">
-                <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-                  Partner
-                </span>
-                <select
-                  value={partnerId}
-                  onChange={(event) => setPartnerId(event.target.value)}
-                  className="max-w-[220px] rounded border border-ash bg-carbon px-3 py-1.5 text-sm text-bone focus:border-signal focus:outline-none"
-                >
-                  <option value="all">All assigned partners ({managerPartners.length})</option>
-                  {managerPartners
-                    .slice()
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((partner) => (
-                      <option key={partner.id} value={partner.id}>
-                        {partner.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-            </div>
-          )}
-          <FilterChips
             options={TYPE_OPTIONS}
             value={typeFilter}
             onChange={setTypeFilter}
             ariaLabel="Filter by opportunity type"
           />
           <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-            Salesforce Account.Partner_Manager__c · {scopedPartners.length} partner
-            {scopedPartners.length === 1 ? '' : 's'}
+            Whole ecosystem · {data.partners.length} aligned partners
           </p>
         </div>
       </div>
@@ -426,7 +269,7 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
         <KpiTile
           label="Active partners"
           value={`${activePartnerCount(opps, scopedRegistrations)}`}
-          sub={`of ${scopedPartners.length} aligned`}
+          sub={`of ${data.partners.length} aligned`}
         />
         <KpiTile
           label="Avg open deal"
@@ -483,9 +326,9 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
         <p className="mt-4 text-xs text-granite">
           Meeting types include {MEETING_TYPE_META.discovery.fullLabel},{' '}
           {MEETING_TYPE_META['pio-interlock'].fullLabel},{' '}
-          {MEETING_TYPE_META['pao-interlock'].fullLabel}, Interlock Cadence, Technical Enablement,
-          GTM Enablement, and Partner Cadence. The mock resets on the weekly boundary; a future
-          Google Calendar connector can replace it.
+          {MEETING_TYPE_META['pao-interlock'].fullLabel}, Interlock Cadence, Deal Support,
+          Technical Enablement, GTM Enablement, and Partner Cadence. Classifications from
+          Activity Tracking roll up here.
         </p>
       </Card>
 
@@ -522,11 +365,10 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
 
       <Card
         title="Partner leaderboard"
-        subtitle={`Top partners by closed-won ${phaseLabel} · ${scopedPartners.length} aligned`}
+        subtitle={`Top partners by closed-won ${phaseLabel} · ${data.partners.length} aligned`}
       >
         <Leaderboard rows={leaderboard} limit={10} closedWonLabel={`Closed-won ${phaseLabel}`} />
       </Card>
-
     </div>
   );
 }

@@ -94,7 +94,23 @@ describe('generateDashboardData', () => {
   it('produces the documented volumes', () => {
     expect(data.registrations).toHaveLength(180);
     expect(data.opportunities).toHaveLength(213); // FY27 book + prior-year book
-    expect(data.activities).toHaveLength(128);
+    // 163 = past seven weeks (seeded pool) + current week, one calendar per
+    // partner manager sized for the 10-meeting weekly goal.
+    expect(data.activities).toHaveLength(163);
+    // The current week yields a full working calendar for every manager.
+    const weekStart = new Date('2026-09-14T00:00:00Z').getTime();
+    const weekEnd = new Date('2026-09-21T00:00:00Z').getTime();
+    const currentWeek = data.activities.filter((activity) => {
+      const occurredAt = new Date(activity.occurredAt).getTime();
+      return occurredAt >= weekStart && occurredAt < weekEnd;
+    });
+    expect(currentWeek).toHaveLength(44);
+    for (const manager of data.partnerManagers) {
+      const managerWeek = currentWeek.filter(
+        (activity) => activity.partnerManagerId === manager.id,
+      );
+      expect(managerWeek.length).toBeGreaterThanOrEqual(7);
+    }
   });
 
   it('matches the documented realized win rate over FY27 closed deals', () => {

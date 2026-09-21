@@ -26,6 +26,8 @@ export interface Partner {
   /** Salesforce Account.Partner_Manager__c relationship. */
   partnerManagerId: string;
   joinedAt: string; // ISO 8601
+  /** True for prospective partners added from the Log Meetings calendar. */
+  prospect?: boolean;
 }
 
 export type RegistrationStatus = 'pending' | 'approved' | 'rejected';
@@ -79,6 +81,8 @@ export interface Opportunity {
   expectedCloseDate: string; // ISO 8601
   closedAt?: string; // set once closed (won or lost)
   outcome?: OpportunityOutcome;
+  /** Free-form note left by a partner manager; edited in-app, shown on hover. */
+  notes?: string;
 }
 
 /** Revenue target for one partner for one quarter. */
@@ -93,9 +97,20 @@ export type MeetingType =
   | 'pio-interlock'
   | 'pao-interlock'
   | 'interlock-cadence'
+  | 'deal-support'
   | 'technical-enablement'
   | 'gtm-enablement'
   | 'partner-cadence';
+
+/**
+ * A partner manager's manual classification of a calendar meeting. In the
+ * mock the Google Calendar sync is faked; once imported, the manager picks the
+ * partner and call type per event, and the weekly goal counts those picks.
+ */
+export interface MeetingClassification {
+  partnerId: string;
+  type: MeetingType;
+}
 
 export type FiscalPhase = 'fy' | 'q1' | 'q2' | 'q3' | 'q4';
 

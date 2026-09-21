@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type {
+  ActivityMeeting,
   DashboardData,
   DealRegistration,
   Opportunity,
@@ -10,6 +11,8 @@ import {
   closedWonForPhase,
   closedWonPriorYearForPhase,
   coverageRatio,
+  currentWeekMeetings,
+  daysLeftInQuarter,
   filterByPhase,
   filterRegistrationsByPhase,
   formatCoverage,
@@ -17,6 +20,7 @@ import {
   phaseWindow,
   quarterlyClosedWonAndTarget,
   remainingQuota,
+  weeklyGoalProgress,
   winRateForPhase,
 } from './metrics';
 
@@ -359,5 +363,81 @@ describe('partnerLeaderboard', () => {
     const q2 = partnerLeaderboard(data, 'all', undefined, 'q2');
     expect(q2[0]?.partner.id).toBe('p-02');
     expect(q2[0]?.closedWonValue).toBe(20);
+  });
+});
+
+// ---- forecasting helpers ----------------------------------------------------
+
+describe('daysLeftInQuarter', () => {
+  it('measures from the snapshot date to the quarter end', () => {
+    // Snapshot 2026-09-18; FY27-Q3 ends 2026-11-01 → 44 days.
+    expect(daysLeftInQuarter('FY27-Q3')).toBe(44);
+    expect(daysLeftInQuarter('FY27-Q2')).toBe(0); // already over
+  });
+});
+
+// ---- weekly goal / calendar -------------------------------------------------
+
+function activity(
+  fields: Partial<ActivityMeeting> & Pick<ActivityMeeting, 'id' | 'occurredAt'>,
+): ActivityMeeting {
+  return {
+    partnerId: 'p-01',
+    partnerManagerId: 'pm-01',
+    type: 'partner-cadence',
+    durationMinutes: 30,
+    ...fields,
+  };
+}
+
+describe('currentWeekMeetings', () => {
+  it('returns only the manager’s meetings inside the snapshot week, sorted', () => {
+    const inWeek = activity({ id: 'b', occurredAt: '2026-09-15T10:00:00Z' });
+    const earlier = activity({ id: 'a', occurredAt: '2026-09-14T09:00:00Z' });
+    const otherManager = activity({
+      id: 'c',
+      occurredAt: '2026-09-14T09:30:00Z',
+      partnerManagerId: 'pm-02',
+    });
+    const lastWeek = activity({ id: 'd', occurredAt: '2026-09-07T09:00:00Z' });
+    expect(currentWeekMeetings([otherManager, inWeek, earlier, lastWeek], 'pm-01')).toEqual([
+      earlier,
+      inWeek,
+    ]);
+  });
+});
+
+describe('weeklyGoalProgress', () => {
+  const inWeek = [
+    activity({ id: 'm1', occurredAt: '2026-09-15T09:00:00Z', type: 'partner-cadence' }),
+    activity({ id: 'm2', occurredAt: '2026-09-16T10:00:00Z', type: 'pio-interlock' }),
+  ];
+
+  it('counts meetings and PIO interlocks against the weekly goals', () => {
+    const progress = weeklyGoalProgress(inWeek, {});
+    expect(progress).toEqual({ meetings: 2, meetingsGoal: 10, pioMeetings: 1, pioGoal: 3 });
+  });
+
+  it('lets manual classifications override partner and call type', () => {
+    const progress = weeklyGoalProgress(inWeek, {
+      m1: { partnerId: 'p-09', type: 'pio-interlock' },
+    });
+    expect(progress).toEqual({ meetings: 2, meetingsGoal: 10, pioMeetings: 2, pioGoal: 3 });
+  });
+
+  it('respects partner manager and partner scopes', () => {
+    const mine = [
+      ...inWeek,
+      activity({
+        id: 'm3',
+        occurredAt: '2026-09-17T11:00:00Z',
+        partnerManagerId: 'pm-02',
+      }),
+    ];
+    expect(weeklyGoalProgress(mine, {}, 'pm-01').meetings).toBe(2);
+    expect(weeklyGoalProgress(mine, {}, 'pm-01', new Set(['p-02'])).meetings).toBe(0);
+    expect(
+      weeklyGoalProgress(mine, { m1: { partnerId: 'p-02', type: 'partner-cadence' } }, 'pm-01', new Set(['p-02'])).meetings,
+    ).toBe(1);
   });
 });
