@@ -117,16 +117,27 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
       ),
     [data.partners, selectedPartnerIds],
   );
-  const phaseOpps = useMemo(
+  // Scope (manager/partner) and type filtering happen before the phase
+  // filter, so prior-year comparisons and the all-quarter revenue chart can
+  // see the whole scoped book rather than just the selected phase.
+  const partnerScopeOpps = useMemo(
     () =>
-      filterByPhase(data.opportunities, phase).filter(
+      data.opportunities.filter(
         (opportunity) => !selectedPartnerIds || selectedPartnerIds.has(opportunity.partnerId),
       ),
-    [data.opportunities, phase, selectedPartnerIds],
+    [data.opportunities, selectedPartnerIds],
+  );
+  const scopedOpps = useMemo(
+    () => filterByType(partnerScopeOpps, typeFilter),
+    [partnerScopeOpps, typeFilter],
+  );
+  const phaseOpps = useMemo(
+    () => filterByPhase(partnerScopeOpps, phase),
+    [partnerScopeOpps, phase],
   );
   const opps = useMemo(
-    () => filterByType(phaseOpps, typeFilter),
-    [phaseOpps, typeFilter],
+    () => filterByPhase(scopedOpps, phase),
+    [scopedOpps, phase],
   );
   const scopedRegistrations = useMemo(
     () =>
@@ -149,9 +160,12 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
   const stages = useMemo(() => stageBreakdown(opps), [opps]);
   const outcomes = useMemo(() => outcomeTotals(opps), [opps]);
   const types = useMemo(() => typeBreakdown(phaseOpps), [phaseOpps]);
+  // The chart buckets by fiscal quarter itself, so it gets the scoped,
+  // type-filtered book *before* phase filtering — phase-filtered input would
+  // draw $0 for every quarter outside the selected phase.
   const quarterly = useMemo(
-    () => quarterlyClosedWonAndTarget(phaseOpps, scopedTargets),
-    [phaseOpps, scopedTargets],
+    () => quarterlyClosedWonAndTarget(scopedOpps, scopedTargets),
+    [scopedOpps, scopedTargets],
   );
   const leaderboard = useMemo(
     () =>
@@ -179,13 +193,19 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
 
   const pipeline = openPipeline(opps);
   const won = closedWonForPhase(opps, phase);
-  const priorWon = closedWonPriorYearForPhase(opps, phase);
-  const wonDelta = priorWon > 0 ? won / priorWon - 1 : 0;
+  // The prior-year comparison reads the scoped book *before* phase filtering:
+  // phase-filtered opportunities can never contain last year's close dates.
+  const priorWon = closedWonPriorYearForPhase(scopedOpps, phase);
+  // Null when there is no prior-year revenue to compare against — a "+0%"
+  // delta would read as flat when it is actually unknown.
+  const wonDelta = priorWon > 0 ? won / priorWon - 1 : null;
   const target = targetForPhase(scopedTargets, phase);
   const attainment = target > 0 ? won / target : 0;
   const coverage = coverageRatio(opps, scopedTargets, phase);
   const remaining = remainingQuota(opps, scopedTargets, phase);
   const phaseLabel = FISCAL_PHASE_META[phase].label;
+  // e.g. 'FY27 Q3' or 'FY27 to date' — scopes the closed-outcome labels.
+  const outcomeScope = phase === 'fy' ? `${FISCAL_YEAR} to date` : `${FISCAL_YEAR} ${phaseLabel}`;
   const phaseDescription = FISCAL_PHASE_META[phase].description;
   const selectedLabel =
     scope === 'all'
@@ -246,14 +266,14 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
       color: STAGE_META[row.stage].color,
     })),
     {
-      label: 'Won (all time)',
+      label: `Won (${outcomeScope})`,
       value: outcomes.wonValue,
       displayValue: formatUsdCompact(outcomes.wonValue),
       secondary: `${outcomes.wonCount} won`,
       color: WON_COLOR,
     },
     {
-      label: 'Lost (all time)',
+      label: `Lost (${outcomeScope})`,
       value: outcomes.lostValue,
       displayValue: formatUsdCompact(outcomes.lostValue),
       secondary: `${outcomes.lostCount} lost`,
@@ -369,10 +389,14 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
         <KpiTile
           label={`Closed-won ${phaseLabel}`}
           value={formatUsdCompact(won)}
-          delta={{
-            text: `${wonDelta >= 0 ? '+' : ''}${formatPct(wonDelta)} vs prior period`,
-            positive: wonDelta >= 0,
-          }}
+          delta={
+            wonDelta === null
+              ? undefined
+              : {
+                  text: `${wonDelta >= 0 ? '+' : ''}${formatPct(wonDelta)} vs prior period`,
+                  positive: wonDelta >= 0,
+                }
+          }
           sub={`${formatPct(attainment)} of ${phase === 'fy' ? FISCAL_YEAR : phaseLabel} target`}
         />
         <KpiTile
@@ -433,7 +457,7 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
         </Card>
         <Card
           title="Pipeline by sales stage"
-          subtitle={`Open ${phaseLabel} opportunities by stage, plus closed outcomes`}
+          subtitle={`Open ${phaseLabel} opportunities by stage, plus closed ${outcomeScope} outcomes`}
         >
           <MetricBars rows={stageRows} />
         </Card>
@@ -441,7 +465,7 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
 
       <Card
         title="Revenue vs. partner sourced target"
-        subtitle="Closed-won by fiscal quarter against combined partner-sourced targets"
+        subtitle="Closed-won by fiscal quarter against combined partner-sourced targets · all FY27 quarters"
       >
         <RevenueTrend data={quarterly} />
       </Card>
@@ -500,7 +524,7 @@ export default function LeadershipView({ data }: { data: DashboardData }) {
         title="Partner leaderboard"
         subtitle={`Top partners by closed-won ${phaseLabel} · ${scopedPartners.length} aligned`}
       >
-        <Leaderboard rows={leaderboard} limit={10} />
+        <Leaderboard rows={leaderboard} limit={10} closedWonLabel={`Closed-won ${phaseLabel}`} />
       </Card>
 
     </div>

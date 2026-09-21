@@ -36,6 +36,7 @@ export default function App() {
                 key={tab.id}
                 type="button"
                 onClick={() => setView(tab.id)}
+                aria-current={view === tab.id ? 'page' : undefined}
                 className={`rounded px-3 py-1.5 font-mono text-xs uppercase tracking-[0.08em] transition-colors duration-150 ${
                   view === tab.id
                     ? 'bg-ash text-bone'

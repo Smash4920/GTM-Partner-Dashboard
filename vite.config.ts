@@ -14,4 +14,22 @@ const base = process.env.BASE_PATH ?? (process.env.VERCEL ? '/' : '/GTM-Partner-
 export default defineConfig({
   plugins: [react()],
   base,
+  build: {
+    rollupOptions: {
+      output: {
+        // Recharts and its d3/victory deps form ~2/3 of the bundle. Split them
+        // into cached vendor chunks so the app shell loads without pulling
+        // the whole charting stack, and no single chunk trips the size
+        // warning that would bury real regressions in CI output.
+        manualChunks(id) {
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/react-smooth')) {
+            return 'recharts';
+          }
+          if (id.includes('node_modules/victory-vendor') || /node_modules\/d3[-/]/.test(id)) {
+            return 'charts-vendor';
+          }
+        },
+      },
+    },
+  },
 });

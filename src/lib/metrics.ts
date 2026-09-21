@@ -20,6 +20,7 @@ import type {
   Partner,
   Target,
 } from '../data/types';
+import { fiscalQuarterOfDate, quarterWindow, startOfWeekUtc } from './fiscal';
 
 const DAY = 86_400_000;
 
@@ -59,19 +60,6 @@ export function closedWonBetween(opps: Opportunity[], startIso: string, endIso: 
     .reduce((sum, opp) => sum + opp.forecastedRevenue, 0);
 }
 
-export function closedWonYtd(opps: Opportunity[]): number {
-  return closedWonForPhase(opps, 'fy');
-}
-
-/** Prior-year closed-won over the same span of the year, for deltas. */
-export function closedWonPriorYearSamePeriod(opps: Opportunity[]): number {
-  return closedWonPriorYearForPhase(opps, 'fy');
-}
-
-export function winRateYtd(opps: Opportunity[]): number {
-  return winRateForPhase(opps, 'fy');
-}
-
 export function winRateForPhase(opps: Opportunity[], phase: FiscalPhase): number {
   const window = phaseWindow(phase);
   const start = window.start.getTime();
@@ -93,7 +81,7 @@ export function avgOpenDealSize(opps: Opportunity[]): number {
   return count === 0 ? 0 : value / count;
 }
 
-/** Partners with an opportunity or registration created this calendar year. */
+/** Partners with an opportunity or registration created this fiscal year. */
 export function activePartnerCount(
   opps: Opportunity[],
   registrations: DealRegistration[],
@@ -253,20 +241,14 @@ export interface QuarterRevenueRow {
   target: number;
 }
 
-export function fiscalQuarterOfDate(iso: string): string {
-  const date = new Date(iso);
-  const month = date.getUTCMonth();
-  const fiscalYear = month === 0 ? date.getUTCFullYear() : date.getUTCFullYear() + 1;
-  const quarter = month === 0 || month === 10 || month === 11
-    ? 4
-    : month >= 1 && month <= 3
-      ? 1
-      : month >= 4 && month <= 6
-        ? 2
-        : 3;
-  return `FY${String(fiscalYear).slice(-2)}-Q${quarter}`;
-}
-
+/**
+ * Closed-won and target per fiscal quarter, for the revenue-vs-target chart.
+ *
+ * Input contract: callers pass their scoped opportunities *before* any phase
+ * filtering — this function buckets by fiscal quarter on its own, so
+ * phase-filtered input would zero out every quarter outside the selected
+ * phase. Scope, partner, and revenue-motion filtering are fine.
+ */
 export function quarterlyClosedWonAndTarget(
   opps: Opportunity[],
   targets: Target[],
@@ -300,30 +282,37 @@ export function ytdTarget(targets: Target[]): number {
 
 export interface PhaseWindow {
   phase: FiscalPhase;
+  /** Phase start (UTC midnight). */
   start: Date;
+  /**
+   * Closed-activity horizon: the phase truncated at the snapshot date.
+   * Nothing can close after the snapshot, so closed opportunities are matched
+   * against this bound. Inverted (end < start) for future phases, which
+   * correctly yields an empty closed set.
+   */
   end: Date;
+  /**
+   * Open-pipeline horizon: the phase's full span, including the future. Open
+   * opportunities are matched by expected close against this bound, so
+   * pipeline scheduled for the rest of the phase is not truncated at the
+   * snapshot.
+   */
+  pipelineEnd: Date;
   targetQuarters: string[];
 }
 
-function quarterWindow(quarter: string): { start: Date; end: Date } {
-  const [, fiscalYearText, quarterText] = quarter.match(/^FY(\d+)-Q(\d)$/) ?? [];
-  const fiscalYear = Number(fiscalYearText);
-  const q = Number(quarterText);
-  const calendarStartYear = 2000 + fiscalYear - 1;
-  const start = new Date(Date.UTC(calendarStartYear, 1 + (q - 1) * 3, 1));
-  const end =
-    q === 4
-      ? new Date(Date.UTC(calendarStartYear + 1, 1, 1))
-      : new Date(Date.UTC(calendarStartYear, 1 + q * 3, 1));
-  return { start, end };
+function minDate(a: Date, b: Date): Date {
+  return a.getTime() <= b.getTime() ? a : b;
 }
 
 export function phaseWindow(phase: FiscalPhase): PhaseWindow {
   if (phase === 'fy') {
+    const pipelineEnd = quarterWindow(FISCAL_QUARTERS[FISCAL_QUARTERS.length - 1]).end;
     return {
       phase,
       start: FISCAL_YEAR_START,
-      end: SNAPSHOT_DATE,
+      end: minDate(pipelineEnd, SNAPSHOT_DATE),
+      pipelineEnd,
       targetQuarters: [...FISCAL_QUARTERS],
     };
   }
@@ -332,22 +321,33 @@ export function phaseWindow(phase: FiscalPhase): PhaseWindow {
   return {
     phase,
     start,
-    end: phase === 'q3' ? SNAPSHOT_DATE : end,
+    end: minDate(end, SNAPSHOT_DATE),
+    pipelineEnd: end,
     targetQuarters: [quarter],
   };
 }
 
+/** The same calendar date one year earlier or later (UTC). */
+function shiftYear(date: Date, years: number): Date {
+  return new Date(
+    Date.UTC(date.getUTCFullYear() + years, date.getUTCMonth(), date.getUTCDate()),
+  );
+}
+
+/**
+ * Prior-year closed-won over the same span of the year, for deltas.
+ * In-progress phases compare snapshot-to-date against snapshot-to-date; a
+ * future phase (Q4) compares against the full prior-year quarter, since
+ * neither year has closed anything in that quarter yet.
+ */
 export function closedWonPriorYearForPhase(
   opps: Opportunity[],
   phase: FiscalPhase,
 ): number {
   const window = phaseWindow(phase);
-  const priorStart = new Date(
-    Date.UTC(window.start.getUTCFullYear() - 1, window.start.getUTCMonth(), window.start.getUTCDate()),
-  );
-  const priorEnd = new Date(
-    Date.UTC(window.end.getUTCFullYear() - 1, window.end.getUTCMonth(), window.end.getUTCDate()),
-  );
+  const currentEnd = window.end.getTime() > window.start.getTime() ? window.end : window.pipelineEnd;
+  const priorStart = shiftYear(window.start, -1);
+  const priorEnd = shiftYear(currentEnd, -1);
   return closedWonBetween(opps, priorStart.toISOString(), priorEnd.toISOString());
 }
 
@@ -357,14 +357,24 @@ function isInWindow(iso: string, window: PhaseWindow): boolean {
 }
 
 /**
- * Filters open opportunities by expected close and closed opportunities by
- * actual close. This keeps a phase useful for both pipeline and performance.
+ * The phase book of business. Open opportunities match by expected close
+ * against the phase's full span (pipelineEnd), so pipeline scheduled later in
+ * the phase stays visible; closed opportunities match by actual close against
+ * the snapshot-truncated window, since outcomes only accrue through today.
  */
 export function filterByPhase(opps: Opportunity[], phase: FiscalPhase): Opportunity[] {
   const window = phaseWindow(phase);
-  return opps.filter((opp) =>
-    isInWindow(opp.outcome ? opp.closedAt ?? opp.expectedCloseDate : opp.expectedCloseDate, window),
-  );
+  const start = window.start.getTime();
+  const closedEnd = window.end.getTime();
+  const pipelineEnd = window.pipelineEnd.getTime();
+  return opps.filter((opp) => {
+    if (opp.outcome) {
+      const closedAt = new Date(opp.closedAt ?? opp.expectedCloseDate).getTime();
+      return closedAt >= start && closedAt < closedEnd;
+    }
+    const expectedClose = new Date(opp.expectedCloseDate).getTime();
+    return expectedClose >= start && expectedClose < pipelineEnd;
+  });
 }
 
 export function targetsForPhase(targets: Target[], phase: FiscalPhase): Target[] {
@@ -391,8 +401,12 @@ export function remainingQuota(
 }
 
 /**
- * Open pipeline over the YTD quota still to be closed. Null when the target is
- * already met, since coverage of a zero gap is not a meaningful ratio.
+ * Open pipeline scheduled anywhere in the phase, over the quota still to be
+ * closed for that phase. The numerator spans the phase's full horizon — not
+ * just through the snapshot — because pipeline scheduled for the rest of the
+ * quarter/year is exactly what covers the remaining target. Null when the
+ * target is already met, since coverage of a zero gap is not a meaningful
+ * ratio.
  */
 export function coverageRatio(
   opps: Opportunity[],
@@ -412,10 +426,11 @@ export interface LeaderboardRow {
   partner: Partner;
   openPipelineValue: number;
   openCount: number;
-  closedWonYtdValue: number;
+  closedWonValue: number;
   winRate: number;
 }
 
+/** Ranks partners on closed-won for the given phase, then on open pipeline. */
 export function partnerLeaderboard(
   data: DashboardData,
   oppType: OpportunityType | 'all',
@@ -426,18 +441,18 @@ export function partnerLeaderboard(
   const rows = data.partners
     .filter((partner) => !partnerIds || partnerIds.has(partner.id))
     .map((partner) => {
-    const partnerOpps = opps.filter((opp) => opp.partnerId === partner.id);
-    const pipeline = openPipeline(partnerOpps);
-    return {
-      partner,
-      openPipelineValue: pipeline.value,
-      openCount: pipeline.count,
-      closedWonYtdValue: closedWonForPhase(partnerOpps, phase),
-      winRate: winRateForPhase(partnerOpps, phase),
-    };
+      const partnerOpps = opps.filter((opp) => opp.partnerId === partner.id);
+      const pipeline = openPipeline(partnerOpps);
+      return {
+        partner,
+        openPipelineValue: pipeline.value,
+        openCount: pipeline.count,
+        closedWonValue: closedWonForPhase(partnerOpps, phase),
+        winRate: winRateForPhase(partnerOpps, phase),
+      };
     });
   return rows.sort(
-    (a, b) => b.closedWonYtdValue - a.closedWonYtdValue || b.openPipelineValue - a.openPipelineValue,
+    (a, b) => b.closedWonValue - a.closedWonValue || b.openPipelineValue - a.openPipelineValue,
   );
 }
 
@@ -448,21 +463,12 @@ export interface WeeklyActivityRow {
   byType: Record<MeetingType, number>;
 }
 
-function startOfWeek(date: Date): Date {
-  const copy = new Date(date);
-  const day = copy.getUTCDay();
-  const daysSinceMonday = (day + 6) % 7;
-  copy.setUTCDate(copy.getUTCDate() - daysSinceMonday);
-  copy.setUTCHours(0, 0, 0, 0);
-  return copy;
-}
-
 export function weeklyActivity(
   activities: ActivityMeeting[],
   partnerManagerId?: string,
   partnerIds?: Set<string>,
 ): WeeklyActivityRow[] {
-  const currentWeek = startOfWeek(SNAPSHOT_DATE);
+  const currentWeek = startOfWeekUtc(SNAPSHOT_DATE);
   return Array.from({ length: 8 }, (_, index) => {
     const start = new Date(currentWeek.getTime() - (7 - index) * 7 * DAY);
     const end = new Date(start.getTime() + 7 * DAY);

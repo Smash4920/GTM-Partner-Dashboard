@@ -98,7 +98,6 @@ export const FISCAL_QUARTERS = [
 ] as const;
 export const CURRENT_FISCAL_QUARTER = 'FY27-Q3';
 export const FISCAL_YEAR_START = new Date('2026-02-01T00:00:00Z');
-export const CURRENT_YEAR = 2026;
 
 export const FISCAL_PHASE_META: Record<
   FiscalPhase,

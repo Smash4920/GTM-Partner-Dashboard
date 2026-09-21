@@ -9,9 +9,9 @@ import PartnerPicker from '../components/PartnerPicker';
 import RegistrationsTable from '../components/RegistrationsTable';
 import RevenueTrend from '../components/RevenueTrend';
 import {
-  CURRENT_YEAR,
   FISCAL_PHASES,
   FISCAL_PHASE_META,
+  FISCAL_YEAR,
   OPP_TYPE_META,
   PARTNER_TIER_META,
   PARTNER_TYPE_META,
@@ -57,9 +57,16 @@ const PHASE_OPTIONS: ChipOption<FiscalPhase>[] = FISCAL_PHASES.map((phase) => ({
  * are visible — Sell To is internal-only.
  */
 export default function PartnerView({ data }: { data: DashboardData }) {
-  const [partnerId, setPartnerId] = useState<string>(
-    () => partnerLeaderboard(data, 'all')[0]?.partner.id ?? data.partners[0]?.id ?? '',
-  );
+  const [partnerId, setPartnerId] = useState<string>(() => {
+    // Rank the default partner on revenue the portal can actually show:
+    // Sell To is internal-only, so it must not drive the "top" pick.
+    const visible = data.opportunities.filter((opp) => opp.oppType !== 'sell-to');
+    return (
+      partnerLeaderboard({ ...data, opportunities: visible }, 'all')[0]?.partner.id ??
+      data.partners[0]?.id ??
+      ''
+    );
+  });
   const [slice, setSlice] = useState<PartnerSlice>('all');
   const [phase, setPhase] = useState<FiscalPhase>('q3');
 
@@ -107,7 +114,12 @@ export default function PartnerView({ data }: { data: DashboardData }) {
   const target = phase === 'fy' ? ytdTarget(partnerTargets) : ytdTarget(phaseTargets);
   const attainment = target > 0 ? wonYtd / target : 0;
   const coverage = coverageRatio(partnerOpps, partnerTargets, phase);
-  const quarterly = quarterlyClosedWonAndTarget(partnerOpps, partnerTargets);
+  // The chart buckets by fiscal quarter itself, so it gets the partner's
+  // motion-scoped book *before* phase filtering — phase-filtered input would
+  // draw $0 for every quarter outside the selected phase.
+  const quarterlyOpps =
+    slice === 'all' ? visibleOpps : visibleOpps.filter((opp) => opp.oppType === slice);
+  const quarterly = quarterlyClosedWonAndTarget(quarterlyOpps, partnerTargets);
   const stages = stageBreakdown(partnerOpps);
   const registrations = recentRegistrations(data.registrations, partnerId, 8);
 
@@ -216,12 +228,20 @@ export default function PartnerView({ data }: { data: DashboardData }) {
           sub={
             slice === 'all'
               ? `${formatPct(attainment)} of their ${
-                  phase === 'fy' ? CURRENT_YEAR : FISCAL_PHASE_META[phase].label
+                  phase === 'fy' ? FISCAL_YEAR : FISCAL_PHASE_META[phase].label
                 } target`
               : `${sliceLabel} only · target covers all revenue`
           }
         />
-        <KpiTile label="Win rate" value={formatPct(winRate)} sub={`of closed ${FISCAL_PHASE_META[phase].label}`} />
+        <KpiTile
+          label="Win rate"
+          value={formatPct(winRate)}
+          sub={
+            slice === 'all'
+              ? `of closed ${FISCAL_PHASE_META[phase].label}`
+              : `of closed ${sliceLabel} ${FISCAL_PHASE_META[phase].label}`
+          }
+        />
         <KpiTile
           label="Awaiting review"
           value={`${pending.length}`}
@@ -268,7 +288,12 @@ export default function PartnerView({ data }: { data: DashboardData }) {
         title={`Pipeline opportunities · ${FISCAL_PHASE_META[phase].label}`}
         subtitle={`${partnerOpps.length} opportunities · Salesforce fields shown as mock data`}
       >
-        <OpportunityTable opportunities={partnerOpps} />
+        <OpportunityTable
+          opportunities={partnerOpps}
+          emptyMessage={`No ${
+            slice === 'all' ? '' : `${sliceLabel} `
+          }${FISCAL_PHASE_META[phase].label} opportunities.`}
+        />
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
