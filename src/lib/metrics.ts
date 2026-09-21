@@ -1,7 +1,19 @@
-import { CURRENT_YEAR, OPP_TYPES, QUARTERS, SNAPSHOT_DATE, STAGES } from '../data/constants';
+import {
+  FISCAL_PHASES,
+  FISCAL_QUARTERS,
+  FISCAL_YEAR,
+  FISCAL_YEAR_START,
+  MEETING_TYPES,
+  OPP_TYPES,
+  SNAPSHOT_DATE,
+  STAGES,
+} from '../data/constants';
 import type {
+  ActivityMeeting,
   DashboardData,
   DealRegistration,
+  FiscalPhase,
+  MeetingType,
   Opportunity,
   OpportunityStage,
   OpportunityType,
@@ -28,7 +40,10 @@ export function filterByType(
 
 export function openPipeline(opps: Opportunity[]): { value: number; count: number } {
   const open = openOpportunities(opps);
-  return { value: open.reduce((sum, opp) => sum + opp.amount, 0), count: open.length };
+  return {
+    value: open.reduce((sum, opp) => sum + opp.forecastedRevenue, 0),
+    count: open.length,
+  };
 }
 
 /** Closed-won revenue whose close date falls in [start, end). */
@@ -41,24 +56,26 @@ export function closedWonBetween(opps: Opportunity[], startIso: string, endIso: 
       const closedAt = new Date(opp.closedAt).getTime();
       return closedAt >= start && closedAt < end;
     })
-    .reduce((sum, opp) => sum + opp.amount, 0);
+    .reduce((sum, opp) => sum + opp.forecastedRevenue, 0);
 }
 
 export function closedWonYtd(opps: Opportunity[]): number {
-  return closedWonBetween(opps, `${CURRENT_YEAR}-01-01`, SNAPSHOT_DATE.toISOString());
+  return closedWonForPhase(opps, 'fy');
 }
 
 /** Prior-year closed-won over the same span of the year, for deltas. */
 export function closedWonPriorYearSamePeriod(opps: Opportunity[]): number {
-  const cutoff = new Date(
-    Date.UTC(CURRENT_YEAR - 1, SNAPSHOT_DATE.getUTCMonth(), SNAPSHOT_DATE.getUTCDate()),
-  ).toISOString();
-  return closedWonBetween(opps, `${CURRENT_YEAR - 1}-01-01`, cutoff);
+  return closedWonPriorYearForPhase(opps, 'fy');
 }
 
 export function winRateYtd(opps: Opportunity[]): number {
-  const start = new Date(`${CURRENT_YEAR}-01-01`).getTime();
-  const end = SNAPSHOT_DATE.getTime();
+  return winRateForPhase(opps, 'fy');
+}
+
+export function winRateForPhase(opps: Opportunity[], phase: FiscalPhase): number {
+  const window = phaseWindow(phase);
+  const start = window.start.getTime();
+  const end = window.end.getTime();
   let won = 0;
   let lost = 0;
   for (const opp of opps) {
@@ -82,7 +99,7 @@ export function activePartnerCount(
   registrations: DealRegistration[],
 ): number {
   const active = new Set<string>();
-  const cutoff = new Date(`${CURRENT_YEAR}-01-01`).getTime();
+  const cutoff = FISCAL_YEAR_START.getTime();
   for (const opp of opps) {
     if (new Date(opp.createdAt).getTime() >= cutoff) active.add(opp.partnerId);
   }
@@ -90,6 +107,14 @@ export function activePartnerCount(
     if (new Date(reg.submittedAt).getTime() >= cutoff) active.add(reg.partnerId);
   }
   return active.size;
+}
+
+export function filterRegistrationsByPhase(
+  registrations: DealRegistration[],
+  phase: FiscalPhase,
+): DealRegistration[] {
+  const window = phaseWindow(phase);
+  return registrations.filter((registration) => isInWindow(registration.submittedAt, window));
 }
 
 /**
@@ -181,7 +206,7 @@ export function stageBreakdown(opps: Opportunity[]): StageRow[] {
     return {
       stage,
       count: inStage.length,
-      value: inStage.reduce((sum, opp) => sum + opp.amount, 0),
+      value: inStage.reduce((sum, opp) => sum + opp.forecastedRevenue, 0),
     };
   });
 }
@@ -198,9 +223,9 @@ export function outcomeTotals(opps: Opportunity[]): OutcomeTotals {
   const lost = opps.filter((opp) => opp.outcome === 'lost');
   return {
     wonCount: won.length,
-    wonValue: won.reduce((sum, opp) => sum + opp.amount, 0),
+    wonValue: won.reduce((sum, opp) => sum + opp.forecastedRevenue, 0),
     lostCount: lost.length,
-    lostValue: lost.reduce((sum, opp) => sum + opp.amount, 0),
+    lostValue: lost.reduce((sum, opp) => sum + opp.forecastedRevenue, 0),
   };
 }
 
@@ -217,7 +242,7 @@ export function typeBreakdown(opps: Opportunity[]): TypeRow[] {
     return {
       type,
       count: ofType.length,
-      value: ofType.reduce((sum, opp) => sum + opp.amount, 0),
+      value: ofType.reduce((sum, opp) => sum + opp.forecastedRevenue, 0),
     };
   });
 }
@@ -228,9 +253,18 @@ export interface QuarterRevenueRow {
   target: number;
 }
 
-function quarterOfDate(iso: string): string {
+export function fiscalQuarterOfDate(iso: string): string {
   const date = new Date(iso);
-  return `${date.getUTCFullYear()}-Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
+  const month = date.getUTCMonth();
+  const fiscalYear = month === 0 ? date.getUTCFullYear() : date.getUTCFullYear() + 1;
+  const quarter = month === 0 || month === 10 || month === 11
+    ? 4
+    : month >= 1 && month <= 3
+      ? 1
+      : month >= 4 && month <= 6
+        ? 2
+        : 3;
+  return `FY${String(fiscalYear).slice(-2)}-Q${quarter}`;
 }
 
 export function quarterlyClosedWonAndTarget(
@@ -244,36 +278,130 @@ export function quarterlyClosedWonAndTarget(
       (targetByQuarter.get(target.quarter) ?? 0) + target.revenueTarget,
     );
   }
-  return QUARTERS.map((quarter) => ({
+  return FISCAL_QUARTERS.map((quarter) => ({
     quarter,
     closedWon: opps
       .filter(
-        (opp) => opp.outcome === 'won' && opp.closedAt && quarterOfDate(opp.closedAt) === quarter,
+        (opp) =>
+          opp.outcome === 'won' &&
+          opp.closedAt &&
+          fiscalQuarterOfDate(opp.closedAt) === quarter,
       )
-      .reduce((sum, opp) => sum + opp.amount, 0),
+      .reduce((sum, opp) => sum + opp.forecastedRevenue, 0),
     target: targetByQuarter.get(quarter) ?? 0,
   }));
 }
 
 export function ytdTarget(targets: Target[]): number {
   return targets
-    .filter((target) => target.quarter.startsWith(String(CURRENT_YEAR)))
+    .filter((target) => target.quarter.startsWith(FISCAL_YEAR))
     .reduce((sum, target) => sum + target.revenueTarget, 0);
 }
 
-/** YTD quota still to be closed. Zero once the target is met. */
-export function remainingQuota(opps: Opportunity[], targets: Target[]): number {
-  return Math.max(ytdTarget(targets) - closedWonYtd(opps), 0);
+export interface PhaseWindow {
+  phase: FiscalPhase;
+  start: Date;
+  end: Date;
+  targetQuarters: string[];
+}
+
+function quarterWindow(quarter: string): { start: Date; end: Date } {
+  const [, fiscalYearText, quarterText] = quarter.match(/^FY(\d+)-Q(\d)$/) ?? [];
+  const fiscalYear = Number(fiscalYearText);
+  const q = Number(quarterText);
+  const calendarStartYear = 2000 + fiscalYear - 1;
+  const start = new Date(Date.UTC(calendarStartYear, 1 + (q - 1) * 3, 1));
+  const end =
+    q === 4
+      ? new Date(Date.UTC(calendarStartYear + 1, 1, 1))
+      : new Date(Date.UTC(calendarStartYear, 1 + q * 3, 1));
+  return { start, end };
+}
+
+export function phaseWindow(phase: FiscalPhase): PhaseWindow {
+  if (phase === 'fy') {
+    return {
+      phase,
+      start: FISCAL_YEAR_START,
+      end: SNAPSHOT_DATE,
+      targetQuarters: [...FISCAL_QUARTERS],
+    };
+  }
+  const quarter = FISCAL_QUARTERS[FISCAL_PHASES.indexOf(phase) - 1];
+  const { start, end } = quarterWindow(quarter);
+  return {
+    phase,
+    start,
+    end: phase === 'q3' ? SNAPSHOT_DATE : end,
+    targetQuarters: [quarter],
+  };
+}
+
+export function closedWonPriorYearForPhase(
+  opps: Opportunity[],
+  phase: FiscalPhase,
+): number {
+  const window = phaseWindow(phase);
+  const priorStart = new Date(
+    Date.UTC(window.start.getUTCFullYear() - 1, window.start.getUTCMonth(), window.start.getUTCDate()),
+  );
+  const priorEnd = new Date(
+    Date.UTC(window.end.getUTCFullYear() - 1, window.end.getUTCMonth(), window.end.getUTCDate()),
+  );
+  return closedWonBetween(opps, priorStart.toISOString(), priorEnd.toISOString());
+}
+
+function isInWindow(iso: string, window: PhaseWindow): boolean {
+  const timestamp = new Date(iso).getTime();
+  return timestamp >= window.start.getTime() && timestamp < window.end.getTime();
+}
+
+/**
+ * Filters open opportunities by expected close and closed opportunities by
+ * actual close. This keeps a phase useful for both pipeline and performance.
+ */
+export function filterByPhase(opps: Opportunity[], phase: FiscalPhase): Opportunity[] {
+  const window = phaseWindow(phase);
+  return opps.filter((opp) =>
+    isInWindow(opp.outcome ? opp.closedAt ?? opp.expectedCloseDate : opp.expectedCloseDate, window),
+  );
+}
+
+export function targetsForPhase(targets: Target[], phase: FiscalPhase): Target[] {
+  const window = phaseWindow(phase);
+  return targets.filter((target) => window.targetQuarters.includes(target.quarter));
+}
+
+export function closedWonForPhase(opps: Opportunity[], phase: FiscalPhase): number {
+  const window = phaseWindow(phase);
+  return opps
+    .filter((opp) => opp.outcome === 'won' && opp.closedAt && isInWindow(opp.closedAt, window))
+    .reduce((sum, opp) => sum + opp.forecastedRevenue, 0);
+}
+
+/** Quota still to be closed for a fiscal phase. Zero once the target is met. */
+export function remainingQuota(
+  opps: Opportunity[],
+  targets: Target[],
+  phase: FiscalPhase = 'fy',
+): number {
+  const phaseTargets = targetsForPhase(targets, phase);
+  const target = phaseTargets.reduce((sum, item) => sum + item.revenueTarget, 0);
+  return Math.max(target - closedWonForPhase(opps, phase), 0);
 }
 
 /**
  * Open pipeline over the YTD quota still to be closed. Null when the target is
  * already met, since coverage of a zero gap is not a meaningful ratio.
  */
-export function coverageRatio(opps: Opportunity[], targets: Target[]): number | null {
-  const remaining = remainingQuota(opps, targets);
+export function coverageRatio(
+  opps: Opportunity[],
+  targets: Target[],
+  phase: FiscalPhase = 'fy',
+): number | null {
+  const remaining = remainingQuota(opps, targets, phase);
   if (remaining <= 0) return null;
-  return openPipeline(opps).value / remaining;
+  return openPipeline(filterByPhase(opps, phase)).value / remaining;
 }
 
 export function formatCoverage(coverage: number | null): string {
@@ -291,22 +419,73 @@ export interface LeaderboardRow {
 export function partnerLeaderboard(
   data: DashboardData,
   oppType: OpportunityType | 'all',
+  partnerIds?: Set<string>,
+  phase: FiscalPhase = 'fy',
 ): LeaderboardRow[] {
   const opps = filterByType(data.opportunities, oppType);
-  const rows = data.partners.map((partner) => {
+  const rows = data.partners
+    .filter((partner) => !partnerIds || partnerIds.has(partner.id))
+    .map((partner) => {
     const partnerOpps = opps.filter((opp) => opp.partnerId === partner.id);
     const pipeline = openPipeline(partnerOpps);
     return {
       partner,
       openPipelineValue: pipeline.value,
       openCount: pipeline.count,
-      closedWonYtdValue: closedWonYtd(partnerOpps),
-      winRate: winRateYtd(partnerOpps),
+      closedWonYtdValue: closedWonForPhase(partnerOpps, phase),
+      winRate: winRateForPhase(partnerOpps, phase),
     };
-  });
+    });
   return rows.sort(
     (a, b) => b.closedWonYtdValue - a.closedWonYtdValue || b.openPipelineValue - a.openPipelineValue,
   );
+}
+
+export interface WeeklyActivityRow {
+  weekStart: string;
+  weekEnd: string;
+  total: number;
+  byType: Record<MeetingType, number>;
+}
+
+function startOfWeek(date: Date): Date {
+  const copy = new Date(date);
+  const day = copy.getUTCDay();
+  const daysSinceMonday = (day + 6) % 7;
+  copy.setUTCDate(copy.getUTCDate() - daysSinceMonday);
+  copy.setUTCHours(0, 0, 0, 0);
+  return copy;
+}
+
+export function weeklyActivity(
+  activities: ActivityMeeting[],
+  partnerManagerId?: string,
+  partnerIds?: Set<string>,
+): WeeklyActivityRow[] {
+  const currentWeek = startOfWeek(SNAPSHOT_DATE);
+  return Array.from({ length: 8 }, (_, index) => {
+    const start = new Date(currentWeek.getTime() - (7 - index) * 7 * DAY);
+    const end = new Date(start.getTime() + 7 * DAY);
+    const byType = Object.fromEntries(
+      MEETING_TYPES.map((type) => [type, 0]),
+    ) as Record<MeetingType, number>;
+    const filtered = activities.filter((activity) => {
+      const occurredAt = new Date(activity.occurredAt).getTime();
+      const inWeek = occurredAt >= start.getTime() && occurredAt < end.getTime();
+      const inManager = !partnerManagerId || activity.partnerManagerId === partnerManagerId;
+      const inPartner = !partnerIds || partnerIds.has(activity.partnerId);
+      return inWeek && inManager && inPartner;
+    });
+    for (const activity of filtered) {
+      byType[activity.type] = (byType[activity.type] ?? 0) + 1;
+    }
+    return {
+      weekStart: start.toISOString(),
+      weekEnd: new Date(end.getTime() - 1).toISOString(),
+      total: filtered.length,
+      byType,
+    };
+  });
 }
 
 /** Pending registrations, oldest first. Optionally scoped to one partner. */

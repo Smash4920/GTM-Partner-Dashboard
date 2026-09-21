@@ -4,22 +4,26 @@ import Card from '../components/Card';
 import FilterChips, { type ChipOption } from '../components/FilterChips';
 import KpiTile from '../components/KpiTile';
 import MetricBars, { type MetricBarRow } from '../components/MetricBars';
+import OpportunityTable from '../components/OpportunityTable';
 import PartnerPicker from '../components/PartnerPicker';
 import RegistrationsTable from '../components/RegistrationsTable';
 import RevenueTrend from '../components/RevenueTrend';
 import {
   CURRENT_YEAR,
+  FISCAL_PHASES,
+  FISCAL_PHASE_META,
   OPP_TYPE_META,
   PARTNER_TIER_META,
   PARTNER_TYPE_META,
   REGION_META,
   STAGE_META,
 } from '../data/constants';
-import type { DashboardData, Opportunity } from '../data/types';
+import type { DashboardData, FiscalPhase, Opportunity } from '../data/types';
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 import {
-  closedWonYtd,
+  closedWonForPhase,
   coverageRatio,
+  filterByPhase,
   formatCoverage,
   openPipeline,
   partnerLeaderboard,
@@ -27,7 +31,8 @@ import {
   quarterlyClosedWonAndTarget,
   recentRegistrations,
   stageBreakdown,
-  winRateYtd,
+  targetsForPhase,
+  winRateForPhase,
   ytdTarget,
 } from '../lib/metrics';
 
@@ -40,6 +45,12 @@ const SLICE_OPTIONS: ChipOption<PartnerSlice>[] = [
   { id: 'allocate', label: 'Allocate', title: OPP_TYPE_META.allocate.description },
 ];
 
+const PHASE_OPTIONS: ChipOption<FiscalPhase>[] = FISCAL_PHASES.map((phase) => ({
+  id: phase,
+  label: FISCAL_PHASE_META[phase].label,
+  title: FISCAL_PHASE_META[phase].description,
+}));
+
 /**
  * Partner-facing portal. In production this view is scoped by partner SSO;
  * the picker here simulates that. Only Sell With and Allocate opportunities
@@ -50,6 +61,7 @@ export default function PartnerView({ data }: { data: DashboardData }) {
     () => partnerLeaderboard(data, 'all')[0]?.partner.id ?? data.partners[0]?.id ?? '',
   );
   const [slice, setSlice] = useState<PartnerSlice>('all');
+  const [phase, setPhase] = useState<FiscalPhase>('q3');
 
   // Default to the top-performing partner so the first view is representative.
   const partner =
@@ -63,12 +75,16 @@ export default function PartnerView({ data }: { data: DashboardData }) {
       ),
     [data.opportunities, partnerId],
   );
+  const phaseVisibleOpps = useMemo(
+    () => filterByPhase(visibleOpps, phase),
+    [visibleOpps, phase],
+  );
   const partnerOpps = useMemo(
     () =>
       slice === 'all'
-        ? visibleOpps
-        : visibleOpps.filter((opp: Opportunity) => opp.oppType === slice),
-    [visibleOpps, slice],
+        ? phaseVisibleOpps
+        : phaseVisibleOpps.filter((opp: Opportunity) => opp.oppType === slice),
+    [phaseVisibleOpps, slice],
   );
   const partnerTargets = useMemo(
     () => data.targets.filter((target) => target.partnerId === partnerId),
@@ -84,12 +100,13 @@ export default function PartnerView({ data }: { data: DashboardData }) {
   }
 
   const pipeline = openPipeline(partnerOpps);
-  const wonYtd = closedWonYtd(partnerOpps);
-  const winRate = winRateYtd(partnerOpps);
+  const wonYtd = closedWonForPhase(partnerOpps, phase);
+  const winRate = winRateForPhase(partnerOpps, phase);
   const pending = pendingRegistrations(data.registrations, partnerId);
-  const target = ytdTarget(partnerTargets);
+  const phaseTargets = targetsForPhase(partnerTargets, phase);
+  const target = phase === 'fy' ? ytdTarget(partnerTargets) : ytdTarget(phaseTargets);
   const attainment = target > 0 ? wonYtd / target : 0;
-  const coverage = coverageRatio(partnerOpps, partnerTargets);
+  const coverage = coverageRatio(partnerOpps, partnerTargets, phase);
   const quarterly = quarterlyClosedWonAndTarget(partnerOpps, partnerTargets);
   const stages = stageBreakdown(partnerOpps);
   const registrations = recentRegistrations(data.registrations, partnerId, 8);
@@ -104,9 +121,14 @@ export default function PartnerView({ data }: { data: DashboardData }) {
 
   // Always computed over everything visible, so the split stays readable
   // regardless of which slice is selected above.
-  const sellWith = openPipeline(visibleOpps.filter((opp) => opp.oppType === 'sell-with'));
-  const allocate = openPipeline(visibleOpps.filter((opp) => opp.oppType === 'allocate'));
-  const total = openPipeline(visibleOpps);
+  const sellWith = openPipeline(
+    phaseVisibleOpps.filter((opp) => opp.oppType === 'sell-with'),
+  );
+  const allocate = openPipeline(
+    phaseVisibleOpps.filter((opp) => opp.oppType === 'allocate'),
+  );
+  const total = openPipeline(phaseVisibleOpps);
+  const certification = data.certifications.find((item) => item.partnerId === partnerId);
 
   const sliceRows: MetricBarRow[] = [
     {
@@ -158,6 +180,13 @@ export default function PartnerView({ data }: { data: DashboardData }) {
         <div className="flex flex-col items-end gap-2">
           <PartnerPicker partners={data.partners} value={partner.id} onChange={setPartnerId} />
           <FilterChips
+            options={PHASE_OPTIONS}
+            value={phase}
+            onChange={setPhase}
+            ariaLabel="Select fiscal phase"
+            size="xs"
+          />
+          <FilterChips
             options={SLICE_OPTIONS}
             value={slice}
             onChange={setSlice}
@@ -182,21 +211,65 @@ export default function PartnerView({ data }: { data: DashboardData }) {
           }
         />
         <KpiTile
-          label="Closed-won YTD"
+          label={`Closed-won ${FISCAL_PHASE_META[phase].label}`}
           value={formatUsdCompact(wonYtd)}
           sub={
             slice === 'all'
-              ? `${formatPct(attainment)} of their ${CURRENT_YEAR} target`
+              ? `${formatPct(attainment)} of their ${
+                  phase === 'fy' ? CURRENT_YEAR : FISCAL_PHASE_META[phase].label
+                } target`
               : `${sliceLabel} only · target covers all revenue`
           }
         />
-        <KpiTile label="Win rate" value={formatPct(winRate)} sub="of closed YTD" />
+        <KpiTile label="Win rate" value={formatPct(winRate)} sub={`of closed ${FISCAL_PHASE_META[phase].label}`} />
         <KpiTile
           label="Awaiting review"
           value={`${pending.length}`}
           sub="registrations pending"
         />
+        <KpiTile
+          label="Partner strategists certified"
+          value={certification ? `${certification.partnerStrategistsCertified}/${certification.partnerStrategistsGoal}` : '—'}
+          sub={
+            certification
+              ? `${formatPct(
+                  certification.partnerStrategistsCertified / certification.partnerStrategistsGoal,
+                )} of goal`
+              : 'No certification data'
+          }
+        />
+        <KpiTile
+          label="Partner engineers certified"
+          value={certification ? `${certification.partnerEngineersCertified}/${certification.partnerEngineersGoal}` : '—'}
+          sub={
+            certification
+              ? `${formatPct(
+                  certification.partnerEngineersCertified / certification.partnerEngineersGoal,
+                )} of goal`
+              : 'No certification data'
+          }
+        />
       </div>
+
+      <Card
+        title="Deal registrations"
+        subtitle="Most recent first · all statuses"
+      >
+        <RegistrationsTable
+          registrations={registrations}
+          partners={data.partners}
+          variant="history"
+          showPartner={false}
+          limit={8}
+        />
+      </Card>
+
+      <Card
+        title={`Pipeline opportunities · ${FISCAL_PHASE_META[phase].label}`}
+        subtitle={`${partnerOpps.length} opportunities · Salesforce fields shown as mock data`}
+      >
+        <OpportunityTable opportunities={partnerOpps} />
+      </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card
@@ -216,19 +289,9 @@ export default function PartnerView({ data }: { data: DashboardData }) {
 
       <Card
         title="Pipeline by revenue motion"
-        subtitle="Open pipeline split across your motions · always shows the full book"
+        subtitle={`Open ${FISCAL_PHASE_META[phase].label} pipeline split across your motions · always shows the full visible book`}
       >
         <MetricBars rows={sliceRows} />
-      </Card>
-
-      <Card title="Deal registrations" subtitle="Most recent first · all statuses">
-        <RegistrationsTable
-          registrations={registrations}
-          partners={data.partners}
-          variant="history"
-          showPartner={false}
-          limit={8}
-        />
       </Card>
     </div>
   );
