@@ -193,7 +193,9 @@ export default function HomeView({
           <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-signal">
             All Partners
           </p>
-          <h1 className="mt-2 text-3xl tracking-tight text-bone">Partner revenue pipeline</h1>
+          <h1 className="mt-2 text-3xl tracking-tight text-bone">
+            Partner Performance Overview
+          </h1>
           <p className="mt-1 text-sm text-granite">
             {phaseDescription} · snapshot {formatDate(SNAPSHOT_DATE.toISOString())}
           </p>

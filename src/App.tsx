@@ -10,6 +10,7 @@ import ActivityTrackingView from './views/ActivityTrackingView';
 import ForecastingView from './views/ForecastingView';
 import HomeView from './views/HomeView';
 import PartnerPerformanceView from './views/PartnerPerformanceView';
+import PartnerView from './views/PartnerView';
 
 export default function App() {
   // The provider is the integration seam. Swap MockDataProvider for a
@@ -157,6 +158,7 @@ export default function App() {
                   onAddPartner={addPartner}
                 />
               )}
+              {route === 'partner-view' && <PartnerView data={live} />}
             </>
           )}
         </main>
