@@ -1,6 +1,12 @@
 import { useState } from 'react';
-import { FORECAST_CATEGORY_META, OPP_TYPE_META, STAGE_META } from '../data/constants';
-import type { Opportunity, Partner } from '../data/types';
+import {
+  FORECAST_CATEGORIES,
+  FORECAST_CATEGORY_FOR_STAGE,
+  FORECAST_CATEGORY_META,
+  OPP_TYPE_META,
+  STAGE_META,
+} from '../data/constants';
+import type { ForecastCategory, Opportunity, Partner } from '../data/types';
 import { formatDate, formatUsd } from '../lib/format';
 import { forecastCategoryOf } from '../lib/metrics';
 import { CheckIcon, CommentIcon, PencilIcon, XIcon } from './icons';
@@ -17,8 +23,14 @@ interface ForecastTableProps {
   onSetRevenue: (opportunityId: string, value: number) => void;
   onSetNote: (opportunityId: string, note: string) => void;
   onSetNextStep: (opportunityId: string, nextStep: string) => void;
+  onSetForecastCall: (opportunityId: string, category: ForecastCategory) => void;
   emptyMessage?: string;
 }
+
+/** Commit first: managers read their book from most to least confident. */
+const CATEGORY_OPTIONS = [...FORECAST_CATEGORIES].sort(
+  (a, b) => FORECAST_CATEGORY_META[b].weight - FORECAST_CATEGORY_META[a].weight,
+);
 
 /**
  * In-quarter opportunity table for the VP of Partnerships. Revenue and Notes
@@ -26,6 +38,10 @@ interface ForecastTableProps {
  * stored as comments and surface on hover, not inline. Next Step renders
  * inline and is editable per row — the row-level answer to "what happens
  * next" that the forecast call-outs and roadmap alerts build on.
+ *
+ * Forecast category is a dropdown rather than a read-only badge because the
+ * call belongs to the manager, not to the stage. Rows where the call disagrees
+ * with the stage are marked "off stage": those are the forecast conversations.
  */
 export default function ForecastTable({
   opportunities,
@@ -36,6 +52,7 @@ export default function ForecastTable({
   onSetRevenue,
   onSetNote,
   onSetNextStep,
+  onSetForecastCall,
   emptyMessage = 'No in-quarter opportunities for this partner manager.',
 }: ForecastTableProps) {
   const [editingRevenue, setEditingRevenue] = useState<string | null>(null);
@@ -133,8 +150,11 @@ export default function ForecastTable({
             const edited = revenueOverrides[opportunity.id] !== undefined;
             const note = notes[opportunity.id] ?? opportunity.notes;
             const nextStep = nextSteps[opportunity.id] ?? opportunity.nextStep;
-            const categoryMeta = FORECAST_CATEGORY_META[forecastCategoryOf(opportunity)];
+            const called = forecastCategoryOf(opportunity);
+            const categoryMeta = FORECAST_CATEGORY_META[called];
             const open = opportunity.outcome === undefined;
+            const impliedByStage = FORECAST_CATEGORY_FOR_STAGE[opportunity.stage];
+            const offStage = open && called !== impliedByStage;
 
             return (
               <tr key={opportunity.id} className="border-b border-carbon last:border-0">
@@ -228,10 +248,32 @@ export default function ForecastTable({
                         className="h-1.5 w-1.5 shrink-0 rounded-full"
                         style={{ backgroundColor: categoryMeta.color }}
                       />
-                      <span className="text-stone">{categoryMeta.label}</span>
-                      <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-granite">
-                        {Math.round(categoryMeta.weight * 100)}%
-                      </span>
+                      <select
+                        value={called}
+                        onChange={(event) =>
+                          onSetForecastCall(
+                            opportunity.id,
+                            event.target.value as ForecastCategory,
+                          )
+                        }
+                        aria-label={`Forecast category for ${opportunity.accountName}`}
+                        className="cursor-pointer rounded border border-transparent bg-transparent py-0.5 text-sm text-stone hover:border-ash focus:border-signal focus:outline-none"
+                      >
+                        {CATEGORY_OPTIONS.map((category) => (
+                          <option key={category} value={category} className="bg-carbon text-bone">
+                            {FORECAST_CATEGORY_META[category].label}{' '}
+                            {Math.round(FORECAST_CATEGORY_META[category].weight * 100)}%
+                          </option>
+                        ))}
+                      </select>
+                      {offStage && (
+                        <span
+                          className="shrink-0 font-mono text-[10px] uppercase tracking-[0.05em] text-signal"
+                          title={`Called ${categoryMeta.label} while the deal sits in ${STAGE_META[opportunity.stage].label}, which implies ${FORECAST_CATEGORY_META[impliedByStage].label}.`}
+                        >
+                          Off stage
+                        </span>
+                      )}
                     </span>
                   ) : (
                     <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-graphite">

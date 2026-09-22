@@ -642,6 +642,60 @@ export function weightedForecast(openOpps: Opportunity[]): WeightedForecast {
   };
 }
 
+export interface CategoryMismatch {
+  opportunity: Opportunity;
+  /** The category the deal's stage implies. */
+  fromStage: ForecastCategory;
+  /** The category actually called on the deal. */
+  called: ForecastCategory;
+  /** 'above' when called more confidently than the stage implies. */
+  direction: 'above' | 'below';
+}
+
+export interface CategoryMismatches {
+  above: CategoryMismatch[];
+  below: CategoryMismatch[];
+  /** Forecasted revenue carried by each side, for sizing the exposure. */
+  aboveValue: number;
+  belowValue: number;
+}
+
+/**
+ * Open deals whose called forecast category disagrees with the category their
+ * stage implies.
+ *
+ * This is the point of tracking a category separately from a stage. A deal
+ * called Commit while sitting in Discovery is either a stale stage or an
+ * unsupported call, and a Long Shot in late-stage review usually means the
+ * deal is dying in a way the pipeline report still shows as healthy. Both are
+ * conversations; neither is visible from stage alone.
+ */
+export function categoryStageMismatches(openOpps: Opportunity[]): CategoryMismatches {
+  const above: CategoryMismatch[] = [];
+  const below: CategoryMismatch[] = [];
+
+  for (const opportunity of openOpps) {
+    const fromStage = FORECAST_CATEGORY_FOR_STAGE[opportunity.stage];
+    const called = forecastCategoryOf(opportunity);
+    if (called === fromStage) continue;
+    const direction =
+      FORECAST_CATEGORIES.indexOf(called) > FORECAST_CATEGORIES.indexOf(fromStage)
+        ? 'above'
+        : 'below';
+    (direction === 'above' ? above : below).push({
+      opportunity,
+      fromStage,
+      called,
+      direction,
+    });
+  }
+
+  const sum = (rows: CategoryMismatch[]) =>
+    rows.reduce((total, row) => total + row.opportunity.forecastedRevenue, 0);
+
+  return { above, below, aboveValue: sum(above), belowValue: sum(below) };
+}
+
 // ---- deal-registration ops -------------------------------------------------
 
 /** Weekdays (Mon–Fri, UTC) between two ISO dates, exclusive of the start day. */

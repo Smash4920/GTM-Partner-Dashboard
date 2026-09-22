@@ -8,12 +8,14 @@ import {
   FISCAL_PHASE_META,
   FORECAST_CATEGORY_META,
   SNAPSHOT_DATE,
+  STAGE_META,
 } from '../data/constants';
-import type { DashboardData, FiscalPhase } from '../data/types';
+import type { DashboardData, FiscalPhase, ForecastCategory } from '../data/types';
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 import { fiscalQuarterOfDate, quarterWindow } from '../lib/fiscal';
 import {
   avgOpenDealSize,
+  categoryStageMismatches,
   closedWonForPhase,
   coverageRatio,
   daysLeftInQuarter,
@@ -42,6 +44,7 @@ interface ForecastingViewProps {
   onSetRevenue: (opportunityId: string, value: number) => void;
   onSetNote: (opportunityId: string, note: string) => void;
   onSetNextStep: (opportunityId: string, nextStep: string) => void;
+  onSetForecastCall: (opportunityId: string, category: ForecastCategory) => void;
 }
 
 /**
@@ -59,6 +62,7 @@ export default function ForecastingView({
   onSetRevenue,
   onSetNote,
   onSetNextStep,
+  onSetForecastCall,
 }: ForecastingViewProps) {
   const [filterManagerId, setFilterManagerId] = useState('all');
   // First manager opens by default so the page never lands fully collapsed.
@@ -144,6 +148,15 @@ export default function ForecastingView({
     [weighted],
   );
 
+  // Deals whose called category disagrees with their stage. This is the only
+  // place the forecast stops being a restatement of the pipeline report: a
+  // Commit in Discovery and a Long Shot in Deal Desk Review both need a
+  // conversation, and neither is visible from stage alone.
+  const mismatches = useMemo(
+    () => categoryStageMismatches(openInQuarterOpps),
+    [openInQuarterOpps],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -226,6 +239,73 @@ export default function ForecastingView({
       </div>
 
       <Card
+        title="Calls that disagree with stage"
+        subtitle={`${mismatches.above.length + mismatches.below.length} of ${openInQuarterOpps.length} open ${phaseLabel} deals are called off the category their stage implies`}
+      >
+        {mismatches.above.length + mismatches.below.length === 0 ? (
+          <p className="text-sm text-granite">
+            Every open deal is called in line with its stage.
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="rounded border border-carbon p-4">
+                <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-signal">
+                  Called above stage
+                </p>
+                <p className="mt-2 text-2xl tabular-nums text-bone">
+                  {formatUsdCompact(mismatches.aboveValue)}
+                </p>
+                <p className="mt-1 text-xs text-granite">
+                  {mismatches.above.length} deals called more confidently than the funnel
+                  supports. Either the stage is stale or the call is optimistic.
+                </p>
+              </div>
+              <div className="rounded border border-carbon p-4">
+                <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+                  Called below stage
+                </p>
+                <p className="mt-2 text-2xl tabular-nums text-bone">
+                  {formatUsdCompact(mismatches.belowValue)}
+                </p>
+                <p className="mt-1 text-xs text-granite">
+                  {mismatches.below.length} late-funnel deals the manager has downgraded. These
+                  still read as healthy on a stage report.
+                </p>
+              </div>
+            </div>
+            <ul className="mt-4 space-y-1.5">
+              {/* Up to three of each, so a long list of optimistic calls never
+                  crowds out the downgraded late-stage deals. */}
+              {[...mismatches.above.slice(0, 3), ...mismatches.below.slice(0, 3)].map((row) => (
+                <li
+                  key={row.opportunity.id}
+                  className="flex flex-wrap items-baseline gap-x-2 text-xs"
+                >
+                  <span className="text-stone">{row.opportunity.accountName}</span>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-granite">
+                    {STAGE_META[row.opportunity.stage].label} → called{' '}
+                    <span className={row.direction === 'above' ? 'text-signal' : 'text-stone'}>
+                      {FORECAST_CATEGORY_META[row.called].label}
+                    </span>
+                  </span>
+                  <span className="tabular-nums text-granite">
+                    {formatUsdCompact(row.opportunity.forecastedRevenue)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        <p className="mt-4 text-xs text-granite">
+          Stage is a fact about process; the forecast category is a judgment about whether the
+          deal lands. Where they agree the category adds nothing, so these disagreements are the
+          forecast conversation. Change any row's category in the table below and every number on
+          this page moves with it.
+        </p>
+      </Card>
+
+      <Card
         title={`In-quarter opportunities · ${quarter}`}
         subtitle={`${groupedCount} opportunities grouped by partner manager · expand a manager to see their book`}
         action={
@@ -276,6 +356,7 @@ export default function ForecastingView({
                       onSetRevenue={onSetRevenue}
                       onSetNote={onSetNote}
                       onSetNextStep={onSetNextStep}
+                      onSetForecastCall={onSetForecastCall}
                     />
                   </div>
                 )}

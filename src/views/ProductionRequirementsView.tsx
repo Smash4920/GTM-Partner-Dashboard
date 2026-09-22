@@ -63,8 +63,9 @@ const UTILITY_REQUIREMENTS = [
   {
     title: 'Forecast quality',
     items: [
-      'Forecast categories with probability weights: Commit (90%), Best Case (50%), Pipeline (25%), and Long Shot (10%), driving a probability-weighted forecast over the open book.',
-      'Close-date slippage, stage aging, row-level next steps, and MEDDPICC-or-equivalent qualification on every open opportunity.',
+      'Live sketch: probability-weighted forecast over the open book, with manager-editable category calls and a "disagrees with stage" call-out.',
+      'Turn per-deal judgments into trend: close-date slippage, stage aging, and category-confidence history per manager and partner.',
+      'MEDDPICC-or-equivalent qualification structured on every open opportunity.',
       'Forecast accuracy by partner, manager, motion, and quarter.',
     ],
   },
@@ -147,9 +148,10 @@ export default function ProductionRequirementsView() {
           </p>
           <h2 className="mt-2 text-2xl tracking-tight text-bone">Utility Improvements</h2>
           <p className="mt-1 max-w-3xl text-sm text-granite">
-            The decisions the GTM Partnerships leader needs the tool to make easy. These build on
-            the architecture foundation above — none are shown live in the demo beyond their
-            forecast-quality and deal-registration-op sketches.
+            The decisions the GTM Partnerships leader needs the tool to make easy. The demo's live
+            sketch covers forecast quality (a weighted forecast driven by manager-editable category
+            calls) and deal-registration operations; the rest of this backlog turns raw pipeline
+            data into those decisions.
           </p>
         </div>
         <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">

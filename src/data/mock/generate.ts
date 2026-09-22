@@ -1,9 +1,16 @@
-import { FISCAL_QUARTERS, FORECAST_CATEGORY_FOR_STAGE, MEETING_TYPES, SNAPSHOT_DATE } from '../constants';
+import {
+  FISCAL_QUARTERS,
+  FORECAST_CATEGORIES,
+  FORECAST_CATEGORY_FOR_STAGE,
+  MEETING_TYPES,
+  SNAPSHOT_DATE,
+} from '../constants';
 import { quarterWindow, startOfWeekUtc } from '../../lib/fiscal';
 import type {
   ActivityMeeting,
   DealRegistration,
   DashboardData,
+  ForecastCategory,
   Opportunity,
   OpportunityStage,
   OpportunityType,
@@ -133,6 +140,37 @@ function seededNextStep(id: string): string | undefined {
   for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   const pick = hash % 10;
   return pick < NEXT_STEP_POOL.length ? NEXT_STEP_POOL[pick] : undefined;
+}
+
+/**
+ * The manager's called forecast category for an open deal.
+ *
+ * A category is a judgment about whether the deal lands, not a restatement of
+ * the stage it sits in. The interesting rows are the ones where the two
+ * disagree: a Commit still in Discovery (paper moving faster than the CRM), or
+ * a Long Shot in Deal Desk Review (the champion left). Those disagreements are
+ * the coaching signal the Forecasting view exists to surface.
+ *
+ * Roughly one open deal in five is called off its stage, split between
+ * optimistic and cautious. That rate is deliberate: it matches the forecast
+ * hygiene of an org with the registration-process problems this book models,
+ * and it leaves enough rows inside a single quarter for the disagreement to be
+ * legible rather than a rounding error. Derived from the id rather than the
+ * PRNG, so no seeded sequence and no pinned volume shifts.
+ */
+function seededCategoryCall(id: string, stage: OpportunityStage): ForecastCategory {
+  const fromStage = FORECAST_CATEGORY_FOR_STAGE[stage];
+  let hash = 0;
+  for (const char of id) hash = (hash * 37 + char.charCodeAt(0)) >>> 0;
+  if (hash % 5 !== 0) return fromStage;
+
+  // FORECAST_CATEGORIES runs long-shot -> commit, so +1 is a more confident
+  // call than the stage implies and -1 a more cautious one. Move a single
+  // bucket to keep every call adjacent-plausible, reflecting back off each end.
+  const index = FORECAST_CATEGORIES.indexOf(fromStage);
+  const step = hash % 10 === 0 ? 1 : -1;
+  const called = index + step;
+  return FORECAST_CATEGORIES[called] ?? FORECAST_CATEGORIES[index - step];
 }
 
 /**
@@ -449,7 +487,8 @@ function generateOpportunities(
 
   // Post-passes that add realism without touching the seeded PRNG sequence:
   // converted registrations get a document-handling dwell time before their
-  // opportunity is created, and open deals carry a row-level next step.
+  // opportunity is created, and open deals carry a row-level next step plus
+  // the manager's called forecast category.
   for (const opportunity of opportunities) {
     if (!opportunity.registrationId) continue;
     const createdAt = Math.min(
@@ -458,9 +497,13 @@ function generateOpportunities(
     );
     opportunity.createdAt = iso(new Date(createdAt));
   }
+  // Open deals also carry the manager's called category, which may disagree
+  // with the stage default set in buildOpportunity. Closed deals keep the
+  // stage-derived value: the call stops mattering once the deal resolves.
   for (const opportunity of opportunities) {
     if (opportunity.outcome) continue;
     opportunity.nextStep = seededNextStep(opportunity.id);
+    opportunity.forecastCategory = seededCategoryCall(opportunity.id, opportunity.stage);
   }
 
   return opportunities;
