@@ -6,14 +6,14 @@ const REQUIREMENTS = [
     items: [
       'Authenticate internal users and partners through the company identity provider.',
       'Enforce role, manager, and partner access on the server, with row-level authorization for every query.',
-      'Remove the partner picker outside an internal demo mode so a partner never receives another partner’s data.',
+      "Remove the partner picker outside an internal demo mode so a partner never receives another partner's data.",
     ],
   },
   {
     title: 'Source-system integration',
     items: [
       'Connect Salesforce or HubSpot as the opportunity and deal-registration system of record.',
-      'Sync Google Calendar activity and the enablement system’s certification records with approved OAuth scopes.',
+      "Sync Google Calendar activity and the enablement system's certification records with approved OAuth scopes.",
       'Use incremental syncs, webhooks where available, scheduled reconciliation, retries, and dead-letter handling.',
     ],
   },
@@ -107,6 +107,16 @@ const UTILITY_REQUIREMENTS = [
       'Sourced, influenced, assisted, reseller, marketplace, referral, and expansion attribution.',
       'Multi-partner credit splits and sales/partner ownership.',
       'Explicit attribution rules, effective dates, and a deal-credit dispute workflow.',
+    ],
+  },
+  {
+    title: 'Services delivery',
+    items: [
+      'A delivery record per engagement: which partner is delivering which service type — implementation, migration, managed service, custom development, enablement and training, advisory — for which client, with start, go-live, and delivery owner.',
+      'The commercial shape of each engagement: Factory revenue attached (license, allocated drawdown, services pass-through) versus no direct revenue, and long-term adoption plays whose return is seat expansion or renewal rather than bookings this quarter.',
+      'Engagements linked to their opportunity, partner, and account so delivery reads next to pipeline and closed-won instead of living in a spreadsheet.',
+      "Outcomes per engagement: adoption and consumption milestones, go-live slippage, post-delivery expansion, and which partners' delivery produces repeat revenue.",
+      "Delivery capacity by service type: certified practitioners available, engagements in flight, and where demand is outrunning a partner's bench.",
     ],
   },
 ];
