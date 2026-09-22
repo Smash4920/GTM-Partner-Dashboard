@@ -99,10 +99,18 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
   the CRM's. Notes never render inline — they are stored as comments and
   appear on hover over the comment icon. Next Step is an inline editable text
   field per row
-- Forecast categories are seeded from the deal's stage (Discovery → Long Shot,
-  Scope → Pipeline, Tech Validation → Best Case, late funnel → Commit); the
-  roadmap calls for manager-assigned categories and forecast accuracy by
-  partner, manager, motion, and quarter
+- **Forecast Category is a dropdown, not a derived badge.** The deal's stage
+  supplies a starting point (Discovery → Long Shot, Scope → Pipeline, Tech
+  Validation → Best Case, late funnel → Commit), but the call belongs to the
+  manager and can disagree with it. Re-calling a deal recalculates the weighted
+  forecast and every category tile immediately
+- **Calls that disagree with stage** sits above the table: deals called *above*
+  their stage (more confident than the funnel supports — a stale stage or an
+  optimistic call) and *below* it (late-funnel deals the manager has downgraded,
+  which still read as healthy on any stage report). Where category and stage
+  agree, the category adds no information, so these disagreements are the
+  forecast conversation. Individual rows are tagged "off stage". Forecast
+  accuracy by partner, manager, motion, and quarter remains on the roadmap
 
 ### Deal Reg Ops
 
@@ -224,9 +232,12 @@ still needs to add.
   pool across the previous seven weeks, plus a full current week per partner
   manager (7–12 calls each) so the weekly goal and Log Meetings have a real
   calendar to work from
-- Every opportunity carries a forecast category seeded from its stage (or the
-  stage heuristic when unset), and open opportunities carry a row-level next
-  step (about half of them, seeded deterministically from the id)
+- Every opportunity carries a forecast category; open deals carry a manager's
+  called category, roughly one in five deliberately off its stage-implied
+  bucket in both directions (deterministic from the id, so no PRNG sequence or
+  pinned volume shifts), and close-date-adjacent deals with no explicit call
+  fall back to the stage heuristic. Open opportunities also carry a row-level
+  next step (about half of them, seeded deterministically from the id)
 - Every approved registration gets a 2–12 day document-handling dwell before
   its opportunity is created, so the submitted → approved → opportunity → win
   chain reads as real time; a fixed set of registrations deliberately shares a

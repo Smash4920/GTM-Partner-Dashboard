@@ -3,7 +3,7 @@ import Sidebar, { type Route } from './components/Sidebar';
 import { MenuIcon } from './components/icons';
 import { SNAPSHOT_DATE } from './data/constants';
 import { MockDataProvider } from './data/mock/MockDataProvider';
-import type { MeetingClassification, Partner } from './data/types';
+import type { ForecastCategory, MeetingClassification, Partner } from './data/types';
 import { useDashboardData } from './data/useDashboardData';
 import { formatDate } from './lib/format';
 import ActivityTrackingView from './views/ActivityTrackingView';
@@ -29,6 +29,7 @@ export default function App() {
   const [revenueOverrides, setRevenueOverrides] = useState<Record<string, number>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [nextSteps, setNextSteps] = useState<Record<string, string>>({});
+  const [forecastCalls, setForecastCalls] = useState<Record<string, ForecastCategory>>({});
   const [classifications, setClassifications] = useState<Record<string, MeetingClassification>>({});
   // Only the prospects live in state; the provider's book stays the source of
   // truth, so this list cannot go stale while the data is still loading.
@@ -40,16 +41,23 @@ export default function App() {
     [data?.partners, prospects],
   );
 
-  // Edited forecasts, notes, and next steps are folded into the opportunity
-  // book itself, so every KPI, chart, and table in the app reads the corrected
-  // figure rather than the one Salesforce supplied.
+  // Edited forecasts, notes, next steps, and called categories are folded into
+  // the opportunity book itself, so every KPI, chart, and table in the app
+  // reads the corrected figure rather than the one Salesforce supplied. The
+  // weighted forecast therefore moves the moment a manager re-calls a deal.
   const opportunities = useMemo(() => {
     const book = data?.opportunities ?? [];
     return book.map((opportunity) => {
       const revenue = revenueOverrides[opportunity.id];
       const note = notes[opportunity.id];
       const nextStep = nextSteps[opportunity.id];
-      if (revenue === undefined && note === undefined && nextStep === undefined) {
+      const call = forecastCalls[opportunity.id];
+      if (
+        revenue === undefined &&
+        note === undefined &&
+        nextStep === undefined &&
+        call === undefined
+      ) {
         return opportunity;
       }
       return {
@@ -57,9 +65,10 @@ export default function App() {
         forecastedRevenue: revenue ?? opportunity.forecastedRevenue,
         notes: note ?? opportunity.notes,
         nextStep: nextStep ?? opportunity.nextStep,
+        forecastCategory: call ?? opportunity.forecastCategory,
       };
     });
-  }, [data?.opportunities, revenueOverrides, notes, nextSteps]);
+  }, [data?.opportunities, revenueOverrides, notes, nextSteps, forecastCalls]);
 
   // The single book every view renders: provider data plus in-app edits.
   const live = useMemo(
@@ -87,6 +96,9 @@ export default function App() {
       return next;
     });
   };
+
+  const setForecastCall = (opportunityId: string, category: ForecastCategory) =>
+    setForecastCalls((prev) => ({ ...prev, [opportunityId]: category }));
 
   const commitClassifications = (next: Record<string, MeetingClassification>) =>
     setClassifications(next);
@@ -178,6 +190,7 @@ export default function App() {
                   onSetRevenue={setRevenue}
                   onSetNote={setNote}
                   onSetNextStep={setNextStep}
+                  onSetForecastCall={setForecastCall}
                 />
               )}
               {route === 'registration-ops' && <DealRegistrationOpsView data={live} />}

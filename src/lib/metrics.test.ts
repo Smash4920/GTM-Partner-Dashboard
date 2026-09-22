@@ -10,6 +10,7 @@ import type {
 import {
   approvedNotConverted,
   businessDaysBetween,
+  categoryStageMismatches,
   closedWonForPhase,
   closedWonPriorYearForPhase,
   coverageRatio,
@@ -485,6 +486,63 @@ describe('weightedForecast', () => {
     expect(rows.pipeline).toMatchObject({ value: 10_000, count: 1 });
     expect(rows['long-shot']).toMatchObject({ value: 2_000, count: 1 });
     expect(rows['best-case']).toMatchObject({ value: 0, count: 0 });
+  });
+});
+
+describe('categoryStageMismatches', () => {
+  it('splits calls that disagree with the stage by direction and sums their value', () => {
+    // discovery implies long-shot, so calling commit is above stage.
+    const optimistic = opp({
+      id: 'a',
+      expectedCloseDate: '2026-09-30T00:00:00Z',
+      stage: 'discovery',
+      forecastedRevenue: 100_000,
+      forecastCategory: 'commit',
+    });
+    // deal-desk-review implies commit, so calling long-shot is below stage.
+    const cautious = opp({
+      id: 'b',
+      expectedCloseDate: '2026-09-30T00:00:00Z',
+      stage: 'deal-desk-review',
+      forecastedRevenue: 40_000,
+      forecastCategory: 'long-shot',
+    });
+    const agreeing = opp({
+      id: 'c',
+      expectedCloseDate: '2026-09-30T00:00:00Z',
+      stage: 'scope',
+      forecastedRevenue: 25_000,
+      forecastCategory: 'pipeline',
+    });
+
+    const result = categoryStageMismatches([optimistic, cautious, agreeing]);
+
+    expect(result.above).toHaveLength(1);
+    expect(result.above[0]).toMatchObject({
+      fromStage: 'long-shot',
+      called: 'commit',
+      direction: 'above',
+    });
+    expect(result.below).toHaveLength(1);
+    expect(result.below[0]).toMatchObject({
+      fromStage: 'commit',
+      called: 'long-shot',
+      direction: 'below',
+    });
+    expect(result.aboveValue).toBe(100_000);
+    expect(result.belowValue).toBe(40_000);
+  });
+
+  it('treats a deal with no explicit category as agreeing with its stage', () => {
+    // An unset category falls back to the stage heuristic, so it can never
+    // register as a mismatch. Without this the whole book would look "called".
+    const result = categoryStageMismatches([
+      opp({ id: 'a', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'tech-validation' }),
+    ]);
+    expect(result.above).toHaveLength(0);
+    expect(result.below).toHaveLength(0);
+    expect(result.aboveValue).toBe(0);
+    expect(result.belowValue).toBe(0);
   });
 });
 

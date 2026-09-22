@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { FISCAL_QUARTERS, FISCAL_YEAR_START, FORECAST_CATEGORY_FOR_STAGE, SNAPSHOT_DATE } from '../constants';
+import {
+  FISCAL_QUARTERS,
+  FISCAL_YEAR_START,
+  FORECAST_CATEGORIES,
+  FORECAST_CATEGORY_FOR_STAGE,
+  SNAPSHOT_DATE,
+} from '../constants';
 import {
   approvedNotConverted,
   avgOpenDealSize,
@@ -141,10 +147,51 @@ describe('generateDashboardData', () => {
     expect(average).toBeLessThan(275_000);
   });
 
-  it('assigns every opportunity a forecast category matching its final stage', () => {
+  it('assigns every opportunity a forecast category', () => {
     for (const opportunity of data.opportunities) {
+      expect(opportunity.forecastCategory).toBeDefined();
+    }
+  });
+
+  it('derives closed opportunity categories from their final stage', () => {
+    // A category is a forward-looking call, so once a deal resolves it simply
+    // tracks the stage it ended in.
+    for (const opportunity of data.opportunities) {
+      if (!opportunity.outcome) continue;
       expect(opportunity.forecastCategory).toBe(FORECAST_CATEGORY_FOR_STAGE[opportunity.stage]);
     }
+  });
+
+  it('calls a minority of open deals off the category their stage implies', () => {
+    // The point of a forecast category is that it can disagree with the stage:
+    // a Commit still in Discovery, or a Long Shot in late-stage review. If the
+    // two never diverged the category would carry no information at all, so
+    // the generator seeds a deliberate minority of disagreements.
+    const open = data.opportunities.filter((opportunity) => !opportunity.outcome);
+    const offStage = open.filter(
+      (opportunity) =>
+        opportunity.forecastCategory !== FORECAST_CATEGORY_FOR_STAGE[opportunity.stage],
+    );
+    const share = offStage.length / open.length;
+    expect(share).toBeGreaterThan(0.05);
+    expect(share).toBeLessThan(0.25);
+    // Both directions must appear, or the weighted forecast is biased one way.
+    const rank = (category: (typeof FORECAST_CATEGORIES)[number]) =>
+      FORECAST_CATEGORIES.indexOf(category);
+    expect(
+      offStage.some(
+        (opportunity) =>
+          rank(opportunity.forecastCategory!) >
+          rank(FORECAST_CATEGORY_FOR_STAGE[opportunity.stage]),
+      ),
+    ).toBe(true);
+    expect(
+      offStage.some(
+        (opportunity) =>
+          rank(opportunity.forecastCategory!) <
+          rank(FORECAST_CATEGORY_FOR_STAGE[opportunity.stage]),
+      ),
+    ).toBe(true);
   });
 
   it('seeds some open opportunities with a next step and leaves others blank', () => {
