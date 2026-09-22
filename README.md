@@ -179,8 +179,10 @@ authorization, source-system integration, persistence and audit, security and
 compliance, reliability). The **Utility Improvements** section is the GTM
 Partnerships leader's product roadmap — forecast quality, partner health and
 lifecycle, deal-registration operations, actionability, partner portal utility,
-and attribution and crediting — separated from the architecture work so the two
-tracks can be prioritized independently.
+attribution and crediting, and services delivery (which partner delivers which
+service type for which client, whether Factory revenue is attached or it is a
+long-term adoption play, and what the engagement produced) — separated from the
+architecture work so the two tracks can be prioritized independently.
 
 ## Running locally
 

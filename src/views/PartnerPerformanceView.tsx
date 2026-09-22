@@ -305,7 +305,7 @@ export default function PartnerPerformanceView({
           <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-signal">
             {selectedLabel}
           </p>
-          <h1 className="mt-2 text-3xl tracking-tight text-bone">Partner performance</h1>
+          <h1 className="mt-2 text-3xl tracking-tight text-bone">Partner Performance</h1>
           <p className="mt-1 text-sm text-granite">
             Drill down into one manager's book or a single partner · snapshot{' '}
             {formatDate(SNAPSHOT_DATE.toISOString())}
