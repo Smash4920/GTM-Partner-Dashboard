@@ -77,6 +77,15 @@ export function PortalIcon({ className = base }: IconProps) {
   );
 }
 
+export function RequirementsIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...stroke} aria-hidden="true">
+      <rect x="4" y="3" width="16" height="18" rx="1.5" />
+      <path d="m8 9 1.5 1.5L12 7.5M14 9h2M8 15l1.5 1.5L12 13.5M14 15h2" />
+    </svg>
+  );
+}
+
 export function PencilIcon({ className = base }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} {...stroke} aria-hidden="true">

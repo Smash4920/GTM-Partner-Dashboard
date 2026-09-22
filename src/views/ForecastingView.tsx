@@ -4,12 +4,13 @@ import ForecastTable from '../components/ForecastTable';
 import KpiTile from '../components/KpiTile';
 import { ChevronIcon } from '../components/icons';
 import {
-  CURRENT_FISCAL_QUARTER,
+  FISCAL_PHASES,
   FISCAL_PHASE_META,
   SNAPSHOT_DATE,
 } from '../data/constants';
-import type { DashboardData } from '../data/types';
+import type { DashboardData, FiscalPhase } from '../data/types';
 import { formatDate, formatUsdCompact } from '../lib/format';
+import { fiscalQuarterOfDate, quarterWindow } from '../lib/fiscal';
 import {
   avgOpenDealSize,
   closedWonForPhase,
@@ -21,6 +22,14 @@ import {
   remainingQuota,
   targetsForPhase,
 } from '../lib/metrics';
+
+const quarter = fiscalQuarterOfDate(SNAPSHOT_DATE.toISOString());
+const phase =
+  (FISCAL_PHASES.find((candidate) => FISCAL_PHASE_META[candidate].quarter === quarter) as Exclude<
+    FiscalPhase,
+    'fy'
+  > | undefined) ?? 'q1';
+const quarterEnd = quarterWindow(quarter).end;
 
 interface ForecastingViewProps {
   data: DashboardData;
@@ -56,8 +65,6 @@ export default function ForecastingView({
         : [...prev, managerId],
     );
 
-  const quarter = CURRENT_FISCAL_QUARTER; // 'FY27-Q3'
-  const phase = 'q3';
   const phaseLabel = FISCAL_PHASE_META[phase].label;
 
   const inQuarterOpps = useMemo(
@@ -123,7 +130,7 @@ export default function ForecastingView({
           <h1 className="mt-2 text-3xl tracking-tight text-bone">Forecasting</h1>
           <p className="mt-1 text-sm text-granite">
             {FISCAL_PHASE_META[phase].description} · the VP's quick read on{' '}
-            {CURRENT_FISCAL_QUARTER} · snapshot {formatDate(SNAPSHOT_DATE.toISOString())}
+            {quarter} · snapshot {formatDate(SNAPSHOT_DATE.toISOString())}
           </p>
         </div>
         <label className="flex items-center gap-2">
@@ -173,12 +180,12 @@ export default function ForecastingView({
         <KpiTile
           label="Days left in quarter"
           value={`${daysLeft}`}
-          sub={`${CURRENT_FISCAL_QUARTER} ends Nov 1`}
+          sub={`${quarter} ends ${formatDate(quarterEnd.toISOString())}`}
         />
       </div>
 
       <Card
-        title={`In-quarter opportunities · ${CURRENT_FISCAL_QUARTER}`}
+        title={`In-quarter opportunities · ${quarter}`}
         subtitle={`${groupedCount} opportunities grouped by partner manager · expand a manager to see their book`}
         action={
           <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
