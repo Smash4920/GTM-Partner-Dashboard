@@ -1,0 +1,53 @@
+# Debugging
+
+The app is a small static frontend: `index.html` loads `src/main.tsx`, which mounts `src/App.tsx` inside React StrictMode. There is no server, no API, no logging framework, and no telemetry in the repository, so debugging means browser DevTools plus a few known trouble spots. This page covers the loading and error paths, the common base-path failure, provider and data issues, chart rendering, and the commands that exist.
+
+## Loading and error paths
+
+All data loads through `src/data/useDashboardData.ts`, which calls the four `DataProvider` methods with `Promise.all` and exposes `{ data, loading, error }`. `src/App.tsx` renders an error banner when `error` is set, a "Loading dashboard data" pulse while `loading` is true, and the selected view only when `data` is present.
+
+The mock provider never rejects, so to see the error path you would temporarily `throw` inside a provider method. A real CRM-backed provider would surface its failures here: the catch branch sets `error` to the rejection message (or `Failed to load dashboard data` for non-`Error` rejections) and flips `loading` to false while leaving `data` null. The `alive` flag prevents state updates after unmount, which also makes the React 18 StrictMode double-invocation of effects in dev mode harmless. If a load unexpectedly re-runs, the cause is a new provider instance: the effect in `src/data/useDashboardData.ts` only re-runs when the provider reference changes, and `src/App.tsx` stabilizes it with `useMemo(() => new MockDataProvider(), [])`.
+
+## Provider and data issues
+
+- The source swap point is `src/App.tsx`; `MockDataProvider` is instantiated there and passed to the hook.
+- The generator's tunables are the constants at the top of `src/data/mock/generate.ts`: `TIER_ACTIVITY`, `TIER_TARGET_BASE`, `REGISTRATION_COUNT`, `QUARTER_WEIGHTS`, `OPEN_STAGE_WEIGHTS`, `LOST_STAGE_WEIGHTS`, `AMOUNT_RANGES`, and `EXTRA_COUNTS`.
+- The snapshot date exists in two places that must agree: `SNAPSHOT_DATE` in `src/data/constants.ts` and the local `SNAPSHOT` constant in `src/data/mock/generate.ts`. Moving the snapshot means updating both; [Data provider](../systems/data-provider.md) calls this out.
+- Referential integrity: collections link through `partnerId`, `registration.convertedTo`, and `opportunity.registrationId`. A key typo shows up as orphaned rows or missing conversions.
+- `MockDataProvider` returns the same array references on every call, and the views treat records as read-only. Mutating a record inside a view or component would corrupt every panel that reads the same array.
+
+## Base-path issues (blank page or missing assets)
+
+`vite.config.ts` picks the asset base from the environment: `/` when `VERCEL` is set, `/GTM-Partner-Dashboard/` otherwise, with `BASE_PATH` overriding both. A build made for one host breaks on another:
+
+- The current `dist/` (built without `VERCEL`) references `/GTM-Partner-Dashboard/assets/...` in `dist/index.html`. Served at a domain root, those asset requests 404 and the app is blank.
+- `npm run preview` respects the configured base: for a default build it redirects `/` to `/GTM-Partner-Dashboard/`, which is the URL to open when verifying a Pages-style build locally.
+- To build for another host: `VERCEL=1 npm run build` or `BASE_PATH=/preview/ npm run build`. Getting started covers the base path table.
+
+The indicator to check first when the page renders HTML but no app is the asset URLs in `dist/index.html` and the browser network panel.
+
+## Chart rendering
+
+`src/components/RevenueTrend.tsx` renders a Recharts `ComposedChart` (bar plus line) inside a `ResponsiveContainer`, which needs a parent with a defined height — the wrapper div carries the fixed `h-72 w-full` class. If the chart is missing, collapsed, or zero-height, check that the wrapper still has a height. `isAnimationActive={false}` on the bar and line makes the chart render fully on first paint, which keeps static captures stable; if you see a blank chart area with correct data, the animation flag or parent sizing is the first thing to inspect.
+
+## Useful commands
+
+```bash
+npm run dev        # Vite dev server, normally http://localhost:5173
+npm run lint       # ESLint flat config
+npm run build      # tsc -b && vite build
+npm run preview    # serve dist/; respects the configured base path
+```
+
+There is no watch-mode type-checking script and no test command; `tsc -b` runs as part of `npm run build`.
+
+## What does not exist
+
+There are no `console.log` instrumentation points in the source, no error-tracking integration, no analytics, no server logs, and no devtools wiring beyond what React and Vite provide. Browser DevTools — console, network, React DevTools if installed — are the entire instrumentation story.
+
+## Related pages
+
+- [How to contribute](index.md) — where debugging fits in the contribution loop.
+- [Data provider](../systems/data-provider.md) — the provider, generator, and snapshot details.
+- [Getting started](../overview/getting-started.md) — running the app and building with different base paths.
+- [Tooling](tooling.md) — what each tool in the stack does.

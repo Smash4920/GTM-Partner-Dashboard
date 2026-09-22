@@ -1,0 +1,469 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:02.490
+The GTM Partner Dashboard is a
+
+2
+00:00:02.530 --> 00:00:05.021
+focused question with a concrete answer:
+
+3
+00:00:05.061 --> 00:00:07.551
+where is partner revenue coming from,
+
+4
+00:00:07.591 --> 00:00:09.660
+and what should happen next?
+
+5
+00:00:09.700 --> 00:00:12.401
+This repository is a static React
+
+6
+00:00:12.441 --> 00:00:15.141
+mockup for two audiences. GTM leadership
+
+7
+00:00:15.181 --> 00:00:17.882
+sees the full partner book. An
+
+8
+00:00:17.922 --> 00:00:20.622
+individual partner sees only the revenue
+
+9
+00:00:20.662 --> 00:00:23.363
+motions and registrations that belong to
+
+10
+00:00:23.403 --> 00:00:26.103
+them. Both views use one data
+
+11
+00:00:26.143 --> 00:00:26.560
+model.
+
+12
+00:00:26.600 --> 00:00:29.236
+Start with the boundary that keeps
+
+13
+00:00:29.276 --> 00:00:31.912
+that possible. App creates a data
+
+14
+00:00:31.952 --> 00:00:34.588
+provider and loads partners, registrations, opportunities,
+
+15
+00:00:34.628 --> 00:00:37.265
+and targets. The provider returns canonical
+
+16
+00:00:37.305 --> 00:00:39.941
+dashboard records. The views do not
+
+17
+00:00:39.981 --> 00:00:42.617
+know whether those records came from
+
+18
+00:00:42.657 --> 00:00:45.293
+the seeded mock, a CRM, or
+
+19
+00:00:45.333 --> 00:00:46.185
+a warehouse.
+
+20
+00:00:46.225 --> 00:00:48.954
+That flow is deliberately small. The
+
+21
+00:00:48.994 --> 00:00:51.723
+application is a Vite single page
+
+22
+00:00:51.763 --> 00:00:54.492
+app. Data enters through the provider.
+
+23
+00:00:54.532 --> 00:00:57.261
+Metrics are derived in a pure
+
+24
+00:00:57.301 --> 00:01:00.030
+library. React views turn those results
+
+25
+00:01:00.070 --> 00:01:02.799
+into cards, bars, charts, tables, and
+
+26
+00:01:02.839 --> 00:01:03.260
+badges.
+
+27
+00:01:03.300 --> 00:01:06.520
+The domain model has four important
+
+28
+00:01:06.560 --> 00:01:09.780
+records. Partners identify the account, tier,
+
+29
+00:01:09.820 --> 00:01:13.039
+region, and manager. Deal registrations capture
+
+30
+00:01:13.079 --> 00:01:16.299
+a partner estimate and an operations
+
+31
+00:01:16.339 --> 00:01:19.559
+decision. Opportunities carry the sales-sized amount,
+
+32
+00:01:19.599 --> 00:01:22.819
+revenue motion, stage, and terminal outcome.
+
+33
+00:01:22.859 --> 00:01:25.535
+Targets set quarterly revenue expectations.
+
+34
+00:01:25.575 --> 00:01:27.967
+The registration path is separate from
+
+35
+00:01:28.008 --> 00:01:30.400
+the sales path. A submission can
+
+36
+00:01:30.440 --> 00:01:32.832
+be pending, approved, or rejected. An
+
+37
+00:01:32.872 --> 00:01:35.265
+approved registration can convert into a
+
+38
+00:01:35.305 --> 00:01:37.698
+Sell With opportunity. The funnel can
+
+39
+00:01:37.738 --> 00:01:40.130
+show count or registered dollars, but
+
+40
+00:01:40.170 --> 00:01:42.563
+it never adds a partner estimate
+
+41
+00:01:42.603 --> 00:01:44.995
+to a later sales-sized opportunity. That
+
+42
+00:01:45.035 --> 00:01:47.428
+unit boundary is one of the
+
+43
+00:01:47.468 --> 00:01:49.860
+most important rules in the app.
+
+44
+00:01:49.900 --> 00:01:53.066
+The leadership view is the operating
+
+45
+00:01:53.106 --> 00:01:56.272
+dashboard. Eight KPI tiles summarize open
+
+46
+00:01:56.312 --> 00:01:59.477
+pipeline, closed-won year to date, coverage,
+
+47
+00:01:59.517 --> 00:02:02.683
+registration approval, registration conversion, win rate,
+
+48
+00:02:02.723 --> 00:02:05.889
+active partners, and average open deal
+
+49
+00:02:05.929 --> 00:02:09.095
+size. A type filter changes the
+
+50
+00:02:09.135 --> 00:02:12.301
+opportunity-derived metrics, stages, revenue trend, and
+
+51
+00:02:12.341 --> 00:02:12.835
+leaderboard.
+
+52
+00:02:12.875 --> 00:02:15.501
+The rest of the leadership view
+
+53
+00:02:15.541 --> 00:02:18.168
+explains why those numbers move. A
+
+54
+00:02:18.208 --> 00:02:20.834
+registration funnel shows submitted, approved, converted,
+
+55
+00:02:20.874 --> 00:02:23.501
+rejected, and pending work. A stage
+
+56
+00:02:23.541 --> 00:02:26.167
+panel shows open opportunities from Discovery
+
+57
+00:02:26.207 --> 00:02:28.833
+through Deal Desk Review, followed by
+
+58
+00:02:28.873 --> 00:02:31.500
+won and lost outcomes. Quarterly revenue
+
+59
+00:02:31.540 --> 00:02:34.166
+is compared with combined partner targets.
+
+60
+00:02:34.206 --> 00:02:36.832
+A pending queue and leaderboard point
+
+61
+00:02:36.872 --> 00:02:38.610
+to the next action.
+
+62
+00:02:38.650 --> 00:02:41.093
+The partner portal applies a stricter
+
+63
+00:02:41.133 --> 00:02:43.577
+boundary. It removes Sell To opportunities
+
+64
+00:02:43.617 --> 00:02:46.060
+before rendering anything. The partner can
+
+65
+00:02:46.100 --> 00:02:48.543
+switch between Total pipeline, Sell With,
+
+66
+00:02:48.583 --> 00:02:51.027
+and Allocate. That slice changes the
+
+67
+00:02:51.067 --> 00:02:53.510
+partner KPIs, stage view, and revenue
+
+68
+00:02:53.550 --> 00:02:55.993
+trend. A separate motion panel keeps
+
+69
+00:02:56.033 --> 00:02:58.477
+the full visible book in view
+
+70
+00:02:58.517 --> 00:03:00.960
+so the split is never hidden.
+
+71
+00:03:01.000 --> 00:03:03.698
+The portal's partner picker is only
+
+72
+00:03:03.738 --> 00:03:06.437
+a prototype control. Production identity would
+
+73
+00:03:06.477 --> 00:03:09.175
+come from partner SSO, and the
+
+74
+00:03:09.215 --> 00:03:11.913
+selected partner would come from the
+
+75
+00:03:11.953 --> 00:03:14.652
+authenticated session. Registration history is scoped
+
+76
+00:03:14.692 --> 00:03:17.390
+to that partner and ordered newest
+
+77
+00:03:17.430 --> 00:03:20.129
+first, with status and rejection reasons
+
+78
+00:03:20.169 --> 00:03:20.585
+preserved.
+
+79
+00:03:20.625 --> 00:03:23.853
+The mock book of business is
+
+80
+00:03:23.893 --> 00:03:27.120
+deterministic. A mulberry32 generator uses seed
+
+81
+00:03:27.160 --> 00:03:30.388
+20260918, and the snapshot is fixed
+
+82
+00:03:30.428 --> 00:03:33.656
+at September 18, 2026. The generator
+
+83
+00:03:33.696 --> 00:03:36.923
+creates 25 partners, 180 registrations, and
+
+84
+00:03:36.963 --> 00:03:40.191
+roughly 185 opportunities across eight quarters.
+
+85
+00:03:40.231 --> 00:03:43.459
+The same build produces the same
+
+86
+00:03:43.499 --> 00:03:46.726
+story, which makes visual review and
+
+87
+00:03:46.766 --> 00:03:48.360
+future tests repeatable.
+
+88
+00:03:48.400 --> 00:03:51.433
+The metric layer is where business
+
+89
+00:03:51.473 --> 00:03:54.507
+rules live. It calculates pipeline, closed-won
+
+90
+00:03:54.547 --> 00:03:57.580
+revenue, win rate, registration funnel totals,
+
+91
+00:03:57.620 --> 00:04:00.653
+stage and type breakdowns, target attainment,
+
+92
+00:04:00.693 --> 00:04:03.727
+coverage, quarterly revenue, pending registrations, and
+
+93
+00:04:03.767 --> 00:04:06.800
+the partner leaderboard. Views select and
+
+94
+00:04:06.840 --> 00:04:09.873
+label those results. Shared components stay
+
+95
+00:04:09.913 --> 00:04:11.410
+focused on rendering.
+
+96
+00:04:11.450 --> 00:04:14.184
+The project uses a narrow toolchain.
+
+97
+00:04:14.224 --> 00:04:16.957
+npm runs the Vite development server,
+
+98
+00:04:16.997 --> 00:04:19.731
+the TypeScript project build, ESLint, and
+
+99
+00:04:19.771 --> 00:04:22.504
+the production preview. GitHub Actions runs
+
+100
+00:04:22.544 --> 00:04:25.278
+lint and build on pull requests.
+
+101
+00:04:25.318 --> 00:04:28.052
+Vercel is the current hosting path
+
+102
+00:04:28.092 --> 00:04:30.825
+for a private repository, while a
+
+103
+00:04:30.865 --> 00:04:33.599
+manual Pages workflow remains available if
+
+104
+00:04:33.639 --> 00:04:35.910
+repository and plan settings change.
+
+105
+00:04:35.950 --> 00:04:41.368
+The next contributor has clear seams.
+
+106
+00:04:41.408 --> 00:04:46.826
+Change business calculations in src/lib/metrics.ts. Change
+
+107
+00:04:46.866 --> 00:04:52.284
+source integration in src/data/DataProvider.ts. Change aggregate
+
+108
+00:04:52.324 --> 00:04:57.742
+behavior in src/views/LeadershipView.tsx. Change partner visibility
+
+109
+00:04:57.782 --> 00:05:03.200
+in src/views/PartnerView.tsx. Change reusable presentation in
+
+110
+00:05:03.240 --> 00:05:04.110
+src/components/.
+
+111
+00:05:04.150 --> 00:05:06.602
+Remember the architecture as one line:
+
+112
+00:05:06.642 --> 00:05:09.095
+source records enter through DataProvider, metrics
+
+113
+00:05:09.135 --> 00:05:11.587
+give them meaning, and two views
+
+114
+00:05:11.627 --> 00:05:14.079
+expose the right slice for each
+
+115
+00:05:14.119 --> 00:05:16.572
+audience. That is the whole dashboard,
+
+116
+00:05:16.612 --> 00:05:19.064
+and it is small enough to
+
+117
+00:05:19.104 --> 00:05:20.310
+understand before changing.
