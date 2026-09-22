@@ -172,6 +172,10 @@ tracks can be prioritized independently.
 
 ## Running locally
 
+Requires **Node 22.13+** (`engines.node` in `package.json`). Node 20 reached
+end-of-life in April 2026 and the current Vite / Vitest / ESLint majors no
+longer support it.
+
 ```bash
 npm install
 npm run dev       # http://localhost:5173
