@@ -1,6 +1,7 @@
 import type {
   DealRegistration,
   FiscalPhase,
+  ForecastCategory,
   MeetingType,
   OpportunityStage,
   OpportunityType,
@@ -53,6 +54,62 @@ export const OPP_TYPE_META: Record<
     description: 'Allocated revenue / committed-spend drawdown attributed to the partner.',
   },
 };
+
+/**
+ * Forecast probability buckets for the weighted forecast. Weights are the
+ * probability the open revenue closes: Long Shot 10%, Pipeline 25%, Best
+ * Case 50%, Commit 90%.
+ */
+export const FORECAST_CATEGORIES: ForecastCategory[] = [
+  'long-shot',
+  'pipeline',
+  'best-case',
+  'commit',
+];
+
+export const FORECAST_CATEGORY_META: Record<
+  ForecastCategory,
+  { label: string; weight: number; color: string; description: string }
+> = {
+  'long-shot': {
+    label: 'Long Shot',
+    weight: 0.1,
+    color: '#6e6b68',
+    description: '10% probability — early funnel, low confidence.',
+  },
+  pipeline: {
+    label: 'Pipeline',
+    weight: 0.25,
+    color: '#8a8380',
+    description: '25% probability — qualified but unproven.',
+  },
+  'best-case': {
+    label: 'Best Case',
+    weight: 0.5,
+    color: '#a09d9a',
+    description: '50% probability — active evaluation.',
+  },
+  commit: {
+    label: 'Commit',
+    weight: 0.9,
+    color: '#a0ca92',
+    description: '90% probability — verbal/paper commitment in place.',
+  },
+};
+
+/** Stage → forecast bucket heuristic used to seed and derive categories. */
+export const FORECAST_CATEGORY_FOR_STAGE: Record<OpportunityStage, ForecastCategory> = {
+  discovery: 'long-shot',
+  scope: 'pipeline',
+  'tech-validation': 'best-case',
+  'business-case': 'commit',
+  'vendor-of-choice': 'commit',
+  'deal-desk-review': 'commit',
+};
+
+/** Deal-registration ops service levels. */
+export const REGISTRATION_SLA_BUSINESS_DAYS = 5; // respond to a submission within 5 business days
+export const REGISTRATION_EXCLUSIVITY_DAYS = 60; // approved lead keeps exclusivity for 60 calendar days
 
 export const PARTNER_TYPE_META: Record<PartnerType, string> = {
   reseller: 'Reseller',

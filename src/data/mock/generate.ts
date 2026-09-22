@@ -1,4 +1,4 @@
-import { FISCAL_QUARTERS, MEETING_TYPES, SNAPSHOT_DATE } from '../constants';
+import { FISCAL_QUARTERS, FORECAST_CATEGORY_FOR_STAGE, MEETING_TYPES, SNAPSHOT_DATE } from '../constants';
 import { quarterWindow, startOfWeekUtc } from '../../lib/fiscal';
 import type {
   ActivityMeeting,
@@ -105,6 +105,46 @@ const REJECTION_REASONS = [
   'Insufficient deal detail',
   'Conflict with another partner',
 ];
+
+/**
+ * Registrations that become duplicate/conflicting submissions: a second
+ * partner registers the same client as an earlier registration, so the
+ * internal duplicate-conflict view has real rows. Applied as a post-pass with
+ * a fixed index list so the seeded PRNG sequence above is never disturbed.
+ */
+const OVERLAP_SOURCES = [9, 23, 38, 52, 67, 81, 96, 110, 125, 139, 154, 168];
+
+/**
+ * Open-opportunity next steps, seeded deterministically from the opportunity
+ * id rather than the PRNG, so the manager-facing table opens half-full of
+ * real "next action" text. Undefined for the rest, which the UI shows as "—".
+ */
+const NEXT_STEP_POOL = [
+  'Send mutual action plan',
+  'Schedule executive roundtable',
+  'Book technical deep-dive',
+  'Align pricing with deal desk',
+  'Provide security questionnaire',
+  'Introduce partner solution lead',
+];
+
+function seededNextStep(id: string): string | undefined {
+  let hash = 0;
+  for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  const pick = hash % 10;
+  return pick < NEXT_STEP_POOL.length ? NEXT_STEP_POOL[pick] : undefined;
+}
+
+/**
+ * Deterministic dwell time between an approved registration and its
+ * opportunity being created, derived from the registration id (2–12 days) so
+ * the conversion chain reads as real document handling rather than instant.
+ */
+function conversionGapDays(registrationId: string): number {
+  const digits = registrationId.replace(/\D/g, '');
+  const num = Number(digits) || 0;
+  return 2 + (num % 11);
+}
 
 /** Higher tiers submit far more registrations. */
 const TIER_ACTIVITY: Record<PartnerTier, number> = {
@@ -300,6 +340,16 @@ function generateRegistrations(partners: Partner[]): DealRegistration[] {
     registrations.push(registration);
   }
 
+  // Seed overlapping submissions: a fixed set of registrations becomes a
+  // second partner registering the same client as an earlier registration.
+  // No randomness is consumed, so every index and volume above is unchanged.
+  for (const index of OVERLAP_SOURCES) {
+    const registration = registrations[index];
+    const rival = registrations[index - 7];
+    if (!registration || !rival || rival.partnerId === registration.partnerId) continue;
+    registration.accountName = rival.accountName;
+  }
+
   return registrations;
 }
 
@@ -342,6 +392,10 @@ function buildOpportunity(params: {
     opportunity.stage = won ? 'deal-desk-review' : weightedPick(rand, LOST_STAGE_WEIGHTS);
     opportunity.closedAt = iso(closedAt);
   }
+
+  // The forecast bucket follows the deal's final stage (a late-funnel deal is
+  // a commit whether it eventually closes or not). No randomness consumed.
+  opportunity.forecastCategory = FORECAST_CATEGORY_FOR_STAGE[opportunity.stage];
 
   return opportunity;
 }
@@ -393,6 +447,22 @@ function generateOpportunities(
     }
   }
 
+  // Post-passes that add realism without touching the seeded PRNG sequence:
+  // converted registrations get a document-handling dwell time before their
+  // opportunity is created, and open deals carry a row-level next step.
+  for (const opportunity of opportunities) {
+    if (!opportunity.registrationId) continue;
+    const createdAt = Math.min(
+      SNAPSHOT.getTime(),
+      new Date(opportunity.createdAt).getTime() + conversionGapDays(opportunity.registrationId) * DAY,
+    );
+    opportunity.createdAt = iso(new Date(createdAt));
+  }
+  for (const opportunity of opportunities) {
+    if (opportunity.outcome) continue;
+    opportunity.nextStep = seededNextStep(opportunity.id);
+  }
+
   return opportunities;
 }
 
@@ -426,12 +496,14 @@ function generatePriorYearOpportunities(partners: Partner[]): Opportunity[] {
       const createdAt = new Date(closedAt.getTime() - randInt(rand, 60, 150) * DAY);
       const expectedClose = new Date(closedAt.getTime() + randInt(rand, 0, 10) * DAY);
       const won = chance(rand, 0.55);
+      const stage = won ? 'deal-desk-review' : weightedPick(rand, LOST_STAGE_WEIGHTS);
       opportunities.push({
         id: `opp-prior-${String(seq).padStart(4, '0')}`,
         partnerId: partner.id,
         accountName: makeAccountName(taken),
         oppType,
-        stage: won ? 'deal-desk-review' : weightedPick(rand, LOST_STAGE_WEIGHTS),
+        stage,
+        forecastCategory: FORECAST_CATEGORY_FOR_STAGE[stage],
         factoryAccountDirector: pick(rand, FACTORY_ACCOUNT_DIRECTORS),
         forecastedRevenue: skewAmount(rand, minAmount, maxAmount),
         createdAt: iso(createdAt),

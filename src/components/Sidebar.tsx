@@ -5,6 +5,7 @@ import {
   HomeIcon,
   PartnersIcon,
   PortalIcon,
+  RegistrationIcon,
   RequirementsIcon,
 } from './icons';
 
@@ -12,6 +13,7 @@ export type Route =
   | 'home'
   | 'partners'
   | 'forecasting'
+  | 'registration-ops'
   | 'activity'
   | 'partner-view'
   | 'production-requirements';
@@ -20,6 +22,7 @@ export const ROUTES: { id: Route; label: string; icon: (props: { className?: str
   { id: 'home', label: 'Home', icon: HomeIcon },
   { id: 'partners', label: 'Partner Performance', icon: PartnersIcon },
   { id: 'forecasting', label: 'Forecasting', icon: ForecastIcon },
+  { id: 'registration-ops', label: 'Deal Reg Ops', icon: RegistrationIcon },
   { id: 'activity', label: 'Activity Tracking', icon: ActivityIcon },
   { id: 'partner-view', label: 'Partner View', icon: PortalIcon },
   { id: 'production-requirements', label: 'Production Requirements', icon: RequirementsIcon },

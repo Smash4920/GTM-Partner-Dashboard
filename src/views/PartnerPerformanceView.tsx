@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import ActivityTracker from '../components/ActivityTracker';
 import Card from '../components/Card';
+import DuplicateRegistrationsTable from '../components/DuplicateRegistrationsTable';
+import ExclusivityTable from '../components/ExclusivityTable';
 import FilterChips, { type ChipOption } from '../components/FilterChips';
 import KpiTile from '../components/KpiTile';
 import Leaderboard from '../components/Leaderboard';
@@ -16,6 +18,8 @@ import {
   FISCAL_YEAR,
   LOST_COLOR,
   MEETING_TYPE_META,
+  REGISTRATION_EXCLUSIVITY_DAYS,
+  REGISTRATION_SLA_BUSINESS_DAYS,
   SNAPSHOT_DATE,
   STAGE_META,
   WON_COLOR,
@@ -29,11 +33,14 @@ import type {
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 import {
   activePartnerCount,
+  approvedNotConverted,
   approvalRate,
   avgOpenDealSize,
   closedWonForPhase,
   closedWonPriorYearForPhase,
   coverageRatio,
+  duplicateRegistrationGroups,
+  exclusivityLapsed,
   filterByPhase,
   filterRegistrationsByPhase,
   formatCoverage,
@@ -43,6 +50,8 @@ import {
   pendingRegistrations,
   quarterlyClosedWonAndTarget,
   registrationConversionRate,
+  registrationsPastSla,
+  registrationConversionTimes,
   remainingQuota,
   registrationFunnel,
   stageBreakdown,
@@ -133,6 +142,29 @@ export default function PartnerPerformanceView({
     () => pendingRegistrations(scopedRegistrations),
     [scopedRegistrations],
   );
+  // Deal-registration ops, scoped to the selection but NOT phase-filtered:
+  // exclusivity lapsing and conversion times span quarters, so a Q3 scope
+  // must still see the older registrations that are leaking.
+  const scopedLeaking = useMemo(
+    () => approvedNotConverted(partnerScopeRegistrations),
+    [partnerScopeRegistrations],
+  );
+  const scopedLapsed = useMemo(
+    () => scopedLeaking.filter(exclusivityLapsed),
+    [scopedLeaking],
+  );
+  const scopedPastSla = useMemo(
+    () => registrationsPastSla(partnerScopeRegistrations),
+    [partnerScopeRegistrations],
+  );
+  const scopedDuplicates = useMemo(
+    () => duplicateRegistrationGroups(partnerScopeRegistrations, data.partners),
+    [partnerScopeRegistrations, data.partners],
+  );
+  const scopedTimes = useMemo(
+    () => registrationConversionTimes(partnerScopeRegistrations, partnerScopeOpps),
+    [partnerScopeRegistrations, partnerScopeOpps],
+  );
   const activity = useMemo(
     () => weeklyActivity(data.activities, managerId === 'all' ? undefined : managerId, selectedPartnerIds, classifications),
     [data.activities, managerId, selectedPartnerIds, classifications],
@@ -200,6 +232,70 @@ export default function PartnerPerformanceView({
     { label: 'Converted to opp', value: funnel.converted, displayValue: `${funnel.converted}`, secondary: formatUsdCompact(funnel.convertedValue), color: '#a0ca92' },
     { label: 'Rejected', value: funnel.rejected, displayValue: `${funnel.rejected}`, secondary: formatUsdCompact(funnel.rejectedValue), color: '#4d4947', dimmed: true },
     { label: 'Pending review', value: funnel.pending, displayValue: `${funnel.pending}`, secondary: formatUsdCompact(funnel.pendingValue), color: '#ee6018' },
+  ];
+
+  const fmtDays = (days: number | null) => (days === null ? '—' : `${days.toFixed(1)}d`);
+
+  const conversionRows: MetricBarRow[] = [
+    {
+      label: 'Submitted → Approved',
+      value: scopedTimes.submittedToApproved ?? 0,
+      displayValue: fmtDays(scopedTimes.submittedToApproved),
+      secondary: 'vs 5-business-day SLA',
+      color: '#7e7b78',
+    },
+    {
+      label: 'Approved → Opportunity',
+      value: scopedTimes.approvedToOpportunity ?? 0,
+      displayValue: fmtDays(scopedTimes.approvedToOpportunity),
+      secondary: 'converted registrations',
+      color: '#9a9693',
+    },
+    {
+      label: 'Opportunity → Win',
+      value: scopedTimes.opportunityToWin ?? 0,
+      displayValue: fmtDays(scopedTimes.opportunityToWin),
+      secondary: 'converted & won',
+      color: '#a0ca92',
+    },
+    {
+      label: 'Submitted → Win',
+      value: scopedTimes.submittedToWin ?? 0,
+      displayValue: fmtDays(scopedTimes.submittedToWin),
+      secondary: 'converted & won',
+      color: '#b8b3b0',
+    },
+  ];
+
+  const leakageRows: MetricBarRow[] = [
+    {
+      label: 'Approved, no opp',
+      value: scopedLeaking.length,
+      displayValue: `${scopedLeaking.length}`,
+      secondary: 'approved registrations',
+      color: '#8a8380',
+    },
+    {
+      label: 'Exclusivity lapsed',
+      value: scopedLapsed.length,
+      displayValue: `${scopedLapsed.length}`,
+      secondary: `> ${REGISTRATION_EXCLUSIVITY_DAYS} days since approval`,
+      color: '#ee6018',
+    },
+    {
+      label: 'Pending past SLA',
+      value: scopedPastSla.length,
+      displayValue: `${scopedPastSla.length}`,
+      secondary: `> ${REGISTRATION_SLA_BUSINESS_DAYS} business days awaiting review`,
+      color: '#ee6018',
+    },
+    {
+      label: 'Duplicate clients',
+      value: scopedDuplicates.length,
+      displayValue: `${scopedDuplicates.length}`,
+      secondary: 'same client, multiple partners',
+      color: '#4d4947',
+    },
   ];
 
   return (
@@ -397,7 +493,7 @@ export default function PartnerPerformanceView({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <LightCard
           title="Registrations awaiting review"
-          subtitle={`${pending.length} pending in scope · oldest first`}
+          subtitle={`${pending.length} pending in scope · oldest first · colored against the ${REGISTRATION_SLA_BUSINESS_DAYS}-business-day SLA`}
         >
           <RegistrationsTable
             registrations={pending}
@@ -406,6 +502,10 @@ export default function PartnerPerformanceView({
             tone="light"
             limit={7}
           />
+          <p className="mt-3 text-xs text-granite">
+            Day counters are green inside the {REGISTRATION_SLA_BUSINESS_DAYS}-business-day response
+            SLA and red once past it.
+          </p>
         </LightCard>
         <Card
           title="Partner leaderboard & enablement"
@@ -419,6 +519,56 @@ export default function PartnerPerformanceView({
           />
         </Card>
       </div>
+
+      <Card
+        title="Exclusivity lapsed · approved, not converted"
+        subtitle={`${scopedLeaking.length} approved registrations without an opportunity · ${scopedLapsed.length} past the ${REGISTRATION_EXCLUSIVITY_DAYS}-day exclusivity window`}
+      >
+        <ExclusivityTable
+          registrations={scopedLeaking}
+          partners={data.partners}
+          limit={8}
+        />
+        <p className="mt-4 text-xs text-granite">
+          An approved lead keeps exclusivity for {REGISTRATION_EXCLUSIVITY_DAYS} calendar days —
+          the partner must introduce the lead within it. Rows past the window are flagged
+          "Exclusivity lapsed".
+        </p>
+      </Card>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card
+          title="Registration conversion time"
+          subtitle="Average days between each step for this scope · submitted → approved → opportunity → win"
+        >
+          <MetricBars rows={conversionRows} />
+        </Card>
+        <Card
+          title="Registration leakage"
+          subtitle={`What the funnel loses · counts in this scope`}
+        >
+          <MetricBars rows={leakageRows} />
+          <p className="mt-4 text-xs text-granite">
+            Leakage is approved registrations that never became opportunities, registrations
+            outside their service levels, and clients registered by more than one partner.
+          </p>
+        </Card>
+      </div>
+
+      <Card
+        title="Duplicate & conflicting registrations"
+        subtitle={`${scopedDuplicates.length} clients registered by more than one partner · submission dates show who registered first · internal only`}
+      >
+        <DuplicateRegistrationsTable
+          groups={scopedDuplicates}
+          partners={data.partners}
+          limit={6}
+        />
+        <p className="mt-4 text-xs text-granite">
+          Multiple partners registering the same client need to be tracked and qualified closely;
+          the earliest submission holds exclusivity. This view never appears in the partner portal.
+        </p>
+      </Card>
 
       {selectedPartner && (
         <Card

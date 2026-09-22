@@ -8,19 +8,28 @@ import type {
   Target,
 } from '../data/types';
 import {
+  approvedNotConverted,
+  businessDaysBetween,
   closedWonForPhase,
   closedWonPriorYearForPhase,
   coverageRatio,
   currentWeekMeetings,
   daysLeftInQuarter,
+  duplicateRegistrationGroups,
+  exclusivityLapsed,
   filterByPhase,
   filterRegistrationsByPhase,
+  forecastCategoryOf,
   formatCoverage,
   partnerLeaderboard,
   phaseWindow,
   quarterlyClosedWonAndTarget,
+  registrationConversionTimes,
+  registrationSlaState,
+  registrationsPastSla,
   remainingQuota,
   weeklyGoalProgress,
+  weightedForecast,
   winRateForPhase,
 } from './metrics';
 
@@ -439,5 +448,237 @@ describe('weeklyGoalProgress', () => {
     expect(
       weeklyGoalProgress(mine, { m1: { partnerId: 'p-02', type: 'partner-cadence' } }, 'pm-01', new Set(['p-02'])).meetings,
     ).toBe(1);
+  });
+});
+
+// ---- forecast quality -------------------------------------------------------
+
+describe('forecastCategoryOf', () => {
+  it('derives the bucket from the stage when the opportunity has none', () => {
+    expect(forecastCategoryOf(opp({ id: 'a', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'discovery' }))).toBe('long-shot');
+    expect(forecastCategoryOf(opp({ id: 'b', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'scope' }))).toBe('pipeline');
+    expect(forecastCategoryOf(opp({ id: 'c', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'tech-validation' }))).toBe('best-case');
+    expect(forecastCategoryOf(opp({ id: 'd', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'business-case' }))).toBe('commit');
+  });
+
+  it('prefers an explicit category over the stage heuristic', () => {
+    const explicit = opp({
+      id: 'e',
+      expectedCloseDate: '2026-09-30T00:00:00Z',
+      stage: 'deal-desk-review',
+      forecastCategory: 'long-shot',
+    });
+    expect(forecastCategoryOf(explicit)).toBe('long-shot');
+  });
+});
+
+describe('weightedForecast', () => {
+  it('applies each category weight to the open book', () => {
+    const forecast = weightedForecast([
+      opp({ id: 'a', expectedCloseDate: '2026-09-30T00:00:00Z', forecastedRevenue: 100_000, forecastCategory: 'commit' }),
+      opp({ id: 'b', expectedCloseDate: '2026-09-30T00:00:00Z', forecastedRevenue: 40_000, forecastCategory: 'pipeline' }),
+      opp({ id: 'c', expectedCloseDate: '2026-09-30T00:00:00Z', forecastedRevenue: 20_000, forecastCategory: 'long-shot' }),
+    ]);
+    expect(forecast.total).toBe(102_000); // 90k + 10k + 2k
+    const rows = Object.fromEntries(forecast.rows.map((row) => [row.category, row]));
+    expect(rows.commit).toMatchObject({ value: 90_000, count: 1 });
+    expect(rows.pipeline).toMatchObject({ value: 10_000, count: 1 });
+    expect(rows['long-shot']).toMatchObject({ value: 2_000, count: 1 });
+    expect(rows['best-case']).toMatchObject({ value: 0, count: 0 });
+  });
+});
+
+// ---- deal-registration ops --------------------------------------------------
+
+function reg(
+  fields: Partial<DealRegistration> & Pick<DealRegistration, 'id' | 'submittedAt' | 'status'>,
+): DealRegistration {
+  return {
+    partnerId: 'p-01',
+    accountName: 'Test Account',
+    amount: 50_000,
+    ...fields,
+  };
+}
+
+describe('businessDaysBetween', () => {
+  it('counts UTC weekdays excluding the start day', () => {
+    expect(businessDaysBetween('2026-09-18T00:00:00Z', '2026-09-18T00:00:00Z')).toBe(0);
+    // Friday → Monday is 1 business day.
+    expect(businessDaysBetween('2026-09-11T00:00:00Z', '2026-09-14T00:00:00Z')).toBe(1);
+    // Monday → Friday same week is 4.
+    expect(businessDaysBetween('2026-09-14T00:00:00Z', '2026-09-18T00:00:00Z')).toBe(4);
+    // Monday → next Monday is 5 (Tue–Fri + Mon).
+    expect(businessDaysBetween('2026-09-14T00:00:00Z', '2026-09-21T00:00:00Z')).toBe(5);
+  });
+});
+
+describe('registrationSlaState', () => {
+  it('flags submissions inside the 5-business-day window as within SLA', () => {
+    // Snapshot 2026-09-18. Submitted Monday, four business days earlier.
+    expect(registrationSlaState(reg({ id: 'r1', submittedAt: '2026-09-14T00:00:00Z', status: 'pending' }))).toBe('within-sla');
+  });
+
+  it('flags submissions at or past 5 business days as past SLA', () => {
+    expect(registrationSlaState(reg({ id: 'r2', submittedAt: '2026-09-07T00:00:00Z', status: 'pending' }))).toBe('past-sla');
+  });
+});
+
+describe('registrationsPastSla', () => {
+  it('returns only pending registrations outside the SLA, oldest first', () => {
+    const old = reg({ id: 'r1', submittedAt: '2026-09-01T00:00:00Z', status: 'pending' });
+    const fresh = reg({ id: 'r2', submittedAt: '2026-09-17T00:00:00Z', status: 'pending' });
+    const approved = reg({ id: 'r3', submittedAt: '2026-09-01T00:00:00Z', status: 'approved', decisionAt: '2026-09-05T00:00:00Z' });
+    expect(registrationsPastSla([approved, fresh, old])).toEqual([old]);
+  });
+});
+
+describe('approvedNotConverted and exclusivityLapsed', () => {
+  const lapsed = reg({
+    id: 'r1',
+    submittedAt: '2026-06-01T00:00:00Z',
+    status: 'approved',
+    decisionAt: '2026-07-01T00:00:00Z',
+  });
+  const inWindow = reg({
+    id: 'r2',
+    submittedAt: '2026-08-15T00:00:00Z',
+    status: 'approved',
+    decisionAt: '2026-08-20T00:00:00Z',
+  });
+  const converted = reg({
+    id: 'r3',
+    submittedAt: '2026-07-01T00:00:00Z',
+    status: 'approved',
+    decisionAt: '2026-07-05T00:00:00Z',
+    convertedTo: 'opp-1',
+  });
+  const pending = reg({ id: 'r4', submittedAt: '2026-09-15T00:00:00Z', status: 'pending' });
+
+  it('keeps only approved registrations without an opportunity, oldest decision first', () => {
+    const leaking = approvedNotConverted([converted, pending, inWindow, lapsed]);
+    expect(leaking.map((item) => item.id)).toEqual(['r1', 'r2']);
+  });
+
+  it('flags exclusivity only past the 60-day window from approval', () => {
+    expect(exclusivityLapsed(lapsed)).toBe(true);
+    expect(exclusivityLapsed(inWindow)).toBe(false);
+    expect(exclusivityLapsed(converted)).toBe(false);
+    expect(exclusivityLapsed(pending)).toBe(false);
+  });
+});
+
+describe('registrationConversionTimes', () => {
+  const registrations = [
+    reg({
+      id: 'r1',
+      submittedAt: '2026-08-01T00:00:00Z',
+      status: 'approved',
+      decisionAt: '2026-08-06T00:00:00Z',
+      convertedTo: 'o-1',
+    }),
+    reg({
+      id: 'r2',
+      submittedAt: '2026-08-15T00:00:00Z',
+      status: 'approved',
+      decisionAt: '2026-08-20T00:00:00Z',
+      convertedTo: 'o-2',
+    }),
+    reg({
+      id: 'r3',
+      submittedAt: '2026-08-25T00:00:00Z',
+      status: 'approved',
+      decisionAt: '2026-09-01T00:00:00Z',
+    }),
+  ];
+  const opportunities = [
+    opp({
+      id: 'o-1',
+      partnerId: 'p-01',
+      expectedCloseDate: '2026-09-30T00:00:00Z',
+      createdAt: '2026-08-10T00:00:00Z',
+      outcome: 'won',
+      closedAt: '2026-09-01T00:00:00Z',
+    }),
+    opp({
+      id: 'o-2',
+      partnerId: 'p-01',
+      expectedCloseDate: '2026-09-30T00:00:00Z',
+      createdAt: '2026-08-22T00:00:00Z',
+      outcome: 'lost',
+      closedAt: '2026-08-25T00:00:00Z',
+    }),
+  ];
+
+  it('averages each hop only over the registrations that reached it', () => {
+    const times = registrationConversionTimes(registrations, opportunities);
+    expect(times.submittedToApproved).toBe(5.7); // (5 + 5 + 7) / 3
+    expect(times.approvedToOpportunity).toBe(3); // (4 + 2) / 2
+    expect(times.opportunityToWin).toBe(22); // only r1 won: Aug 10 → Sep 1
+    expect(times.submittedToWin).toBe(31); // only r1 won: Aug 1 → Sep 1
+  });
+
+  it('returns null hops when no registration reached them', () => {
+    expect(
+      registrationConversionTimes([reg({ id: 'r4', submittedAt: '2026-09-01T00:00:00Z', status: 'pending' })], []),
+    ).toEqual({
+      submittedToApproved: null,
+      approvedToOpportunity: null,
+      opportunityToWin: null,
+      submittedToWin: null,
+    });
+  });
+});
+
+describe('duplicateRegistrationGroups', () => {
+  const secondPartner: Partner = { ...partner, id: 'p-02', name: 'Second Partner' };
+  const regs = [
+    reg({
+      id: 'r1',
+      partnerId: 'p-01',
+      accountName: 'Shared Client',
+      submittedAt: '2026-03-01T00:00:00Z',
+      status: 'approved',
+      decisionAt: '2026-03-05T00:00:00Z',
+    }),
+    reg({
+      id: 'r2',
+      partnerId: 'p-02',
+      accountName: 'Shared Client',
+      submittedAt: '2026-04-01T00:00:00Z',
+      status: 'approved',
+      decisionAt: '2026-04-05T00:00:00Z',
+    }),
+    reg({
+      id: 'r3',
+      partnerId: 'p-01',
+      accountName: 'Solo Client',
+      submittedAt: '2026-03-01T00:00:00Z',
+      status: 'pending',
+    }),
+    reg({
+      id: 'r4',
+      partnerId: 'p-01',
+      accountName: 'Same Partner Twice',
+      submittedAt: '2026-02-01T00:00:00Z',
+      status: 'pending',
+    }),
+    reg({
+      id: 'r5',
+      partnerId: 'p-01',
+      accountName: 'Same Partner Twice',
+      submittedAt: '2026-02-10T00:00:00Z',
+      status: 'pending',
+    }),
+  ];
+
+  it('groups only clients registered by two or more distinct partners', () => {
+    const groups = duplicateRegistrationGroups(regs, [partner, secondPartner]);
+    expect(groups).toHaveLength(1);
+    const group = groups[0]!;
+    expect(group.accountName).toBe('Shared Client');
+    expect(group.distinctPartners).toBe(2);
+    expect(group.firstSubmitted.id).toBe('r1');
+    expect(group.registrations.map((item) => item.id)).toEqual(['r1', 'r2']);
   });
 });

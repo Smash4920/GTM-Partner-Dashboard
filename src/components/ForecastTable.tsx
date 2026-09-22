@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { OPP_TYPE_META, STAGE_META } from '../data/constants';
+import { FORECAST_CATEGORY_META, OPP_TYPE_META, STAGE_META } from '../data/constants';
 import type { Opportunity, Partner } from '../data/types';
 import { formatDate, formatUsd } from '../lib/format';
+import { forecastCategoryOf } from '../lib/metrics';
 import { CheckIcon, CommentIcon, PencilIcon, XIcon } from './icons';
 
 interface ForecastTableProps {
@@ -11,35 +12,45 @@ interface ForecastTableProps {
   revenueOverrides: Record<string, number>;
   /** Free-form partner-manager notes per opportunity id. */
   notes: Record<string, string>;
+  /** Row-level next action per opportunity id, editable inline. */
+  nextSteps: Record<string, string>;
   onSetRevenue: (opportunityId: string, value: number) => void;
   onSetNote: (opportunityId: string, note: string) => void;
+  onSetNextStep: (opportunityId: string, nextStep: string) => void;
   emptyMessage?: string;
 }
 
 /**
  * In-quarter opportunity table for the VP of Partnerships. Revenue and Notes
  * carry a pencil so partner managers can edit the forecast locally; notes are
- * stored as comments and surface on hover, not inline.
+ * stored as comments and surface on hover, not inline. Next Step renders
+ * inline and is editable per row — the row-level answer to "what happens
+ * next" that the forecast call-outs and roadmap alerts build on.
  */
 export default function ForecastTable({
   opportunities,
   partners,
   revenueOverrides,
   notes,
+  nextSteps,
   onSetRevenue,
   onSetNote,
+  onSetNextStep,
   emptyMessage = 'No in-quarter opportunities for this partner manager.',
 }: ForecastTableProps) {
   const [editingRevenue, setEditingRevenue] = useState<string | null>(null);
   const [editingNotes, setEditingNotes] = useState<string | null>(null);
+  const [editingNextStep, setEditingNextStep] = useState<string | null>(null);
   const [revenueDraft, setRevenueDraft] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
+  const [nextStepDraft, setNextStepDraft] = useState('');
   const [revenueError, setRevenueError] = useState<string | null>(null);
 
   const partnerById = new Map(partners.map((partner) => [partner.id, partner]));
 
   const startRevenueEdit = (opportunityId: string) => {
     setEditingNotes(null);
+    setEditingNextStep(null);
     setEditingRevenue(opportunityId);
     setRevenueError(null);
     setRevenueDraft(
@@ -64,6 +75,7 @@ export default function ForecastTable({
 
   const startNoteEdit = (opportunityId: string) => {
     setEditingRevenue(null);
+    setEditingNextStep(null);
     setRevenueError(null);
     setEditingNotes(opportunityId);
     setNoteDraft(notes[opportunityId] ?? '');
@@ -72,6 +84,19 @@ export default function ForecastTable({
   const commitNote = (opportunityId: string) => {
     onSetNote(opportunityId, noteDraft.trim());
     setEditingNotes(null);
+  };
+
+  const startNextStepEdit = (opportunityId: string) => {
+    setEditingRevenue(null);
+    setEditingNotes(null);
+    setRevenueError(null);
+    setEditingNextStep(opportunityId);
+    setNextStepDraft(nextSteps[opportunityId] ?? '');
+  };
+
+  const commitNextStep = (opportunityId: string) => {
+    onSetNextStep(opportunityId, nextStepDraft.trim());
+    setEditingNextStep(null);
   };
 
   const cancelRevenueEdit = () => {
@@ -88,7 +113,7 @@ export default function ForecastTable({
       role="region"
       aria-label="In-quarter opportunities, scrollable"
     >
-      <table className="w-full min-w-[900px] text-sm">
+      <table className="w-full min-w-[1180px] text-sm">
         <thead className="sticky top-0 z-[1] bg-canvas">
           <tr className="border-b border-carbon">
             <th className={th}>Client</th>
@@ -96,7 +121,9 @@ export default function ForecastTable({
             <th className={`${th} text-right`}>Revenue forecast</th>
             <th className={th}>Opportunity type</th>
             <th className={th}>Stage</th>
+            <th className={th}>Forecast category</th>
             <th className={`${th} text-right`}>Close date</th>
+            <th className={th}>Next step</th>
             <th className={`${th} text-right`}>Notes</th>
           </tr>
         </thead>
@@ -105,6 +132,9 @@ export default function ForecastTable({
             const revenue = revenueOverrides[opportunity.id] ?? opportunity.forecastedRevenue;
             const edited = revenueOverrides[opportunity.id] !== undefined;
             const note = notes[opportunity.id] ?? opportunity.notes;
+            const nextStep = nextSteps[opportunity.id] ?? opportunity.nextStep;
+            const categoryMeta = FORECAST_CATEGORY_META[forecastCategoryOf(opportunity)];
+            const open = opportunity.outcome === undefined;
 
             return (
               <tr key={opportunity.id} className="border-b border-carbon last:border-0">
@@ -190,8 +220,76 @@ export default function ForecastTable({
                     <span className="text-stone">{STAGE_META[opportunity.stage].label}</span>
                   )}
                 </td>
+                <td className="py-3 pr-3">
+                  {open ? (
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        aria-hidden="true"
+                        className="h-1.5 w-1.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: categoryMeta.color }}
+                      />
+                      <span className="text-stone">{categoryMeta.label}</span>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-granite">
+                        {Math.round(categoryMeta.weight * 100)}%
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-graphite">
+                      —
+                    </span>
+                  )}
+                </td>
                 <td className="py-3 pr-3 text-right font-mono text-xs tabular-nums text-granite">
                   {formatDate(opportunity.closedAt ?? opportunity.expectedCloseDate)}
+                </td>
+                <td className="py-3 pr-3">
+                  {editingNextStep === opportunity.id ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <input
+                        autoFocus
+                        value={nextStepDraft}
+                        onChange={(event) => setNextStepDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') commitNextStep(opportunity.id);
+                          if (event.key === 'Escape') setEditingNextStep(null);
+                        }}
+                        placeholder="Next action…"
+                        aria-label={`Next step for ${opportunity.accountName}`}
+                        className="w-56 rounded border border-ash bg-carbon px-2 py-1 text-sm text-bone placeholder:text-graphite focus:border-signal focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => commitNextStep(opportunity.id)}
+                        aria-label="Save next step"
+                        className="rounded p-0.5 text-metric hover:bg-ash/30"
+                      >
+                        <CheckIcon className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingNextStep(null)}
+                        aria-label="Cancel next step edit"
+                        className="rounded p-0.5 text-granite hover:bg-ash/30"
+                      >
+                        <XIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={nextStep ? 'text-stone' : 'font-mono text-[10px] uppercase tracking-[0.05em] text-graphite'}>
+                        {nextStep ?? '—'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => startNextStepEdit(opportunity.id)}
+                        className="rounded p-0.5 text-granite transition-colors hover:text-stone"
+                        title={nextStep ? 'Edit next step' : 'Add a next step'}
+                        aria-label={`${nextStep ? 'Edit' : 'Add'} next step for ${opportunity.accountName}`}
+                      >
+                        <PencilIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  )}
                 </td>
                 <td className="py-3 text-right">
                   {editingNotes === opportunity.id ? (
@@ -256,7 +354,7 @@ export default function ForecastTable({
           })}
           {opportunities.length === 0 && (
             <tr>
-              <td colSpan={7} className="py-8 text-center text-sm text-granite">
+              <td colSpan={9} className="py-8 text-center text-sm text-granite">
                 {emptyMessage}
               </td>
             </tr>

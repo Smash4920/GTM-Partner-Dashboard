@@ -7,6 +7,7 @@ import type { MeetingClassification, Partner } from './data/types';
 import { useDashboardData } from './data/useDashboardData';
 import { formatDate } from './lib/format';
 import ActivityTrackingView from './views/ActivityTrackingView';
+import DealRegistrationOpsView from './views/DealRegistrationOpsView';
 import ForecastingView from './views/ForecastingView';
 import HomeView from './views/HomeView';
 import PartnerPerformanceView from './views/PartnerPerformanceView';
@@ -23,10 +24,11 @@ export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // In-app edits that override the CRM-backed mock data and re-render every
-  // view live: forecast revenue deltas, opp notes, meeting classifications,
-  // and prospect partners added from Log Meetings.
+  // view live: forecast revenue deltas, opp notes, next steps, meeting
+  // classifications, and prospect partners added from Log Meetings.
   const [revenueOverrides, setRevenueOverrides] = useState<Record<string, number>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [nextSteps, setNextSteps] = useState<Record<string, string>>({});
   const [classifications, setClassifications] = useState<Record<string, MeetingClassification>>({});
   // Only the prospects live in state; the provider's book stays the source of
   // truth, so this list cannot go stale while the data is still loading.
@@ -38,22 +40,26 @@ export default function App() {
     [data?.partners, prospects],
   );
 
-  // Edited forecasts and notes are folded into the opportunity book itself, so
-  // every KPI, chart, and table in the app reads the corrected figure rather
-  // than the one Salesforce supplied.
+  // Edited forecasts, notes, and next steps are folded into the opportunity
+  // book itself, so every KPI, chart, and table in the app reads the corrected
+  // figure rather than the one Salesforce supplied.
   const opportunities = useMemo(() => {
     const book = data?.opportunities ?? [];
     return book.map((opportunity) => {
       const revenue = revenueOverrides[opportunity.id];
       const note = notes[opportunity.id];
-      if (revenue === undefined && note === undefined) return opportunity;
+      const nextStep = nextSteps[opportunity.id];
+      if (revenue === undefined && note === undefined && nextStep === undefined) {
+        return opportunity;
+      }
       return {
         ...opportunity,
         forecastedRevenue: revenue ?? opportunity.forecastedRevenue,
         notes: note ?? opportunity.notes,
+        nextStep: nextStep ?? opportunity.nextStep,
       };
     });
-  }, [data?.opportunities, revenueOverrides, notes]);
+  }, [data?.opportunities, revenueOverrides, notes, nextSteps]);
 
   // The single book every view renders: provider data plus in-app edits.
   const live = useMemo(
@@ -68,6 +74,15 @@ export default function App() {
     setNotes((prev) => {
       const next = { ...prev };
       if (note) next[opportunityId] = note;
+      else delete next[opportunityId];
+      return next;
+    });
+  };
+
+  const setNextStep = (opportunityId: string, nextStep: string) => {
+    setNextSteps((prev) => {
+      const next = { ...prev };
+      if (nextStep) next[opportunityId] = nextStep;
       else delete next[opportunityId];
       return next;
     });
@@ -159,10 +174,13 @@ export default function App() {
                   data={live}
                   revenueOverrides={revenueOverrides}
                   notes={notes}
+                  nextSteps={nextSteps}
                   onSetRevenue={setRevenue}
                   onSetNote={setNote}
+                  onSetNextStep={setNextStep}
                 />
               )}
+              {route === 'registration-ops' && <DealRegistrationOpsView data={live} />}
               {route === 'activity' && (
                 <ActivityTrackingView
                   data={live}

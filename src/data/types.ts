@@ -66,6 +66,13 @@ export type OpportunityType = 'sell-to' | 'sell-with' | 'allocate';
 
 export type OpportunityOutcome = 'won' | 'lost';
 
+/**
+ * Probability bucket a partner manager assigns to an open deal, the input to
+ * the weighted forecast: commit, best case, pipeline, or long shot. Weights
+ * live in constants.ts (FORECAST_CATEGORY_META).
+ */
+export type ForecastCategory = 'long-shot' | 'pipeline' | 'best-case' | 'commit';
+
 export interface Opportunity {
   id: string;
   partnerId: string;
@@ -77,6 +84,10 @@ export interface Opportunity {
   stage: OpportunityStage;
   /** Salesforce Opportunity.Forecasted_Revenue__c. */
   forecastedRevenue: number;
+  /** Probability bucket for the weighted forecast; derived from stage when unset. */
+  forecastCategory?: ForecastCategory;
+  /** Row-level next action; a free-form field edited in-app. */
+  nextStep?: string;
   createdAt: string; // ISO 8601
   expectedCloseDate: string; // ISO 8601
   closedAt?: string; // set once closed (won or lost)
