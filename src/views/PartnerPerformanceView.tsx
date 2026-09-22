@@ -109,6 +109,11 @@ export default function PartnerPerformanceView({
       ),
     [data.registrations, phase, selectedPartnerIds],
   );
+  const partnerScopeRegistrations = useMemo(
+    () =>
+      data.registrations.filter((registration) => selectedPartnerIds.has(registration.partnerId)),
+    [data.registrations, selectedPartnerIds],
+  );
   const scopedTargets = useMemo(
     () => data.targets.filter((target) => selectedPartnerIds.has(target.partnerId)),
     [data.targets, selectedPartnerIds],
@@ -318,8 +323,8 @@ export default function PartnerPerformanceView({
         />
         <KpiTile
           label="Active partners"
-          value={`${activePartnerCount(phaseOpps, scopedRegistrations)}`}
-          sub={`of ${uniquePartners} aligned`}
+          value={`${activePartnerCount(partnerScopeOpps, partnerScopeRegistrations)}`}
+          sub={`with FY activity · of ${uniquePartners} aligned`}
         />
         <KpiTile
           label="Avg open deal"

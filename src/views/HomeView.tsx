@@ -270,8 +270,8 @@ export default function HomeView({
         />
         <KpiTile
           label="Active partners"
-          value={`${activePartnerCount(opps, scopedRegistrations)}`}
-          sub={`of ${data.partners.length} aligned`}
+          value={`${activePartnerCount(data.opportunities, data.registrations)}`}
+          sub={`with FY activity · of ${data.partners.length} aligned`}
         />
         <KpiTile
           label="Avg open deal"

@@ -32,29 +32,51 @@ export default function ForecastTable({
 }: ForecastTableProps) {
   const [editingRevenue, setEditingRevenue] = useState<string | null>(null);
   const [editingNotes, setEditingNotes] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
+  const [revenueDraft, setRevenueDraft] = useState('');
+  const [noteDraft, setNoteDraft] = useState('');
+  const [revenueError, setRevenueError] = useState<string | null>(null);
 
   const partnerById = new Map(partners.map((partner) => [partner.id, partner]));
 
   const startRevenueEdit = (opportunityId: string) => {
+    setEditingNotes(null);
     setEditingRevenue(opportunityId);
-    setDraft(String(revenueOverrides[opportunityId] ?? opportunities.find((o) => o.id === opportunityId)?.forecastedRevenue ?? ''));
+    setRevenueError(null);
+    setRevenueDraft(
+      String(
+        revenueOverrides[opportunityId] ??
+          opportunities.find((opportunity) => opportunity.id === opportunityId)?.forecastedRevenue ??
+          '',
+      ),
+    );
   };
 
   const commitRevenue = (opportunityId: string) => {
-    const value = Number(draft);
-    if (Number.isFinite(value) && value >= 0) onSetRevenue(opportunityId, value);
+    const value = Number(revenueDraft);
+    if (revenueDraft.trim() === '' || !Number.isFinite(value) || value < 0) {
+      setRevenueError('Enter a non-negative number.');
+      return;
+    }
+    onSetRevenue(opportunityId, value);
     setEditingRevenue(null);
+    setRevenueError(null);
   };
 
   const startNoteEdit = (opportunityId: string) => {
+    setEditingRevenue(null);
+    setRevenueError(null);
     setEditingNotes(opportunityId);
-    setDraft(notes[opportunityId] ?? '');
+    setNoteDraft(notes[opportunityId] ?? '');
   };
 
   const commitNote = (opportunityId: string) => {
-    onSetNote(opportunityId, draft.trim());
+    onSetNote(opportunityId, noteDraft.trim());
     setEditingNotes(null);
+  };
+
+  const cancelRevenueEdit = () => {
+    setEditingRevenue(null);
+    setRevenueError(null);
   };
 
   const th = 'pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite';
@@ -97,17 +119,21 @@ export default function ForecastTable({
                 </td>
                 <td className="py-3 pr-3 text-right">
                   {editingRevenue === opportunity.id ? (
-                    <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
                       <input
                         autoFocus
-                        value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
+                        value={revenueDraft}
+                        onChange={(event) => {
+                          setRevenueDraft(event.target.value);
+                          setRevenueError(null);
+                        }}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter') commitRevenue(opportunity.id);
-                          if (event.key === 'Escape') setEditingRevenue(null);
+                          if (event.key === 'Escape') cancelRevenueEdit();
                         }}
-                        onBlur={() => commitRevenue(opportunity.id)}
                         aria-label={`Revenue forecast for ${opportunity.accountName}`}
+                        aria-invalid={revenueError ? true : undefined}
+                        inputMode="decimal"
                         className="w-28 rounded border border-ash bg-carbon px-2 py-1 text-right text-sm tabular-nums text-bone focus:border-signal focus:outline-none"
                       />
                       <button
@@ -120,12 +146,17 @@ export default function ForecastTable({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setEditingRevenue(null)}
+                        onClick={cancelRevenueEdit}
                         aria-label="Cancel revenue edit"
                         className="rounded p-0.5 text-granite hover:bg-ash/30"
                       >
                         <XIcon className="h-3.5 w-3.5" />
                       </button>
+                      {revenueError && (
+                        <span className="w-full text-right text-xs text-signal" role="alert">
+                          {revenueError}
+                        </span>
+                      )}
                     </span>
                   ) : (
                     <span className="inline-flex items-center justify-end gap-1.5">
@@ -167,8 +198,8 @@ export default function ForecastTable({
                     <span className="inline-flex items-center justify-end gap-1.5">
                       <input
                         autoFocus
-                        value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
+                        value={noteDraft}
+                        onChange={(event) => setNoteDraft(event.target.value)}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter') commitNote(opportunity.id);
                           if (event.key === 'Escape') setEditingNotes(null);

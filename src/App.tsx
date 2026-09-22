@@ -11,6 +11,7 @@ import ForecastingView from './views/ForecastingView';
 import HomeView from './views/HomeView';
 import PartnerPerformanceView from './views/PartnerPerformanceView';
 import PartnerView from './views/PartnerView';
+import ProductionRequirementsView from './views/ProductionRequirementsView';
 
 export default function App() {
   // The provider is the integration seam. Swap MockDataProvider for a
@@ -19,6 +20,7 @@ export default function App() {
   const { data, loading, error } = useDashboardData(provider);
   const [route, setRoute] = useState<Route>('home');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // In-app edits that override the CRM-backed mock data and re-render every
   // view live: forecast revenue deltas, opp notes, meeting classifications,
@@ -100,7 +102,10 @@ export default function App() {
         <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
           <button
             type="button"
-            onClick={() => setSidebarOpen((open) => !open)}
+            onClick={() => {
+              setSidebarOpen((open) => !open);
+              setMobileNavOpen((open) => !open);
+            }}
             aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
             aria-expanded={sidebarOpen}
             className="rounded p-2 text-granite transition-colors hover:bg-ash/20 hover:text-stone"
@@ -121,7 +126,15 @@ export default function App() {
       </header>
 
       <div className="flex">
-        <Sidebar collapsed={!sidebarOpen} route={route} onNavigate={setRoute} />
+        <Sidebar
+          collapsed={!sidebarOpen}
+          mobileOpen={mobileNavOpen}
+          route={route}
+          onNavigate={(nextRoute) => {
+            setRoute(nextRoute);
+            setMobileNavOpen(false);
+          }}
+        />
 
         <main className="min-w-0 flex-1 px-4 py-8 sm:px-6">
           {error && (
@@ -159,6 +172,7 @@ export default function App() {
                 />
               )}
               {route === 'partner-view' && <PartnerView data={live} />}
+              {route === 'production-requirements' && <ProductionRequirementsView />}
             </>
           )}
         </main>
