@@ -366,9 +366,12 @@ export default function ForecastingView({
         </div>
         <p className="mt-4 text-xs text-granite">
           Columns per manager: open pipeline, then closed-won. Pencil = edit. Revenue edits
-          update every metric above and across the app immediately; notes are saved as comments
-          and appear on hover over the comment icon; next step is the row-level editable action
-          that feeds the roadmap's missing-next-step alerts.
+          update every metric above and across the app immediately; the forecast category pencil
+          opens the dropdown of probability buckets (Commit 90%, Best Case 50%, Pipeline 25%,
+          Long Shot 10%) and re-calls the deal, which re-weights the forecast tiles above —
+          closed rows have no call left to make; notes are saved as comments and appear on
+          hover over the comment icon; next step is the row-level editable action that feeds
+          the roadmap's missing-next-step alerts.
         </p>
       </Card>
     </div>

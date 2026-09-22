@@ -93,17 +93,20 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
   closed-won, and expands to their book
 - Table fields: Client, Partner, Revenue Forecast, Opportunity Type, Stage,
   Forecast Category, Close Date, Next Step, and Notes
-- **Revenue Forecast**, **Notes**, and **Next Step** each carry a pencil. An
-  edited revenue forecast overrides the Salesforce figure and immediately
-  updates every metric across the app, so a manager's number can differ from
-  the CRM's. Notes never render inline — they are stored as comments and
-  appear on hover over the comment icon. Next Step is an inline editable text
-  field per row
-- **Forecast Category is a dropdown, not a derived badge.** The deal's stage
-  supplies a starting point (Discovery → Long Shot, Scope → Pipeline, Tech
-  Validation → Best Case, late funnel → Commit), but the call belongs to the
-  manager and can disagree with it. Re-calling a deal recalculates the weighted
-  forecast and every category tile immediately
+- **Revenue Forecast**, **Forecast Category**, **Notes**, and **Next Step**
+  each carry a pencil. An edited revenue forecast overrides the Salesforce
+  figure and immediately updates every metric across the app, so a manager's
+  number can differ from the CRM's. Notes never render inline — they are stored
+  as comments and appear on hover over the comment icon. Next Step is an
+  inline editable text field per row
+- **Forecast Category is an editable call, not a derived badge.** The deal's
+  stage supplies a starting point (Discovery → Long Shot, Scope → Pipeline,
+  Tech Validation → Best Case, late funnel → Commit), but the call belongs to
+  the manager: clicking the pencil opens a dropdown of the four probability
+  buckets — Commit (90%), Best Case (50%), Pipeline (25%), Long Shot (10%) —
+  and picking one re-calls the deal, which recalculates the weighted forecast
+  and every category tile immediately. Closed rows carry no pencil — the call
+  stops mattering once the deal resolves
 - **Calls that disagree with stage** sits above the table: deals called *above*
   their stage (more confident than the funnel supports — a stale stage or an
   optimistic call) and *below* it (late-funnel deals the manager has downgraded,
@@ -148,8 +151,9 @@ Organized by partner manager and their assigned partners, with dropdowns for
 - Call types: Discovery, PIO Interlock, PAO Interlock, Interlock Cadence, Deal
   Support, Technical Enablement, GTM Enablement, and Partner Cadence
 
-In-app edits (revenue, notes, next steps, classifications, added prospects) live
-in React state for the session; a write-capable provider is the next step.
+In-app edits (revenue, forecast-category calls, notes, next steps,
+classifications, added prospects) live in React state for the session; a
+write-capable provider is the next step.
 
 ### Partner View
 
@@ -214,8 +218,9 @@ warehouse (Snowflake, Looker) and swap the provider in `App.tsx`. No view code
 changes.
 
 The interface is read-only. `App.tsx` layers the session's in-app edits —
-revenue overrides, notes, next steps, meeting classifications, and added
-prospects — on top of the provider's book before handing a single merged
+revenue overrides, forecast-category calls, notes, next steps, meeting
+classifications, and added prospects — on top of the provider's book before
+handing a single merged
 `DashboardData` to every page, so writes are the one thing a live provider
 still needs to add.
 
