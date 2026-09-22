@@ -3,8 +3,13 @@ import {
   FISCAL_QUARTERS,
   FISCAL_YEAR,
   FISCAL_YEAR_START,
+  FORECAST_CATEGORIES,
+  FORECAST_CATEGORY_FOR_STAGE,
+  FORECAST_CATEGORY_META,
   MEETING_TYPES,
   OPP_TYPES,
+  REGISTRATION_EXCLUSIVITY_DAYS,
+  REGISTRATION_SLA_BUSINESS_DAYS,
   SNAPSHOT_DATE,
   STAGES,
   WEEKLY_MEETING_GOAL,
@@ -15,6 +20,7 @@ import type {
   DashboardData,
   DealRegistration,
   FiscalPhase,
+  ForecastCategory,
   MeetingClassification,
   MeetingType,
   Opportunity,
@@ -593,4 +599,222 @@ export function recentRegistrations(
 /** Days a registration has been waiting as of the snapshot date. */
 export function daysWaiting(reg: DealRegistration): number {
   return Math.round((SNAPSHOT_DATE.getTime() - new Date(reg.submittedAt).getTime()) / DAY);
+}
+
+// ---- forecast quality ------------------------------------------------------
+
+/** The bucket a forecast row sits in: its own category or the stage heuristic. */
+export function forecastCategoryOf(opp: Opportunity): ForecastCategory {
+  return opp.forecastCategory ?? FORECAST_CATEGORY_FOR_STAGE[opp.stage];
+}
+
+export interface WeightedForecastRow {
+  category: ForecastCategory;
+  /** Probability-weighted value: Σ forecasted revenue × category weight. */
+  value: number;
+  count: number;
+}
+
+export interface WeightedForecast {
+  total: number;
+  rows: WeightedForecastRow[];
+}
+
+/**
+ * Probability-weighted forecast over an open book: each deal contributes its
+ * forecasted revenue times its category's probability weight, so the total is
+ * the expected partner-sourced revenue rather than raw pipeline.
+ */
+export function weightedForecast(openOpps: Opportunity[]): WeightedForecast {
+  const rows = FORECAST_CATEGORIES.map((category) => {
+    let value = 0;
+    let count = 0;
+    for (const opp of openOpps) {
+      if (forecastCategoryOf(opp) !== category) continue;
+      value += opp.forecastedRevenue * FORECAST_CATEGORY_META[category].weight;
+      count += 1;
+    }
+    return { category, value, count };
+  });
+  return {
+    total: rows.reduce((sum, row) => sum + row.value, 0),
+    rows,
+  };
+}
+
+// ---- deal-registration ops -------------------------------------------------
+
+/** Weekdays (Mon–Fri, UTC) between two ISO dates, exclusive of the start day. */
+export function businessDaysBetween(fromIso: string, toIso: string): number {
+  const from = new Date(fromIso);
+  const to = new Date(toIso);
+  const startMs = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
+  const endMs = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate());
+  let days = 0;
+  for (let timestamp = startMs + DAY; timestamp <= endMs; timestamp += DAY) {
+    const weekday = new Date(timestamp).getUTCDay();
+    if (weekday !== 0 && weekday !== 6) days += 1;
+  }
+  return days;
+}
+
+/** Whole calendar days between two ISO dates (snapshot-relative comparisons). */
+export function calendarDaysBetween(fromIso: string, toIso: string): number {
+  return Math.round((new Date(toIso).getTime() - new Date(fromIso).getTime()) / DAY);
+}
+
+export type SlaState = 'within-sla' | 'past-sla';
+
+/**
+ * Pending-registration SLA state: within target while the submission is less
+ * than REGISTRATION_SLA_BUSINESS_DAYS business days old, past it otherwise.
+ */
+export function registrationSlaState(reg: DealRegistration): SlaState {
+  return businessDaysBetween(reg.submittedAt, SNAPSHOT_DATE.toISOString()) >=
+    REGISTRATION_SLA_BUSINESS_DAYS
+    ? 'past-sla'
+    : 'within-sla';
+}
+
+/** Pending registrations currently outside the response SLA, oldest first. */
+export function registrationsPastSla(registrations: DealRegistration[]): DealRegistration[] {
+  return registrations
+    .filter((reg) => reg.status === 'pending' && registrationSlaState(reg) === 'past-sla')
+    .sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
+}
+
+/** Approved registrations that never produced an opportunity, oldest decision first. */
+export function approvedNotConverted(registrations: DealRegistration[]): DealRegistration[] {
+  return registrations
+    .filter((reg) => reg.status === 'approved' && reg.decisionAt !== undefined && !reg.convertedTo)
+    .sort((a, b) => new Date(a.decisionAt!).getTime() - new Date(b.decisionAt!).getTime());
+}
+
+/**
+ * Exclusivity window: the lead keeps exclusivity for
+ * REGISTRATION_EXCLUSIVITY_DAYS calendar days after approval. Approved leads
+ * still without an opportunity past that window have lapsed exclusivity.
+ */
+export function exclusivityLapsed(reg: DealRegistration): boolean {
+  return (
+    reg.status === 'approved' &&
+    reg.decisionAt !== undefined &&
+    !reg.convertedTo &&
+    calendarDaysBetween(reg.decisionAt, SNAPSHOT_DATE.toISOString()) > REGISTRATION_EXCLUSIVITY_DAYS
+  );
+}
+
+/** Business days a pending registration has been waiting as of the snapshot. */
+export function businessDaysWaiting(reg: DealRegistration): number {
+  return businessDaysBetween(reg.submittedAt, SNAPSHOT_DATE.toISOString());
+}
+
+export interface RegistrationConversionTimes {
+  /** Avg days from submission to approval (approved registrations only). */
+  submittedToApproved: number | null;
+  /** Avg days from approval to opportunity creation (converted registrations only). */
+  approvedToOpportunity: number | null;
+  /** Avg days from opportunity creation to closed-won (converted + won only). */
+  opportunityToWin: number | null;
+  /** Avg days from submission to closed-won (converted + won only). */
+  submittedToWin: number | null;
+}
+
+/**
+ * Average conversion times across a registration book, chained as
+ * submitted → approved → opportunity created → win. Every hop is averaged
+ * only over the registrations that reached it; null when nothing has.
+ */
+export function registrationConversionTimes(
+  registrations: DealRegistration[],
+  opportunities: Opportunity[],
+): RegistrationConversionTimes {
+  const oppById = new Map(opportunities.map((opp) => [opp.id, opp]));
+  const average = (durations: number[]) =>
+    durations.length === 0
+      ? null
+      : Math.round((durations.reduce((sum, d) => sum + d, 0) / durations.length) * 10) / 10;
+
+  const approved = registrations.filter(
+    (reg) => reg.status === 'approved' && reg.decisionAt !== undefined,
+  );
+  const submittedToApproved = approved.map((reg) =>
+    calendarDaysBetween(reg.submittedAt, reg.decisionAt!),
+  );
+  const converted = approved.filter(
+    (reg) => reg.convertedTo !== undefined && oppById.has(reg.convertedTo),
+  );
+  const approvedToOpportunity = converted.map((reg) => {
+    const opp = oppById.get(reg.convertedTo!)!;
+    return calendarDaysBetween(reg.decisionAt!, opp.createdAt);
+  });
+  const won = converted.filter((reg) => {
+    const opp = oppById.get(reg.convertedTo!)!;
+    return opp.outcome === 'won' && opp.closedAt !== undefined;
+  });
+  const opportunityToWin = won.map((reg) => {
+    const opp = oppById.get(reg.convertedTo!)!;
+    return calendarDaysBetween(opp.createdAt, opp.closedAt!);
+  });
+  const submittedToWin = won.map((reg) => {
+    const opp = oppById.get(reg.convertedTo!)!;
+    return calendarDaysBetween(reg.submittedAt, opp.closedAt!);
+  });
+
+  return {
+    submittedToApproved: average(submittedToApproved),
+    approvedToOpportunity: average(approvedToOpportunity),
+    opportunityToWin: average(opportunityToWin),
+    submittedToWin: average(submittedToWin),
+  };
+}
+
+export interface DuplicateRegistrationGroup {
+  accountName: string;
+  /** Every registration for this client, oldest submission first. */
+  registrations: DealRegistration[];
+  /** The first partner to submit for this client. */
+  firstSubmitted: DealRegistration;
+  /** How many distinct partners registered the same client. */
+  distinctPartners: number;
+}
+
+/**
+ * Conflicting deal registrations: one client registered by two or more
+ * different partners, so the earliest submission and the overlap must be
+ * tracked and qualified closely. Internal view only.
+ */
+export function duplicateRegistrationGroups(
+  registrations: DealRegistration[],
+  partners: Partner[],
+): DuplicateRegistrationGroup[] {
+  const byAccount = new Map<string, DealRegistration[]>();
+  for (const reg of registrations) {
+    const list = byAccount.get(reg.accountName);
+    if (list) list.push(reg);
+    else byAccount.set(reg.accountName, [reg]);
+  }
+  const groups: DuplicateRegistrationGroup[] = [];
+  for (const [accountName, regs] of byAccount) {
+    const sorted = [...regs].sort(
+      (a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime(),
+    );
+    const distinct = new Set(sorted.map((reg) => reg.partnerId));
+    if (distinct.size < 2) continue;
+    const valid = sorted.filter((reg) =>
+      partners.some((partner) => partner.id === reg.partnerId),
+    );
+    if (valid.length < 2) continue;
+    groups.push({
+      accountName,
+      registrations: valid,
+      firstSubmitted: valid[0],
+      distinctPartners: distinct.size,
+    });
+  }
+  return groups.sort(
+    (a, b) =>
+      new Date(a.firstSubmitted.submittedAt).getTime() -
+      new Date(b.firstSubmitted.submittedAt).getTime(),
+  );
 }

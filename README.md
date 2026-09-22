@@ -1,11 +1,13 @@
 # GTM Partner Dashboard
 
-Mockup of a partner revenue pipeline dashboard for the GTM team. Four pages over
+Mockup of a partner revenue pipeline dashboard for the GTM team. Six views over
 one data model, reached through a collapsible left sidebar: **Home** (ecosystem
 summary), **Partner Performance** (per-manager / per-partner drill-down),
-**Forecasting** (the VP's in-quarter view), **Activity Tracking** (weekly
-meeting goals and calendar logging), and **Partner View** (the partner-facing
-sharing surface).
+**Forecasting** (the VP's in-quarter view with a weighted forecast),
+**Deal Reg Ops** (registration SLAs, conversion time, exclusivity, and
+conflicts), **Activity Tracking** (weekly meeting goals and calendar logging),
+**Partner View** (the partner-facing sharing surface), and **Production
+Requirements** (the architecture + utility roadmap).
 
 ![Home view](docs/screenshots/home.png)
 ![Forecasting view](docs/screenshots/forecasting.png)
@@ -63,6 +65,17 @@ Partners aligned to that manager, or a single partner, via Salesforce-style
   Partner Strategist / Partner Engineer certification against goal. When the
   scope includes multiple partners, the leaderboard shows each partner's
   certified counts and attainment beneath the count.
+- Registrations awaiting review are colored against the **5-business-day
+  response SLA**: counters are green inside the window, red past it
+- After the awaiting-review block: **Exclusivity lapsed** flags every approved
+  registration that never became an opportunity, with the 60-day window from
+  approval shown per row
+- Registration **conversion time** (submitted → approved → opportunity → win)
+  and **leakage** counts (approved without an opportunity, exclusivity lapsed,
+  pending past SLA, duplicate clients)
+- **Duplicate & conflicting registrations** — clients registered by more than
+  one partner, with submission dates so the first partner to submit is visible.
+  Internal only; never rendered in the partner portal
 
 ### Forecasting
 
@@ -71,16 +84,46 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
 - Callout tiles: partner sourced pipeline, closed-won (with % attainment to the
   quarterly goal), pipeline coverage to goal, average deal size, and days left
   in the quarter
+- **Weighted forecast call-outs**: every open deal carries a forecast category
+  — Commit (90%), Best Case (50%), Pipeline (25%), Long Shot (10%) — and each
+  category's probability-weighted contribution is summed into a total expected
+  revenue, above the raw pipeline numbers
 - In-quarter opportunities grouped into a collapsible section per partner
   manager; each header shows their opportunity count, open pipeline, and
   closed-won, and expands to their book
 - Table fields: Client, Partner, Revenue Forecast, Opportunity Type, Stage,
-  Close Date, and Notes
-- **Revenue Forecast** and **Notes** each carry a pencil. An edited revenue
-  forecast overrides the Salesforce figure and immediately updates every metric
-  across the app, so a manager's number can differ from the CRM's. Notes never
-  render inline — they are stored as comments and appear on hover over the
-  comment icon
+  Forecast Category, Close Date, Next Step, and Notes
+- **Revenue Forecast**, **Notes**, and **Next Step** each carry a pencil. An
+  edited revenue forecast overrides the Salesforce figure and immediately
+  updates every metric across the app, so a manager's number can differ from
+  the CRM's. Notes never render inline — they are stored as comments and
+  appear on hover over the comment icon. Next Step is an inline editable text
+  field per row
+- Forecast categories are seeded from the deal's stage (Discovery → Long Shot,
+  Scope → Pipeline, Tech Validation → Best Case, late funnel → Commit); the
+  roadmap calls for manager-assigned categories and forecast accuracy by
+  partner, manager, motion, and quarter
+
+### Deal Reg Ops
+
+The ops-led read on the registration book, whole-org and time-agnostic so
+leakage spanning quarters stays visible.
+
+- KPI tiles: average days per hop of the chain **submitted → approved →
+  opportunity created → win**, pending registrations past the 5-business-day
+  SLA, and registrations past the 60-day **exclusivity window**
+- Conversion-time bars with the SLA and exclusivity windows annotated against
+  each hop
+- Pending registrations queue with the SLA-colored day counters
+- **Exclusivity window**: approved registrations still without an opportunity,
+  flagged "Exclusivity lapsed" once the 60 days from approval pass — the lead
+  keeps exclusivity until the partner introduces it
+- **Duplicate & conflicting registrations**: all clients registered by more
+  than one partner, with every submission date so the earliest submission is
+  obvious. Internal only
+- The same section appears inside Partner View, scoped to that partner's own
+  registrations (timeline + exclusivity), with conflicts and other partners'
+  submissions excluded
 
 ### Activity Tracking
 
@@ -97,8 +140,8 @@ Organized by partner manager and their assigned partners, with dropdowns for
 - Call types: Discovery, PIO Interlock, PAO Interlock, Interlock Cadence, Deal
   Support, Technical Enablement, GTM Enablement, and Partner Cadence
 
-In-app edits (revenue, notes, classifications, added prospects) live in React
-state for the session; a write-capable provider is the next step.
+In-app edits (revenue, notes, next steps, classifications, added prospects) live
+in React state for the session; a write-capable provider is the next step.
 
 ### Partner View
 
@@ -109,8 +152,23 @@ The picker simulates which partner is viewing the shared platform today.
 - Partner-scoped pipeline, closed-won, win rate, awaiting-review registrations,
   opportunity details, revenue-vs-target trend, stage pipeline, and revenue
   motion breakdown
+- **Deal registration timeline**: average conversion time across the partner's
+  own registrations (submitted → approved → opportunity → win)
+- **Exclusivity window**: the partner's approved registrations still without an
+  opportunity, flagged once the 60-day introduction window lapses
 - Partner Strategist and Partner Engineer certification counts with goal
   attainment
+
+### Production Requirements
+
+Two tracked backlogs. The **Architecture roadmap** documents the server-side
+foundation required before connecting protected systems (identity and row-level
+authorization, source-system integration, persistence and audit, security and
+compliance, reliability). The **Utility Improvements** section is the GTM
+Partnerships leader's product roadmap — forecast quality, partner health and
+lifecycle, deal-registration operations, actionability, partner portal utility,
+and attribution and crediting — separated from the architecture work so the two
+tracks can be prioritized independently.
 
 ## Running locally
 
@@ -144,9 +202,10 @@ warehouse (Snowflake, Looker) and swap the provider in `App.tsx`. No view code
 changes.
 
 The interface is read-only. `App.tsx` layers the session's in-app edits —
-revenue overrides, notes, meeting classifications, and added prospects — on top
-of the provider's book before handing a single merged `DashboardData` to every
-page, so writes are the one thing a live provider still needs to add.
+revenue overrides, notes, next steps, meeting classifications, and added
+prospects — on top of the provider's book before handing a single merged
+`DashboardData` to every page, so writes are the one thing a live provider
+still needs to add.
 
 ## Mock data
 
@@ -161,6 +220,15 @@ page, so writes are the one thing a live provider still needs to add.
   pool across the previous seven weeks, plus a full current week per partner
   manager (7–12 calls each) so the weekly goal and Log Meetings have a real
   calendar to work from
+- Every opportunity carries a forecast category seeded from its stage (or the
+  stage heuristic when unset), and open opportunities carry a row-level next
+  step (about half of them, seeded deterministically from the id)
+- Every approved registration gets a 2–12 day document-handling dwell before
+  its opportunity is created, so the submitted → approved → opportunity → win
+  chain reads as real time; a fixed set of registrations deliberately shares a
+  client with another partner so the duplicate/conflict views have rows, and
+  older approved registrations are left unconverted so the exclusivity window
+  has lapsed and still-current rows
 - Realized FY27 win rate: 20 of 44 closed deals won (~45%)
 - Volumes and weights are tuned in
   [`src/data/mock/generate.ts`](src/data/mock/generate.ts); the exact volumes

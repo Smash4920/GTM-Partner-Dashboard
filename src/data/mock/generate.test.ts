@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { FISCAL_QUARTERS, FISCAL_YEAR_START, SNAPSHOT_DATE } from '../constants';
+import { FISCAL_QUARTERS, FISCAL_YEAR_START, FORECAST_CATEGORY_FOR_STAGE, SNAPSHOT_DATE } from '../constants';
 import {
+  approvedNotConverted,
   avgOpenDealSize,
   closedWonPriorYearForPhase,
+  duplicateRegistrationGroups,
+  exclusivityLapsed,
   filterByPhase,
   phaseWindow,
+  registrationsPastSla,
 } from '../../lib/metrics';
 import { generateDashboardData } from './generate';
 import { MockDataProvider } from './MockDataProvider';
@@ -135,6 +139,54 @@ describe('generateDashboardData', () => {
     const average = avgOpenDealSize(filterByPhase(data.opportunities, 'q3'));
     expect(average).toBeGreaterThan(225_000);
     expect(average).toBeLessThan(275_000);
+  });
+
+  it('assigns every opportunity a forecast category matching its final stage', () => {
+    for (const opportunity of data.opportunities) {
+      expect(opportunity.forecastCategory).toBe(FORECAST_CATEGORY_FOR_STAGE[opportunity.stage]);
+    }
+  });
+
+  it('seeds some open opportunities with a next step and leaves others blank', () => {
+    const open = data.opportunities.filter((opportunity) => !opportunity.outcome);
+    expect(open.length).toBeGreaterThan(0);
+    expect(open.some((opportunity) => opportunity.nextStep)).toBe(true);
+    expect(open.some((opportunity) => opportunity.nextStep === undefined)).toBe(true);
+  });
+
+  it('gives converted registrations a dwell time before their opportunity is created', () => {
+    const converted = data.registrations.filter(
+      (registration) => registration.status === 'approved' && registration.convertedTo,
+    );
+    expect(converted.length).toBeGreaterThan(0);
+    const gaps = converted.map((registration) => {
+      const opportunity = data.opportunities.find((opp) => opp.id === registration.convertedTo);
+      expect(opportunity).toBeDefined();
+      return (
+        new Date(opportunity!.createdAt).getTime() - new Date(registration.decisionAt!).getTime()
+      );
+    });
+    // Approvals near the snapshot clamp the opportunity at the snapshot date;
+    // everything older carries the full 2–12 day document-handling dwell.
+    expect(gaps.every((gap) => gap >= 0)).toBe(true);
+    expect(gaps.some((gap) => gap >= 2 * 86_400_000)).toBe(true);
+    const average = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
+    expect(average).toBeGreaterThan(86_400_000);
+  });
+
+  it('seeds exclusivity-lapsed, past-SLA, and duplicate registrations for the ops views', () => {
+    expect(data.registrations.some(exclusivityLapsed)).toBe(true);
+    const leaking = approvedNotConverted(data.registrations);
+    expect(leaking.length).toBeGreaterThan(0);
+    expect(leaking.some(exclusivityLapsed)).toBe(true);
+    expect(registrationsPastSla(data.registrations).length).toBeGreaterThan(0);
+    const groups = duplicateRegistrationGroups(data.registrations, data.partners);
+    expect(groups.length).toBeGreaterThan(0);
+    // Every duplicate groups at least two distinct partners on one client.
+    for (const group of groups) {
+      expect(group.distinctPartners).toBeGreaterThanOrEqual(2);
+      expect(group.registrations.length).toBeGreaterThanOrEqual(2);
+    }
   });
 });
 

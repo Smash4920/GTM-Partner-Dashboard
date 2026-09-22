@@ -1,6 +1,6 @@
 import type { DealRegistration, Partner } from '../data/types';
 import { formatDate, formatUsd } from '../lib/format';
-import { daysWaiting } from '../lib/metrics';
+import { businessDaysWaiting, daysWaiting, registrationSlaState } from '../lib/metrics';
 import { StatusBadge } from './Badge';
 
 interface RegistrationsTableProps {
@@ -55,7 +55,14 @@ export default function RegistrationsTable({
       <tbody>
         {rows.map((reg) => {
           const waiting = daysWaiting(reg);
-          const waitingClass = waiting > 10 ? 'text-signal' : mutedClass;
+          // Pending rows are colored against the 5-business-day response SLA:
+          // green inside the window, signal red once past it.
+          const slaState = registrationSlaState(reg);
+          const waitingClass = isQueue
+            ? slaState === 'within-sla'
+              ? 'text-metric'
+              : 'text-signal'
+            : mutedClass;
           return (
             <tr key={reg.id} className={`border-b ${rowBorder} last:border-0`}>
               <td className="py-2.5 pr-3">
@@ -81,6 +88,13 @@ export default function RegistrationsTable({
                 className={`py-2.5 pr-3 text-right font-mono text-xs tabular-nums ${
                   isQueue ? waitingClass : mutedClass
                 }`}
+                title={
+                  isQueue
+                    ? `${businessDaysWaiting(reg)} business days waiting · ${
+                        slaState === 'within-sla' ? 'within' : 'past'
+                      } the 5-business-day SLA`
+                    : undefined
+                }
               >
                 {isQueue ? `${waiting}d` : reg.decisionAt ? formatDate(reg.decisionAt) : '—'}
               </td>

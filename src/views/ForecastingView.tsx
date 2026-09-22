@@ -6,10 +6,11 @@ import { ChevronIcon } from '../components/icons';
 import {
   FISCAL_PHASES,
   FISCAL_PHASE_META,
+  FORECAST_CATEGORY_META,
   SNAPSHOT_DATE,
 } from '../data/constants';
 import type { DashboardData, FiscalPhase } from '../data/types';
-import { formatDate, formatUsdCompact } from '../lib/format';
+import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 import { fiscalQuarterOfDate, quarterWindow } from '../lib/fiscal';
 import {
   avgOpenDealSize,
@@ -18,9 +19,11 @@ import {
   daysLeftInQuarter,
   filterByPhase,
   formatCoverage,
+  openOpportunities,
   openPipeline,
   remainingQuota,
   targetsForPhase,
+  weightedForecast,
 } from '../lib/metrics';
 
 const quarter = fiscalQuarterOfDate(SNAPSHOT_DATE.toISOString());
@@ -35,22 +38,27 @@ interface ForecastingViewProps {
   data: DashboardData;
   revenueOverrides: Record<string, number>;
   notes: Record<string, string>;
+  nextSteps: Record<string, string>;
   onSetRevenue: (opportunityId: string, value: number) => void;
   onSetNote: (opportunityId: string, note: string) => void;
+  onSetNextStep: (opportunityId: string, nextStep: string) => void;
 }
 
 /**
  * Forecasting: the VP of Partnerships' in-quarter view. Callout tiles sum the
- * quarter's sourced pipeline and closed book, then an editable table lists
- * every in-quarter opportunity, filterable by partner manager. Revenue and
- * Notes carry a pencil so managers can correct Salesforce locally.
+ * quarter's sourced pipeline and probability-weighted forecast, then an
+ * editable table lists every in-quarter opportunity, filterable by partner
+ * manager. Revenue and Notes carry a pencil so managers can correct
+ * Salesforce locally; Next Step is the row-level editable action.
  */
 export default function ForecastingView({
   data,
   revenueOverrides,
   notes,
+  nextSteps,
   onSetRevenue,
   onSetNote,
+  onSetNextStep,
 }: ForecastingViewProps) {
   const [filterManagerId, setFilterManagerId] = useState('all');
   // First manager opens by default so the page never lands fully collapsed.
@@ -122,6 +130,20 @@ export default function ForecastingView({
   const attainment = target > 0 ? closedWon / target : 0;
   const daysLeft = useMemo(() => daysLeftInQuarter(quarter), [quarter]);
 
+  // Weighted forecast: each open deal contributes its revenue × the
+  // probability weight of its forecast category (commit 90%, best case 50%,
+  // pipeline 25%, long shot 10%), so the total is expected revenue, not raw
+  // pipeline.
+  const openInQuarterOpps = useMemo(() => openOpportunities(inQuarterOpps), [inQuarterOpps]);
+  const weighted = useMemo(() => weightedForecast(openInQuarterOpps), [openInQuarterOpps]);
+  const categoryTiles = useMemo(
+    () =>
+      [...weighted.rows].sort(
+        (a, b) => FORECAST_CATEGORY_META[b.category].weight - FORECAST_CATEGORY_META[a.category].weight,
+      ),
+    [weighted],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -184,6 +206,25 @@ export default function ForecastingView({
         />
       </div>
 
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <KpiTile
+          label="Weighted forecast"
+          value={formatUsdCompact(weighted.total)}
+          sub={`open ${phaseLabel} pipeline × category probability`}
+        />
+        {categoryTiles.map((row) => {
+          const meta = FORECAST_CATEGORY_META[row.category];
+          return (
+            <KpiTile
+              key={row.category}
+              label={`${meta.label} ${Math.round(meta.weight * 100)}%`}
+              value={formatUsdCompact(row.value)}
+              sub={`${formatPct(meta.weight)} weighted · ${row.count} opps`}
+            />
+          );
+        })}
+      </div>
+
       <Card
         title={`In-quarter opportunities · ${quarter}`}
         subtitle={`${groupedCount} opportunities grouped by partner manager · expand a manager to see their book`}
@@ -231,8 +272,10 @@ export default function ForecastingView({
                       partners={data.partners}
                       revenueOverrides={revenueOverrides}
                       notes={notes}
+                      nextSteps={nextSteps}
                       onSetRevenue={onSetRevenue}
                       onSetNote={onSetNote}
+                      onSetNextStep={onSetNextStep}
                     />
                   </div>
                 )}
@@ -243,7 +286,8 @@ export default function ForecastingView({
         <p className="mt-4 text-xs text-granite">
           Columns per manager: open pipeline, then closed-won. Pencil = edit. Revenue edits
           update every metric above and across the app immediately; notes are saved as comments
-          and appear on hover over the comment icon.
+          and appear on hover over the comment icon; next step is the row-level editable action
+          that feeds the roadmap's missing-next-step alerts.
         </p>
       </Card>
     </div>

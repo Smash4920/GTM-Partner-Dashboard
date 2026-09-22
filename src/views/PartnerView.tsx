@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
+import ExclusivityTable from '../components/ExclusivityTable';
 import FilterChips, { type ChipOption } from '../components/FilterChips';
 import KpiTile from '../components/KpiTile';
 import MetricBars, { type MetricBarRow } from '../components/MetricBars';
@@ -16,11 +17,13 @@ import {
   PARTNER_TIER_META,
   PARTNER_TYPE_META,
   REGION_META,
+  REGISTRATION_EXCLUSIVITY_DAYS,
   STAGE_META,
 } from '../data/constants';
 import type { DashboardData, FiscalPhase, Opportunity } from '../data/types';
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 import {
+  approvedNotConverted,
   closedWonForPhase,
   coverageRatio,
   filterByPhase,
@@ -30,6 +33,7 @@ import {
   pendingRegistrations,
   quarterlyClosedWonAndTarget,
   recentRegistrations,
+  registrationConversionTimes,
   stageBreakdown,
   targetsForPhase,
   winRateForPhase,
@@ -101,6 +105,17 @@ export default function PartnerView({ data }: { data: DashboardData }) {
     () => data.registrations.filter((reg) => reg.partnerId === partnerId),
     [data.registrations, partnerId],
   );
+  // The portal pairs the deal-registration ops section with each partner's
+  // own book: their conversion times and their exclusivity window. Conflicts
+  // and other partners' submissions stay internal.
+  const partnerLeaking = useMemo(
+    () => approvedNotConverted(partnerRegistrations),
+    [partnerRegistrations],
+  );
+  const partnerTimes = useMemo(
+    () => registrationConversionTimes(partnerRegistrations, visibleOpps),
+    [partnerRegistrations, visibleOpps],
+  );
 
   if (!partner) {
     return <p className="text-sm text-granite">No partners available.</p>;
@@ -167,6 +182,38 @@ export default function PartnerView({ data }: { data: DashboardData }) {
   ];
 
   const sliceLabel = slice === 'all' ? 'Sell With + Allocate' : OPP_TYPE_META[slice].label;
+
+  const fmtDays = (days: number | null) => (days === null ? '—' : `${days.toFixed(1)}d`);
+  const timelineRows: MetricBarRow[] = [
+    {
+      label: 'Submitted → Approved',
+      value: partnerTimes.submittedToApproved ?? 0,
+      displayValue: fmtDays(partnerTimes.submittedToApproved),
+      secondary: '5-business-day SLA',
+      color: '#7e7b78',
+    },
+    {
+      label: 'Approved → Opportunity',
+      value: partnerTimes.approvedToOpportunity ?? 0,
+      displayValue: fmtDays(partnerTimes.approvedToOpportunity),
+      secondary: 'converted registrations',
+      color: '#9a9693',
+    },
+    {
+      label: 'Opportunity → Win',
+      value: partnerTimes.opportunityToWin ?? 0,
+      displayValue: fmtDays(partnerTimes.opportunityToWin),
+      secondary: 'converted & won',
+      color: '#a0ca92',
+    },
+    {
+      label: 'Submitted → Win',
+      value: partnerTimes.submittedToWin ?? 0,
+      displayValue: fmtDays(partnerTimes.submittedToWin),
+      secondary: 'converted & won',
+      color: '#b8b3b0',
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -283,6 +330,30 @@ export default function PartnerView({ data }: { data: DashboardData }) {
           limit={8}
         />
       </Card>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card
+          title="Deal registration timeline"
+          subtitle="Average conversion time across your registrations · submitted → approved → opportunity → win"
+        >
+          <MetricBars rows={timelineRows} />
+        </Card>
+        <Card
+          title="Exclusivity window"
+          subtitle={`${partnerLeaking.length} approved registrations without an opportunity · ${REGISTRATION_EXCLUSIVITY_DAYS}-day window from approval`}
+        >
+          <ExclusivityTable
+            registrations={partnerLeaking}
+            partners={data.partners}
+            showPartner={false}
+            limit={6}
+          />
+          <p className="mt-4 text-xs text-granite">
+            Your approved leads keep exclusivity for {REGISTRATION_EXCLUSIVITY_DAYS} calendar days
+            — introduce the lead within it or the window lapses.
+          </p>
+        </Card>
+      </div>
 
       <Card
         title={`Pipeline opportunities · ${FISCAL_PHASE_META[phase].label}`}

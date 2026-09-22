@@ -86,6 +86,17 @@ export function RequirementsIcon({ className = base }: IconProps) {
   );
 }
 
+export function RegistrationIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...stroke} aria-hidden="true">
+      <rect x="4" y="3" width="16" height="18" rx="1.5" />
+      <path d="M8 7.5h8M8 11h8M8 14.5h5" />
+      <circle cx="17" cy="17" r="2.6" />
+      <path d="M17 15.6V17l1.2.8" />
+    </svg>
+  );
+}
+
 export function PencilIcon({ className = base }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} {...stroke} aria-hidden="true">

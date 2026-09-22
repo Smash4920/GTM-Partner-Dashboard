@@ -353,7 +353,7 @@ export default function HomeView({
         </Card>
         <LightCard
           title="Registrations awaiting review"
-          subtitle={`${pending.length} pending · oldest first`}
+          subtitle={`${pending.length} pending · oldest first · colored against the 5-business-day SLA`}
         >
           <RegistrationsTable
             registrations={pending}
@@ -362,6 +362,9 @@ export default function HomeView({
             tone="light"
             limit={7}
           />
+          <p className="mt-3 text-xs text-granite">
+            Day counters are green inside the 5-business-day response SLA and red once past it.
+          </p>
         </LightCard>
       </div>
 
