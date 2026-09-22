@@ -21,8 +21,11 @@ export default defineConfig({
         // into cached vendor chunks so the app shell loads without pulling
         // the whole charting stack, and no single chunk trips the size
         // warning that would bury real regressions in CI output.
+        //
+        // Recharts 3 reaches its redux/immer runtime only from its own entry,
+        // so Rollup co-locates those in this chunk without an explicit rule.
         manualChunks(id) {
-          if (id.includes('node_modules/recharts') || id.includes('node_modules/react-smooth')) {
+          if (id.includes('node_modules/recharts')) {
             return 'recharts';
           }
           if (id.includes('node_modules/victory-vendor') || /node_modules\/d3[-/]/.test(id)) {
