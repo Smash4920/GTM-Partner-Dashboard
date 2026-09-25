@@ -3,11 +3,14 @@ import type {
   FiscalPhase,
   ForecastCategory,
   MeetingType,
+  NotificationChannel,
   OpportunityStage,
   OpportunityType,
   PartnerTier,
   PartnerType,
   Region,
+  TeamRole,
+  TeamUserStatus,
 } from './types';
 
 export const STAGES: OpportunityStage[] = [
@@ -110,6 +113,14 @@ export const FORECAST_CATEGORY_FOR_STAGE: Record<OpportunityStage, ForecastCateg
 /** Deal-registration ops service levels. */
 export const REGISTRATION_SLA_BUSINESS_DAYS = 5; // respond to a submission within 5 business days
 export const REGISTRATION_EXCLUSIVITY_DAYS = 60; // approved lead keeps exclusivity for 60 calendar days
+
+/**
+ * How far ahead of the response SLA the owner is warned: one business day, so
+ * a registration pending 24 hours out from the deadline notifies its owner
+ * while there is still a working day to act. The deadline itself is the
+ * snapshot day the submission reaches REGISTRATION_SLA_BUSINESS_DAYS.
+ */
+export const REGISTRATION_SLA_WARNING_BUSINESS_DAYS = 1;
 
 export const PARTNER_TYPE_META: Record<PartnerType, string> = {
   reseller: 'Reseller',
@@ -226,3 +237,57 @@ export const WEEKLY_PIO_GOAL = 3;
 export const WON_COLOR = '#a0ca92'; // metric green
 export const LOST_COLOR = '#4d4947'; // graphite
 export const TARGET_COLOR = '#8a8380'; // granite
+
+/**
+ * Internal partner-team roles. `aligned` marks the role that must be tied to
+ * one partner manager — that alignment is what routes a registration to its
+ * owner, so a manager without one would never be notified.
+ */
+export const TEAM_ROLE_META: Record<
+  TeamRole,
+  { label: string; description: string; aligned: boolean }
+> = {
+  'partnership-lead': {
+    label: 'Partnership Lead',
+    description: 'Owns the partner business end to end; sees every partner and manager.',
+    aligned: false,
+  },
+  'partner-manager': {
+    label: 'Partner Manager',
+    description: "Owns one manager's aligned partners, and the registrations they submit.",
+    aligned: true,
+  },
+  'deal-desk-ops': {
+    label: 'Deal Desk Ops',
+    description: 'Works the registration queue across every partner and manager.',
+    aligned: false,
+  },
+  analyst: {
+    label: 'Analyst',
+    description: 'Read-only reporting across the ecosystem; no workflow ownership.',
+    aligned: false,
+  },
+};
+
+export const TEAM_ROLES: TeamRole[] = Object.keys(TEAM_ROLE_META) as TeamRole[];
+
+export const TEAM_USER_STATUS_META: Record<
+  TeamUserStatus,
+  { label: string; dotClass: string; textClass: string }
+> = {
+  active: { label: 'Authorized', dotClass: 'bg-metric', textClass: 'text-metric' },
+  invited: { label: 'Awaiting authorization', dotClass: 'bg-signal', textClass: 'text-signal' },
+  suspended: { label: 'Access revoked', dotClass: 'bg-graphite', textClass: 'text-granite' },
+};
+
+export const NOTIFICATION_CHANNEL_META: Record<
+  NotificationChannel,
+  { label: string; description: string }
+> = {
+  email: { label: 'Email', description: 'Always on — the channel that reaches everyone.' },
+  slack: { label: 'Slack', description: 'Direct message from the partner-bot workspace app.' },
+  'in-app': { label: 'In-app', description: 'Badge and inbox inside this dashboard.' },
+};
+
+export const NOTIFICATION_CHANNELS: NotificationChannel[] = ['email', 'slack', 'in-app'];
+

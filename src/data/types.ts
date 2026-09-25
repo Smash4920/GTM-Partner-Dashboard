@@ -170,6 +170,87 @@ export interface PartnerCertification {
   partnerEngineersGoal: number;
 }
 
+/** Internal (not partner) role on the GTM partner team. */
+export type TeamRole = 'partnership-lead' | 'partner-manager' | 'deal-desk-ops' | 'analyst';
+
+/**
+ * Access state for an internal user:
+ * - invited:   added to the roster, no access until someone authorizes it
+ * - active:    authorized to sign in and receive notifications
+ * - suspended: access revoked, the roster entry (and its audit trail) kept
+ */
+export type TeamUserStatus = 'active' | 'invited' | 'suspended';
+
+/** Where a notification can be delivered. Email is the always-on channel. */
+export type NotificationChannel = 'email' | 'slack' | 'in-app';
+
+/**
+ * An internal user on the partner team.
+ *
+ * The dashboard is not the system of record for people: in production the
+ * identity provider owns the roster and this record is a projection of it
+ * (see the Data Connections view). What lives here is the dashboard-specific
+ * part — which manager a user is aligned to, and which channels they are
+ * authorized to be notified on — because that is what decides who hears about
+ * a deal registration they own.
+ */
+export interface TeamUser {
+  id: string;
+  name: string;
+  email: string;
+  role: TeamRole;
+  /**
+   * Partner-manager alignment for a `partner-manager` user. Together with the
+   * partner record this is what makes a registration "theirs": partner →
+   * partnerManagerId → user. Left unset for roles that are not aligned to one
+   * manager (the lead and the deal desk see the whole book).
+   */
+  partnerManagerId?: string;
+  status: TeamUserStatus;
+  /** Channels this user is authorized to receive notifications on. */
+  channels: NotificationChannel[];
+  addedAt: string; // ISO 8601
+  /** Set when access was granted; the audit entry a real IdP would keep. */
+  authorizedAt?: string;
+  /** Who added the user to the roster. */
+  addedBy?: string;
+}
+
+/** What the access form collects; the roster record is built from it. */
+export interface NewTeamUserInput {
+  name: string;
+  email: string;
+  role: TeamRole;
+  /** Required for the aligned `partner-manager` role, ignored otherwise. */
+  partnerManagerId?: string;
+  channels: NotificationChannel[];
+}
+
+export type NotificationKind =
+  /** Owner's registration is one business day from the response SLA. */
+  | 'registration-sla-warning'
+  /** Owner's registration has already passed the response SLA. */
+  | 'registration-sla-breach'
+  /** Free-form note sent by hand from the notification panel. */
+  | 'manual';
+
+/** Mock delivery states; a real sender would add retries and failures. */
+export type NotificationStatus = 'queued' | 'delivered' | 'failed';
+
+/** One notification sent to one internal user, recorded for the session. */
+export interface DashboardNotification {
+  id: string;
+  userId: string;
+  kind: NotificationKind;
+  subject: string;
+  body: string;
+  channels: NotificationChannel[];
+  sentAt: string; // ISO 8601
+  status: NotificationStatus;
+  /** The registration the notification is about, when it is about one. */
+  registrationId?: string;
+}
+
 export interface DashboardData {
   partnerManagers: PartnerManager[];
   partners: Partner[];
@@ -180,4 +261,6 @@ export interface DashboardData {
   targets: Target[];
   activities: ActivityMeeting[];
   certifications: PartnerCertification[];
+  /** Internal partner-team roster projected from the identity provider. */
+  teamUsers: TeamUser[];
 }

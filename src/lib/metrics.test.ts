@@ -8,6 +8,7 @@ import type {
   Partner,
   PipelineSnapshot,
   Target,
+  TeamUser,
 } from '../data/types';
 import {
   approvedNotConverted,
@@ -30,6 +31,7 @@ import {
   phaseWindow,
   quarterlyClosedWonAndTarget,
   registrationConversionTimes,
+  registrationSlaAlerts,
   registrationSlaState,
   registrationsPastSla,
   remainingQuota,
@@ -92,6 +94,7 @@ function dashboard(overrides: Partial<DashboardData>): DashboardData {
     targets: [],
     activities: [],
     certifications: [],
+    teamUsers: [],
     ...overrides,
   };
 }
@@ -820,6 +823,98 @@ describe('registrationsPastSla', () => {
     const fresh = reg({ id: 'r2', submittedAt: '2026-09-17T00:00:00Z', status: 'pending' });
     const approved = reg({ id: 'r3', submittedAt: '2026-09-01T00:00:00Z', status: 'approved', decisionAt: '2026-09-05T00:00:00Z' });
     expect(registrationsPastSla([approved, fresh, old])).toEqual([old]);
+  });
+});
+
+function teamUser(fields: Partial<TeamUser> & Pick<TeamUser, 'id' | 'role'>): TeamUser {
+  return {
+    name: 'Alex Morgan',
+    email: `${fields.id}@factory.ai`,
+    status: 'active',
+    channels: ['email'],
+    addedAt: '2026-02-02T00:00:00Z',
+    ...fields,
+  };
+}
+
+describe('registrationSlaAlerts', () => {
+  const manager = teamUser({ id: 'u-01', role: 'partner-manager', partnerManagerId: 'pm-01' });
+  const dealDesk = teamUser({ id: 'u-02', role: 'deal-desk-ops' });
+  const roster = [manager, dealDesk];
+
+  // Snapshot 2026-09-18 (Friday). A Monday submission has 4 business days
+  // behind it, which is one business day from the 5-business-day deadline.
+  const warning = reg({ id: 'r-warning', submittedAt: '2026-09-14T00:00:00Z', status: 'pending' });
+  const breached = reg({ id: 'r-breach', submittedAt: '2026-09-07T00:00:00Z', status: 'pending' });
+  const inside = reg({ id: 'r-inside', submittedAt: '2026-09-17T00:00:00Z', status: 'pending' });
+
+  it('flags the warning window a business day before the deadline', () => {
+    const [alert] = registrationSlaAlerts([warning], [partner], roster);
+    expect(alert.state).toBe('approaching');
+    expect(alert.businessDaysWaiting).toBe(4);
+    expect(alert.businessDaysRemaining).toBe(1);
+    expect(alert.dueAt).toBe('2026-09-21T00:00:00.000Z');
+  });
+
+  it('flags registrations already past the SLA', () => {
+    const [alert] = registrationSlaAlerts([breached], [partner], roster);
+    expect(alert.state).toBe('breached');
+    expect(alert.businessDaysRemaining).toBeLessThan(0);
+    expect(alert.dueAt).toBe('2026-09-14T00:00:00.000Z');
+  });
+
+  it('leaves registrations still inside the SLA alone', () => {
+    expect(registrationSlaAlerts([inside], [partner], roster)).toEqual([]);
+  });
+
+  it('ignores registrations that are no longer pending', () => {
+    const approved = reg({
+      id: 'r-approved',
+      submittedAt: '2026-09-01T00:00:00Z',
+      status: 'approved',
+      decisionAt: '2026-09-03T00:00:00Z',
+    });
+    expect(registrationSlaAlerts([approved], [partner], roster)).toEqual([]);
+  });
+
+  it('routes to the aligned partner manager, and to the deal desk otherwise', () => {
+    expect(registrationSlaAlerts([warning], [partner], roster)[0].owner?.id).toBe('u-01');
+    // A manager without an alignment, or one whose access was revoked, cannot
+    // own the alert: the deal desk catches it rather than nobody.
+    expect(
+      registrationSlaAlerts([warning], [partner], [dealDesk])[0].owner?.id,
+    ).toBe('u-02');
+    expect(
+      registrationSlaAlerts(
+        [warning],
+        [partner],
+        [{ ...manager, status: 'suspended' }, dealDesk],
+      )[0].owner?.id,
+    ).toBe('u-02');
+  });
+
+  it('keeps the first active manager aligned to a partner manager', () => {
+    // A second user appended to the roster with the same alignment must not
+    // silently take over the first one's alert queue.
+    const second = teamUser({
+      id: 'u-03',
+      role: 'partner-manager',
+      partnerManagerId: 'pm-01',
+    });
+    expect(registrationSlaAlerts([warning], [partner], [manager, second])[0].owner?.id).toBe(
+      'u-01',
+    );
+  });
+
+  it('still returns an alert with no owner when the roster is empty', () => {
+    const [alert] = registrationSlaAlerts([warning], [partner], []);
+    expect(alert.owner).toBeUndefined();
+    expect(alert.state).toBe('approaching');
+  });
+
+  it('leads with the 24-hour warnings, then the most overdue registration', () => {
+    const alerts = registrationSlaAlerts([warning, breached], [partner], roster);
+    expect(alerts.map((alert) => alert.registration.id)).toEqual(['r-warning', 'r-breach']);
   });
 });
 

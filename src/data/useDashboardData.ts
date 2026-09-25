@@ -25,6 +25,7 @@ export function useDashboardData(provider: DataProvider): DashboardState {
       provider.listPartnerManagers(),
       provider.listActivities(),
       provider.listCertifications(),
+      provider.listTeamUsers(),
     ])
       .then(
         ([
@@ -36,6 +37,7 @@ export function useDashboardData(provider: DataProvider): DashboardState {
           partnerManagers,
           activities,
           certifications,
+          teamUsers,
         ]) => {
         if (!alive) return;
         setData({
@@ -47,6 +49,7 @@ export function useDashboardData(provider: DataProvider): DashboardState {
           targets,
           activities,
           certifications,
+          teamUsers,
         });
         setLoading(false);
         },

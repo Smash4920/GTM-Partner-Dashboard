@@ -146,3 +146,24 @@ export function CommentIcon({ className = base }: IconProps) {
     </svg>
   );
 }
+
+export function ConnectionsIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...stroke} aria-hidden="true">
+      <circle cx="5" cy="6" r="2.5" />
+      <circle cx="5" cy="18" r="2.5" />
+      <circle cx="19" cy="12" r="2.5" />
+      <path d="M7.5 6h4.5v6M7.5 18h4.5v-6" />
+      <path d="M12 12h4.5" />
+    </svg>
+  );
+}
+
+export function SendIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...stroke} aria-hidden="true">
+      <path d="M4 12 20 4l-3 8 3 8-16-8z" />
+      <path d="M4 12h13" />
+    </svg>
+  );
+}

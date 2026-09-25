@@ -4,10 +4,17 @@ import {
   FORECAST_CATEGORIES,
   FORECAST_CATEGORY_FOR_STAGE,
   MEETING_TYPES,
+  NOTIFICATION_CHANNELS,
+  REGISTRATION_SLA_BUSINESS_DAYS,
+  REGISTRATION_SLA_WARNING_BUSINESS_DAYS,
   SNAPSHOT_DATE,
   STAGES,
 } from '../constants';
-import { quarterWindow, startOfWeekUtc } from '../../lib/fiscal';
+import {
+  businessDaysBefore,
+  quarterWindow,
+  startOfWeekUtc,
+} from '../../lib/fiscal';
 import type {
   ActivityMeeting,
   DealRegistration,
@@ -24,6 +31,7 @@ import type {
   PipelineSnapshot,
   Region,
   Target,
+  TeamUser,
 } from '../types';
 import { chance, mulberry32, pick, randInt, skewAmount, weightedPick } from './rng';
 
@@ -123,6 +131,27 @@ const REJECTION_REASONS = [
  * a fixed index list so the seeded PRNG sequence above is never disturbed.
  */
 const OVERLAP_SOURCES = [9, 23, 38, 52, 67, 81, 96, 110, 125, 139, 154, 168];
+
+/**
+ * How many still-pending registrations are re-dated into the SLA warning
+ * window, one per partner, so the 24-hours-out alert rule has owners to reach.
+ * Applied as a post-pass with no PRNG consumed (see seedSlaWarningWindow).
+ */
+const SLA_WARNING_ROWS = 3;
+
+/** Internal partner-team roster: the five partner managers plus the roles around them. */
+const TEAM_USERS: readonly (readonly [name: string, role: TeamUser['role'], status: TeamUser['status']])[] = [
+  // The five managers align to the five partner managers in order.
+  ['Alex Morgan', 'partner-manager', 'active'],
+  ['Jordan Lee', 'partner-manager', 'active'],
+  ['Taylor Chen', 'partner-manager', 'active'],
+  ['Casey Rivera', 'partner-manager', 'active'],
+  ['Riley Patel', 'partner-manager', 'active'],
+  ['Nadia Okonkwo', 'partnership-lead', 'active'],
+  ['Priya Raman', 'deal-desk-ops', 'active'],
+  // Added but not yet authorized: the flow the Access panel exists to complete.
+  ['Sam Whitaker', 'analyst', 'invited'],
+];
 
 /**
  * Open-opportunity next steps, seeded deterministically from the opportunity
@@ -392,6 +421,36 @@ function generateRegistrations(partners: Partner[]): DealRegistration[] {
   }
 
   return registrations;
+}
+
+/**
+ * Seed the 24-hours-out SLA warning.
+ *
+ * The warning window is one business day wide, so which submissions sit in it
+ * depends on the snapshot's weekday: a natural distribution can easily contain
+ * none, and then the alert rule has nothing to demonstrate. This re-dates a few
+ * still-pending submissions — one per partner — to the day that leaves exactly
+ * REGISTRATION_SLA_WARNING_BUSINESS_DAYS before the deadline, which is the
+ * moment the rule is meant to fire. They stay real pending registrations; only
+ * the working date is chosen, and it is derived from the snapshot rather than
+ * hard-coded, so it follows if the snapshot moves. No PRNG is consumed, so no
+ * volume, amount, or index changes.
+ */
+function seedSlaWarningWindow(registrations: DealRegistration[]): void {
+  const warningDate = iso(
+    businessDaysBefore(
+      SNAPSHOT,
+      REGISTRATION_SLA_BUSINESS_DAYS - REGISTRATION_SLA_WARNING_BUSINESS_DAYS,
+    ),
+  );
+  const seededPartners = new Set<string>();
+  for (const registration of registrations) {
+    if (seededPartners.size >= SLA_WARNING_ROWS) return;
+    if (registration.status !== 'pending') continue;
+    if (seededPartners.has(registration.partnerId)) continue;
+    registration.submittedAt = warningDate;
+    seededPartners.add(registration.partnerId);
+  }
 }
 
 function buildOpportunity(params: {
@@ -778,11 +837,43 @@ function generateCertifications(partners: Partner[]): PartnerCertification[] {
   });
 }
 
+/**
+ * The internal partner-team roster. Derived from the fixed TEAM_USERS list
+ * rather than the PRNG, so adding a person never shifts the book, and ids stay
+ * stable while names or roles are reordered only deliberately.
+ */
+function generateTeamUsers(partnerManagers: PartnerManager[]): TeamUser[] {
+  let managerIndex = 0;
+  return TEAM_USERS.map(([name, role, status], index) => {
+    const addedAt = new Date(Date.UTC(2026, 1, 2 + index));
+    return {
+      id: `user-${String(index + 1).padStart(2, '0')}`,
+      name,
+      email: `${name.toLowerCase().replace(/[^a-z]+/g, '.')}@factory.ai`,
+      role,
+      partnerManagerId:
+        role === 'partner-manager' ? partnerManagers[managerIndex++]?.id : undefined,
+      status,
+      channels:
+        role === 'analyst'
+          ? ['email']
+          : role === 'deal-desk-ops'
+            ? ['email', 'slack']
+            : [...NOTIFICATION_CHANNELS],
+      addedAt: iso(addedAt),
+      addedBy: 'Nadia Okonkwo',
+      // Only a user who has been authorized carries the grant timestamp.
+      authorizedAt: status === 'active' ? iso(new Date(addedAt.getTime() + DAY)) : undefined,
+    };
+  });
+}
+
 export function generateDashboardData(): DashboardData {
   rand = mulberry32(SEED);
   const partnerManagers = generatePartnerManagers();
   const partners = generatePartners(partnerManagers);
   const registrations = generateRegistrations(partners);
+  seedSlaWarningWindow(registrations);
   const opportunities = [
     ...generateOpportunities(partners, registrations),
     ...generatePriorYearOpportunities(partners),
@@ -791,6 +882,7 @@ export function generateDashboardData(): DashboardData {
   const targets = generateTargets(partners);
   const activities = generateActivities(partners, partnerManagers);
   const certifications = generateCertifications(partners);
+  const teamUsers = generateTeamUsers(partnerManagers);
   return {
     partnerManagers,
     partners,
@@ -800,5 +892,6 @@ export function generateDashboardData(): DashboardData {
     targets,
     activities,
     certifications,
+    teamUsers,
   };
 }

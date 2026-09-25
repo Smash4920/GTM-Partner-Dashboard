@@ -1,16 +1,18 @@
 # GTM Partner Dashboard
 
-Mockup of a partner revenue pipeline dashboard for the GTM team. Six views over
+Mockup of a partner revenue pipeline dashboard for the GTM team. Seven views over
 one data model, reached through a collapsible left sidebar: **Home** (ecosystem
 summary), **Partner Performance** (per-manager / per-partner drill-down),
 **Forecasting** (the VP's in-quarter view with a weighted forecast),
 **Deal Reg Ops** (registration SLAs, conversion time, exclusivity, and
 conflicts), **Activity Tracking** (weekly meeting goals and calendar logging),
-**Partner View** (the partner-facing sharing surface), and **Production
-Requirements** (the architecture + utility roadmap).
+**Partner View** (the partner-facing sharing surface), **Production
+Requirements** (the architecture + utility roadmap), and **Data Connections**
+(the integration map, partner-team access, and registration SLA notifications).
 
 ![Home view](docs/screenshots/home.png)
 ![Forecasting view](docs/screenshots/forecasting.png)
+![Data Connections view](docs/screenshots/data-connections.png)
 
 The interface follows Factory's external brand system: near-black canvas
 (#101010), bone type (#EEEEEE), Geist / Geist Mono, 1px hairline borders, no
@@ -170,8 +172,8 @@ Organized by partner manager and their assigned partners, with dropdowns for
   Support, Technical Enablement, GTM Enablement, and Partner Cadence
 
 In-app edits (revenue, forecast-category calls, notes, next steps,
-classifications, added prospects) live in React state for the session; a
-write-capable provider is the next step.
+classifications, added prospects, roster changes, sent notifications) live in
+React state for the session; a write-capable provider is the next step.
 
 ### Partner View
 
@@ -202,6 +204,48 @@ service type for which client, whether Factory revenue is attached or it is a
 long-term adoption play, and what the engagement produced) — separated from the
 architecture work so the two tracks can be prioritized independently.
 
+### Data Connections
+
+The integration map and the two things that hang off it: who on the partner
+team can be told about the data, and the rule that tells them.
+
+- **Data connection map** — a wire diagram of every system the dashboard reads
+  from or writes to, drawn from one catalog
+  ([`src/data/connections.ts`](src/data/connections.ts)) so the boxes and the
+  wires cannot disagree about where a node sits. Boxes are systems, wires are
+  data. Color is state only: **required** (signal) is a connection that has to
+  exist before real partner data can be served, **live** (metric) is flowing
+  through the DataProvider seam today, **planned** (graphite, dashed) is
+  roadmap. Click a box for what it supplies, the DataProvider methods it fills,
+  its source object, auth, cadence, and — the point of the view — what is still
+  missing and which roadmap track owns it. Each node's `methods` name the
+  DataProvider method it fills, so the map and the contract in
+  `DataProvider.ts` can be read against each other; a test asserts every method
+  there is covered here
+- **Partner team access** — the internal roster the identity provider owns,
+  projected into the dashboard. Adding a person puts them on the roster
+  *awaiting authorization*; authorizing is a second, separate step, which is
+  the split a real IdP enforces between knowing who should have access and
+  granting it. A user is either a Partnership Lead, a Partner Manager (aligned
+  to one partner manager, which is what routes a registration to them), Deal
+  Desk Ops (the whole queue), or an Analyst; each carries the notification
+  channels they are authorized on. Access can be revoked and restored, and a
+  user added this session can be removed
+- **Deal-registration SLA alerts** — the notification rule, the registrations
+  it fires on, and what has been sent this session. Every pending registration
+  is measured against the 5-business-day response SLA at the snapshot; one
+  business day (24 hours) before the deadline the owner is warned, and once it
+  has passed the breach is raised. The owner is the submitting partner's
+  aligned partner manager, with the deal desk catching anything unaligned, so a
+  registration never goes unowned. The 24-hour warnings lead the queue — they
+  are the ones with a working day left in them
+- **Notifications** are sent from inside the map: pick a teammate in the
+  notification node and it loads their own most urgent alert, or pick a
+  registration from the alert queue, or write a free-form note. Delivery goes
+  out over the user's authorized channels only, and the send is logged. Sends
+  are timestamped off the session clock, not the fixed snapshot: the demo data
+  is frozen at Sep 18, but an action taken now happened now
+
 ## Running locally
 
 ```bash
@@ -228,6 +272,7 @@ The UI only talks to the `DataProvider` interface
 | `getTargets()`        | `Target[]`              | Quota objects or warehouse                |
 | `listActivities()`    | `ActivityMeeting[]`     | Google Calendar events                    |
 | `listCertifications()` | `PartnerCertification[]` | Partner enablement system               |
+| `listTeamUsers()`     | `TeamUser[]`            | Identity provider / SCIM directory        |
 
 `MockDataProvider` fills the seam with deterministic, seeded data today. To go
 live, implement the interface against your CRM (HubSpot, Salesforce) or
@@ -236,8 +281,8 @@ changes.
 
 The interface is read-only. `App.tsx` layers the session's in-app edits —
 revenue overrides, forecast-category calls, notes, next steps, meeting
-classifications, and added prospects — on top of the provider's book before
-handing a single merged
+classifications, added prospects, roster changes, and sent notifications — on
+top of the provider's book before handing a single merged
 `DashboardData` to every page, so writes are the one thing a live provider
 still needs to add.
 
@@ -260,7 +305,9 @@ written by a scheduled job.
   and `generateDashboardData()` call
 - Fixed snapshot: 2026-09-18 (`SNAPSHOT_DATE`) so numbers never drift
 - 5 partner managers, each aligned to 5 partners through a Salesforce-style
-  account relationship
+  account relationship, each with an authorized Partner Manager user aligned to
+  them; the 8-person roster also carries a partnership lead, a deal-desk ops
+  user, and an analyst still awaiting authorization
 - 25 partners, 180 registrations, 213 opportunities — the FY27 book
   (February 2026 → January 2027) plus a closed prior-year FY26 book that only
   feeds the prior-year delta tiles — and 163 mock calendar meetings: a seeded
@@ -289,6 +336,11 @@ written by a scheduled job.
   client with another partner so the duplicate/conflict views have rows, and
   older approved registrations are left unconverted so the exclusivity window
   has lapsed and still-current rows
+- A few still-pending registrations are re-dated to one business day before
+  their response SLA — one per partner — so the 24-hours-out notification rule
+  has owners to reach at the snapshot. The warning window is only a day wide,
+  and a natural distribution can contain none of it; the seeded working date is
+  derived from the snapshot, and no PRNG is consumed, so no volume shifts
 - Realized FY27 win rate: 20 of 44 closed deals won (~45%)
 - Volumes and weights are tuned in
   [`src/data/mock/generate.ts`](src/data/mock/generate.ts); the exact volumes

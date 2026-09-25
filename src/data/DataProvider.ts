@@ -7,6 +7,7 @@ import type {
   PartnerManager,
   PipelineSnapshot,
   Target,
+  TeamUser,
 } from './types';
 
 /**
@@ -31,4 +32,11 @@ export interface DataProvider {
   getTargets(): Promise<Target[]>;
   listActivities(): Promise<ActivityMeeting[]>;
   listCertifications(): Promise<PartnerCertification[]>;
+  /**
+   * The internal partner-team roster, projected from the identity provider.
+   * This is what decides who a deal-registration alert belongs to; a provider
+   * with no roster yet may return an empty array, and the alerts simply carry
+   * no owner.
+   */
+  listTeamUsers(): Promise<TeamUser[]>;
 }

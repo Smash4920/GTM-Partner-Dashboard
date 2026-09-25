@@ -45,4 +45,8 @@ export class MockDataProvider implements DataProvider {
   async listCertifications() {
     return this.data.certifications;
   }
+
+  async listTeamUsers() {
+    return this.data.teamUsers;
+  }
 }
