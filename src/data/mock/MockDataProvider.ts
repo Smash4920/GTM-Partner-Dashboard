@@ -30,6 +30,10 @@ export class MockDataProvider implements DataProvider {
     return this.data.opportunities;
   }
 
+  async listPipelineSnapshots() {
+    return this.data.snapshots;
+  }
+
   async getTargets() {
     return this.data.targets;
   }

@@ -41,6 +41,17 @@ export function formatDate(iso: string): string {
   return dateFmt.format(new Date(iso));
 }
 
+// Week buckets on charts: month + day, no year.
+const dayShortFmt = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
+
+export function formatDayShort(iso: string): string {
+  return dayShortFmt.format(new Date(iso));
+}
+
 // Meetings keep their UTC clock time for the calendar grid; no timezone math.
 const timeFmt = new Intl.DateTimeFormat('en-US', {
   hour: '2-digit',

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { SNAPSHOT_DATE } from '../data/constants';
 import type {
   ActivityMeeting,
   DashboardData,
   DealRegistration,
   Opportunity,
   Partner,
+  PipelineSnapshot,
   Target,
 } from '../data/types';
 import {
@@ -22,6 +24,8 @@ import {
   filterRegistrationsByPhase,
   forecastCategoryOf,
   formatCoverage,
+  openOpportunities,
+  openPipeline,
   partnerLeaderboard,
   phaseWindow,
   quarterlyClosedWonAndTarget,
@@ -29,6 +33,7 @@ import {
   registrationSlaState,
   registrationsPastSla,
   remainingQuota,
+  weeklyForecastRows,
   weeklyGoalProgress,
   weightedForecast,
   winRateForPhase,
@@ -83,10 +88,23 @@ function dashboard(overrides: Partial<DashboardData>): DashboardData {
     partners: [],
     registrations: [],
     opportunities: [],
+    snapshots: [],
     targets: [],
     activities: [],
     certifications: [],
     ...overrides,
+  };
+}
+
+function snapshot(
+  fields: Partial<PipelineSnapshot> & Pick<PipelineSnapshot, 'takenAt' | 'opportunityId'>,
+): PipelineSnapshot {
+  return {
+    forecastedRevenue: 10_000,
+    forecastCategory: 'pipeline',
+    stage: 'scope',
+    expectedCloseDate: '2026-09-30T00:00:00Z',
+    ...fields,
   };
 }
 
@@ -486,6 +504,220 @@ describe('weightedForecast', () => {
     expect(rows.pipeline).toMatchObject({ value: 10_000, count: 1 });
     expect(rows['long-shot']).toMatchObject({ value: 2_000, count: 1 });
     expect(rows['best-case']).toMatchObject({ value: 0, count: 0 });
+  });
+});
+
+describe('weeklyForecastRows', () => {
+  it('spans the whole quarter in Monday-aligned buckets, stub days folded into week one', () => {
+    const rows = weeklyForecastRows([], 'FY27-Q3');
+    expect(rows).toHaveLength(13);
+    // Q3 runs Aug 1 – Nov 1 and Aug 1 is a Saturday, so week one absorbs the
+    // weekend stub and runs [Aug 1, Aug 10); Mondays carry the rest.
+    expect(rows[0]).toMatchObject({
+      weekStart: '2026-08-01T00:00:00.000Z',
+      weekEnd: '2026-08-10T00:00:00.000Z',
+    });
+    expect(rows[1].weekStart).toBe('2026-08-10T00:00:00.000Z');
+    expect(rows[rows.length - 1]).toMatchObject({
+      weekStart: '2026-10-26T00:00:00.000Z',
+      weekEnd: '2026-11-01T00:00:00.000Z',
+    });
+  });
+
+  it('lights up one week at a time as the as-of date advances', () => {
+    // Snapshot Sep 18 (Friday): the weeks through Sep 14 have begun.
+    expect(weeklyForecastRows([], 'FY27-Q3').map((row) => row.hasStarted)).toEqual([
+      true, true, true, true, true, true, true,
+      false, false, false, false, false, false,
+    ]);
+    // In week 3 of the quarter, only weeks 1-3 carry points.
+    const early = weeklyForecastRows([], 'FY27-Q3', new Date('2026-08-20T00:00:00Z'));
+    expect(early.filter((row) => row.hasStarted)).toHaveLength(3);
+    expect(early[2]).toMatchObject({ weekStart: '2026-08-17T00:00:00.000Z', hasStarted: true });
+    expect(early[3].hasStarted).toBe(false);
+  });
+
+  it('matches the open pipeline and weighted forecast tiles at the latest started week', () => {
+    const opps = [
+      opp({ id: 'a', expectedCloseDate: '2026-09-01T00:00:00Z' }),
+      opp({ id: 'b', expectedCloseDate: '2026-10-15T00:00:00Z', stage: 'deal-desk-review' }),
+      opp({
+        id: 'c',
+        expectedCloseDate: '2026-09-10T00:00:00Z',
+        outcome: 'won',
+        closedAt: '2026-09-05T00:00:00Z',
+      }),
+    ];
+    const started = weeklyForecastRows(opps, 'FY27-Q3').filter((row) => row.hasStarted);
+    const latest = started[started.length - 1];
+    const book = openOpportunities(filterByPhase(opps, 'q3'));
+    expect(latest.total).toBe(openPipeline(book).value);
+    expect(latest.weightedTotal).toBe(weightedForecast(book).total);
+  });
+
+  it('carries a deal only in the weeks it exists and is open', () => {
+    const rows = weeklyForecastRows(
+      [
+        // Created Aug 5, won Sep 1: in the book between those dates only.
+        opp({
+          id: 'a',
+          createdAt: '2026-08-05T00:00:00Z',
+          expectedCloseDate: '2026-09-10T00:00:00Z',
+          outcome: 'won',
+          closedAt: '2026-09-01T00:00:00Z',
+        }),
+        // Scheduled to close outside the quarter: never in the in-quarter book.
+        opp({ id: 'b', expectedCloseDate: '2026-11-15T00:00:00Z' }),
+      ],
+      'FY27-Q3',
+    );
+    // Weeks: Aug 1, Aug 10, Aug 17, Aug 24, Aug 31, ... — the deal is in the
+    // book from its creation (Aug 5) until the week it closes (Sep 1).
+    expect(rows.map((row) => row.total)).toEqual([
+      10_000, 10_000, 10_000, 10_000, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+  });
+
+  it('weights each category bucket at its close probability', () => {
+    const started = weeklyForecastRows(
+      [
+        opp({ id: 'a', expectedCloseDate: '2026-09-01T00:00:00Z', stage: 'deal-desk-review' }),
+        opp({ id: 'b', expectedCloseDate: '2026-09-01T00:00:00Z', stage: 'discovery' }),
+      ],
+      'FY27-Q3',
+    ).filter((row) => row.hasStarted);
+    const latest = started[started.length - 1];
+    expect(latest.raw.commit).toBe(10_000);
+    expect(latest.weighted.commit).toBe(9_000);
+    expect(latest.raw['long-shot']).toBe(10_000);
+    expect(latest.weighted['long-shot']).toBe(1_000);
+    expect(latest.total).toBe(20_000);
+    expect(latest.weightedTotal).toBe(10_000);
+  });
+
+  it('freezes the in-progress week at the as-of date', () => {
+    const opps = [
+      opp({
+        id: 'a',
+        createdAt: '2026-08-22T00:00:00Z',
+        expectedCloseDate: '2026-10-01T00:00:00Z',
+      }),
+    ];
+    // Aug 20 sits inside the week of Aug 17: a deal created Aug 22 is not in
+    // its state, but lands once the next week has begun.
+    const asOfAug20 = weeklyForecastRows(opps, 'FY27-Q3', new Date('2026-08-20T00:00:00Z'));
+    expect(asOfAug20[2]).toMatchObject({ weekStart: '2026-08-17T00:00:00.000Z', total: 0 });
+    const asOfAug25 = weeklyForecastRows(opps, 'FY27-Q3', new Date('2026-08-25T00:00:00Z'));
+    expect(asOfAug25[3]).toMatchObject({ weekStart: '2026-08-24T00:00:00.000Z', total: 10_000 });
+  });
+
+  it('leaves a future quarter with an empty axis', () => {
+    const rows = weeklyForecastRows(
+      [opp({ id: 'a', expectedCloseDate: '2026-12-01T00:00:00Z' })],
+      'FY27-Q4',
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => !row.hasStarted && row.total === 0)).toBe(true);
+  });
+});
+
+describe('weeklyForecastRows with recorded history', () => {
+  // One deal, recorded at every Monday of Q3 through the snapshot week.
+  const mondays = [
+    '2026-08-10', '2026-08-17', '2026-08-24', '2026-08-31',
+    '2026-09-07', '2026-09-14',
+  ].map((day) => `${day}T00:00:00.000Z`);
+
+  const book = [opp({ id: 'a', expectedCloseDate: '2026-09-30T00:00:00Z' })];
+
+  it('reads closed weeks from the snapshot rather than the current book', () => {
+    // The deal was called Pipeline at $100k all quarter, and today reads
+    // Commit at $500k. History must show what was recorded, not today.
+    const history = mondays.map((takenAt) =>
+      snapshot({
+        takenAt,
+        opportunityId: 'a',
+        forecastedRevenue: 100_000,
+        forecastCategory: 'pipeline',
+      }),
+    );
+    const edited = [
+      opp({
+        id: 'a',
+        expectedCloseDate: '2026-09-30T00:00:00Z',
+        forecastedRevenue: 500_000,
+        forecastCategory: 'commit',
+      }),
+    ];
+    const rows = weeklyForecastRows(edited, 'FY27-Q3', SNAPSHOT_DATE, history);
+    const recorded = rows.filter((row) => row.recordedAt !== undefined);
+    expect(recorded).toHaveLength(6);
+    for (const row of recorded) {
+      expect(row.total).toBe(100_000);
+      expect(row.raw.pipeline).toBe(100_000);
+      expect(row.weightedTotal).toBe(25_000); // 100k × 25%, the call of the day
+    }
+  });
+
+  it('keeps the in-progress week live, so it still matches the tiles', () => {
+    const history = mondays.map((takenAt) =>
+      snapshot({ takenAt, opportunityId: 'a', forecastedRevenue: 100_000 }),
+    );
+    const rows = weeklyForecastRows(book, 'FY27-Q3', SNAPSHOT_DATE, history);
+    // Snapshot Sep 18 sits inside the week of Sep 14, whose own recording is
+    // its opening boundary, not a state inside it: that week stays live.
+    const live = rows.filter((row) => row.hasStarted && row.recordedAt === undefined);
+    expect(live).toHaveLength(1);
+    expect(live[0].weekStart).toBe('2026-09-14T00:00:00.000Z');
+    const open = openOpportunities(filterByPhase(book, 'q3'));
+    expect(live[0].total).toBe(openPipeline(open).value);
+    expect(live[0].weightedTotal).toBe(weightedForecast(open).total);
+  });
+
+  it('shows a slip out of the quarter as a drop instead of erasing it', () => {
+    // Recorded in Q3 for the first three weeks, then pushed into Q4. Today the
+    // deal is a Q4 deal, so deriving from the current book would hide it from
+    // every week and leave no drop behind.
+    const history = mondays.map((takenAt, index) =>
+      snapshot({
+        takenAt,
+        opportunityId: 'a',
+        forecastedRevenue: 100_000,
+        expectedCloseDate:
+          index < 3 ? '2026-09-30T00:00:00Z' : '2026-11-20T00:00:00Z',
+      }),
+    );
+    const slipped = [opp({ id: 'a', expectedCloseDate: '2026-11-20T00:00:00Z' })];
+    const totals = weeklyForecastRows(slipped, 'FY27-Q3', SNAPSHOT_DATE, history)
+      .filter((row) => row.recordedAt !== undefined)
+      .map((row) => row.total);
+    expect(totals).toEqual([100_000, 100_000, 100_000, 0, 0, 0]);
+  });
+
+  it('falls back to the current book for weeks history does not cover', () => {
+    // History starts in September, so August weeks have nothing recorded.
+    const history = mondays.slice(4).map((takenAt) =>
+      snapshot({ takenAt, opportunityId: 'a', forecastedRevenue: 100_000 }),
+    );
+    const rows = weeklyForecastRows(book, 'FY27-Q3', SNAPSHOT_DATE, history);
+    const august = rows.filter(
+      (row) => row.hasStarted && new Date(row.weekStart) < new Date('2026-08-31T00:00:00Z'),
+    );
+    expect(august.length).toBeGreaterThan(0);
+    for (const row of august) {
+      expect(row.recordedAt).toBeUndefined();
+      expect(row.total).toBe(10_000); // the fixture's current amount
+    }
+    expect(rows.filter((row) => row.recordedAt !== undefined)).toHaveLength(2);
+  });
+
+  it('ignores recordings outside the quarter being charted', () => {
+    const history = [
+      snapshot({ takenAt: '2026-07-06T00:00:00.000Z', opportunityId: 'a' }),
+      snapshot({ takenAt: '2026-11-09T00:00:00.000Z', opportunityId: 'a' }),
+    ];
+    const rows = weeklyForecastRows(book, 'FY27-Q3', SNAPSHOT_DATE, history);
+    expect(rows.every((row) => row.recordedAt === undefined)).toBe(true);
   });
 });
 

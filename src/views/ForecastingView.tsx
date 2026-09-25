@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import Card from '../components/Card';
 import ForecastTable from '../components/ForecastTable';
 import KpiTile from '../components/KpiTile';
+import WeeklyForecastChart from '../components/WeeklyForecastChart';
 import { ChevronIcon } from '../components/icons';
 import {
   FISCAL_PHASES,
@@ -26,6 +27,7 @@ import {
   remainingQuota,
   targetsForPhase,
   weightedForecast,
+  weeklyForecastRows,
 } from '../lib/metrics';
 
 const quarter = fiscalQuarterOfDate(SNAPSHOT_DATE.toISOString());
@@ -157,6 +159,22 @@ export default function ForecastingView({
     [openInQuarterOpps],
   );
 
+  // Week-over-week pipeline: closed weeks come from the recorded snapshots, so
+  // editing a deal today moves the current week's bar and leaves history
+  // alone; the in-progress week is the live book, so it equals the tiles above.
+  const weeklyRows = useMemo(
+    () => weeklyForecastRows(data.opportunities, quarter, SNAPSHOT_DATE, data.snapshots),
+    [data.opportunities, data.snapshots, quarter],
+  );
+  const startedWeeks = useMemo(
+    () => weeklyRows.filter((row) => row.hasStarted).length,
+    [weeklyRows],
+  );
+  const recordedWeeks = useMemo(
+    () => weeklyRows.filter((row) => row.recordedAt !== undefined).length,
+    [weeklyRows],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -237,6 +255,21 @@ export default function ForecastingView({
           );
         })}
       </div>
+
+      <Card
+        title="Week-over-week pipeline"
+        subtitle={`Open ${phaseLabel} pipeline (solid) vs the probability-weighted forecast (faded), stacked by forecast category · dashed line = ${phaseLabel} revenue goal · ${startedWeeks} of ${weeklyRows.length} weeks in, ${recordedWeeks} from recorded history`}
+      >
+        <WeeklyForecastChart rows={weeklyRows} goal={target} />
+        <p className="mt-4 text-xs text-granite">
+          {recordedWeeks} closed weeks are read from the weekly pipeline snapshot, each one the
+          open book as it stood that Friday, so they never move: re-call a deal or correct its
+          revenue today and only the live week changes. The live week is as of the snapshot
+          date, which is why it matches the tiles above. A bar falling week-over-week is
+          pipeline that closed, was lost, or slipped out of the quarter — the amount a deal was
+          called at, and the week it moved, are both recorded, so the table below says which.
+        </p>
+      </Card>
 
       <Card
         title="Calls that disagree with stage"

@@ -1,9 +1,11 @@
 import {
   FISCAL_QUARTERS,
+  FISCAL_YEAR_START,
   FORECAST_CATEGORIES,
   FORECAST_CATEGORY_FOR_STAGE,
   MEETING_TYPES,
   SNAPSHOT_DATE,
+  STAGES,
 } from '../constants';
 import { quarterWindow, startOfWeekUtc } from '../../lib/fiscal';
 import type {
@@ -19,6 +21,7 @@ import type {
   PartnerManager,
   PartnerTier,
   PartnerType,
+  PipelineSnapshot,
   Region,
   Target,
 } from '../types';
@@ -561,6 +564,128 @@ function generatePriorYearOpportunities(partners: Partner[]): Opportunity[] {
   return opportunities;
 }
 
+// ---- weekly pipeline history -----------------------------------------------
+
+const WEEK = 7 * DAY;
+
+/**
+ * Stable hash of an id, for variation that consumes no seeded randomness.
+ *
+ * The finalizer matters: opportunity ids run in sequence and differ only in
+ * their last characters, so without mixing, the low bits track id order and
+ * any `% n` selection picks a periodic slice of the book — which silently
+ * correlates drift with creation batches, and so with close-date ranges.
+ */
+function idHash(id: string, salt: number): number {
+  let hash = salt;
+  for (const char of id) hash = (hash * 131 + char.charCodeAt(0)) >>> 0;
+  hash ^= hash >>> 16;
+  hash = Math.imul(hash, 0x7feb352d) >>> 0;
+  hash ^= hash >>> 15;
+  hash = Math.imul(hash, 0x846ca68b) >>> 0;
+  return (hash ^ (hash >>> 16)) >>> 0;
+}
+
+/**
+ * Forecasted revenue as it stood `weeksAgo` weeks before the snapshot. Most
+ * deals were never re-sized; of those that were, most grew as the scope firmed
+ * up and a few were cut back.
+ */
+function snapshotRevenue(opportunity: Opportunity, weeksAgo: number): number {
+  const hash = idHash(opportunity.id, 7);
+  if (hash % 3 !== 0) return opportunity.forecastedRevenue;
+  const stepWeeksAgo = 2 + (hash % 6);
+  if (weeksAgo < stepWeeksAgo) return opportunity.forecastedRevenue;
+  // A cut deal was larger before the step; a grown deal was smaller.
+  const factor =
+    hash % 9 === 0 ? 1.1 + ((hash >> 3) % 4) * 0.08 : 0.62 + ((hash >> 3) % 5) * 0.07;
+  return Math.round((opportunity.forecastedRevenue * factor) / 1_000) * 1_000;
+}
+
+/**
+ * The call and stage as they stood. A minority of deals were a bucket more
+ * cautious and a stage earlier a few weeks back, which is what makes a
+ * week-over-week composition shift real rather than an artifact of today's
+ * calls being projected backward.
+ */
+function snapshotCall(
+  opportunity: Opportunity,
+  weeksAgo: number,
+): { category: ForecastCategory; stage: OpportunityStage } {
+  const current =
+    opportunity.forecastCategory ?? FORECAST_CATEGORY_FOR_STAGE[opportunity.stage];
+  const hash = idHash(opportunity.id, 11);
+  if (hash % 4 !== 0) return { category: current, stage: opportunity.stage };
+  const calledWeeksAgo = 1 + (hash % 5);
+  if (weeksAgo < calledWeeksAgo) return { category: current, stage: opportunity.stage };
+  return {
+    category: FORECAST_CATEGORIES[Math.max(0, FORECAST_CATEGORIES.indexOf(current) - 1)],
+    stage: STAGES[Math.max(0, STAGES.indexOf(opportunity.stage) - 1)],
+  };
+}
+
+/**
+ * Expected close as it stood. A minority of deals moved across a quarter
+ * boundary: a slip pushes the date out, so the quarter it left shows the drop,
+ * and a pull-in brings it forward, so the quarter it joined shows the rise.
+ * Six weeks is enough movement to cross a boundary either way.
+ */
+function snapshotCloseDate(opportunity: Opportunity, weeksAgo: number): string {
+  const hash = idHash(opportunity.id, 13);
+  if (hash % 5 !== 0) return opportunity.expectedCloseDate;
+  const movedWeeksAgo = 1 + (hash % 4);
+  if (weeksAgo < movedWeeksAgo) return opportunity.expectedCloseDate;
+  const current = new Date(opportunity.expectedCloseDate).getTime();
+  // Slips outnumber pull-ins about two to one, as they do in a real book.
+  const pulledIn = hash % 15 === 0;
+  return iso(new Date(pulledIn ? current + 6 * WEEK : current - 6 * WEEK));
+}
+
+/**
+ * Weekly recordings of the open book: one row per open opportunity per Monday
+ * of FY27 through the snapshot date.
+ *
+ * Without history a week-over-week view has to read past weeks off the current
+ * book, which backdates every later change — amounts, calls, and close dates
+ * all arrive retroactively, and a deal that slipped out of a quarter vanishes
+ * from the weeks it was in rather than showing the drop. These rows are what a
+ * Friday-evening capture would have written, so once written they never move.
+ *
+ * Drift is derived from the opportunity id and the week index rather than the
+ * seeded PRNG, so adding history shifts no existing volume or amount.
+ */
+function generateSnapshots(opportunities: Opportunity[]): PipelineSnapshot[] {
+  const fiscalStart = FISCAL_YEAR_START.getTime();
+  const mondayOnOrBefore = startOfWeekUtc(FISCAL_YEAR_START).getTime();
+  const firstMonday = mondayOnOrBefore === fiscalStart ? fiscalStart : mondayOnOrBefore + WEEK;
+  const lastMonday = startOfWeekUtc(SNAPSHOT).getTime();
+  const snapshots: PipelineSnapshot[] = [];
+
+  for (let takenAt = firstMonday; takenAt <= lastMonday; takenAt += WEEK) {
+    const weeksAgo = Math.round((lastMonday - takenAt) / WEEK);
+    for (const opportunity of opportunities) {
+      if (new Date(opportunity.createdAt).getTime() > takenAt) continue;
+      const closedAt = opportunity.closedAt
+        ? new Date(opportunity.closedAt).getTime()
+        : undefined;
+      // A snapshot is the open book: membership is what records that the deal
+      // had neither closed nor been created yet at that moment.
+      if (closedAt !== undefined && closedAt <= takenAt) continue;
+      const call = snapshotCall(opportunity, weeksAgo);
+      snapshots.push({
+        takenAt: iso(new Date(takenAt)),
+        opportunityId: opportunity.id,
+        forecastedRevenue: snapshotRevenue(opportunity, weeksAgo),
+        forecastCategory: call.category,
+        stage: call.stage,
+        expectedCloseDate: snapshotCloseDate(opportunity, weeksAgo),
+      });
+    }
+  }
+
+  return snapshots;
+}
+
 function generateTargets(partners: Partner[]): Target[] {
   const targets: Target[] = [];
   for (const partner of partners) {
@@ -662,6 +787,7 @@ export function generateDashboardData(): DashboardData {
     ...generateOpportunities(partners, registrations),
     ...generatePriorYearOpportunities(partners),
   ];
+  const snapshots = generateSnapshots(opportunities);
   const targets = generateTargets(partners);
   const activities = generateActivities(partners, partnerManagers);
   const certifications = generateCertifications(partners);
@@ -670,6 +796,7 @@ export function generateDashboardData(): DashboardData {
     partners,
     registrations,
     opportunities,
+    snapshots,
     targets,
     activities,
     certifications,

@@ -27,6 +27,7 @@ import type {
   OpportunityStage,
   OpportunityType,
   Partner,
+  PipelineSnapshot,
   Target,
 } from '../data/types';
 import { fiscalQuarterOfDate, quarterWindow, startOfWeekUtc } from './fiscal';
@@ -640,6 +641,135 @@ export function weightedForecast(openOpps: Opportunity[]): WeightedForecast {
     total: rows.reduce((sum, row) => sum + row.value, 0),
     rows,
   };
+}
+
+export interface WeeklyForecastRow {
+  /** ISO start of the week bucket; the first bucket starts at the quarter start. */
+  weekStart: string;
+  /** ISO end of the week bucket (exclusive); the last bucket ends at the quarter end. */
+  weekEnd: string;
+  /** Open in-quarter pipeline per forecast category, raw dollars. */
+  raw: Record<ForecastCategory, number>;
+  /** The same pipeline per category, weighted by the category's probability. */
+  weighted: Record<ForecastCategory, number>;
+  /** Total open pipeline at the week's close (Σ raw). */
+  total: number;
+  /** Probability-weighted forecast at the week's close (Σ weighted). */
+  weightedTotal: number;
+  /** False until the week has begun as of the as-of date; future weeks carry zeros. */
+  hasStarted: boolean;
+  /**
+   * When the week's state came from a recorded snapshot, the instant it was
+   * taken. Undefined for a week reconstructed from the current book — the
+   * in-progress week, or any week a provider has no history for.
+   */
+  recordedAt?: string;
+}
+
+/**
+ * Week-over-week state of one quarter's partner-sourced pipeline, one bucket
+ * per week of the quarter: Monday-aligned, clipped at the quarter end, and
+ * spanning the entire quarter so a new bucket lights up as each week begins.
+ *
+ * A quarter rarely starts on a Monday, so the days before the first Monday
+ * join the first week rather than forming their own bucket: a two-day stub
+ * beside a full week reads as two comparable weeks on a bar chart when it is
+ * nothing of the kind.
+ *
+ * A bucket's values are the open book as it stood at the week's close,
+ * counting only deals expected to close inside the quarter. Closed weeks come
+ * from recorded snapshots, so they are immutable: an amount raised, a deal
+ * re-called, or a close date slipped this week moves this week's bar and
+ * leaves the earlier ones alone. Without history — a provider that supplies
+ * none — a week is reconstructed from the current book instead, which is only
+ * faithful about deals entering and leaving, and silently backdates every
+ * other change. `recordedAt` says which kind of week a caller is looking at.
+ *
+ * The in-progress week is always reconstructed from the live book (no snapshot
+ * exists yet), so it equals the forecasting tiles and moves with in-app edits.
+ */
+export function weeklyForecastRows(
+  opps: Opportunity[],
+  quarter: string,
+  asOf: Date = SNAPSHOT_DATE,
+  snapshots: PipelineSnapshot[] = [],
+): WeeklyForecastRow[] {
+  const { start, end } = quarterWindow(quarter);
+  const qStart = start.getTime();
+  const qEnd = end.getTime();
+  const asOfTs = asOf.getTime();
+
+  const startsOnMonday = startOfWeekUtc(start).getTime() === qStart;
+  const starts = [qStart];
+  // A quarter that opens mid-week gives its first bucket the stub days plus
+  // the following full week, so every bucket on the axis is at least a week.
+  let cursor = startOfWeekUtc(start).getTime() + (startsOnMonday ? 7 : 14) * DAY;
+  while (cursor < qEnd) {
+    starts.push(cursor);
+    cursor += 7 * DAY;
+  }
+
+  const byInstant = new Map<number, PipelineSnapshot[]>();
+  for (const snapshot of snapshots) {
+    const takenAt = new Date(snapshot.takenAt).getTime();
+    const group = byInstant.get(takenAt);
+    if (group) group.push(snapshot);
+    else byInstant.set(takenAt, [snapshot]);
+  }
+  const instants = [...byInstant.keys()].sort((a, b) => a - b);
+
+  return starts.map((weekStart, index) => {
+    const weekEnd = index + 1 < starts.length ? starts[index + 1] : qEnd;
+    const hasStarted = weekStart <= asOfTs;
+    // State at the week's close; the in-progress week freezes at the as-of date.
+    const at = Math.min(weekEnd, asOfTs);
+    // The latest recording inside this bucket. Requiring it past weekStart is
+    // what keeps the in-progress week from reusing last week's snapshot.
+    const recordedAt = instants.reduce<number | undefined>(
+      (latest, instant) =>
+        instant > weekStart && instant <= at ? instant : latest,
+      undefined,
+    );
+
+    const raw = Object.fromEntries(
+      FORECAST_CATEGORIES.map((category) => [category, 0]),
+    ) as Record<ForecastCategory, number>;
+    const weighted = { ...raw };
+    const add = (category: ForecastCategory, revenue: number) => {
+      raw[category] += revenue;
+      weighted[category] += revenue * FORECAST_CATEGORY_META[category].weight;
+    };
+
+    if (hasStarted && recordedAt !== undefined) {
+      for (const snapshot of byInstant.get(recordedAt)!) {
+        const expectedClose = new Date(snapshot.expectedCloseDate).getTime();
+        if (expectedClose < qStart || expectedClose >= qEnd) continue;
+        add(snapshot.forecastCategory, snapshot.forecastedRevenue);
+      }
+    } else if (hasStarted) {
+      for (const opp of opps) {
+        const expectedClose = new Date(opp.expectedCloseDate).getTime();
+        if (expectedClose < qStart || expectedClose >= qEnd) continue;
+        if (new Date(opp.createdAt).getTime() > at) continue;
+        const closedAt = opp.closedAt ? new Date(opp.closedAt).getTime() : undefined;
+        if (closedAt !== undefined && closedAt <= at) continue;
+        add(forecastCategoryOf(opp), opp.forecastedRevenue);
+      }
+    }
+
+    return {
+      weekStart: new Date(weekStart).toISOString(),
+      weekEnd: new Date(weekEnd).toISOString(),
+      raw,
+      weighted,
+      total: FORECAST_CATEGORIES.reduce((sum, category) => sum + raw[category], 0),
+      weightedTotal: FORECAST_CATEGORIES.reduce((sum, category) => sum + weighted[category], 0),
+      hasStarted,
+      ...(hasStarted && recordedAt !== undefined
+        ? { recordedAt: new Date(recordedAt).toISOString() }
+        : {}),
+    };
+  });
 }
 
 export interface CategoryMismatch {

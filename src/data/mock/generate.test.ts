@@ -6,6 +6,7 @@ import {
   FORECAST_CATEGORY_FOR_STAGE,
   SNAPSHOT_DATE,
 } from '../constants';
+import { quarterWindow } from '../../lib/fiscal';
 import {
   approvedNotConverted,
   avgOpenDealSize,
@@ -221,6 +222,98 @@ describe('generateDashboardData', () => {
     expect(average).toBeGreaterThan(86_400_000);
   });
 
+  it('records a weekly snapshot of the open book, Monday-aligned, never past the snapshot', () => {
+    expect(data.snapshots.length).toBeGreaterThan(0);
+    const oppById = new Map(data.opportunities.map((opportunity) => [opportunity.id, opportunity]));
+    const instants = new Set<string>();
+    for (const row of data.snapshots) {
+      instants.add(row.takenAt);
+      const takenAt = new Date(row.takenAt);
+      expect(takenAt.getUTCDay()).toBe(1); // Monday
+      expect(takenAt.getTime()).toBeLessThanOrEqual(SNAPSHOT_DATE.getTime());
+      expect(takenAt.getTime()).toBeGreaterThanOrEqual(FISCAL_YEAR_START.getTime());
+      const opportunity = oppById.get(row.opportunityId);
+      expect(opportunity).toBeDefined();
+      expect(row.forecastedRevenue).toBeGreaterThan(0);
+      // Only deals that existed and had not yet resolved are in the open book.
+      expect(new Date(opportunity!.createdAt).getTime()).toBeLessThanOrEqual(takenAt.getTime());
+      if (opportunity!.closedAt) {
+        expect(new Date(opportunity!.closedAt).getTime()).toBeGreaterThan(takenAt.getTime());
+      }
+    }
+    // One recording per week from the first Monday of FY27 to the snapshot week.
+    expect(instants.size).toBe(33);
+    // No opportunity is recorded twice in one week.
+    const keys = new Set(data.snapshots.map((row) => `${row.takenAt}|${row.opportunityId}`));
+    expect(keys.size).toBe(data.snapshots.length);
+  });
+
+  it('drifts amounts, calls, and close dates so week-over-week movement is real', () => {
+    const oppById = new Map(data.opportunities.map((opportunity) => [opportunity.id, opportunity]));
+    const moved = { amount: 0, call: 0, stage: 0, closeDate: 0, grew: 0, cut: 0 };
+    for (const row of data.snapshots) {
+      const current = oppById.get(row.opportunityId)!;
+      if (row.forecastedRevenue !== current.forecastedRevenue) {
+        moved.amount += 1;
+        if (row.forecastedRevenue < current.forecastedRevenue) moved.grew += 1;
+        else moved.cut += 1;
+      }
+      if (row.forecastCategory !== current.forecastCategory) moved.call += 1;
+      if (row.stage !== current.stage) moved.stage += 1;
+      if (row.expectedCloseDate !== current.expectedCloseDate) moved.closeDate += 1;
+    }
+    // Every field a forecast conversation turns on must have moved for some
+    // deal at some point, or history is just today's book repeated weekly.
+    expect(moved.amount).toBeGreaterThan(0);
+    expect(moved.call).toBeGreaterThan(0);
+    expect(moved.stage).toBeGreaterThan(0);
+    expect(moved.closeDate).toBeGreaterThan(0);
+    // Both directions: deals that grew as scope firmed up, and deals cut back.
+    expect(moved.grew).toBeGreaterThan(0);
+    expect(moved.cut).toBeGreaterThan(0);
+  });
+
+  it('seeds a slip out of Q3 and a pull-in, so the quarter shows both moves', () => {
+    const { start, end } = quarterWindow('FY27-Q3');
+    const inQuarter = (iso: string) => {
+      const time = new Date(iso).getTime();
+      return time >= start.getTime() && time < end.getTime();
+    };
+    const oppById = new Map(data.opportunities.map((opportunity) => [opportunity.id, opportunity]));
+    // A slip: recorded inside Q3, now expected after it, so the week it moved
+    // reads as a drop rather than the deal never having been there.
+    const slips = data.snapshots.filter(
+      (row) =>
+        inQuarter(row.expectedCloseDate) &&
+        !inQuarter(oppById.get(row.opportunityId)!.expectedCloseDate),
+    );
+    expect(slips.length).toBeGreaterThan(0);
+    // A pull-in: recorded outside Q3, now expected inside it.
+    const pullIns = data.snapshots.filter(
+      (row) =>
+        !inQuarter(row.expectedCloseDate) &&
+        inQuarter(oppById.get(row.opportunityId)!.expectedCloseDate),
+    );
+    expect(pullIns.length).toBeGreaterThan(0);
+  });
+
+  it('leaves the latest recording in step with the current book', () => {
+    // The most recent Monday is the handoff between recorded history and the
+    // live book, so the two must not disagree about a deal open in both.
+    const latest = data.snapshots
+      .map((row) => row.takenAt)
+      .reduce((max, takenAt) => (takenAt > max ? takenAt : max));
+    expect(latest).toBe('2026-09-14T00:00:00.000Z');
+    const oppById = new Map(data.opportunities.map((opportunity) => [opportunity.id, opportunity]));
+    for (const row of data.snapshots.filter((candidate) => candidate.takenAt === latest)) {
+      const opportunity = oppById.get(row.opportunityId)!;
+      expect(row.forecastedRevenue).toBe(opportunity.forecastedRevenue);
+      expect(row.forecastCategory).toBe(opportunity.forecastCategory);
+      expect(row.expectedCloseDate).toBe(opportunity.expectedCloseDate);
+      expect(row.stage).toBe(opportunity.stage);
+    }
+  });
+
   it('seeds exclusivity-lapsed, past-SLA, and duplicate registrations for the ops views', () => {
     expect(data.registrations.some(exclusivityLapsed)).toBe(true);
     const leaking = approvedNotConverted(data.registrations);
@@ -245,6 +338,7 @@ describe('MockDataProvider', () => {
       partners,
       registrations,
       opportunities,
+      snapshots,
       targets,
       activities,
       certifications,
@@ -253,6 +347,7 @@ describe('MockDataProvider', () => {
       provider.listPartners(),
       provider.listRegistrations(),
       provider.listOpportunities(),
+      provider.listPipelineSnapshots(),
       provider.getTargets(),
       provider.listActivities(),
       provider.listCertifications(),
@@ -261,6 +356,7 @@ describe('MockDataProvider', () => {
     expect(partners).toHaveLength(25);
     expect(registrations).toHaveLength(180);
     expect(opportunities.length).toBeGreaterThan(200);
+    expect(snapshots.length).toBeGreaterThan(1_000);
     expect(targets).toHaveLength(100);
     expect(activities.length).toBeGreaterThan(100);
     expect(certifications).toHaveLength(25);
