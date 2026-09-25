@@ -88,6 +88,24 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
   — Commit (90%), Best Case (50%), Pipeline (25%), Long Shot (10%) — and each
   category's probability-weighted contribution is summed into a total expected
   revenue, above the raw pipeline numbers
+- **Week-over-week pipeline** sits directly below the call-outs: one cluster per
+  week of the quarter, the open pipeline stacked by forecast category (solid)
+  beside the same book weighted by close probability (faded), with the quarter's
+  revenue goal as a dashed line. Dollars on the Y axis, weeks on the X, and the
+  axis spans the whole quarter — weeks that have not begun are empty slots, so a
+  new bar appears as each week starts. Hovering a week gives both totals and the
+  week-over-week change.
+
+  Closed weeks are read from the **weekly pipeline snapshot** (see Data
+  contract), not reconstructed from today's book, and that distinction is the
+  point: a snapshot already written never moves, so correcting a revenue figure
+  or re-calling a deal today shifts the live week and leaves history alone.
+  Reading the past off current state instead would backdate every later change —
+  an amount raised this week would rewrite the weeks before it, a re-call would
+  re-color them, and a deal that slipped out of the quarter would vanish from
+  the weeks it was in rather than showing the drop. The tooltip names which kind
+  of week you are looking at; where no history exists, a week falls back to the
+  reconstruction and says so
 - In-quarter opportunities grouped into a collapsible section per partner
   manager; each header shows their opportunity count, open pipeline, and
   closed-won, and expands to their book
@@ -206,6 +224,7 @@ The UI only talks to the `DataProvider` interface
 | `listPartners()`      | `Partner[]`             | PRM / CRM partner accounts                |
 | `listRegistrations()` | `DealRegistration[]`    | CRM "Deal Registration" custom object     |
 | `listOpportunities()`  | `Opportunity[]`         | Salesforce opportunities                  |
+| `listPipelineSnapshots()` | `PipelineSnapshot[]` | `OpportunityHistory` / weekly fact table |
 | `getTargets()`        | `Target[]`              | Quota objects or warehouse                |
 | `listActivities()`    | `ActivityMeeting[]`     | Google Calendar events                    |
 | `listCertifications()` | `PartnerCertification[]` | Partner enablement system               |
@@ -221,6 +240,19 @@ classifications, and added prospects — on top of the provider's book before
 handing a single merged
 `DashboardData` to every page, so writes are the one thing a live provider
 still needs to add.
+
+`listPipelineSnapshots()` is the one collection that is history rather than
+current state: an append-only weekly recording of the open book, carrying each
+open deal's amount, called category, stage, and expected close as they stood.
+An `Opportunity` holds one of each, so current state cannot answer a question
+about a past week, and any view that tries to derive one backdates every later
+change. Snapshots are also what makes forecast accuracy measurable at all — a
+call can only be scored against an outcome if the call as made was kept. A
+provider with no history may return an empty array; views that can degrade fall
+back to what create and close dates alone support, and say which weeks those
+are. In Salesforce the equivalent lives in `OpportunityHistory` and
+`OpportunityFieldHistory`; a warehouse would model it as a weekly fact table
+written by a scheduled job.
 
 ## Mock data
 
@@ -241,6 +273,16 @@ still needs to add.
   pinned volume shifts), and close-date-adjacent deals with no explicit call
   fall back to the stage heuristic. Open opportunities also carry a row-level
   next step (about half of them, seeded deterministically from the id)
+- 1,911 weekly pipeline snapshot rows: the open book recorded every Monday of
+  FY27 through the snapshot date (33 recordings). Amounts, calls, stages, and
+  expected close dates drift week to week — most deals never move, a minority
+  were a bucket more cautious and a stage earlier a few weeks back, some grew as
+  scope firmed up while others were cut, and a handful crossed a quarter
+  boundary (7 deals slipped out of Q3, 4 were pulled in). Without that movement
+  a snapshot series is just today's numbers repeated and the week-over-week
+  chart shows nothing but deals entering and closing. Drift is derived from the
+  opportunity id and week index rather than the seeded PRNG, so history shifts
+  no existing volume or amount
 - Every approved registration gets a 2–12 day document-handling dwell before
   its opportunity is created, so the submitted → approved → opportunity → win
   chain reads as real time; a fixed set of registrations deliberately shares a

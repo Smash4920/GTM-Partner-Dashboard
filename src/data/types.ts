@@ -96,6 +96,33 @@ export interface Opportunity {
   notes?: string;
 }
 
+/**
+ * One opportunity's state as it stood at a weekly recording of the open book.
+ *
+ * This is append-only history, and it exists because current state cannot
+ * answer a question about the past. An opportunity row carries one amount, one
+ * call, and one expected close date, so reading last week's pipeline off
+ * today's book silently backdates every later change: an amount raised this
+ * week rewrites the weeks before it, a re-call re-colors them, and a deal that
+ * slipped out of the quarter disappears from the weeks it was in rather than
+ * showing the drop. A snapshot already written must never change.
+ *
+ * Salesforce keeps the equivalent in OpportunityHistory and
+ * OpportunityFieldHistory; a warehouse would model it as a weekly fact table.
+ */
+export interface PipelineSnapshot {
+  /** UTC Monday midnight the book was recorded at — the close of the prior week. */
+  takenAt: string; // ISO 8601
+  opportunityId: string;
+  /** Forecasted revenue as it stood, not today's figure. */
+  forecastedRevenue: number;
+  /** The manager's call as it stood. */
+  forecastCategory: ForecastCategory;
+  stage: OpportunityStage;
+  /** Expected close as it stood, so slips in and out of a quarter are visible. */
+  expectedCloseDate: string; // ISO 8601
+}
+
 /** Revenue target for one partner for one quarter. */
 export interface Target {
   partnerId: string;
@@ -148,6 +175,8 @@ export interface DashboardData {
   partners: Partner[];
   registrations: DealRegistration[];
   opportunities: Opportunity[];
+  /** Weekly recordings of the open book, for week-over-week history. */
+  snapshots: PipelineSnapshot[];
   targets: Target[];
   activities: ActivityMeeting[];
   certifications: PartnerCertification[];
