@@ -68,7 +68,9 @@ Partners aligned to that manager, or a single partner, via Salesforce-style
   scope includes multiple partners, the leaderboard shows each partner's
   certified counts and attainment beneath the count.
 - Registrations awaiting review are colored against the **5-business-day
-  response SLA**: counters are green inside the window, red past it
+  response SLA**, and the waiting counter is quoted in the same unit —
+  business days, not calendar days. A Friday submission is one business day
+  old on Monday, not three, so the number and the color can never disagree
 - After the awaiting-review block: **Exclusivity lapsed** flags every approved
   registration that never became an opportunity, with the 60-day window from
   approval shown per row

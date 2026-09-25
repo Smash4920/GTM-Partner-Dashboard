@@ -1,6 +1,6 @@
 import type { DealRegistration, Partner } from '../data/types';
 import { formatDate, formatUsd } from '../lib/format';
-import { businessDaysWaiting, daysWaiting, registrationSlaState } from '../lib/metrics';
+import { businessDaysWaiting, registrationSlaState } from '../lib/metrics';
 import { StatusBadge } from './Badge';
 
 interface RegistrationsTableProps {
@@ -48,15 +48,19 @@ export default function RegistrationsTable({
           {showPartner && <th className={`${th} pr-3 text-left`}>Partner</th>}
           <th className={`${th} pr-3 text-right`}>Amount</th>
           <th className={`${th} pr-3 text-right`}>Submitted</th>
-          <th className={`${th} pr-3 text-right`}>{isQueue ? 'Waiting' : 'Decision'}</th>
+          <th className={`${th} pr-3 text-right`}>
+            {isQueue ? 'Waiting (biz days)' : 'Decision'}
+          </th>
           <th className={`${th} text-right`}>Status</th>
         </tr>
       </thead>
       <tbody>
         {rows.map((reg) => {
-          const waiting = daysWaiting(reg);
-          // Pending rows are colored against the 5-business-day response SLA:
-          // green inside the window, signal red once past it.
+          // The counter and the color must speak the same unit. The SLA is 5
+          // business days, so the number shown is business days too: a
+          // calendar count would read "6d" green on a Saturday submission that
+          // has only used 4 working days, which looks like the SLA was missed.
+          const waiting = businessDaysWaiting(reg);
           const slaState = registrationSlaState(reg);
           const waitingClass = isQueue
             ? slaState === 'within-sla'

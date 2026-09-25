@@ -612,11 +612,6 @@ export function recentRegistrations(
     .slice(0, limit);
 }
 
-/** Days a registration has been waiting as of the snapshot date. */
-export function daysWaiting(reg: DealRegistration): number {
-  return Math.round((SNAPSHOT_DATE.getTime() - new Date(reg.submittedAt).getTime()) / DAY);
-}
-
 // ---- forecast quality ------------------------------------------------------
 
 /** The bucket a forecast row sits in: its own category or the stage heuristic. */

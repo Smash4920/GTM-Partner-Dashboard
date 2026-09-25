@@ -13,6 +13,8 @@ import type {
 import {
   approvedNotConverted,
   businessDaysBetween,
+  businessDaysWaiting,
+  calendarDaysBetween,
   categoryStageMismatches,
   closedWonForPhase,
   closedWonPriorYearForPhase,
@@ -807,6 +809,27 @@ describe('businessDaysBetween', () => {
 });
 
 describe('registrationSlaState', () => {
+  it('counts the waiting counter in business days, not calendar days', () => {
+    // Snapshot 2026-09-18 (Friday). A weekend submission separates the two
+    // units: Sunday 09-06 is 12 calendar days back but only 10 working days.
+    // The counter the UI shows sits next to a 5-business-day SLA and is
+    // colored by it, so it has to be quoted in the same unit.
+    const sunday = reg({ id: 'r-sun', submittedAt: '2026-09-06T00:00:00Z', status: 'pending' });
+    expect(calendarDaysBetween(sunday.submittedAt, SNAPSHOT_DATE.toISOString())).toBe(12);
+    expect(businessDaysWaiting(sunday)).toBe(10);
+  });
+
+  it('lapses exactly when the business-day counter reaches the SLA', () => {
+    // The counter and the color read off the same scale: 4 working days is
+    // inside, and the day it reaches 5 is the day it lapses.
+    const monday = reg({ id: 'r-mon', submittedAt: '2026-09-14T00:00:00Z', status: 'pending' });
+    const sunday = reg({ id: 'r-sun2', submittedAt: '2026-09-13T00:00:00Z', status: 'pending' });
+    expect(businessDaysWaiting(monday)).toBe(4);
+    expect(registrationSlaState(monday)).toBe('within-sla');
+    expect(businessDaysWaiting(sunday)).toBe(5);
+    expect(registrationSlaState(sunday)).toBe('past-sla');
+  });
+
   it('flags submissions inside the 5-business-day window as within SLA', () => {
     // Snapshot 2026-09-18. Submitted Monday, four business days earlier.
     expect(registrationSlaState(reg({ id: 'r1', submittedAt: '2026-09-14T00:00:00Z', status: 'pending' }))).toBe('within-sla');
