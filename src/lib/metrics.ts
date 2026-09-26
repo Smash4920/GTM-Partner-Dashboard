@@ -10,6 +10,7 @@ import {
   OPP_TYPES,
   REGISTRATION_EXCLUSIVITY_DAYS,
   REGISTRATION_SLA_BUSINESS_DAYS,
+  REGISTRATION_SLA_WARNING_BUSINESS_DAYS,
   SNAPSHOT_DATE,
   STAGES,
   WEEKLY_MEETING_GOAL,
@@ -29,8 +30,22 @@ import type {
   Partner,
   PipelineSnapshot,
   Target,
+  TeamUser,
 } from '../data/types';
-import { fiscalQuarterOfDate, quarterWindow, startOfWeekUtc } from './fiscal';
+import {
+  businessDaysAfter,
+  businessDaysBetween,
+  fiscalQuarterOfDate,
+  quarterWindow,
+  startOfWeekUtc,
+} from './fiscal';
+
+/**
+ * Business-day math lives in fiscal.ts, alongside the other calendar rules the
+ * generator and the metrics share; re-exported here because the ops helpers
+ * below are its main consumer.
+ */
+export { businessDaysBetween } from './fiscal';
 
 const DAY = 86_400_000;
 
@@ -597,11 +612,6 @@ export function recentRegistrations(
     .slice(0, limit);
 }
 
-/** Days a registration has been waiting as of the snapshot date. */
-export function daysWaiting(reg: DealRegistration): number {
-  return Math.round((SNAPSHOT_DATE.getTime() - new Date(reg.submittedAt).getTime()) / DAY);
-}
-
 // ---- forecast quality ------------------------------------------------------
 
 /** The bucket a forecast row sits in: its own category or the stage heuristic. */
@@ -828,20 +838,6 @@ export function categoryStageMismatches(openOpps: Opportunity[]): CategoryMismat
 
 // ---- deal-registration ops -------------------------------------------------
 
-/** Weekdays (Mon–Fri, UTC) between two ISO dates, exclusive of the start day. */
-export function businessDaysBetween(fromIso: string, toIso: string): number {
-  const from = new Date(fromIso);
-  const to = new Date(toIso);
-  const startMs = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
-  const endMs = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate());
-  let days = 0;
-  for (let timestamp = startMs + DAY; timestamp <= endMs; timestamp += DAY) {
-    const weekday = new Date(timestamp).getUTCDay();
-    if (weekday !== 0 && weekday !== 6) days += 1;
-  }
-  return days;
-}
-
 /** Whole calendar days between two ISO dates (snapshot-relative comparisons). */
 export function calendarDaysBetween(fromIso: string, toIso: string): number {
   return Math.round((new Date(toIso).getTime() - new Date(fromIso).getTime()) / DAY);
@@ -891,6 +887,95 @@ export function exclusivityLapsed(reg: DealRegistration): boolean {
 /** Business days a pending registration has been waiting as of the snapshot. */
 export function businessDaysWaiting(reg: DealRegistration): number {
   return businessDaysBetween(reg.submittedAt, SNAPSHOT_DATE.toISOString());
+}
+
+export type RegistrationSlaAlertState = 'approaching' | 'breached';
+
+/**
+ * A pending registration that has reached (or is about to reach) the response
+ * SLA, paired with the internal user expected to act on it.
+ */
+export interface RegistrationSlaAlert {
+  registration: DealRegistration;
+  /** The submitting partner, when the book still carries it. */
+  partner?: Partner;
+  /** Resolved owner: the aligned partner manager, or the deal desk. */
+  owner?: TeamUser;
+  /** Business days the submission has been waiting at the snapshot. */
+  businessDaysWaiting: number;
+  /** Business days left before the SLA lapses; at or below zero once past it. */
+  businessDaysRemaining: number;
+  state: RegistrationSlaAlertState;
+  /** The day the response falls due, the SLA's business days after submission. */
+  dueAt: string; // ISO 8601
+}
+
+/**
+ * Pending registrations that need their owner's attention now: those already
+ * past REGISTRATION_SLA_BUSINESS_DAYS, and those within
+ * REGISTRATION_SLA_WARNING_BUSINESS_DAYS of it — one business day, or 24
+ * hours out from the SLA, which is the heads-up the partner team asked for.
+ *
+ * Ownership is resolved the way the data model routes it: the submitting
+ * partner's aligned partner manager, and the deal desk for anything with no
+ * active manager (the queue is theirs either way). An alert with no owner is
+ * still returned — it is a roster gap, not something to hide.
+ *
+ * The 24-hours-out warnings lead the queue: they are the ones with a working
+ * day left in them, so acting on one prevents the lapse rather than reporting
+ * it. Past-SLA registrations follow, most overdue first.
+ */
+export function registrationSlaAlerts(
+  registrations: DealRegistration[],
+  partners: Partner[],
+  teamUsers: TeamUser[],
+  warningBusinessDays = REGISTRATION_SLA_WARNING_BUSINESS_DAYS,
+): RegistrationSlaAlert[] {
+  const partnerById = new Map(partners.map((partner) => [partner.id, partner]));
+  const managerUserByManagerId = new Map<string, TeamUser>();
+  for (const user of teamUsers) {
+    if (user.role !== 'partner-manager' || user.status !== 'active') continue;
+    // The roster is ordered, and the first active user aligned to a manager is
+    // that manager's owner. A later addition does not silently take over an
+    // existing manager's queue just by being appended.
+    if (user.partnerManagerId && !managerUserByManagerId.has(user.partnerManagerId)) {
+      managerUserByManagerId.set(user.partnerManagerId, user);
+    }
+  }
+  // The deal desk works the whole queue, so it catches alerts whose manager
+  // has left, been suspended, or was never set.
+  const fallbackOwner = teamUsers.find(
+    (user) => user.role === 'deal-desk-ops' && user.status === 'active',
+  );
+
+  const alerts: RegistrationSlaAlert[] = [];
+  for (const registration of registrations) {
+    if (registration.status !== 'pending') continue;
+    const waiting = businessDaysBetween(registration.submittedAt, SNAPSHOT_DATE.toISOString());
+    const remaining = REGISTRATION_SLA_BUSINESS_DAYS - waiting;
+    const state: RegistrationSlaAlertState | null =
+      remaining <= 0 ? 'breached' : remaining <= warningBusinessDays ? 'approaching' : null;
+    if (!state) continue;
+    const partner = partnerById.get(registration.partnerId);
+    alerts.push({
+      registration,
+      partner,
+      owner:
+        (partner && managerUserByManagerId.get(partner.partnerManagerId)) ?? fallbackOwner,
+      businessDaysWaiting: waiting,
+      businessDaysRemaining: remaining,
+      state,
+      dueAt: businessDaysAfter(
+        registration.submittedAt,
+        REGISTRATION_SLA_BUSINESS_DAYS,
+      ).toISOString(),
+    });
+  }
+
+  return alerts.sort((a, b) => {
+    if (a.state !== b.state) return a.state === 'approaching' ? -1 : 1;
+    return a.businessDaysRemaining - b.businessDaysRemaining;
+  });
 }
 
 export interface RegistrationConversionTimes {

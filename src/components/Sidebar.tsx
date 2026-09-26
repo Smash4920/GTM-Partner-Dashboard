@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   ActivityIcon,
+  ConnectionsIcon,
   ForecastIcon,
   HomeIcon,
   PartnersIcon,
@@ -16,7 +17,8 @@ export type Route =
   | 'registration-ops'
   | 'activity'
   | 'partner-view'
-  | 'production-requirements';
+  | 'production-requirements'
+  | 'data-connections';
 
 export const ROUTES: { id: Route; label: string; icon: (props: { className?: string }) => ReactNode }[] = [
   { id: 'home', label: 'Home', icon: HomeIcon },
@@ -26,6 +28,7 @@ export const ROUTES: { id: Route; label: string; icon: (props: { className?: str
   { id: 'activity', label: 'Activity Tracking', icon: ActivityIcon },
   { id: 'partner-view', label: 'Partner View', icon: PortalIcon },
   { id: 'production-requirements', label: 'Production Requirements', icon: RequirementsIcon },
+  { id: 'data-connections', label: 'Data Connections', icon: ConnectionsIcon },
 ];
 
 interface SidebarProps {

@@ -7,6 +7,8 @@
  * drift apart when the snapshot or fiscal year moves.
  */
 
+const DAY = 86_400_000;
+
 /** Fiscal quarter label (e.g. 'FY27-Q3') for a UTC calendar date. */
 export function fiscalQuarterOfDate(iso: string): string {
   const date = new Date(iso);
@@ -43,4 +45,67 @@ export function startOfWeekUtc(date: Date): Date {
   copy.setUTCDate(copy.getUTCDate() - daysSinceMonday);
   copy.setUTCHours(0, 0, 0, 0);
   return copy;
+}
+
+/**
+ * Business-day rules, shared by the metrics layer and the mock generator.
+ *
+ * A business day is a UTC weekday (Mon–Fri). Holidays are not modeled yet;
+ * when they enter the fiscal calendar this predicate is the one place to teach
+ * them to, so the SLA counters and the seeded working dates cannot drift apart.
+ */
+export function isBusinessDay(date: Date): boolean {
+  const weekday = date.getUTCDay();
+  return weekday !== 0 && weekday !== 6;
+}
+
+/** The UTC calendar day of an ISO instant, at midnight. */
+function utcDay(iso: string | Date): Date {
+  const date = typeof iso === 'string' ? new Date(iso) : iso;
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+/**
+ * Weekdays (Mon–Fri, UTC) strictly after `fromIso` through `toIso`. Counting
+ * from Monday to the following Monday is 5, not 7, and a same-day comparison
+ * is 0.
+ */
+export function businessDaysBetween(fromIso: string, toIso: string): number {
+  let days = 0;
+  for (
+    let timestamp = utcDay(fromIso).getTime() + DAY;
+    timestamp <= utcDay(toIso).getTime();
+    timestamp += DAY
+  ) {
+    if (isBusinessDay(new Date(timestamp))) days += 1;
+  }
+  return days;
+}
+
+/**
+ * The UTC day that sits `count` business days away from `iso`: stepping one
+ * weekday at a time (backwards for a negative count) and skipping weekends, so
+ * `businessDaysBetween(iso, shiftBusinessDays(iso, n)) === n`. Used both to
+ * seed working dates relative to the snapshot and to date an SLA deadline
+ * forward from a submission.
+ */
+export function shiftBusinessDays(iso: string | Date, count: number): Date {
+  const cursor = utcDay(iso);
+  const step = count < 0 ? -1 : 1;
+  for (let remaining = Math.abs(count); remaining > 0; remaining -= 1) {
+    do {
+      cursor.setUTCDate(cursor.getUTCDate() + step);
+    } while (!isBusinessDay(cursor));
+  }
+  return cursor;
+}
+
+/** The UTC day `count` business days before `iso`. */
+export function businessDaysBefore(iso: string | Date, count: number): Date {
+  return shiftBusinessDays(iso, -count);
+}
+
+/** The UTC day `count` business days after `iso`. */
+export function businessDaysAfter(iso: string | Date, count: number): Date {
+  return shiftBusinessDays(iso, count);
 }

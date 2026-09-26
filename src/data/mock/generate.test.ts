@@ -4,6 +4,7 @@ import {
   FISCAL_YEAR_START,
   FORECAST_CATEGORIES,
   FORECAST_CATEGORY_FOR_STAGE,
+  REGISTRATION_SLA_WARNING_BUSINESS_DAYS,
   SNAPSHOT_DATE,
 } from '../constants';
 import { quarterWindow } from '../../lib/fiscal';
@@ -15,6 +16,7 @@ import {
   exclusivityLapsed,
   filterByPhase,
   phaseWindow,
+  registrationSlaAlerts,
   registrationsPastSla,
 } from '../../lib/metrics';
 import { generateDashboardData } from './generate';
@@ -314,6 +316,53 @@ describe('generateDashboardData', () => {
     }
   });
 
+  it('seeds an internal partner-team roster with a manager alignment per manager', () => {
+    expect(data.teamUsers).toHaveLength(8);
+    const emails = new Set(data.teamUsers.map((user) => user.email));
+    expect(emails.size).toBe(data.teamUsers.length);
+    expect(new Set(data.teamUsers.map((user) => user.id)).size).toBe(data.teamUsers.length);
+
+    // Every partner manager has an authorized user aligned to them, which is
+    // what turns a registration into somebody's notification.
+    const managerUsers = data.teamUsers.filter((user) => user.role === 'partner-manager');
+    expect(managerUsers).toHaveLength(5);
+    for (const partnerManager of data.partnerManagers) {
+      expect(
+        managerUsers.some(
+          (user) => user.partnerManagerId === partnerManager.id && user.status === 'active',
+        ),
+      ).toBe(true);
+    }
+
+    const managerIds = new Set(data.partnerManagers.map((manager) => manager.id));
+    for (const user of data.teamUsers) {
+      if (user.partnerManagerId) expect(managerIds.has(user.partnerManagerId)).toBe(true);
+      if (user.status === 'active') expect(user.authorizedAt).toBeDefined();
+      else expect(user.authorizedAt).toBeUndefined();
+    }
+
+    // The roster carries an unaligned role (the queue owner) and a user still
+    // awaiting authorization, so both states are visible in the access panel.
+    expect(data.teamUsers.some((user) => user.role === 'deal-desk-ops')).toBe(true);
+    expect(data.teamUsers.some((user) => user.status === 'invited')).toBe(true);
+  });
+
+  it('seeds pending registrations in the 24-hours-out SLA warning window', () => {
+    const alerts = registrationSlaAlerts(data.registrations, data.partners, data.teamUsers);
+    const approaching = alerts.filter((alert) => alert.state === 'approaching');
+    // One per seeded partner, so the warning reaches several owners at once.
+    expect(approaching).toHaveLength(3);
+    expect(new Set(approaching.map((alert) => alert.registration.partnerId)).size).toBe(
+      approaching.length,
+    );
+    for (const alert of approaching) {
+      expect(alert.businessDaysRemaining).toBe(REGISTRATION_SLA_WARNING_BUSINESS_DAYS);
+      expect(alert.owner).toBeDefined();
+    }
+    // And the lapsed side of the rule has real rows too.
+    expect(alerts.some((alert) => alert.state === 'breached')).toBe(true);
+  });
+
   it('seeds exclusivity-lapsed, past-SLA, and duplicate registrations for the ops views', () => {
     expect(data.registrations.some(exclusivityLapsed)).toBe(true);
     const leaking = approvedNotConverted(data.registrations);
@@ -342,6 +391,7 @@ describe('MockDataProvider', () => {
       targets,
       activities,
       certifications,
+      teamUsers,
     ] = await Promise.all([
       provider.listPartnerManagers(),
       provider.listPartners(),
@@ -351,6 +401,7 @@ describe('MockDataProvider', () => {
       provider.getTargets(),
       provider.listActivities(),
       provider.listCertifications(),
+      provider.listTeamUsers(),
     ]);
     expect(managers).toHaveLength(5);
     expect(partners).toHaveLength(25);
@@ -360,5 +411,6 @@ describe('MockDataProvider', () => {
     expect(targets).toHaveLength(100);
     expect(activities.length).toBeGreaterThan(100);
     expect(certifications).toHaveLength(25);
+    expect(teamUsers).toHaveLength(8);
   });
 });

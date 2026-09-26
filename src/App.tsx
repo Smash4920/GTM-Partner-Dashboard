@@ -3,10 +3,20 @@ import Sidebar, { type Route } from './components/Sidebar';
 import { MenuIcon } from './components/icons';
 import { SNAPSHOT_DATE } from './data/constants';
 import { MockDataProvider } from './data/mock/MockDataProvider';
-import type { ForecastCategory, MeetingClassification, Partner } from './data/types';
+import type {
+  DashboardNotification,
+  ForecastCategory,
+  MeetingClassification,
+  NewTeamUserInput,
+  Partner,
+  TeamUser,
+  TeamUserStatus,
+} from './data/types';
 import { useDashboardData } from './data/useDashboardData';
+import type { NotificationDraft } from './lib/notifications';
 import { formatDate } from './lib/format';
 import ActivityTrackingView from './views/ActivityTrackingView';
+import DataConnectionsView from './views/DataConnectionsView';
 import DealRegistrationOpsView from './views/DealRegistrationOpsView';
 import ForecastingView from './views/ForecastingView';
 import HomeView from './views/HomeView';
@@ -36,9 +46,33 @@ export default function App() {
   const [prospects, setProspects] = useState<Partner[]>([]);
   const prospectSeq = useRef(0);
 
+  // Partner-team access and notifications. Roster patches are overrides keyed
+  // by user id, additions are separate, and sent notifications are their own
+  // log — the same shape as the other session edits, and the same gap a live
+  // provider has to close by persisting them (see Data Connections).
+  const [teamUserOverrides, setTeamUserOverrides] = useState<Record<string, Partial<TeamUser>>>({});
+  const [addedTeamUsers, setAddedTeamUsers] = useState<TeamUser[]>([]);
+  const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
+  const teamUserSeq = useRef(0);
+  const notificationSeq = useRef(0);
+
   const partners = useMemo(
     () => [...(data?.partners ?? []), ...prospects],
     [data?.partners, prospects],
+  );
+
+  // The roster the whole app sees: the identity provider's projection with any
+  // session status changes applied, plus anyone added this session.
+  const teamUsers = useMemo(() => {
+    const base = (data?.teamUsers ?? []).map((user) =>
+      teamUserOverrides[user.id] ? { ...user, ...teamUserOverrides[user.id] } : user,
+    );
+    return [...base, ...addedTeamUsers];
+  }, [data?.teamUsers, teamUserOverrides, addedTeamUsers]);
+
+  const addedUserIds = useMemo(
+    () => new Set(addedTeamUsers.map((user) => user.id)),
+    [addedTeamUsers],
   );
 
   // Edited forecasts, notes, next steps, and called categories are folded into
@@ -72,8 +106,8 @@ export default function App() {
 
   // The single book every view renders: provider data plus in-app edits.
   const live = useMemo(
-    () => (data ? { ...data, partners, opportunities } : null),
-    [data, partners, opportunities],
+    () => (data ? { ...data, partners, opportunities, teamUsers } : null),
+    [data, partners, opportunities, teamUsers],
   );
 
   const setRevenue = (opportunityId: string, value: number) =>
@@ -121,6 +155,61 @@ export default function App() {
       },
     ]);
     return id;
+  };
+
+  // Adding puts a name on the roster awaiting authorization; authorizing is a
+  // second step, which is how a real identity provider separates the two.
+  const addTeamUser = (input: NewTeamUserInput) => {
+    teamUserSeq.current += 1;
+    setAddedTeamUsers((prev) => [
+      ...prev,
+      {
+        id: `session-user-${teamUserSeq.current}`,
+        name: input.name,
+        email: input.email,
+        role: input.role,
+        partnerManagerId: input.partnerManagerId,
+        status: 'invited',
+        channels: input.channels,
+        addedAt: new Date().toISOString(),
+      },
+    ]);
+  };
+
+  const setTeamUserStatus = (userId: string, status: TeamUserStatus) => {
+    const patch: Partial<TeamUser> = { status };
+    if (status === 'active') patch.authorizedAt = new Date().toISOString();
+    if (addedTeamUsers.some((user) => user.id === userId)) {
+      setAddedTeamUsers((prev) =>
+        prev.map((user) => (user.id === userId ? { ...user, ...patch } : user)),
+      );
+      return;
+    }
+    setTeamUserOverrides((prev) => ({ ...prev, [userId]: { ...prev[userId], ...patch } }));
+  };
+
+  const removeTeamUser = (userId: string) =>
+    setAddedTeamUsers((prev) => prev.filter((user) => user.id !== userId));
+
+  // Sends are timestamped off the session clock, not the snapshot: the data is
+  // mocked at a fixed date, but an action taken now happened now. The record
+  // is delivered immediately because the demo has no service behind it.
+  const sendNotification = (draft: NotificationDraft) => {
+    notificationSeq.current += 1;
+    setNotifications((prev) => [
+      {
+        id: `notification-${notificationSeq.current}`,
+        userId: draft.userId,
+        kind: draft.kind,
+        subject: draft.subject,
+        body: draft.body,
+        channels: draft.channels,
+        sentAt: new Date().toISOString(),
+        status: 'delivered',
+        registrationId: draft.registrationId,
+      },
+      ...prev,
+    ]);
   };
 
   return (
@@ -204,6 +293,17 @@ export default function App() {
               )}
               {route === 'partner-view' && <PartnerView data={live} />}
               {route === 'production-requirements' && <ProductionRequirementsView />}
+              {route === 'data-connections' && (
+                <DataConnectionsView
+                  data={live}
+                  addedUserIds={addedUserIds}
+                  notifications={notifications}
+                  onAddTeamUser={addTeamUser}
+                  onSetTeamUserStatus={setTeamUserStatus}
+                  onRemoveTeamUser={removeTeamUser}
+                  onSendNotification={sendNotification}
+                />
+              )}
             </>
           )}
         </main>
