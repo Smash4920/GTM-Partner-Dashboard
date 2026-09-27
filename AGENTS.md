@@ -33,6 +33,7 @@ Run commands from the repository root.
 npm run dev       # start the Vite development server
 npm run lint      # lint all TypeScript and TSX files
 npm test          # run the Vitest suite once
+npm run test:list # collect and list tests without running them
 npm run build     # run TypeScript project checks, then create dist/
 npm run preview   # serve the production build locally
 ```
