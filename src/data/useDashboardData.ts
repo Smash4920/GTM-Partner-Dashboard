@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { logger } from '../lib/logging';
 import type { DataProvider } from './DataProvider';
 import type { DashboardData } from './types';
 
@@ -8,6 +9,8 @@ export interface DashboardState {
   error: string | null;
 }
 
+const log = logger.child({ component: 'useDashboardData' });
+
 /** Loads all dashboard data through the DataProvider seam. */
 export function useDashboardData(provider: DataProvider): DashboardState {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -16,6 +19,8 @@ export function useDashboardData(provider: DataProvider): DashboardState {
 
   useEffect(() => {
     let alive = true;
+    log.debug('Loading dashboard data');
+    const startedAt = Date.now();
     Promise.all([
       provider.listPartners(),
       provider.listRegistrations(),
@@ -39,23 +44,44 @@ export function useDashboardData(provider: DataProvider): DashboardState {
           certifications,
           teamUsers,
         ]) => {
-        if (!alive) return;
-        setData({
-          partnerManagers,
-          partners,
-          registrations,
-          opportunities,
-          snapshots,
-          targets,
-          activities,
-          certifications,
-          teamUsers,
-        });
-        setLoading(false);
+          if (!alive) {
+            // StrictMode double-invokes effects in development; the first
+            // run's result is expected to be discarded, and the record says so.
+            log.debug('Load finished after unmount; result discarded');
+            return;
+          }
+          log.info('Dashboard data loaded', {
+            partnerManagers: partnerManagers.length,
+            partners: partners.length,
+            registrations: registrations.length,
+            opportunities: opportunities.length,
+            snapshots: snapshots.length,
+            targets: targets.length,
+            activities: activities.length,
+            certifications: certifications.length,
+            teamUsers: teamUsers.length,
+            durationMs: Date.now() - startedAt,
+          });
+          setData({
+            partnerManagers,
+            partners,
+            registrations,
+            opportunities,
+            snapshots,
+            targets,
+            activities,
+            certifications,
+            teamUsers,
+          });
+          setLoading(false);
         },
       )
       .catch((err: unknown) => {
-        if (!alive) return;
+        if (!alive) {
+          log.debug('Load failed after unmount; failure discarded');
+          return;
+        }
+        log.error('Failed to load dashboard data', { error: err });
         setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
         setLoading(false);
       });

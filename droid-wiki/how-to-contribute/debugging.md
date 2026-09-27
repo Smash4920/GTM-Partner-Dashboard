@@ -1,12 +1,26 @@
 # Debugging
 
-The app is a small static frontend: `index.html` loads `src/main.tsx`, which mounts `src/App.tsx` inside React StrictMode. There is no server, no API, no logging framework, and no telemetry in the repository, so debugging means browser DevTools plus a few known trouble spots. This page covers the loading and error paths, the common base-path failure, provider and data issues, chart rendering, and the commands that exist.
+The app is a small static frontend: `index.html` loads `src/main.tsx`, which mounts `src/App.tsx` inside React StrictMode inside an error boundary. There is no server and no API, so instrumentation is the structured logger in `src/lib/logging.ts` — one record per event, written to the browser console — and debugging means those records plus DevTools. This page covers the logging surface, the loading and error paths, the common base-path failure, provider and data issues, chart rendering, and the commands that exist.
 
 ## Loading and error paths
 
 All data loads through `src/data/useDashboardData.ts`, which calls the four `DataProvider` methods with `Promise.all` and exposes `{ data, loading, error }`. `src/App.tsx` renders an error banner when `error` is set, a "Loading dashboard data" pulse while `loading` is true, and the selected view only when `data` is present.
 
 The mock provider never rejects, so to see the error path you would temporarily `throw` inside a provider method. A real CRM-backed provider would surface its failures here: the catch branch sets `error` to the rejection message (or `Failed to load dashboard data` for non-`Error` rejections) and flips `loading` to false while leaving `data` null. The `alive` flag prevents state updates after unmount, which also makes the React 18 StrictMode double-invocation of effects in dev mode harmless. If a load unexpectedly re-runs, the cause is a new provider instance: the effect in `src/data/useDashboardData.ts` only re-runs when the provider reference changes, and `src/App.tsx` stabilizes it with `useMemo(() => new MockDataProvider(), [])`.
+
+The load is also the main thing that is logged: `Loading dashboard data` at debug when the fetch starts, `Dashboard data loaded` at info with a count per collection and the elapsed milliseconds when it lands, and `Failed to load dashboard data` at error with the rejection serialized under `error` when it does not. If a result arrives after unmount, the hook discards it with a debug record saying so — that is the React 18 StrictMode double-invoke in development working as intended, not a bug to chase.
+
+## Structured logging
+
+`src/lib/logging.ts` is the instrumentation surface. Every event is one flat record — `time`, `level`, `msg`, plus context fields — instead of a string with values interpolated into it, so the console sidebar filters by level and any future sink can read fields without parsing prose.
+
+- Levels are `debug`, `info`, `warn`, `error`. The minimum comes from `VITE_LOG_LEVEL` when it is one of those, else `debug` in development and `warn` in production builds; Vite inlines it at build time, so a preview server does not re-read the environment.
+- `logger` is the app-wide instance; `logger.child({ component: '...' })` carries those fields on every record. The data hook logs with `component: useDashboardData`, session actions in `App.tsx` with `component: App`, render crashes with `component: ErrorBoundary`.
+- `Error` values are serialized to `name`, `message`, and `stack` (a raw `Error` does not survive `JSON.stringify`); dates become ISO strings; undefined fields are dropped; circular or arbitrarily deep values are cut off rather than thrown on.
+- The default sink writes each record to the console method matching its level. `createLogger({ sink })` accepts any `(record) => void` function — the unit tests in `src/lib/logging.test.ts` capture records that way, and a collector endpoint would attach the same way.
+- `src/components/ErrorBoundary.tsx` wraps the app and logs render crashes at error level with the component stack, so a blank page leaves a record behind.
+
+When instrumenting, log identifiers and counts — ids, categories, amounts, collection sizes — not user prose. Opportunity notes and next steps are deliberately not logged.
 
 ## Provider and data issues
 
@@ -35,15 +49,17 @@ The indicator to check first when the page renders HTML but no app is the asset 
 ```bash
 npm run dev        # Vite dev server, normally http://localhost:5173
 npm run lint       # ESLint flat config
+npm test           # Vitest unit suite, run once
+npm run test:e2e   # Playwright browser suite
 npm run build      # tsc -b && vite build
 npm run preview    # serve dist/; respects the configured base path
 ```
 
-There is no watch-mode type-checking script and no test command; `tsc -b` runs as part of `npm run build`.
+There is no watch-mode type-checking script; `tsc -b` runs as part of `npm run build`.
 
 ## What does not exist
 
-There are no `console.log` instrumentation points in the source, no error-tracking integration, no analytics, no server logs, and no devtools wiring beyond what React and Vite provide. Browser DevTools — console, network, React DevTools if installed — are the entire instrumentation story.
+There is no error-tracking integration, no analytics, and no server-side log collection: the structured logger writes to the browser console and nothing ships records anywhere. DevTools — console (with its level filter), network, React DevTools if installed — is where those records are read.
 
 ## Related pages
 

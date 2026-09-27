@@ -57,7 +57,7 @@ Related metadata maps in the same file: `STAGE_META`, `OPP_TYPE_META`, `PARTNER_
 
 ## Runtime secrets and configuration
 
-The dashboard has no runtime environment variables, no server-side config file, and no secrets. `VERCEL` and `BASE_PATH` are read at build time only, and the deployed `dist/` is static. Authentication is not part of the app: the partner portal picker simulates a partner identity, and any access control lives at the hosting layer (Vercel Authentication) or, in the future, in partner SSO. A future CRM adapter (see [Data provider](../systems/data-provider.md)) is where credentials would belong — not in this repository's configuration.
+The dashboard has no runtime environment variables, no server-side config file, and no secrets. `VERCEL`, `BASE_PATH`, and `VITE_LOG_LEVEL` are read at build time only — the first two pick the asset base path, the last sets the minimum log level (see [Debugging](../how-to-contribute/debugging.md)) — and the deployed `dist/` is static. Authentication is not part of the app: the partner portal picker simulates a partner identity, and any access control lives at the hosting layer (Vercel Authentication) or, in the future, in partner SSO. A future CRM adapter (see [Data provider](../systems/data-provider.md)) is where credentials would belong — not in this repository's configuration.
 
 ## Related pages
 

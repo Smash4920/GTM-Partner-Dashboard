@@ -265,6 +265,25 @@ npm run build     # type-checks, then bundles to dist/
 npm run preview
 ```
 
+### Logging
+
+The app logs through [`src/lib/logging.ts`](src/lib/logging.ts): every event
+is one structured record — `time`, `level`, `msg`, and flat context fields —
+written to the browser console, so DevTools filters by level and reads fields
+without parsing prose. `Error` values serialize to name, message, and stack;
+circular or oversized values are cut off, never thrown on. Data loads, session
+edits, notification sends, and render crashes (caught by
+`src/components/ErrorBoundary.tsx`) all leave records.
+
+The minimum level defaults to `debug` in development and `warn` in production
+builds; `VITE_LOG_LEVEL` (`debug` / `info` / `warn` / `error`) overrides it.
+Vite inlines the value at build time, so set it on the `dev` or `build`
+command, not `preview`:
+
+```bash
+VITE_LOG_LEVEL=debug npm run dev
+```
+
 ### Dev container
 
 Open the repository in VS Code with the

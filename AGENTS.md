@@ -61,8 +61,8 @@ npm run build
 - `src/views/`: page-level dashboard views. Keep cross-view business rules out
   of these files when they can be expressed as reusable helpers.
 - `src/components/`: reusable UI and domain components.
-- `src/lib/`: pure formatting, fiscal-calendar, notification, and metric
-  helpers. Unit tests are colocated as `*.test.ts`.
+- `src/lib/`: pure formatting, fiscal-calendar, structured logging,
+  notification, and metric helpers. Unit tests are colocated as `*.test.ts`.
 - `src/data/types.ts`: shared domain types and the `DashboardData` shape.
 - `src/data/constants.ts`: fiscal dates, service levels, labels, and other
   shared domain constants.
@@ -112,6 +112,10 @@ npm run build
   commas in multiline structures, and two-space indentation.
 - Add comments for business invariants and non-obvious time or data semantics,
   not for self-evident JSX.
+- Log through `src/lib/logging.ts`, not raw `console` calls: one structured
+  record per event — `log.info('msg', { fields })` — with
+  `logger.child({ component: '...' })` for shared context. Log identifiers
+  and counts, not user prose.
 - Preserve accessible labels and native controls when changing interactions.
 
 ## Visual conventions
