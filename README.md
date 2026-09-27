@@ -259,6 +259,7 @@ npm install
 npm run dev       # http://localhost:5173
 npm run lint
 npm test          # vitest: fiscal/metric helpers + the mock data contract
+npm run test:e2e  # playwright: browser workflows and partner-data boundaries
 npm run build     # type-checks, then bundles to dist/
 npm run preview
 ```
