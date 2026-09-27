@@ -4,6 +4,10 @@ node_modules
 # Build output
 dist
 
+# Browser test artifacts
+playwright-report
+test-results
+
 # TypeScript
 *.tsbuildinfo
 
@@ -13,3 +17,13 @@ dist
 # Editor / OS
 .DS_Store
 coverage/
+
+# Factory droid session state. Grows into the gigabytes, so it must never be
+# committed -- a single `git add -A` would otherwise balloon the history.
+.factory/
+
+# The generated wiki's narrated overview is ~10MB, larger than the rest of the
+# repository and its entire history combined, and a binary git cannot diff.
+# The wiki markdown and the caption transcript are tracked; publish the video
+# as a GitHub Release asset instead.
+droid-wiki/video/*.mp4

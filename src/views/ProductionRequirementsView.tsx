@@ -226,8 +226,8 @@ export default function ProductionRequirementsView() {
         </p>
         <h1 className="mt-2 text-3xl tracking-tight text-bone">Production Requirements</h1>
         <p className="mt-1 max-w-3xl text-sm text-granite">
-          This demo uses deterministic mock data and session-only edits. The capabilities below
-          are required before connecting protected business systems or serving external partners.
+          This demo uses deterministic mock data and session-only edits. The capabilities below are
+          required before connecting protected business systems or serving external partners.
         </p>
       </div>
 
@@ -237,7 +237,10 @@ export default function ProductionRequirementsView() {
             <ul className="space-y-3 text-sm text-stone">
               {requirement.items.map((item) => (
                 <li key={item} className="flex gap-3">
-                  <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-signal" />
+                  <span
+                    aria-hidden="true"
+                    className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-signal"
+                  />
                   <span>{item}</span>
                 </li>
               ))}
@@ -309,7 +312,10 @@ export default function ProductionRequirementsView() {
               <ul className="space-y-3 text-sm text-stone">
                 {requirement.items.map((item) => (
                   <li key={item} className="flex gap-3">
-                    <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-metric" />
+                    <span
+                      aria-hidden="true"
+                      className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-metric"
+                    />
                     <span>{item}</span>
                   </li>
                 ))}

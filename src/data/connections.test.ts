@@ -53,9 +53,7 @@ describe('connection catalog', () => {
   });
 
   it('places each tier in its own column, with no overlapping boxes', () => {
-    const columns = new Set(
-      CONNECTION_NODES.map((node) => CONNECTION_TIER_META[node.tier].x),
-    );
+    const columns = new Set(CONNECTION_NODES.map((node) => CONNECTION_TIER_META[node.tier].x));
     expect(columns.size).toBe(3);
     for (const node of CONNECTION_NODES) {
       expect(node.x).toBe(CONNECTION_TIER_META[node.tier].x);

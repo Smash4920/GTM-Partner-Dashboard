@@ -112,6 +112,7 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
   the weeks it was in rather than showing the drop. The tooltip names which kind
   of week you are looking at; where no history exists, a week falls back to the
   reconstruction and says so
+
 - In-quarter opportunities grouped into a collapsible section per partner
   manager; each header shows their opportunity count, open pipeline, and
   closed-won, and expands to their book. The view reads five aggregates and
@@ -133,9 +134,9 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
   and picking one re-calls the deal, which recalculates the weighted forecast
   and every category tile immediately. Closed rows carry no pencil — the call
   stops mattering once the deal resolves
-- **Calls that disagree with stage** sits above the table: deals called *above*
+- **Calls that disagree with stage** sits above the table: deals called _above_
   their stage (more confident than the funnel supports — a stale stage or an
-  optimistic call) and *below* it (late-funnel deals the manager has downgraded,
+  optimistic call) and _below_ it (late-funnel deals the manager has downgraded,
   which still read as healthy on any stage report). Where category and stage
   agree, the category adds no information, so these disagreements are the
   forecast conversation. Individual rows are tagged "off stage". Forecast
@@ -241,7 +242,7 @@ team can be told about the data, and the rule that tells them.
   there is covered here
 - **Partner team access** — the internal roster the identity provider owns,
   projected into the dashboard. Adding a person puts them on the roster
-  *awaiting authorization*; authorizing is a second, separate step, which is
+  _awaiting authorization_; authorizing is a second, separate step, which is
   the split a real IdP enforces between knowing who should have access and
   granting it. A user is either a Partnership Lead, a Partner Manager (aligned
   to one partner manager, which is what routes a registration to them), Deal
@@ -265,6 +266,10 @@ team can be told about the data, and the rule that tells them.
 
 ## Running locally
 
+Requires **Node 22.13+** (`engines.node` in `package.json`). Node 20 reached
+end-of-life in April 2026 and the current Vite / Vitest / ESLint majors no
+longer support it.
+
 ```bash
 npm install
 npm run dev             # http://localhost:5173
@@ -272,8 +277,49 @@ npm run lint
 npm test                # vitest: fiscal/metric helpers, the mock data contract, the provider seam, the view layer
 npm run test:coverage   # the same suite with coverage, enforcing the thresholds in vite.config.ts
 npm run build           # type-checks, then bundles to dist/
+npm ci
+npm run dev       # http://localhost:5173
+npm run format    # format source, configuration, and documentation
+npm run format:check
+npm run lint
+npm test          # vitest: fiscal/metric helpers + the mock data contract
+npm run test:e2e  # playwright: browser workflows and partner-data boundaries
+npm run test:list # collect and list tests without running them
+npm run build     # type-checks, then bundles to dist/
 npm run preview
 ```
+
+### Logging
+
+The app logs through [`src/lib/logging.ts`](src/lib/logging.ts): every event
+is one structured record — `time`, `level`, `msg`, and flat context fields —
+written to the browser console, so DevTools filters by level and reads fields
+without parsing prose. `Error` values serialize to name, message, and stack;
+circular or oversized values are cut off, never thrown on. Data loads, session
+edits, notification sends, and render crashes (caught by
+`src/components/ErrorBoundary.tsx`) all leave records.
+
+The minimum level defaults to `debug` in development and `warn` in production
+builds; `VITE_LOG_LEVEL` (`debug` / `info` / `warn` / `error`) overrides it.
+Vite inlines the value at build time, so set it on the `dev` or `build`
+command, not `preview`:
+
+```bash
+VITE_LOG_LEVEL=debug npm run dev
+```
+`npm ci` installs a Husky pre-commit hook. Every commit runs the linter and
+Vitest suite, preventing known lint violations and unit test failures from
+entering the repository.
+
+### Dev container
+
+Open the repository in VS Code with the
+[Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+or create a GitHub Codespace to use the checked-in development environment.
+The container provides Node.js 22 on Debian, installs the locked dependencies
+with `npm ci`, and configures ESLint, Tailwind CSS, and the workspace TypeScript
+version. Start the app with `npm run dev`; port 5173 is forwarded and opens in
+the browser automatically.
 
 ## Data contract (the integration seam)
 
@@ -322,6 +368,24 @@ unit suite.
   the same kilobytes (five aggregates, 25 rows a page); the load-everything path
   is what changes. That is the argument, and it is why the default is the local
   mock: this provider deliberately makes the un-migrated views slow.
+([`src/data/DataProvider.ts`](src/data/DataProvider.ts)):
+
+| Method                    | Returns                  | Future source                            |
+| ------------------------- | ------------------------ | ---------------------------------------- |
+| `listPartnerManagers()`   | `PartnerManager[]`       | Salesforce Account owner alignment       |
+| `listPartners()`          | `Partner[]`              | PRM / CRM partner accounts               |
+| `listRegistrations()`     | `DealRegistration[]`     | CRM "Deal Registration" custom object    |
+| `listOpportunities()`     | `Opportunity[]`          | Salesforce opportunities                 |
+| `listPipelineSnapshots()` | `PipelineSnapshot[]`     | `OpportunityHistory` / weekly fact table |
+| `getTargets()`            | `Target[]`               | Quota objects or warehouse               |
+| `listActivities()`        | `ActivityMeeting[]`      | Google Calendar events                   |
+| `listCertifications()`    | `PartnerCertification[]` | Partner enablement system                |
+| `listTeamUsers()`         | `TeamUser[]`             | Identity provider / SCIM directory       |
+
+`MockDataProvider` fills the seam with deterministic, seeded data today. To go
+live, implement the interface against your CRM (HubSpot, Salesforce) or
+warehouse (Snowflake, Looker) and swap the provider in `App.tsx`. No view code
+changes.
 
 The interface is read-only. `App.tsx` layers the session's in-app edits —
 revenue overrides, forecast-category calls, notes, next steps, meeting

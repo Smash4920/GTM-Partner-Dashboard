@@ -58,10 +58,7 @@ export function openOpportunities(opps: Opportunity[]): Opportunity[] {
   return opps.filter(isOpen);
 }
 
-export function filterByType(
-  opps: Opportunity[],
-  oppType: OpportunityType | 'all',
-): Opportunity[] {
+export function filterByType(opps: Opportunity[], oppType: OpportunityType | 'all'): Opportunity[] {
   return oppType === 'all' ? opps : opps.filter((opp) => opp.oppType === oppType);
 }
 
@@ -108,10 +105,7 @@ export function avgOpenDealSize(opps: Opportunity[]): number {
 }
 
 /** Partners with an opportunity or registration created this fiscal year. */
-export function activePartnerCount(
-  opps: Opportunity[],
-  registrations: DealRegistration[],
-): number {
+export function activePartnerCount(opps: Opportunity[], registrations: DealRegistration[]): number {
   const active = new Set<string>();
   const cutoff = FISCAL_YEAR_START.getTime();
   for (const opp of opps) {
@@ -291,9 +285,7 @@ export function quarterlyClosedWonAndTarget(
     closedWon: opps
       .filter(
         (opp) =>
-          opp.outcome === 'won' &&
-          opp.closedAt &&
-          fiscalQuarterOfDate(opp.closedAt) === quarter,
+          opp.outcome === 'won' && opp.closedAt && fiscalQuarterOfDate(opp.closedAt) === quarter,
       )
       .reduce((sum, opp) => sum + opp.forecastedRevenue, 0),
     target: targetByQuarter.get(quarter) ?? 0,
@@ -379,9 +371,7 @@ export function phaseWindow(phase: FiscalPhase): PhaseWindow {
 
 /** The same calendar date one year earlier or later (UTC). */
 function shiftYear(date: Date, years: number): Date {
-  return new Date(
-    Date.UTC(date.getUTCFullYear() + years, date.getUTCMonth(), date.getUTCDate()),
-  );
+  return new Date(Date.UTC(date.getUTCFullYear() + years, date.getUTCMonth(), date.getUTCDate()));
 }
 
 /**
@@ -390,12 +380,10 @@ function shiftYear(date: Date, years: number): Date {
  * future phase (Q4) compares against the full prior-year quarter, since
  * neither year has closed anything in that quarter yet.
  */
-export function closedWonPriorYearForPhase(
-  opps: Opportunity[],
-  phase: FiscalPhase,
-): number {
+export function closedWonPriorYearForPhase(opps: Opportunity[], phase: FiscalPhase): number {
   const window = phaseWindow(phase);
-  const currentEnd = window.end.getTime() > window.start.getTime() ? window.end : window.pipelineEnd;
+  const currentEnd =
+    window.end.getTime() > window.start.getTime() ? window.end : window.pipelineEnd;
   const priorStart = shiftYear(window.start, -1);
   const priorEnd = shiftYear(currentEnd, -1);
   return closedWonBetween(opps, priorStart.toISOString(), priorEnd.toISOString());
@@ -523,9 +511,10 @@ export function weeklyActivity(
   return Array.from({ length: 8 }, (_, index) => {
     const start = new Date(currentWeek.getTime() - (7 - index) * 7 * DAY);
     const end = new Date(start.getTime() + 7 * DAY);
-    const byType = Object.fromEntries(
-      MEETING_TYPES.map((type) => [type, 0]),
-    ) as Record<MeetingType, number>;
+    const byType = Object.fromEntries(MEETING_TYPES.map((type) => [type, 0])) as Record<
+      MeetingType,
+      number
+    >;
     const filtered = activities.filter((activity) => {
       const occurredAt = new Date(activity.occurredAt).getTime();
       const inWeek = occurredAt >= start.getTime() && occurredAt < end.getTime();
@@ -761,14 +750,14 @@ export function weeklyForecastRows(
     // The latest recording inside this bucket. Requiring it past weekStart is
     // what keeps the in-progress week from reusing last week's snapshot.
     const recordedAt = instants.reduce<number | undefined>(
-      (latest, instant) =>
-        instant > weekStart && instant <= at ? instant : latest,
+      (latest, instant) => (instant > weekStart && instant <= at ? instant : latest),
       undefined,
     );
 
-    const raw = Object.fromEntries(
-      FORECAST_CATEGORIES.map((category) => [category, 0]),
-    ) as Record<ForecastCategory, number>;
+    const raw = Object.fromEntries(FORECAST_CATEGORIES.map((category) => [category, 0])) as Record<
+      ForecastCategory,
+      number
+    >;
     const weighted = { ...raw };
     const add = (category: ForecastCategory, revenue: number) => {
       raw[category] += revenue;
@@ -985,8 +974,7 @@ export function registrationSlaAlerts(
     alerts.push({
       registration,
       partner,
-      owner:
-        (partner && managerUserByManagerId.get(partner.partnerManagerId)) ?? fallbackOwner,
+      owner: (partner && managerUserByManagerId.get(partner.partnerManagerId)) ?? fallbackOwner,
       businessDaysWaiting: waiting,
       businessDaysRemaining: remaining,
       state,
@@ -1095,9 +1083,7 @@ export function duplicateRegistrationGroups(
     );
     const distinct = new Set(sorted.map((reg) => reg.partnerId));
     if (distinct.size < 2) continue;
-    const valid = sorted.filter((reg) =>
-      partners.some((partner) => partner.id === reg.partnerId),
-    );
+    const valid = sorted.filter((reg) => partners.some((partner) => partner.id === reg.partnerId));
     if (valid.length < 2) continue;
     groups.push({
       accountName,

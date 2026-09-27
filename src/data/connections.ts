@@ -118,6 +118,12 @@ export const CONNECTION_NODES: ConnectionNode[] = [
       'listRegistrations()',
       'getTargets()',
     ],
+    supplies: [
+      'Opportunity book and stages',
+      'Deal registrations and decisions',
+      'Targets and fiscal periods',
+    ],
+    methods: ['listOpportunities()', 'listRegistrations()', 'getTargets()'],
     source: 'Opportunity, Deal_Registration__c, Account, quota objects',
     auth: 'Connected app, OAuth 2.0 JWT bearer, service account',
     cadence: '15-minute incremental sync plus webhooks',

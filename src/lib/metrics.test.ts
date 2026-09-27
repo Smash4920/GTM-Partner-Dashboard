@@ -186,8 +186,12 @@ describe('filterByPhase', () => {
 
 describe('filterRegistrationsByPhase', () => {
   it('filters registrations by submitted date within the phase window', () => {
-    expect(filterRegistrationsByPhase([registration('2026-08-05T00:00:00Z')], 'q3')).toHaveLength(1);
-    expect(filterRegistrationsByPhase([registration('2026-05-05T00:00:00Z')], 'q3')).toHaveLength(0);
+    expect(filterRegistrationsByPhase([registration('2026-08-05T00:00:00Z')], 'q3')).toHaveLength(
+      1,
+    );
+    expect(filterRegistrationsByPhase([registration('2026-05-05T00:00:00Z')], 'q3')).toHaveLength(
+      0,
+    );
   });
 });
 
@@ -204,13 +208,27 @@ describe('coverageRatio', () => {
       closedAt: '2026-08-05T00:00:00Z',
       forecastedRevenue: 20_000,
     });
-    const beforeSnapshot = opp({ id: 'o1', expectedCloseDate: '2026-09-10T00:00:00Z', forecastedRevenue: 60_000 });
-    const lateInPhase = opp({ id: 'o2', expectedCloseDate: '2026-10-15T00:00:00Z', forecastedRevenue: 100_000 });
-    const nextQuarter = opp({ id: 'o3', expectedCloseDate: '2026-12-01T00:00:00Z', forecastedRevenue: 500_000 });
+    const beforeSnapshot = opp({
+      id: 'o1',
+      expectedCloseDate: '2026-09-10T00:00:00Z',
+      forecastedRevenue: 60_000,
+    });
+    const lateInPhase = opp({
+      id: 'o2',
+      expectedCloseDate: '2026-10-15T00:00:00Z',
+      forecastedRevenue: 100_000,
+    });
+    const nextQuarter = opp({
+      id: 'o3',
+      expectedCloseDate: '2026-12-01T00:00:00Z',
+      forecastedRevenue: 500_000,
+    });
 
     // Remaining quota is 80k; Q3-scheduled open pipeline is 160k (the 500k
     // Q4 deal must not leak in), so coverage is 2x.
-    expect(coverageRatio([closedWon, beforeSnapshot, lateInPhase, nextQuarter], targets, 'q3')).toBe(2);
+    expect(
+      coverageRatio([closedWon, beforeSnapshot, lateInPhase, nextQuarter], targets, 'q3'),
+    ).toBe(2);
   });
 
   it('returns null when the phase target is already met', () => {
@@ -470,7 +488,12 @@ describe('weeklyGoalProgress', () => {
     expect(weeklyGoalProgress(mine, {}, 'pm-01').meetings).toBe(2);
     expect(weeklyGoalProgress(mine, {}, 'pm-01', new Set(['p-02'])).meetings).toBe(0);
     expect(
-      weeklyGoalProgress(mine, { m1: { partnerId: 'p-02', type: 'partner-cadence' } }, 'pm-01', new Set(['p-02'])).meetings,
+      weeklyGoalProgress(
+        mine,
+        { m1: { partnerId: 'p-02', type: 'partner-cadence' } },
+        'pm-01',
+        new Set(['p-02']),
+      ).meetings,
     ).toBe(1);
   });
 });
@@ -479,10 +502,26 @@ describe('weeklyGoalProgress', () => {
 
 describe('forecastCategoryOf', () => {
   it('derives the bucket from the stage when the opportunity has none', () => {
-    expect(forecastCategoryOf(opp({ id: 'a', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'discovery' }))).toBe('long-shot');
-    expect(forecastCategoryOf(opp({ id: 'b', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'scope' }))).toBe('pipeline');
-    expect(forecastCategoryOf(opp({ id: 'c', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'tech-validation' }))).toBe('best-case');
-    expect(forecastCategoryOf(opp({ id: 'd', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'business-case' }))).toBe('commit');
+    expect(
+      forecastCategoryOf(
+        opp({ id: 'a', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'discovery' }),
+      ),
+    ).toBe('long-shot');
+    expect(
+      forecastCategoryOf(
+        opp({ id: 'b', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'scope' }),
+      ),
+    ).toBe('pipeline');
+    expect(
+      forecastCategoryOf(
+        opp({ id: 'c', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'tech-validation' }),
+      ),
+    ).toBe('best-case');
+    expect(
+      forecastCategoryOf(
+        opp({ id: 'd', expectedCloseDate: '2026-09-30T00:00:00Z', stage: 'business-case' }),
+      ),
+    ).toBe('commit');
   });
 
   it('prefers an explicit category over the stage heuristic', () => {
@@ -499,9 +538,24 @@ describe('forecastCategoryOf', () => {
 describe('weightedForecast', () => {
   it('applies each category weight to the open book', () => {
     const forecast = weightedForecast([
-      opp({ id: 'a', expectedCloseDate: '2026-09-30T00:00:00Z', forecastedRevenue: 100_000, forecastCategory: 'commit' }),
-      opp({ id: 'b', expectedCloseDate: '2026-09-30T00:00:00Z', forecastedRevenue: 40_000, forecastCategory: 'pipeline' }),
-      opp({ id: 'c', expectedCloseDate: '2026-09-30T00:00:00Z', forecastedRevenue: 20_000, forecastCategory: 'long-shot' }),
+      opp({
+        id: 'a',
+        expectedCloseDate: '2026-09-30T00:00:00Z',
+        forecastedRevenue: 100_000,
+        forecastCategory: 'commit',
+      }),
+      opp({
+        id: 'b',
+        expectedCloseDate: '2026-09-30T00:00:00Z',
+        forecastedRevenue: 40_000,
+        forecastCategory: 'pipeline',
+      }),
+      opp({
+        id: 'c',
+        expectedCloseDate: '2026-09-30T00:00:00Z',
+        forecastedRevenue: 20_000,
+        forecastCategory: 'long-shot',
+      }),
     ]);
     expect(forecast.total).toBe(102_000); // 90k + 10k + 2k
     const rows = Object.fromEntries(forecast.rows.map((row) => [row.category, row]));
@@ -532,8 +586,19 @@ describe('weeklyForecastRows', () => {
   it('lights up one week at a time as the as-of date advances', () => {
     // Snapshot Sep 18 (Friday): the weeks through Sep 14 have begun.
     expect(weeklyForecastRows([], 'FY27-Q3').map((row) => row.hasStarted)).toEqual([
-      true, true, true, true, true, true, true,
-      false, false, false, false, false, false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
     ]);
     // In week 3 of the quarter, only weeks 1-3 carry points.
     const early = weeklyForecastRows([], 'FY27-Q3', new Date('2026-08-20T00:00:00Z'));
@@ -629,8 +694,12 @@ describe('weeklyForecastRows', () => {
 describe('weeklyForecastRows with recorded history', () => {
   // One deal, recorded at every Monday of Q3 through the snapshot week.
   const mondays = [
-    '2026-08-10', '2026-08-17', '2026-08-24', '2026-08-31',
-    '2026-09-07', '2026-09-14',
+    '2026-08-10',
+    '2026-08-17',
+    '2026-08-24',
+    '2026-08-31',
+    '2026-09-07',
+    '2026-09-14',
   ].map((day) => `${day}T00:00:00.000Z`);
 
   const book = [opp({ id: 'a', expectedCloseDate: '2026-09-30T00:00:00Z' })];
@@ -688,8 +757,7 @@ describe('weeklyForecastRows with recorded history', () => {
         takenAt,
         opportunityId: 'a',
         forecastedRevenue: 100_000,
-        expectedCloseDate:
-          index < 3 ? '2026-09-30T00:00:00Z' : '2026-11-20T00:00:00Z',
+        expectedCloseDate: index < 3 ? '2026-09-30T00:00:00Z' : '2026-11-20T00:00:00Z',
       }),
     );
     const slipped = [opp({ id: 'a', expectedCloseDate: '2026-11-20T00:00:00Z' })];
@@ -701,9 +769,9 @@ describe('weeklyForecastRows with recorded history', () => {
 
   it('falls back to the current book for weeks history does not cover', () => {
     // History starts in September, so August weeks have nothing recorded.
-    const history = mondays.slice(4).map((takenAt) =>
-      snapshot({ takenAt, opportunityId: 'a', forecastedRevenue: 100_000 }),
-    );
+    const history = mondays
+      .slice(4)
+      .map((takenAt) => snapshot({ takenAt, opportunityId: 'a', forecastedRevenue: 100_000 }));
     const rows = weeklyForecastRows(book, 'FY27-Q3', SNAPSHOT_DATE, history);
     const august = rows.filter(
       (row) => row.hasStarted && new Date(row.weekStart) < new Date('2026-08-31T00:00:00Z'),
@@ -832,11 +900,19 @@ describe('registrationSlaState', () => {
 
   it('flags submissions inside the 5-business-day window as within SLA', () => {
     // Snapshot 2026-09-18. Submitted Monday, four business days earlier.
-    expect(registrationSlaState(reg({ id: 'r1', submittedAt: '2026-09-14T00:00:00Z', status: 'pending' }))).toBe('within-sla');
+    expect(
+      registrationSlaState(
+        reg({ id: 'r1', submittedAt: '2026-09-14T00:00:00Z', status: 'pending' }),
+      ),
+    ).toBe('within-sla');
   });
 
   it('flags submissions at or past 5 business days as past SLA', () => {
-    expect(registrationSlaState(reg({ id: 'r2', submittedAt: '2026-09-07T00:00:00Z', status: 'pending' }))).toBe('past-sla');
+    expect(
+      registrationSlaState(
+        reg({ id: 'r2', submittedAt: '2026-09-07T00:00:00Z', status: 'pending' }),
+      ),
+    ).toBe('past-sla');
   });
 });
 
@@ -844,7 +920,12 @@ describe('registrationsPastSla', () => {
   it('returns only pending registrations outside the SLA, oldest first', () => {
     const old = reg({ id: 'r1', submittedAt: '2026-09-01T00:00:00Z', status: 'pending' });
     const fresh = reg({ id: 'r2', submittedAt: '2026-09-17T00:00:00Z', status: 'pending' });
-    const approved = reg({ id: 'r3', submittedAt: '2026-09-01T00:00:00Z', status: 'approved', decisionAt: '2026-09-05T00:00:00Z' });
+    const approved = reg({
+      id: 'r3',
+      submittedAt: '2026-09-01T00:00:00Z',
+      status: 'approved',
+      decisionAt: '2026-09-05T00:00:00Z',
+    });
     expect(registrationsPastSla([approved, fresh, old])).toEqual([old]);
   });
 });
@@ -904,9 +985,7 @@ describe('registrationSlaAlerts', () => {
     expect(registrationSlaAlerts([warning], [partner], roster)[0].owner?.id).toBe('u-01');
     // A manager without an alignment, or one whose access was revoked, cannot
     // own the alert: the deal desk catches it rather than nobody.
-    expect(
-      registrationSlaAlerts([warning], [partner], [dealDesk])[0].owner?.id,
-    ).toBe('u-02');
+    expect(registrationSlaAlerts([warning], [partner], [dealDesk])[0].owner?.id).toBe('u-02');
     expect(
       registrationSlaAlerts(
         [warning],
@@ -1028,7 +1107,10 @@ describe('registrationConversionTimes', () => {
 
   it('returns null hops when no registration reached them', () => {
     expect(
-      registrationConversionTimes([reg({ id: 'r4', submittedAt: '2026-09-01T00:00:00Z', status: 'pending' })], []),
+      registrationConversionTimes(
+        [reg({ id: 'r4', submittedAt: '2026-09-01T00:00:00Z', status: 'pending' })],
+        [],
+      ),
     ).toEqual({
       submittedToApproved: null,
       approvedToOpportunity: null,

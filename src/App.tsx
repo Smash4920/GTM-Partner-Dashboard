@@ -19,6 +19,7 @@ import type {
 import { useDashboardData } from './data/useDashboardData';
 import type { NotificationDraft } from './lib/notifications';
 import { formatDate } from './lib/format';
+import { logger } from './lib/logging';
 import ActivityTrackingView from './views/ActivityTrackingView';
 import DataConnectionsView from './views/DataConnectionsView';
 import DealRegistrationOpsView from './views/DealRegistrationOpsView';
@@ -27,6 +28,11 @@ import HomeView from './views/HomeView';
 import PartnerPerformanceView from './views/PartnerPerformanceView';
 import PartnerView from './views/PartnerView';
 import ProductionRequirementsView from './views/ProductionRequirementsView';
+
+// Every session action leaves one structured record (see lib/logging.ts), so a
+// session can be replayed from the console; opportunity notes and next steps
+// are user prose and are deliberately not logged.
+const log = logger.child({ component: 'App' });
 
 export default function App() {
   // The provider is the integration seam. The header swaps it between the
@@ -115,7 +121,10 @@ export default function App() {
   );
 
   const setRevenue = (opportunityId: string, value: number) =>
+  const setRevenue = (opportunityId: string, value: number) => {
+    log.debug('Revenue forecast edited', { opportunityId, revenue: value });
     setRevenueOverrides((prev) => ({ ...prev, [opportunityId]: value }));
+  };
 
   // An emptied field is stored as '' rather than deleted. Deleting the key
   // would drop back through the `??` below to the provider's value, so
@@ -129,8 +138,10 @@ export default function App() {
   const setNextStep = (opportunityId: string, nextStep: string) =>
     setNextSteps((prev) => ({ ...prev, [opportunityId]: nextStep }));
 
-  const setForecastCall = (opportunityId: string, category: ForecastCategory) =>
+  const setForecastCall = (opportunityId: string, category: ForecastCategory) => {
+    log.debug('Forecast call changed', { opportunityId, category });
     setForecastCalls((prev) => ({ ...prev, [opportunityId]: category }));
+  };
 
   const commitClassifications = (next: Record<string, MeetingClassification>) =>
     setClassifications(next);
@@ -138,6 +149,7 @@ export default function App() {
   const addPartner = (name: string, partnerManagerId: string) => {
     prospectSeq.current += 1;
     const id = `prospect-${prospectSeq.current}`;
+    log.debug('Prospect partner added', { partnerId: id, name, partnerManagerId });
     setProspects((prev) => [
       ...prev,
       {
@@ -159,6 +171,12 @@ export default function App() {
   // second step, which is how a real identity provider separates the two.
   const addTeamUser = (input: NewTeamUserInput) => {
     teamUserSeq.current += 1;
+    log.debug('Team user invited', {
+      name: input.name,
+      email: input.email,
+      role: input.role,
+      partnerManagerId: input.partnerManagerId,
+    });
     setAddedTeamUsers((prev) => [
       ...prev,
       {
@@ -175,6 +193,7 @@ export default function App() {
   };
 
   const setTeamUserStatus = (userId: string, status: TeamUserStatus) => {
+    log.debug('Team user status changed', { userId, status });
     const patch: Partial<TeamUser> = { status };
     if (status === 'active') patch.authorizedAt = new Date().toISOString();
     if (addedTeamUsers.some((user) => user.id === userId)) {
@@ -186,17 +205,26 @@ export default function App() {
     setTeamUserOverrides((prev) => ({ ...prev, [userId]: { ...prev[userId], ...patch } }));
   };
 
-  const removeTeamUser = (userId: string) =>
+  const removeTeamUser = (userId: string) => {
+    log.debug('Session team user removed', { userId });
     setAddedTeamUsers((prev) => prev.filter((user) => user.id !== userId));
+  };
 
   // Sends are timestamped off the session clock, not the snapshot: the data is
   // mocked at a fixed date, but an action taken now happened now. The record
   // is delivered immediately because the demo has no service behind it.
   const sendNotification = (draft: NotificationDraft) => {
     notificationSeq.current += 1;
+    const id = `notification-${notificationSeq.current}`;
+    log.info('Notification sent', {
+      notificationId: id,
+      userId: draft.userId,
+      kind: draft.kind,
+      channels: draft.channels,
+    });
     setNotifications((prev) => [
       {
-        id: `notification-${notificationSeq.current}`,
+        id,
         userId: draft.userId,
         kind: draft.kind,
         subject: draft.subject,
@@ -283,6 +311,8 @@ export default function App() {
               provider, say — keeps the book already on screen, and the notice
               above says what is being fetched. */}
           {loading && !live && (
+          {error && <p className="rounded-card border border-ash p-4 text-sm text-bone">{error}</p>}
+          {loading && (
             <p className="flex items-center gap-2 py-32 font-mono text-xs uppercase tracking-[0.08em] text-granite">
               <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal" />
               Loading dashboard data
@@ -293,6 +323,8 @@ export default function App() {
               {route === 'home' && (
                 <HomeView data={live} classifications={classifications} />
               )}
+            <>
+              {route === 'home' && <HomeView data={live} classifications={classifications} />}
               {route === 'partners' && (
                 <PartnerPerformanceView data={live} classifications={classifications} />
               )}
@@ -335,8 +367,8 @@ export default function App() {
 
       <footer className="p-6">
         <p className="font-mono text-xs text-granite">
-          Mock data · deterministic snapshot as of {formatDate(SNAPSHOT_DATE.toISOString())} ·
-          edits stay in-app for this session
+          Mock data · deterministic snapshot as of {formatDate(SNAPSHOT_DATE.toISOString())} · edits
+          stay in-app for this session
         </p>
       </footer>
     </div>
