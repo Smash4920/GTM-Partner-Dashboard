@@ -63,9 +63,7 @@ export default function SlaAlertPanel({
             <span className="h-1.5 w-1.5 rounded-full bg-graphite" />
             <span className="text-granite">{breached.length} past the SLA</span>
           </span>
-          <span className="text-granite">
-            {notifyable.length} with a resolvable owner
-          </span>
+          <span className="text-granite">{notifyable.length} with a resolvable owner</span>
         </div>
       </div>
 
@@ -163,8 +161,8 @@ export default function SlaAlertPanel({
       </div>
       {alerts.length > shown.length && (
         <p className="text-xs text-granite">
-          Showing the {shown.length} most urgent of {alerts.length} registrations flagged against the
-          SLA.
+          Showing the {shown.length} most urgent of {alerts.length} registrations flagged against
+          the SLA.
         </p>
       )}
 

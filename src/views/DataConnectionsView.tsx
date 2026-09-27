@@ -75,9 +75,7 @@ export default function DataConnectionsView({
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   // The composer opens on the most urgent alert so the panel is never a blank
   // form; the node's roster chips and the alert queue re-target it.
-  const [composer, setComposer] = useState<ComposerState>(() =>
-    composerForAlert(alerts),
-  );
+  const [composer, setComposer] = useState<ComposerState>(() => composerForAlert(alerts));
 
   const selectedNode = CONNECTION_NODES.find((node) => node.id === selectedNodeId) ?? null;
   const selectedEdges = selectedNode
@@ -358,7 +356,10 @@ function ConnectionDetail({
           <ul className="space-y-1">
             {node.supplies.map((item) => (
               <li key={item} className="flex gap-2 text-stone">
-                <span aria-hidden="true" className="mt-2 h-1 w-1 shrink-0 rounded-full bg-graphite" />
+                <span
+                  aria-hidden="true"
+                  className="mt-2 h-1 w-1 shrink-0 rounded-full bg-graphite"
+                />
                 <span>{item}</span>
               </li>
             ))}

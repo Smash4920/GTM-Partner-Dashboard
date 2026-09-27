@@ -50,7 +50,10 @@ export default function ActivityTrackingView({
   );
 
   const partnerIds = useMemo(
-    () => (partnerFilter === 'all' ? new Set(managerPartners.map((p) => p.id)) : new Set([partnerFilter])),
+    () =>
+      partnerFilter === 'all'
+        ? new Set(managerPartners.map((p) => p.id))
+        : new Set([partnerFilter]),
     [managerPartners, partnerFilter],
   );
 
@@ -204,8 +207,8 @@ export default function ActivityTrackingView({
               hint={`${Math.min(100, Math.round((goal.pioMeetings / goal.pioGoal) * 100))}% of goal`}
             />
             <p className="text-xs text-granite">
-              Classified in Log Meetings. {MEETING_TYPE_META['pio-interlock'].fullLabel}. The
-              goal resets every Monday.
+              Classified in Log Meetings. {MEETING_TYPE_META['pio-interlock'].fullLabel}. The goal
+              resets every Monday.
             </p>
           </div>
           <div>

@@ -4,9 +4,7 @@ const primaryNavigation = (page: Page) => page.getByRole('navigation', { name: '
 
 async function openView(page: Page, name: string) {
   await page.goto('/');
-  await expect(
-    page.getByRole('heading', { name: 'Partner Performance Overview' }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Partner Performance Overview' })).toBeVisible();
   await primaryNavigation(page).getByRole('button', { name }).click();
 }
 
@@ -39,9 +37,7 @@ test('editing an open forecast updates live pipeline and weighted metrics', asyn
   });
   await revenueInput.fill('-1');
   await openOpportunityRow.getByRole('button', { name: 'Save revenue' }).click();
-  await expect(openOpportunityRow.getByRole('alert')).toHaveText(
-    'Enter a non-negative number.',
-  );
+  await expect(openOpportunityRow.getByRole('alert')).toHaveText('Enter a non-negative number.');
 
   await revenueInput.fill('987654321');
   await openOpportunityRow.getByRole('button', { name: 'Save revenue' }).click();
@@ -50,9 +46,7 @@ test('editing an open forecast updates live pipeline and weighted metrics', asyn
 
   const weightedAfterRevenue = await weightedValue.textContent();
   const editedRow = table.getByRole('row').filter({ hasText: '$987,654,321' });
-  await editedRow
-    .getByRole('button', { name: /^Edit forecast category for / })
-    .click();
+  await editedRow.getByRole('button', { name: /^Edit forecast category for / }).click();
   const category = editedRow.getByRole('combobox', {
     name: /^Forecast category for /,
   });
@@ -93,9 +87,7 @@ test('an authorized roster addition can receive and log a notification', async (
   await expect(page.getByText('Sent this session · 1', { exact: true })).toBeVisible();
 });
 
-test('every simulated partner portal excludes internal Sell To opportunities', async ({
-  page,
-}) => {
+test('every simulated partner portal excludes internal Sell To opportunities', async ({ page }) => {
   await openView(page, 'Partner View');
   await expect(page.getByText('In production, scoped by partner SSO')).toBeVisible();
 
@@ -105,9 +97,9 @@ test('every simulated partner portal excludes internal Sell To opportunities', a
     .click();
 
   const partnerPicker = page.getByLabel('Viewing as');
-  const partnerIds = await partnerPicker.locator('option').evaluateAll((options) =>
-    options.map((option) => (option as HTMLOptionElement).value),
-  );
+  const partnerIds = await partnerPicker
+    .locator('option')
+    .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
   const pipeline = page.getByRole('region', {
     name: 'Pipeline opportunities, scrollable',
   });

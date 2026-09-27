@@ -75,21 +75,15 @@ export default function PartnerView({ data }: { data: DashboardData }) {
   const [phase, setPhase] = useState<FiscalPhase>('q3');
 
   // Default to the top-performing partner so the first view is representative.
-  const partner =
-    data.partners.find((candidate) => candidate.id === partnerId) ?? data.partners[0];
+  const partner = data.partners.find((candidate) => candidate.id === partnerId) ?? data.partners[0];
 
   // Everything the partner is allowed to see: Sell To is internal-only.
   const visibleOpps = useMemo(
     () =>
-      data.opportunities.filter(
-        (opp) => opp.partnerId === partnerId && opp.oppType !== 'sell-to',
-      ),
+      data.opportunities.filter((opp) => opp.partnerId === partnerId && opp.oppType !== 'sell-to'),
     [data.opportunities, partnerId],
   );
-  const phaseVisibleOpps = useMemo(
-    () => filterByPhase(visibleOpps, phase),
-    [visibleOpps, phase],
-  );
+  const phaseVisibleOpps = useMemo(() => filterByPhase(visibleOpps, phase), [visibleOpps, phase]);
   const partnerOpps = useMemo(
     () =>
       slice === 'all'
@@ -148,12 +142,8 @@ export default function PartnerView({ data }: { data: DashboardData }) {
 
   // Always computed over everything visible, so the split stays readable
   // regardless of which slice is selected above.
-  const sellWith = openPipeline(
-    phaseVisibleOpps.filter((opp) => opp.oppType === 'sell-with'),
-  );
-  const allocate = openPipeline(
-    phaseVisibleOpps.filter((opp) => opp.oppType === 'allocate'),
-  );
+  const sellWith = openPipeline(phaseVisibleOpps.filter((opp) => opp.oppType === 'sell-with'));
+  const allocate = openPipeline(phaseVisibleOpps.filter((opp) => opp.oppType === 'allocate'));
   const total = openPipeline(phaseVisibleOpps);
   const certification = data.certifications.find((item) => item.partnerId === partnerId);
 
@@ -232,8 +222,8 @@ export default function PartnerView({ data }: { data: DashboardData }) {
             </span>
           </div>
           <p className="mt-1.5 text-xs text-granite">
-            Account manager {partner.accountManager} · partner since{' '}
-            {formatDate(partner.joinedAt)} · {partnerRegistrations.length} lifetime registrations
+            Account manager {partner.accountManager} · partner since {formatDate(partner.joinedAt)}{' '}
+            · {partnerRegistrations.length} lifetime registrations
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -289,14 +279,14 @@ export default function PartnerView({ data }: { data: DashboardData }) {
               : `of closed ${sliceLabel} ${FISCAL_PHASE_META[phase].label}`
           }
         />
-        <KpiTile
-          label="Awaiting review"
-          value={`${pending.length}`}
-          sub="registrations pending"
-        />
+        <KpiTile label="Awaiting review" value={`${pending.length}`} sub="registrations pending" />
         <KpiTile
           label="Partner strategists certified"
-          value={certification ? `${certification.partnerStrategistsCertified}/${certification.partnerStrategistsGoal}` : '—'}
+          value={
+            certification
+              ? `${certification.partnerStrategistsCertified}/${certification.partnerStrategistsGoal}`
+              : '—'
+          }
           sub={
             certification
               ? `${formatPct(
@@ -307,7 +297,11 @@ export default function PartnerView({ data }: { data: DashboardData }) {
         />
         <KpiTile
           label="Partner engineers certified"
-          value={certification ? `${certification.partnerEngineersCertified}/${certification.partnerEngineersGoal}` : '—'}
+          value={
+            certification
+              ? `${certification.partnerEngineersCertified}/${certification.partnerEngineersGoal}`
+              : '—'
+          }
           sub={
             certification
               ? `${formatPct(
@@ -318,10 +312,7 @@ export default function PartnerView({ data }: { data: DashboardData }) {
         />
       </div>
 
-      <Card
-        title="Deal registrations"
-        subtitle="Most recent first · all statuses"
-      >
+      <Card title="Deal registrations" subtitle="Most recent first · all statuses">
         <RegistrationsTable
           registrations={registrations}
           partners={data.partners}
@@ -349,8 +340,8 @@ export default function PartnerView({ data }: { data: DashboardData }) {
             limit={6}
           />
           <p className="mt-4 text-xs text-granite">
-            Your approved leads keep exclusivity for {REGISTRATION_EXCLUSIVITY_DAYS} calendar days
-            — introduce the lead within it or the window lapses.
+            Your approved leads keep exclusivity for {REGISTRATION_EXCLUSIVITY_DAYS} calendar days —
+            introduce the lead within it or the window lapses.
           </p>
         </Card>
       </div>

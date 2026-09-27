@@ -22,7 +22,11 @@ export default function AddPartnerForm({
   const trimmed = name.trim();
 
   return (
-    <div className="rounded border border-ash bg-carbon p-3" role="dialog" aria-label="Add prospective partner">
+    <div
+      className="rounded border border-ash bg-carbon p-3"
+      role="dialog"
+      aria-label="Add prospective partner"
+    >
       <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
         New prospective partner · {partnerManagerName}
       </p>
