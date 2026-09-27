@@ -280,9 +280,7 @@ export default function App() {
         />
 
         <main className="min-w-0 flex-1 px-4 py-8 sm:px-6">
-          {error && (
-            <p className="rounded-card border border-ash p-4 text-sm text-bone">{error}</p>
-          )}
+          {error && <p className="rounded-card border border-ash p-4 text-sm text-bone">{error}</p>}
           {loading && (
             <p className="flex items-center gap-2 py-32 font-mono text-xs uppercase tracking-[0.08em] text-granite">
               <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal" />
@@ -291,9 +289,7 @@ export default function App() {
           )}
           {live && (
             <>
-              {route === 'home' && (
-                <HomeView data={live} classifications={classifications} />
-              )}
+              {route === 'home' && <HomeView data={live} classifications={classifications} />}
               {route === 'partners' && (
                 <PartnerPerformanceView data={live} classifications={classifications} />
               )}
@@ -338,8 +334,8 @@ export default function App() {
 
       <footer className="p-6">
         <p className="font-mono text-xs text-granite">
-          Mock data · deterministic snapshot as of {formatDate(SNAPSHOT_DATE.toISOString())} ·
-          edits stay in-app for this session
+          Mock data · deterministic snapshot as of {formatDate(SNAPSHOT_DATE.toISOString())} · edits
+          stay in-app for this session
         </p>
       </footer>
     </div>

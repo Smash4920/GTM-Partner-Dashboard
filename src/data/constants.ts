@@ -158,12 +158,7 @@ export const SNAPSHOT_DATE = new Date('2026-09-18T00:00:00Z');
 
 /** Fiscal year starts in February. The snapshot is in FY27 Q3. */
 export const FISCAL_YEAR = 'FY27';
-export const FISCAL_QUARTERS = [
-  'FY27-Q1',
-  'FY27-Q2',
-  'FY27-Q3',
-  'FY27-Q4',
-] as const;
+export const FISCAL_QUARTERS = ['FY27-Q1', 'FY27-Q2', 'FY27-Q3', 'FY27-Q4'] as const;
 export const CURRENT_FISCAL_QUARTER = 'FY27-Q3';
 export const FISCAL_YEAR_START = new Date('2026-02-01T00:00:00Z');
 
@@ -222,9 +217,7 @@ export const MEETING_TYPE_META: Record<
   },
 };
 
-export const MEETING_TYPES: MeetingType[] = Object.keys(
-  MEETING_TYPE_META,
-) as MeetingType[];
+export const MEETING_TYPES: MeetingType[] = Object.keys(MEETING_TYPE_META) as MeetingType[];
 
 /**
  * Activity-tracking weekly goal: 10 classified partner meetings per manager
@@ -290,4 +283,3 @@ export const NOTIFICATION_CHANNEL_META: Record<
 };
 
 export const NOTIFICATION_CHANNELS: NotificationChannel[] = ['email', 'slack', 'in-app'];
-

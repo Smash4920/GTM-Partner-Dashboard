@@ -31,6 +31,8 @@ Run commands from the repository root.
 
 ```bash
 npm run dev       # start the Vite development server
+npm run format    # format source, configuration, and documentation
+npm run format:check # verify formatting without changing files
 npm run lint      # lint all TypeScript and TSX files
 npm test          # run the Vitest suite once
 npm run test:e2e  # run the Playwright browser suite
@@ -48,6 +50,7 @@ npm test -- src/lib/metrics.test.ts
 Before handing off a change, run the same checks as CI, in this order:
 
 ```bash
+npm run format:check
 npm run lint
 npm test
 npm run test:e2e
@@ -104,6 +107,12 @@ npm run build
   the settings in `tsconfig.app.json`.
 - Use ESM imports, function components, React hooks, and explicit `import type`
   declarations, matching surrounding code.
+- Use `camelCase` for variables, functions, parameters, and object members;
+  `PascalCase` for React components and TypeScript types; and
+  `UPPER_SNAKE_CASE` for module-level constants that represent fixed values.
+  Fixed configuration or environment keys may also use `UPPER_SNAKE_CASE`,
+  while quoted object keys may follow an external or domain-defined format.
+  ESLint enforces these identifier conventions through `npm run lint`.
 - Keep derived calculations pure and centralized in `src/lib/metrics.ts` or a
   focused helper rather than duplicating formulas across views.
 - Reuse types, labels, thresholds, and metadata from `src/data/types.ts` and

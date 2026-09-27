@@ -84,8 +84,7 @@ export default function WireDiagram({
   onSelectUser,
   alertCountByUserId,
 }: WireDiagramProps) {
-  const canvasWidth =
-    Math.max(...CONNECTION_NODES.map((node) => node.x + node.w)) + CANVAS_PADDING;
+  const canvasWidth = Math.max(...CONNECTION_NODES.map((node) => node.x + node.w)) + CANVAS_PADDING;
   const canvasHeight =
     Math.max(...CONNECTION_NODES.map((node) => node.y + node.h)) + CANVAS_PADDING;
 
@@ -145,11 +144,7 @@ export default function WireDiagram({
           {(['source', 'platform', 'destination'] as const).map((tier) => {
             const meta = CONNECTION_TIER_META[tier];
             return (
-              <div
-                key={tier}
-                className="absolute"
-                style={{ left: meta.x, width: meta.w, top: 0 }}
-              >
+              <div key={tier} className="absolute" style={{ left: meta.x, width: meta.w, top: 0 }}>
                 <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-stone">
                   {meta.label}
                 </p>
@@ -242,10 +237,7 @@ function NodeCard({
 }: NodeCardProps) {
   const meta = CONNECTION_STATUS_META[node.status];
   return (
-    <div
-      className="absolute"
-      style={{ left: node.x, top: node.y, width: node.w, height: node.h }}
-    >
+    <div className="absolute" style={{ left: node.x, top: node.y, width: node.w, height: node.h }}>
       <button
         type="button"
         onClick={onSelect}
@@ -274,9 +266,7 @@ function NodeCard({
             Partner team · pick one to notify
           </p>
           <div className="mt-1.5 flex flex-wrap gap-1">
-            {users.length === 0 && (
-              <span className="text-[10px] text-granite">No roster yet.</span>
-            )}
+            {users.length === 0 && <span className="text-[10px] text-granite">No roster yet.</span>}
             {users.map((user) => {
               const alerts = alertCountByUserId[user.id] ?? 0;
               const selectedUser = user.id === selectedUserId;

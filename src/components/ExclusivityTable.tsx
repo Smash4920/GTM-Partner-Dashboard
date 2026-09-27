@@ -50,10 +50,7 @@ export default function ExclusivityTable({
       <tbody>
         {rows.map((reg) => {
           const reference = reg.decisionAt ?? reg.submittedAt;
-          const daysSince = calendarDaysBetween(
-            reference,
-            SNAPSHOT_DATE.toISOString(),
-          );
+          const daysSince = calendarDaysBetween(reference, SNAPSHOT_DATE.toISOString());
           const lapsed = exclusivityLapsed(reg);
           return (
             <tr key={reg.id} className="border-b border-carbon last:border-0">

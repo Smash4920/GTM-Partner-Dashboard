@@ -62,6 +62,7 @@ export function useDashboardData(provider: DataProvider): DashboardState {
             teamUsers: teamUsers.length,
             durationMs: Date.now() - startedAt,
           });
+          if (!alive) return;
           setData({
             partnerManagers,
             partners,
