@@ -274,9 +274,10 @@ team can be told about the data, and the rule that tells them.
 
 ## Running locally
 
-Requires **Node 22.13+** (`engines.node` in `package.json`). Node 20 reached
-end-of-life in April 2026 and the current Vite / Vitest / ESLint majors no
-longer support it.
+Requires **Node 22.13 through 24** (`engines.node` in `package.json`). Node 20
+reached end-of-life in April 2026 and the current Vite / Vitest / ESLint majors
+no longer support it. The upper bound keeps the Vercel build on a tested major
+instead of rolling onto a future release automatically.
 
 ```bash
 npm ci
