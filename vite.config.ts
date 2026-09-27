@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 /**
@@ -14,6 +14,9 @@ const base = process.env.BASE_PATH ?? (process.env.VERCEL ? '/' : '/GTM-Partner-
 export default defineConfig({
   plugins: [react()],
   base,
+  test: {
+    include: ['src/**/*.test.ts'],
+  },
   build: {
     rollupOptions: {
       output: {

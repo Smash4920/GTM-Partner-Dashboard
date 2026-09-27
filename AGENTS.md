@@ -33,6 +33,7 @@ Run commands from the repository root.
 npm run dev       # start the Vite development server
 npm run lint      # lint all TypeScript and TSX files
 npm test          # run the Vitest suite once
+npm run test:e2e  # run the Playwright browser suite
 npm run test:list # collect and list tests without running them
 npm run build     # run TypeScript project checks, then create dist/
 npm run preview   # serve the production build locally
@@ -49,6 +50,7 @@ Before handing off a change, run the same checks as CI, in this order:
 ```bash
 npm run lint
 npm test
+npm run test:e2e
 npm run build
 ```
 

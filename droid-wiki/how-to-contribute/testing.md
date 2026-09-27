@@ -1,40 +1,60 @@
 # Testing
 
-The repository has no automated test suite. There is no `test` script in `package.json`, no test directory, and CI runs no tests. What exists is a set of static and build-time checks plus manual browser verification. This page states that accurately and notes where automated tests could attach if one is added later.
+The repository uses two complementary test suites:
 
-## Current checks
+- Vitest covers pure fiscal, metric, notification, connection-catalog, and
+  deterministic mock-data behavior.
+- Playwright runs the complete Vite application in Chromium and verifies
+  user journeys that cross providers, React state, views, and components.
 
-- `npm run lint` — ESLint 9 using the flat config in `eslint.config.js`, applying the typescript-eslint recommended rule set. It catches unused imports, some type-unsafe patterns, and syntax-level problems, but nothing about runtime behavior.
-- `npm run build` — `tsc -b` type-checks all of `src/` under the strict settings in `tsconfig.app.json`, then `vite build` bundles to `dist/`. The strict flags `noUnusedLocals`, `noUnusedParameters`, and `noFallthroughCasesInSwitch` are build errors, so the TypeScript type system is the main automated regression net today.
+## Run the checks
 
-CI in `.github/workflows/ci.yml` runs exactly these two commands (`npm run lint`, `npm run build`) after `npm ci`.
+Install the locked dependencies and the Chromium browser once:
 
-## Manual browser checks
+```bash
+npm ci
+npx playwright install chromium
+```
 
-Because there is no test runner, verifying a change means running `npm run dev` and covering the behavior the app actually has:
+Then run the same checks used by CI:
 
-- Both views load and switch cleanly, and the error and loading states render as wired in `src/App.tsx`.
-- The filters hold their invariants: on `src/views/LeadershipView.tsx` the type filter drives KPIs, stages, revenue, and the leaderboard while registrations stay unfiltered, and the funnel measure switches between value and count; on `src/views/PartnerView.tsx` the Sell To exclusion holds across every slice.
-- Numbers are consistent with the deterministic mock: 25 partners, 180 registrations, roughly 185 opportunities, and 200 targets (25 partners × 8 quarters), with the documented ~85% approval rate, ~70% registration-to-opportunity conversion, and ~55% win rate. These baselines come from `src/data/mock/generate.ts` and are catalogued in [Data provider](../systems/data-provider.md).
+```bash
+npm run lint
+npm test
+npm run test:e2e
+npm run build
+```
 
-## Why deterministic data helps
+Use `npm test -- <path>` for one Vitest file, or
+`npm run test:e2e -- --grep "<name>"` for one Playwright journey.
 
-The mock is a fixed-story fixture: `src/data/mock/rng.ts` provides a seeded mulberry32 PRNG, and `src/data/mock/generate.ts` consumes it in a fixed order, so the output is identical on every load and every build. Manual expected-value checks are repeatable, and a future automated test can assert exact totals rather than ranges.
+## Browser coverage
 
-## Suggested future test seams
+The tests in `tests/e2e/` start Vite through `playwright.config.ts` and cover:
 
-None of the following exist today; they are the natural places a test runner would attach:
+- Editing an open opportunity, including invalid revenue handling, and
+  confirming that pipeline and weighted forecast metrics recompute.
+- Adding a partner-team user, enforcing the authorization gate, sending a
+  notification, and recording its delivery in the session log.
+- Switching through every simulated partner account and verifying the
+  partner-facing pipeline never exposes internal Sell To opportunities.
 
-- Unit tests for `src/lib/metrics.ts` and `src/lib/format.ts`. These modules are pure TypeScript with no React or browser dependency, so they run in any framework with no test doubles. Vitest would fit the Vite setup.
-- Golden-master checks against `generateDashboardData()` in `src/data/mock/generate.ts`: it is pure and deterministic, so record counts and aggregate totals can be asserted exactly.
-- Provider contract tests: a fake implementation of the `DataProvider` interface in `src/data/DataProvider.ts` can exercise `src/data/useDashboardData.ts` loading, error, and the `alive` unmount guard.
-- Component tests for `src/components/` with React Testing Library and Vitest if the chips and picker interactions need coverage.
+These checks deliberately use the rendered application rather than importing
+components or mock records. They protect integration boundaries that unit tests
+cannot: provider loading, navigation, state propagation, and confidentiality in
+the partner portal.
 
-Adding a runner means touching `package.json` (a new script and dev dependency), committing the lockfile update, and extending `.github/workflows/ci.yml`; none of that exists yet, and [Tooling](tooling.md) documents the current setup that would change.
+## Determinism and artifacts
+
+The mock provider uses a fixed seed and snapshot date, so browser assertions do
+not depend on the wall clock or network. Each Playwright test gets a fresh
+browser context because dashboard edits are session-only.
+
+Failure traces, screenshots, and the HTML report are generated under
+`test-results/` and `playwright-report/`. Both directories are gitignored.
 
 ## Related pages
 
-- [How to contribute](index.md) — the definition of done this page supports.
-- [Development workflow](development-workflow.md) — the loop that includes manual verification.
-- [By the numbers](../by-the-numbers.md) — the repository baseline, including the zero-test count.
-- [Patterns and conventions](patterns-and-conventions.md) — where pure functions live so they stay testable.
+- [How to contribute](index.md)
+- [Development workflow](development-workflow.md)
+- [Data provider](../systems/data-provider.md)
