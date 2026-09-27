@@ -102,7 +102,11 @@ function expandBook(base: ProviderBook, scale: number): ProviderBook {
       targets.push({ ...target, partnerId: `${target.partnerId}${suffix}` });
     }
     for (const activity of base.activities) {
-      activities.push({ ...activity, id: `${activity.id}${suffix}`, partnerId: `${activity.partnerId}${suffix}` });
+      activities.push({
+        ...activity,
+        id: `${activity.id}${suffix}`,
+        partnerId: `${activity.partnerId}${suffix}`,
+      });
     }
     for (const certification of base.certifications) {
       certifications.push({ ...certification, partnerId: `${certification.partnerId}${suffix}` });

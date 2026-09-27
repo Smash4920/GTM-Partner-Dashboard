@@ -48,9 +48,7 @@ export default function RegistrationsTable({
           {showPartner && <th className={`${th} pr-3 text-left`}>Partner</th>}
           <th className={`${th} pr-3 text-right`}>Amount</th>
           <th className={`${th} pr-3 text-right`}>Submitted</th>
-          <th className={`${th} pr-3 text-right`}>
-            {isQueue ? 'Waiting (biz days)' : 'Decision'}
-          </th>
+          <th className={`${th} pr-3 text-right`}>{isQueue ? 'Waiting (biz days)' : 'Decision'}</th>
           <th className={`${th} text-right`}>Status</th>
         </tr>
       </thead>
@@ -72,7 +70,9 @@ export default function RegistrationsTable({
               <td className="py-2.5 pr-3">
                 <p className={accountClass}>{reg.accountName}</p>
                 {variant === 'history' && reg.reason && (
-                  <p className={`mt-0.5 font-mono text-[10px] uppercase tracking-[0.06em] ${mutedClass}`}>
+                  <p
+                    className={`mt-0.5 font-mono text-[10px] uppercase tracking-[0.06em] ${mutedClass}`}
+                  >
                     {reg.reason}
                   </p>
                 )}

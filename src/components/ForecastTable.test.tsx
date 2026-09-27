@@ -8,12 +8,14 @@ import type { Opportunity } from '../data/types';
 /** Client, Partner, Revenue, Type, Stage, Category, Close date, Next step, Notes. */
 const NEXT_STEP_COLUMN = 7;
 
-function renderTable(options: {
-  opportunities?: Opportunity[];
-  revenueOverrides?: Record<string, number>;
-  notes?: Record<string, string>;
-  nextSteps?: Record<string, string>;
-} = {}) {
+function renderTable(
+  options: {
+    opportunities?: Opportunity[];
+    revenueOverrides?: Record<string, number>;
+    notes?: Record<string, string>;
+    nextSteps?: Record<string, string>;
+  } = {},
+) {
   const handlers = {
     onSetRevenue: vi.fn(),
     onSetNote: vi.fn(),
@@ -183,9 +185,7 @@ describe('ForecastTable', () => {
 
     it('offers no call on a closed deal', () => {
       renderTable({
-        opportunities: [
-          makeOpportunity({ outcome: 'won', closedAt: '2026-09-10T00:00:00.000Z' }),
-        ],
+        opportunities: [makeOpportunity({ outcome: 'won', closedAt: '2026-09-10T00:00:00.000Z' })],
       });
       expect(screen.getByText('Closed won')).toBeInTheDocument();
       expect(

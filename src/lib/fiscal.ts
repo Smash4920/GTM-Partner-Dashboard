@@ -14,13 +14,14 @@ export function fiscalQuarterOfDate(iso: string): string {
   const date = new Date(iso);
   const month = date.getUTCMonth();
   const fiscalYear = month === 0 ? date.getUTCFullYear() : date.getUTCFullYear() + 1;
-  const quarter = month === 0 || month === 10 || month === 11
-    ? 4
-    : month >= 1 && month <= 3
-      ? 1
-      : month >= 4 && month <= 6
-        ? 2
-        : 3;
+  const quarter =
+    month === 0 || month === 10 || month === 11
+      ? 4
+      : month >= 1 && month <= 3
+        ? 1
+        : month >= 4 && month <= 6
+          ? 2
+          : 3;
   return `FY${String(fiscalYear).slice(-2)}-Q${quarter}`;
 }
 

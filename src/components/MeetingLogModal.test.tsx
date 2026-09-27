@@ -5,7 +5,9 @@ import MeetingLogModal from './MeetingLogModal';
 import { makeMeeting, makePartner } from '../test/fixtures';
 import type { MeetingClassification } from '../data/types';
 
-function renderModal(options: { dirty?: boolean; classifications?: Record<string, MeetingClassification> } = {}) {
+function renderModal(
+  options: { dirty?: boolean; classifications?: Record<string, MeetingClassification> } = {},
+) {
   const handlers = {
     onChange: vi.fn(),
     onAddPartner: vi.fn(() => 'prospect-1'),
@@ -32,9 +34,7 @@ describe('MeetingLogModal', () => {
     renderModal();
     expect(screen.getByRole('dialog', { name: 'Log meetings' })).toBeInTheDocument();
     expect(screen.getByText(/Log meetings · J. Alvarez/)).toBeInTheDocument();
-    expect(
-      screen.getByRole('combobox', { name: /Partner for .* meeting/ }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Partner for .* meeting/ })).toBeInTheDocument();
   });
 
   it('reports a reclassification', async () => {

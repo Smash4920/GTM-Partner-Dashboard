@@ -53,8 +53,7 @@ export interface NotificationDraft {
   registrationId?: string;
 }
 
-const plural = (count: number, noun: string) =>
-  `${count} ${noun}${count === 1 ? '' : 's'}`;
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 export function slaAlertKind(state: RegistrationSlaAlert['state']): NotificationKind {
   return state === 'approaching' ? 'registration-sla-warning' : 'registration-sla-breach';

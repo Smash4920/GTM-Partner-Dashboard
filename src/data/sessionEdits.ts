@@ -34,10 +34,7 @@ export const NO_SESSION_EDITS: SessionEdits = {
  * Untouched opportunities are returned by reference so downstream memoisation
  * can still tell what actually changed.
  */
-export function applySessionEdits(
-  book: Opportunity[],
-  edits: SessionEdits,
-): Opportunity[] {
+export function applySessionEdits(book: Opportunity[], edits: SessionEdits): Opportunity[] {
   const { revenueOverrides, notes, nextSteps, forecastCalls } = edits;
   return book.map((opportunity) => {
     const revenue = revenueOverrides[opportunity.id];

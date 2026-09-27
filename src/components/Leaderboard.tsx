@@ -24,8 +24,7 @@ export default function Leaderboard({
     (certifications ?? []).map((certification) => [certification.partnerId, certification]),
   );
   const showCertifications = certifications !== undefined;
-  const th =
-    'pb-2 font-mono text-[10px] uppercase tracking-[0.06em] text-granite';
+  const th = 'pb-2 font-mono text-[10px] uppercase tracking-[0.06em] text-granite';
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[760px] text-sm">
@@ -93,13 +92,7 @@ export default function Leaderboard({
   );
 }
 
-function CertificationCell({
-  certified,
-  goal,
-}: {
-  certified?: number;
-  goal?: number;
-}) {
+function CertificationCell({ certified, goal }: { certified?: number; goal?: number }) {
   if (certified === undefined || goal === undefined) {
     return (
       <td className="py-2.5 text-right text-granite">

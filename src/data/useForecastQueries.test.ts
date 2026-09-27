@@ -213,9 +213,7 @@ describe('useManagerBook', () => {
     const { result } = renderHook(() => useManagerBook(provider, baseScope, 'pm-1', 2));
 
     await waitFor(() => expect(result.current.error).not.toBeNull());
-    expect(result.current.error).toBe(
-      'listQuarterOpportunities failed in transit (simulated)',
-    );
+    expect(result.current.error).toBe('listQuarterOpportunities failed in transit (simulated)');
     expect(result.current.rows).toEqual([]);
 
     act(() => result.current.retry());

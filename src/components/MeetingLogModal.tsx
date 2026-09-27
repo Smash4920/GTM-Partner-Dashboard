@@ -33,9 +33,7 @@ function classificationFor(
   meeting: ActivityMeeting,
   classifications: Record<string, MeetingClassification>,
 ): MeetingClassification {
-  return (
-    classifications[meeting.id] ?? { partnerId: meeting.partnerId, type: meeting.type }
-  );
+  return classifications[meeting.id] ?? { partnerId: meeting.partnerId, type: meeting.type };
 }
 
 /**
@@ -107,15 +105,25 @@ export default function MeetingLogModal({
   const weekLabel = useMemo(() => {
     const start = weekStart;
     const end = new Date(start.getTime() + 4 * 86_400_000);
-    const startText = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-    const endText = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const startText = start.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+    const endText = end.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
     return `${startText} – ${endText}`;
   }, [weekStart]);
 
   const byDay = useMemo(() => {
     const columns: ActivityMeeting[][] = Array.from({ length: 5 }, () => []);
     for (const meeting of meetings) {
-      const dayIndex = Math.floor((new Date(meeting.occurredAt).getTime() - weekStart.getTime()) / 86_400_000);
+      const dayIndex = Math.floor(
+        (new Date(meeting.occurredAt).getTime() - weekStart.getTime()) / 86_400_000,
+      );
       if (dayIndex >= 0 && dayIndex < 5) columns[dayIndex].push(meeting);
     }
     return columns;
@@ -144,8 +152,8 @@ export default function MeetingLogModal({
               Log meetings · {managerName}
             </h2>
             <p className="mt-1 text-xs text-granite">
-              {weekLabel} · weekly view of the manager's calendar. Pick a partner and call type
-              per meeting, then submit — classifications feed the weekly goal.
+              {weekLabel} · weekly view of the manager's calendar. Pick a partner and call type per
+              meeting, then submit — classifications feed the weekly goal.
             </p>
           </div>
           <button
@@ -256,9 +264,7 @@ export default function MeetingLogModal({
         <div className="flex flex-wrap items-center justify-end gap-3 border-t border-carbon px-5 py-4">
           {confirmingDiscard && (
             <div className="mr-auto flex flex-wrap items-center gap-3" role="alert">
-              <p className="text-sm text-bone">
-                Discard unsubmitted classifications?
-              </p>
+              <p className="text-sm text-bone">Discard unsubmitted classifications?</p>
               <button
                 type="button"
                 onClick={() => setConfirmingDiscard(false)}

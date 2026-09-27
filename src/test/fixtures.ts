@@ -1,12 +1,14 @@
 import type {
   ActivityMeeting,
   DashboardData,
+  DashboardNotification,
   DealRegistration,
   Opportunity,
   Partner,
   PartnerCertification,
   ProviderBook,
   Target,
+  TeamUser,
 } from '../data/types';
 
 /**
@@ -72,9 +74,7 @@ export function makeCertification(
   };
 }
 
-export function makeRegistration(
-  overrides: Partial<DealRegistration> = {},
-): DealRegistration {
+export function makeRegistration(overrides: Partial<DealRegistration> = {}): DealRegistration {
   return {
     id: 'reg-1',
     partnerId: 'partner-1',
@@ -91,6 +91,37 @@ export function makeTarget(overrides: Partial<Target> = {}): Target {
     partnerId: 'partner-1',
     quarter: 'FY27-Q3',
     revenueTarget: 500_000,
+    ...overrides,
+  };
+}
+
+export function makeTeamUser(overrides: Partial<TeamUser> = {}): TeamUser {
+  return {
+    id: 'user-1',
+    name: 'J. Alvarez',
+    email: 'j.alvarez@example.com',
+    role: 'partner-manager',
+    partnerManagerId: 'pm-1',
+    status: 'active',
+    channels: ['email', 'slack'],
+    addedAt: '2026-02-02T00:00:00.000Z',
+    authorizedAt: '2026-02-03T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+export function makeNotification(
+  overrides: Partial<DashboardNotification> = {},
+): DashboardNotification {
+  return {
+    id: 'notification-1',
+    userId: 'user-1',
+    kind: 'manual',
+    subject: 'Registration needs a response',
+    body: 'Acme Freight has been pending since Monday.',
+    channels: ['email'],
+    sentAt: '2026-09-18T12:00:00.000Z',
+    status: 'delivered',
     ...overrides,
   };
 }

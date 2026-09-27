@@ -1,11 +1,11 @@
 # Production migration plan
 
 How this dashboard gets from a deterministic mock to a system serving real
-partner data at production volume. The *what* is already enumerated in the
+partner data at production volume. The _what_ is already enumerated in the
 [Production Requirements](../src/views/ProductionRequirementsView.tsx)
 architecture roadmap — in particular "serve aggregated, paginated API responses
 rather than loading the entire ecosystem into the browser". This document is
-the *how*: where the current design breaks, the one contract change everything
+the _how_: where the current design breaks, the one contract change everything
 else follows from, and the order the work has to happen in.
 
 ## Where the current design breaks
@@ -19,12 +19,12 @@ volume.
 Extrapolating from measured object sizes (~600 B per `Opportunity`, ~250 B per
 `PipelineSnapshot`), retaining three years of history:
 
-| Tier          | Partners | Open book | Opps (3 yr) | Snapshot rows (3 yr) | Parsed in browser | Verdict                    |
-| ------------- | -------- | --------- | ----------- | -------------------- | ----------------- | -------------------------- |
-| Today (mock)  | 25       | ~58       | 213         | 1.9 k                | ~1 MB             | Fine                       |
-| Small team    | 100      | 400       | 3 k         | 62 k                 | ~20 MB            | Works, slow first load     |
-| Mid-market    | 500      | 3,000     | 25 k        | 470 k                | ~150 MB           | Degraded to unusable       |
-| Enterprise    | 2,000    | 15,000    | 150 k       | 2.3 M                | ~800 MB           | Tab dies                   |
+| Tier         | Partners | Open book | Opps (3 yr) | Snapshot rows (3 yr) | Parsed in browser | Verdict                |
+| ------------ | -------- | --------- | ----------- | -------------------- | ----------------- | ---------------------- |
+| Today (mock) | 25       | ~58       | 213         | 1.9 k                | ~1 MB             | Fine                   |
+| Small team   | 100      | 400       | 3 k         | 62 k                 | ~20 MB            | Works, slow first load |
+| Mid-market   | 500      | 3,000     | 25 k        | 470 k                | ~150 MB           | Degraded to unusable   |
+| Enterprise   | 2,000    | 15,000    | 150 k       | 2.3 M                | ~800 MB           | Tab dies               |
 
 Order-of-magnitude figures, but the shape is the point: **weekly pipeline
 snapshots are 87–89% of the payload at every tier above the mock.**
@@ -50,7 +50,7 @@ memory, and vice versa. Both need the same underlying change.
 **The server ships answers, not books.**
 
 Today `metrics.ts` is the implementation: ~1,100 lines of aggregation running in
-the browser over the full dataset. In production it becomes the *specification*
+the browser over the full dataset. In production it becomes the _specification_
 a server implementation must match.
 
 That reframing is more tractable than it sounds, because the aggregate return
@@ -64,12 +64,19 @@ lists that paginate. As shipped in Phase 1:
 
 ```ts
 interface ForecastScope {
-  quarter: string;              // 'FY27-Q3'
-  partnerManagerId?: string;    // everything except the weekly series
-  edits?: SessionEdits;         // this session's uncommitted corrections
+  quarter: string; // 'FY27-Q3'
+  partnerManagerId?: string; // everything except the weekly series
+  edits?: SessionEdits; // this session's uncommitted corrections
 }
-interface PageRequest { cursor?: string; limit: number }
-interface Page<T> { rows: T[]; nextCursor?: string; totalCount: number }
+interface PageRequest {
+  cursor?: string;
+  limit: number;
+}
+interface Page<T> {
+  rows: T[];
+  nextCursor?: string;
+  totalCount: number;
+}
 
 interface ScopedQueryProvider {
   // Aggregates: computed behind the seam, returned small.
@@ -113,7 +120,7 @@ receives the collection that is 87% of the payload. `ProviderBook` in
 
 **Known blast radius.** `src/data/connections.ts` records the DataProvider
 methods each integration node fills, and `connections.test.ts` asserts every
-method on the contract appears somewhere on the map. That list is now *derived*
+method on the contract appears somewhere on the map. That list is now _derived_
 from `DATA_PROVIDER_METHODS`, which is keyed by `keyof DataProvider`, so a new
 method on the seam is a compile error until it is listed and a test failure
 until it has a wire. That test was built to catch exactly this, and it did.
@@ -181,17 +188,17 @@ The weekly snapshot job must be **idempotent**: a unique key on
 
 - Replace the single `Promise.all` in `useDashboardData` with a server-state
   library (TanStack Query) and **per-widget** loading and error states, so one
-  slow endpoint no longer blanks the whole page. *Partly done:* the migrated
+  slow endpoint no longer blanks the whole page. _Partly done:_ the migrated
   view has hand-rolled per-widget states (`useForecastQueries.ts`) and a global
   spinner still covers the other seven. The library is worth adopting when there
   are several migrated views to share it, not before.
 - Virtualize `OpportunityTable` and `ForecastTable`; give `Leaderboard` a real
-  limit instead of `limit={uniquePartners}`. *Not started* — the scoped contract
+  limit instead of `limit={uniquePartners}`. _Not started_ — the scoped contract
   now bounds what reaches the client, so this is comfort rather than survival.
 - Route-level `React.lazy` so the ~485 KB Recharts chunk stops loading for users
-  who only open Data Connections. *Not started.* Measured after Phase 1: 193 KB
+  who only open Data Connections. _Not started._ Measured after Phase 1: 193 KB
   app + 484 KB Recharts + 63 KB charts vendor, raw.
-- **Keep edits feeling instant.** *Partly done:* rows render the session's
+- **Keep edits feeling instant.** _Partly done:_ rows render the session's
   override immediately and the aggregates hold their previous figures during the
   refetch, so an edit never flashes the page. The full optimistic delta is Phase
   5, because it needs the write path to reconcile against.
@@ -268,21 +275,21 @@ which is honest about what the mock can and cannot show. Medians over five runs
 at 100× — 2,500 partners, 21,300 opportunities, 191,000 snapshot rows, ~45 MB of
 JSON:
 
-| Call | Payload | Median |
-| --- | --- | --- |
-| `getForecastSummary` | 217 B | 15 ms |
-| `getManagerForecastGroups` | 578 B | 13 ms |
-| `getForecastQuality` | < 1 KB | 14 ms |
-| `listQuarterOpportunities` | 7.8 KB, one page of 25 | 15 ms |
-| `getWeeklyForecastSeries` | 4.2 KB, 13 buckets | 106 ms |
-| the five aggregates, as one view load | ~13 KB | ~165 ms |
-| `listOpportunities` (still on the old contract) | **7.5 MB** | 0 ms in-process |
+| Call                                            | Payload                | Median          |
+| ----------------------------------------------- | ---------------------- | --------------- |
+| `getForecastSummary`                            | 217 B                  | 15 ms           |
+| `getManagerForecastGroups`                      | 578 B                  | 13 ms           |
+| `getForecastQuality`                            | < 1 KB                 | 14 ms           |
+| `listQuarterOpportunities`                      | 7.8 KB, one page of 25 | 15 ms           |
+| `getWeeklyForecastSeries`                       | 4.2 KB, 13 buckets     | 106 ms          |
+| the five aggregates, as one view load           | ~13 KB                 | ~165 ms         |
+| `listOpportunities` (still on the old contract) | **7.5 MB**             | 0 ms in-process |
 
 The week-over-week series is the whole argument in one line: 191,100 rows,
 35.9 MB, and the client now receives 13 buckets. What is left is in-process
 work, because `MockDataProvider` stands in for the server and does the
 aggregation the browser used to do; that is the 100 ms and it is exactly the
-work a rollup table removes in Phase 3. What changed is the *shape* of what
+work a rollup table removes in Phase 3. What changed is the _shape_ of what
 crosses the seam, which is the part that cannot be fixed later by throwing
 hardware at it.
 
@@ -324,8 +331,8 @@ wire optimistic client updates.
 
 Bands rather than estimates, assuming CRM access is already granted:
 
-| Workstream                                  | Rough effort |
-| ------------------------------------------- | ------------ |
+| Workstream                                   | Rough effort |
+| -------------------------------------------- | ------------ |
 | Test infrastructure + conformance harness    | 2–3 weeks    |
 | Contract rewrite against mock (Phase 1)      | 3–4 weeks    |
 | Warehouse, models, snapshot job              | 4–6 weeks    |

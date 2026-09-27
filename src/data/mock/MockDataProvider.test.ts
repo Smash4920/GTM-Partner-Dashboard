@@ -123,24 +123,22 @@ describe('MockDataProvider scoped contract', () => {
     const managerByPartner = new Map(
       book.partners.map((partner) => [partner.id, partner.partnerManagerId]),
     );
-    const owned = inQuarter.filter(
-      (opp) => managerByPartner.get(opp.partnerId) === managerId,
-    );
+    const owned = inQuarter.filter((opp) => managerByPartner.get(opp.partnerId) === managerId);
     const scoped = await provider.getForecastSummary({ quarter, partnerManagerId: managerId });
     expect(scoped.openCount).toBe(openPipeline(owned).count);
     expect(scoped.openPipelineValue).toBe(openPipeline(owned).value);
 
-    expect(await provider.getManagerForecastGroups({ quarter, partnerManagerId: managerId })).toEqual(
-      groups.filter((group) => group.managerId === managerId),
-    );
+    expect(
+      await provider.getManagerForecastGroups({ quarter, partnerManagerId: managerId }),
+    ).toEqual(groups.filter((group) => group.managerId === managerId));
 
     // The documented exception, pinned here so nobody "fixes" it by filtering
     // the live weeks: a snapshot row does not record whose book a deal was in,
     // so a manager-filtered series would drop the recorded weeks' history and
     // draw a cliff that never happened.
-    expect(await provider.getWeeklyForecastSeries({ quarter, partnerManagerId: managerId })).toEqual(
-      await provider.getWeeklyForecastSeries({ quarter }),
-    );
+    expect(
+      await provider.getWeeklyForecastSeries({ quarter, partnerManagerId: managerId }),
+    ).toEqual(await provider.getWeeklyForecastSeries({ quarter }));
   });
 
   it('walks a paged book exactly once, in a stable order', async () => {

@@ -27,10 +27,7 @@ export function skewAmount(rand: () => number, min: number, max: number): number
   return Math.round(min + (max - min) * rand() * rand());
 }
 
-export function weightedPick<T>(
-  rand: () => number,
-  entries: readonly (readonly [T, number])[],
-): T {
+export function weightedPick<T>(rand: () => number, entries: readonly (readonly [T, number])[]): T {
   const total = entries.reduce((sum, entry) => sum + entry[1], 0);
   let roll = rand() * total;
   for (const [item, weight] of entries) {

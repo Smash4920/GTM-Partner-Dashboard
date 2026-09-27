@@ -137,7 +137,9 @@ export default function TeamAccessPanel({
                   <td className="py-2.5 pr-3">
                     <span className="flex items-center gap-1.5">
                       <span className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`} />
-                      <span className={`font-mono text-[10px] uppercase tracking-[0.06em] ${status.textClass}`}>
+                      <span
+                        className={`font-mono text-[10px] uppercase tracking-[0.06em] ${status.textClass}`}
+                      >
                         {status.label}
                       </span>
                     </span>
@@ -161,7 +163,9 @@ export default function TeamAccessPanel({
                         </RowAction>
                       )}
                       {user.status === 'suspended' && (
-                        <RowAction onClick={() => onSetStatus(user.id, 'active')}>Restore</RowAction>
+                        <RowAction onClick={() => onSetStatus(user.id, 'active')}>
+                          Restore
+                        </RowAction>
                       )}
                       {addedUserIds.has(user.id) && (
                         <RowAction onClick={() => onRemove(user.id)}>Remove</RowAction>
@@ -188,13 +192,7 @@ function Th({ children, className }: { children: ReactNode; className: string })
   );
 }
 
-function RowAction({
-  children,
-  onClick,
-}: {
-  children: ReactNode;
-  onClick: () => void;
-}) {
+function RowAction({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -313,7 +311,8 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
 
       <p className="mt-3 text-[10px] leading-snug text-granite">
         {TEAM_ROLE_META[role].description}
-        {aligned && ' Without an alignment, none of their registrations would have an owner to alert.'}
+        {aligned &&
+          ' Without an alignment, none of their registrations would have an owner to alert.'}
       </p>
 
       <div className="mt-3">

@@ -20,7 +20,12 @@ import {
   STAGE_META,
   WON_COLOR,
 } from '../data/constants';
-import type { DashboardData, FiscalPhase, MeetingClassification, OpportunityType } from '../data/types';
+import type {
+  DashboardData,
+  FiscalPhase,
+  MeetingClassification,
+  OpportunityType,
+} from '../data/types';
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 import {
   activePartnerCount,
@@ -92,8 +97,14 @@ export default function HomeView({
   const [funnelMeasure, setFunnelMeasure] = useState<FunnelMeasure>('value');
   const [phase, setPhase] = useState<FiscalPhase>('q3');
 
-  const scopedOpps = useMemo(() => filterByType(data.opportunities, typeFilter), [data.opportunities, typeFilter]);
-  const phaseOpps = useMemo(() => filterByPhase(data.opportunities, phase), [data.opportunities, phase]);
+  const scopedOpps = useMemo(
+    () => filterByType(data.opportunities, typeFilter),
+    [data.opportunities, typeFilter],
+  );
+  const phaseOpps = useMemo(
+    () => filterByPhase(data.opportunities, phase),
+    [data.opportunities, phase],
+  );
   // The phase book for tables/charts: type-filtered and phase-filtered compute
   // differently from the scoped book, matching the old LeadershipView seams.
   const opps = useMemo(() => filterByPhase(scopedOpps, phase), [scopedOpps, phase]);
@@ -132,7 +143,12 @@ export default function HomeView({
   const phaseDescription = FISCAL_PHASE_META[phase].description;
 
   const funnelStages = [
-    { label: 'Submitted', count: funnel.submitted, amount: funnel.submittedValue, color: '#8a8380' },
+    {
+      label: 'Submitted',
+      count: funnel.submitted,
+      amount: funnel.submittedValue,
+      color: '#8a8380',
+    },
     { label: 'Approved', count: funnel.approved, amount: funnel.approvedValue, color: '#b8b3b0' },
     {
       label: 'Converted to opp',
@@ -140,8 +156,19 @@ export default function HomeView({
       amount: funnel.convertedValue,
       color: '#a0ca92',
     },
-    { label: 'Rejected', count: funnel.rejected, amount: funnel.rejectedValue, color: '#4d4947', dimmed: true },
-    { label: 'Pending review', count: funnel.pending, amount: funnel.pendingValue, color: '#ee6018' },
+    {
+      label: 'Rejected',
+      count: funnel.rejected,
+      amount: funnel.rejectedValue,
+      color: '#4d4947',
+      dimmed: true,
+    },
+    {
+      label: 'Pending review',
+      count: funnel.pending,
+      amount: funnel.pendingValue,
+      color: '#ee6018',
+    },
   ];
 
   const funnelRows: MetricBarRow[] = funnelStages.map((stage) => ({
@@ -193,9 +220,7 @@ export default function HomeView({
           <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-signal">
             All Partners
           </p>
-          <h1 className="mt-2 text-3xl tracking-tight text-bone">
-            Partner Performance Overview
-          </h1>
+          <h1 className="mt-2 text-3xl tracking-tight text-bone">Partner Performance Overview</h1>
           <p className="mt-1 text-sm text-granite">
             {phaseDescription} · snapshot {formatDate(SNAPSHOT_DATE.toISOString())}
           </p>
@@ -328,9 +353,9 @@ export default function HomeView({
         <p className="mt-4 text-xs text-granite">
           Meeting types include {MEETING_TYPE_META.discovery.fullLabel},{' '}
           {MEETING_TYPE_META['pio-interlock'].fullLabel},{' '}
-          {MEETING_TYPE_META['pao-interlock'].fullLabel}, Interlock Cadence, Deal Support,
-          Technical Enablement, GTM Enablement, and Partner Cadence. Classifications from
-          Activity Tracking roll up here.
+          {MEETING_TYPE_META['pao-interlock'].fullLabel}, Interlock Cadence, Deal Support, Technical
+          Enablement, GTM Enablement, and Partner Cadence. Classifications from Activity Tracking
+          roll up here.
         </p>
       </Card>
 

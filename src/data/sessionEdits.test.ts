@@ -69,10 +69,7 @@ describe('applySessionEdits', () => {
       makeOpportunity({ id: 'cleared', nextStep: 'Send pricing' }),
       makeOpportunity({ id: 'untouched', nextStep: 'Send pricing' }),
     ];
-    const [cleared, untouched] = applySessionEdits(
-      book,
-      edits({ nextSteps: { cleared: '' } }),
-    );
+    const [cleared, untouched] = applySessionEdits(book, edits({ nextSteps: { cleared: '' } }));
     expect(cleared.nextStep).toBe('');
     expect(untouched.nextStep).toBe('Send pricing');
   });

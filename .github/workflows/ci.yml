@@ -13,11 +13,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run format:check
       - run: npm run lint
       # Coverage, not a bare test run: the thresholds in vite.config.ts are
       # what keep the view layer from drifting back toward 0%.
       - run: npm run test:coverage
       - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

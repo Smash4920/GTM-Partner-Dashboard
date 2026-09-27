@@ -87,9 +87,7 @@ describe('business days', () => {
     for (const count of [1, 2, 3, 4, 5, 10]) {
       const from = '2026-09-14T00:00:00Z';
       expect(businessDaysBetween(from, businessDaysAfter(from, count).toISOString())).toBe(count);
-      expect(
-        businessDaysBetween(businessDaysBefore(from, count).toISOString(), from),
-      ).toBe(count);
+      expect(businessDaysBetween(businessDaysBefore(from, count).toISOString(), from)).toBe(count);
     }
   });
 });

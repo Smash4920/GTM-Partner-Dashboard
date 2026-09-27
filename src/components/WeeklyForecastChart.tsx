@@ -74,17 +74,37 @@ function WeekTooltip({ active, payload }: { active?: boolean; payload?: TooltipE
   if (!row.hasStarted) {
     return (
       <div style={TOOLTIP_STYLE}>
-        <p style={{ fontFamily: MONO, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#b8b3b0' }}>
+        <p
+          style={{
+            fontFamily: MONO,
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            color: '#b8b3b0',
+          }}
+        >
           Week of {row.label}
         </p>
         <p style={{ marginTop: 4, color: '#8a8380' }}>Hasn't started yet.</p>
       </div>
     );
   }
-  const valueStyle: React.CSSProperties = { float: 'right', marginLeft: 16, fontVariantNumeric: 'tabular-nums' };
+  const valueStyle: React.CSSProperties = {
+    float: 'right',
+    marginLeft: 16,
+    fontVariantNumeric: 'tabular-nums',
+  };
   return (
     <div style={TOOLTIP_STYLE}>
-      <p style={{ fontFamily: MONO, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#b8b3b0' }}>
+      <p
+        style={{
+          fontFamily: MONO,
+          fontSize: 11,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          color: '#b8b3b0',
+        }}
+      >
         Week of {row.label}
       </p>
       <p style={{ marginTop: 6 }}>

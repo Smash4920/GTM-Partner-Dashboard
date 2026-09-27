@@ -3,13 +3,22 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "check:pre-commit": "npm run lint && npm test",
+    "prepare": "husky",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:list": "vitest list",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -17,25 +26,28 @@
     "@fontsource/geist-sans": "^5.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "recharts": "^2.15.0"
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
-    "@vitest/coverage-v8": "^3.2.7",
+    "@vitejs/plugin-react": "^5.2.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "autoprefixer": "^10.4.20",
-    "eslint": "^9.17.0",
+    "eslint": "^10.11.0",
+    "husky": "^9.1.7",
     "jsdom": "^30.1.1",
     "postcss": "^8.4.49",
+    "prettier": "^3.9.9",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.6.3",
-    "typescript-eslint": "^8.18.1",
-    "vite": "^5.4.11",
-    "vitest": "^3.2.7"
+    "typescript-eslint": "^8.70.1",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.11"
   }
 }

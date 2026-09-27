@@ -189,9 +189,7 @@ export class MockDataProvider implements DataProvider {
     }
 
     return this.data.partnerManagers
-      .filter(
-        (manager) => !scope.partnerManagerId || manager.id === scope.partnerManagerId,
-      )
+      .filter((manager) => !scope.partnerManagerId || manager.id === scope.partnerManagerId)
       .map((manager) => {
         const opportunities = byManager.get(manager.id) ?? [];
         const open = openPipeline(opportunities);

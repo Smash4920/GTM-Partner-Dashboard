@@ -54,7 +54,10 @@ export default function ActivityTracker({ rows }: { rows: WeeklyActivityRow[] })
             key={type}
             className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.04em] text-granite"
           >
-            <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: MEETING_TYPE_META[type].color }} />
+            <span
+              className="h-2 w-2 rounded-sm"
+              style={{ backgroundColor: MEETING_TYPE_META[type].color }}
+            />
             {MEETING_TYPE_META[type].label}
           </span>
         ))}

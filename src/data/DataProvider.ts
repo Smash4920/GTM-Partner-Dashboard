@@ -200,10 +200,7 @@ export interface ScopedQueryProvider {
    * One manager's in-quarter book, a page at a time. Requested when a group is
    * expanded, rather than loaded for every manager up front.
    */
-  listQuarterOpportunities(
-    scope: ForecastScope,
-    page: PageRequest,
-  ): Promise<Page<Opportunity>>;
+  listQuarterOpportunities(scope: ForecastScope, page: PageRequest): Promise<Page<Opportunity>>;
   /**
    * Partner id to name, for the partner column of a row.
    *

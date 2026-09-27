@@ -108,7 +108,9 @@ describe('App', () => {
     expect(await screen.findByText(remoteNotice)).toBeInTheDocument();
     // The views are the same views; only the answer's origin changed. This is
     // the whole claim of the abstraction, and it is one select.
-    expect(screen.getByRole('heading', { name: 'Partner Performance Overview' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Partner Performance Overview' }),
+    ).toBeInTheDocument();
 
     await user.selectOptions(selector, 'local');
     expect(screen.queryByText(remoteNotice)).not.toBeInTheDocument();

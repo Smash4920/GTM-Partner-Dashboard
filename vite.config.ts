@@ -15,6 +15,10 @@ export default defineConfig({
   plugins: [react()],
   base,
   test: {
+    // `{ts,tsx}`, not `*.test.ts`: the component suites are `.tsx`, and the
+    // narrower glob silently ran only the pure modules — every view test
+    // skipped, and the coverage gate never met.
+    include: ['src/**/*.test.{ts,tsx}'],
     // jsdom for everything rather than per-file: the pure metric suites run
     // fine under it, and one environment means a new component test never
     // fails for want of a docblock.
@@ -39,10 +43,10 @@ export default defineConfig({
       // layer sat at 0% before Phase 0 of docs/migration-plan.md, which is how
       // a refactor of 5,700 unverified lines came to look survivable.
       thresholds: {
-        statements: 90,
-        branches: 85,
-        functions: 75,
-        lines: 90,
+        statements: 94,
+        branches: 88,
+        functions: 92,
+        lines: 95,
       },
     },
   },
@@ -53,8 +57,11 @@ export default defineConfig({
         // into cached vendor chunks so the app shell loads without pulling
         // the whole charting stack, and no single chunk trips the size
         // warning that would bury real regressions in CI output.
+        //
+        // Recharts 3 reaches its redux/immer runtime only from its own entry,
+        // so Rollup co-locates those in this chunk without an explicit rule.
         manualChunks(id) {
-          if (id.includes('node_modules/recharts') || id.includes('node_modules/react-smooth')) {
+          if (id.includes('node_modules/recharts')) {
             return 'recharts';
           }
           if (id.includes('node_modules/victory-vendor') || /node_modules\/d3[-/]/.test(id)) {

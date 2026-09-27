@@ -70,10 +70,7 @@ export default function ForecastingView({
     (group) => filterManagerId === 'all' || group.managerId === filterManagerId,
   );
 
-  const filteredCount = visibleGroups.reduce(
-    (sum, group) => sum + group.opportunityCount,
-    0,
-  );
+  const filteredCount = visibleGroups.reduce((sum, group) => sum + group.opportunityCount, 0);
 
   // The first manager opens by default so the page never lands fully collapsed.
   // Toggles are recorded as overrides rather than as a copy of the default, so
@@ -117,8 +114,7 @@ export default function ForecastingView({
 
   const { summary, weighted, quality, weeks } = aggregates.data;
   const categoryTiles = [...weighted.rows].sort(
-    (a, b) =>
-      FORECAST_CATEGORY_META[b.category].weight - FORECAST_CATEGORY_META[a.category].weight,
+    (a, b) => FORECAST_CATEGORY_META[b.category].weight - FORECAST_CATEGORY_META[a.category].weight,
   );
   const mismatchCount = quality.aboveCount + quality.belowCount;
   const startedWeeks = weeks.filter((row) => row.hasStarted).length;
@@ -128,11 +124,13 @@ export default function ForecastingView({
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-signal">In-quarter forecast</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-signal">
+            In-quarter forecast
+          </p>
           <h1 className="mt-2 text-3xl tracking-tight text-bone">Forecasting</h1>
           <p className="mt-1 text-sm text-granite">
-            {FISCAL_PHASE_META[phase].description} · the VP's quick read on{' '}
-            {quarter} · snapshot {formatDate(SNAPSHOT_DATE.toISOString())}
+            {FISCAL_PHASE_META[phase].description} · the VP's quick read on {quarter} · snapshot{' '}
+            {formatDate(SNAPSHOT_DATE.toISOString())}
           </p>
         </div>
         <div className="flex items-end gap-4">
@@ -238,12 +236,12 @@ export default function ForecastingView({
       >
         <WeeklyForecastChart rows={weeks} goal={summary.target} />
         <p className="mt-4 text-xs text-granite">
-          {recordedWeeks} closed weeks are read from the weekly pipeline snapshot, each one the
-          open book as it stood that Friday, so they never move: re-call a deal or correct its
-          revenue today and only the live week changes. The live week is as of the snapshot
-          date, which is why it matches the tiles above. A bar falling week-over-week is
-          pipeline that closed, was lost, or slipped out of the quarter — the amount a deal was
-          called at, and the week it moved, are both recorded, so the table below says which.
+          {recordedWeeks} closed weeks are read from the weekly pipeline snapshot, each one the open
+          book as it stood that Friday, so they never move: re-call a deal or correct its revenue
+          today and only the live week changes. The live week is as of the snapshot date, which is
+          why it matches the tiles above. A bar falling week-over-week is pipeline that closed, was
+          lost, or slipped out of the quarter — the amount a deal was called at, and the week it
+          moved, are both recorded, so the table below says which.
         </p>
       </Card>
 
@@ -252,9 +250,7 @@ export default function ForecastingView({
         subtitle={`${mismatchCount} of ${quality.openCount} open ${phaseLabel} deals are called off the category their stage implies`}
       >
         {mismatchCount === 0 ? (
-          <p className="text-sm text-granite">
-            Every open deal is called in line with its stage.
-          </p>
+          <p className="text-sm text-granite">Every open deal is called in line with its stage.</p>
         ) : (
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -266,8 +262,8 @@ export default function ForecastingView({
                   {formatUsdCompact(quality.aboveValue)}
                 </p>
                 <p className="mt-1 text-xs text-granite">
-                  {quality.aboveCount} deals called more confidently than the funnel
-                  supports. Either the stage is stale or the call is optimistic.
+                  {quality.aboveCount} deals called more confidently than the funnel supports.
+                  Either the stage is stale or the call is optimistic.
                 </p>
               </div>
               <div className="rounded border border-carbon p-4">
@@ -278,8 +274,8 @@ export default function ForecastingView({
                   {formatUsdCompact(quality.belowValue)}
                 </p>
                 <p className="mt-1 text-xs text-granite">
-                  {quality.belowCount} late-funnel deals the manager has downgraded. These
-                  still read as healthy on a stage report.
+                  {quality.belowCount} late-funnel deals the manager has downgraded. These still
+                  read as healthy on a stage report.
                 </p>
               </div>
             </div>
@@ -307,10 +303,10 @@ export default function ForecastingView({
           </>
         )}
         <p className="mt-4 text-xs text-granite">
-          Stage is a fact about process; the forecast category is a judgment about whether the
-          deal lands. Where they agree the category adds nothing, so these disagreements are the
-          forecast conversation. Change any row's category in the table below and every number on
-          this page moves with it.
+          Stage is a fact about process; the forecast category is a judgment about whether the deal
+          lands. Where they agree the category adds nothing, so these disagreements are the forecast
+          conversation. Change any row's category in the table below and every number on this page
+          moves with it.
         </p>
       </Card>
 
@@ -372,14 +368,13 @@ export default function ForecastingView({
           })}
         </div>
         <p className="mt-4 text-xs text-granite">
-          Columns per manager: open pipeline, then closed-won. Pencil = edit. Revenue edits
-          update every metric above and across the app immediately; the forecast category pencil
-          opens the dropdown of probability buckets (Commit 90%, Best Case 50%, Pipeline 25%,
-          Long Shot 10%) and re-calls the deal, which re-weights the forecast tiles above —
-          closed rows have no call left to make; notes are saved as comments and appear on
-          hover over the comment icon; next step is the row-level editable action that feeds
-          the roadmap's missing-next-step alerts. One page of 25 rows is fetched per expanded
-          manager, not the whole book.
+          Columns per manager: open pipeline, then closed-won. Pencil = edit. Revenue edits update
+          every metric above and across the app immediately; the forecast category pencil opens the
+          dropdown of probability buckets (Commit 90%, Best Case 50%, Pipeline 25%, Long Shot 10%)
+          and re-calls the deal, which re-weights the forecast tiles above — closed rows have no
+          call left to make; notes are saved as comments and appear on hover over the comment icon;
+          next step is the row-level editable action that feeds the roadmap's missing-next-step
+          alerts. One page of 25 rows is fetched per expanded manager, not the whole book.
         </p>
       </Card>
     </div>

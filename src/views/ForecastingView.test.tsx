@@ -98,7 +98,9 @@ describe('ForecastingView', () => {
     renderView({ provider: new MockDataProvider(book) });
 
     expect(await screen.findByText('Called above stage')).toBeInTheDocument();
-    expect(screen.getByText('1 of 28 open Q3 deals are called off the category their stage implies')).toBeInTheDocument();
+    expect(
+      screen.getByText('1 of 28 open Q3 deals are called off the category their stage implies'),
+    ).toBeInTheDocument();
     // Bounded sample: the account name, and nothing more than the sample size.
     expect(screen.getByText('Acme 0')).toBeInTheDocument();
   });

@@ -205,7 +205,11 @@ export function useManagerBook(
 
     provider
       .listQuarterOpportunities(
-        { quarter, partnerManagerId: managerId, edits: { revenueOverrides, notes, nextSteps, forecastCalls } },
+        {
+          quarter,
+          partnerManagerId: managerId,
+          edits: { revenueOverrides, notes, nextSteps, forecastCalls },
+        },
         { limit: pageSize },
       )
       .then((page) => {
@@ -248,7 +252,11 @@ export function useManagerBook(
 
     provider
       .listQuarterOpportunities(
-        { quarter, partnerManagerId: managerId, edits: { revenueOverrides, notes, nextSteps, forecastCalls } },
+        {
+          quarter,
+          partnerManagerId: managerId,
+          edits: { revenueOverrides, notes, nextSteps, forecastCalls },
+        },
         { cursor: next, limit: pageSize },
       )
       .then((page) => {
