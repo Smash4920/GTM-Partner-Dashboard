@@ -14,8 +14,8 @@ moved to production volume.
 
 ## Setup
 
-- Use Node.js 22.13 or newer. CI runs Node.js 22 and `package.json` enforces the
-  minimum supported version.
+- Use Node.js 22.13 through 24. CI runs Node.js 22 and `package.json`
+  (`engines.node`) enforces the supported range.
 - Use npm and keep `package-lock.json` in sync with `package.json`.
 - Install exactly the locked dependencies with:
 
