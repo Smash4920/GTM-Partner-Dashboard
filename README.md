@@ -268,6 +268,10 @@ npm run build     # type-checks, then bundles to dist/
 npm run preview
 ```
 
+`npm ci` installs a Husky pre-commit hook. Every commit runs the linter and
+Vitest suite, preventing known lint violations and unit test failures from
+entering the repository.
+
 ### Dev container
 
 Open the repository in VS Code with the
