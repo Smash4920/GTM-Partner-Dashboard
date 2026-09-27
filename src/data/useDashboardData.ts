@@ -39,19 +39,19 @@ export function useDashboardData(provider: DataProvider): DashboardState {
           certifications,
           teamUsers,
         ]) => {
-        if (!alive) return;
-        setData({
-          partnerManagers,
-          partners,
-          registrations,
-          opportunities,
-          snapshots,
-          targets,
-          activities,
-          certifications,
-          teamUsers,
-        });
-        setLoading(false);
+          if (!alive) return;
+          setData({
+            partnerManagers,
+            partners,
+            registrations,
+            opportunities,
+            snapshots,
+            targets,
+            activities,
+            certifications,
+            teamUsers,
+          });
+          setLoading(false);
         },
       )
       .catch((err: unknown) => {

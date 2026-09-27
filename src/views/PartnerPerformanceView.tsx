@@ -24,12 +24,7 @@ import {
   STAGE_META,
   WON_COLOR,
 } from '../data/constants';
-import type {
-  DashboardData,
-  FiscalPhase,
-  MeetingClassification,
-  Partner,
-} from '../data/types';
+import type { DashboardData, FiscalPhase, MeetingClassification, Partner } from '../data/types';
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 import {
   activePartnerCount,
@@ -101,10 +96,7 @@ export default function PartnerPerformanceView({
   }, [managerPartners, partnerId]);
 
   const partnerScopeOpps = useMemo(
-    () =>
-      data.opportunities.filter(
-        (opportunity) => selectedPartnerIds.has(opportunity.partnerId),
-      ),
+    () => data.opportunities.filter((opportunity) => selectedPartnerIds.has(opportunity.partnerId)),
     [data.opportunities, selectedPartnerIds],
   );
   const phaseOpps = useMemo(
@@ -113,8 +105,8 @@ export default function PartnerPerformanceView({
   );
   const scopedRegistrations = useMemo(
     () =>
-      filterRegistrationsByPhase(data.registrations, phase).filter(
-        (registration) => selectedPartnerIds.has(registration.partnerId),
+      filterRegistrationsByPhase(data.registrations, phase).filter((registration) =>
+        selectedPartnerIds.has(registration.partnerId),
       ),
     [data.registrations, phase, selectedPartnerIds],
   );
@@ -135,13 +127,11 @@ export default function PartnerPerformanceView({
     [partnerScopeOpps, scopedTargets],
   );
   const leaderboard = useMemo(
-    () => partnerLeaderboard({ ...data, opportunities: phaseOpps }, 'all', selectedPartnerIds, phase),
+    () =>
+      partnerLeaderboard({ ...data, opportunities: phaseOpps }, 'all', selectedPartnerIds, phase),
     [data, phase, phaseOpps, selectedPartnerIds],
   );
-  const pending = useMemo(
-    () => pendingRegistrations(scopedRegistrations),
-    [scopedRegistrations],
-  );
+  const pending = useMemo(() => pendingRegistrations(scopedRegistrations), [scopedRegistrations]);
   // Deal-registration ops, scoped to the selection but NOT phase-filtered:
   // exclusivity lapsing and conversion times span quarters, so a Q3 scope
   // must still see the older registrations that are leaking.
@@ -149,10 +139,7 @@ export default function PartnerPerformanceView({
     () => approvedNotConverted(partnerScopeRegistrations),
     [partnerScopeRegistrations],
   );
-  const scopedLapsed = useMemo(
-    () => scopedLeaking.filter(exclusivityLapsed),
-    [scopedLeaking],
-  );
+  const scopedLapsed = useMemo(() => scopedLeaking.filter(exclusivityLapsed), [scopedLeaking]);
   const scopedPastSla = useMemo(
     () => registrationsPastSla(partnerScopeRegistrations),
     [partnerScopeRegistrations],
@@ -166,7 +153,13 @@ export default function PartnerPerformanceView({
     [partnerScopeRegistrations, partnerScopeOpps],
   );
   const activity = useMemo(
-    () => weeklyActivity(data.activities, managerId === 'all' ? undefined : managerId, selectedPartnerIds, classifications),
+    () =>
+      weeklyActivity(
+        data.activities,
+        managerId === 'all' ? undefined : managerId,
+        selectedPartnerIds,
+        classifications,
+      ),
     [data.activities, managerId, selectedPartnerIds, classifications],
   );
   const goal = useMemo(
@@ -196,10 +189,12 @@ export default function PartnerPerformanceView({
       ? managerId === 'all'
         ? 'All Partners'
         : `${selectedManager?.name ?? 'Partner manager'} · All Partners`
-      : data.partners.find((partner) => partner.id === partnerId)?.name ?? 'Partner';
+      : (data.partners.find((partner) => partner.id === partnerId)?.name ?? 'Partner');
 
   const selectedPartner = data.partners.find((partner) => partner.id === partnerId);
-  const uniquePartners = new Set(data.partners.filter((p) => selectedPartnerIds.has(p.id)).map((p) => p.id)).size;
+  const uniquePartners = new Set(
+    data.partners.filter((p) => selectedPartnerIds.has(p.id)).map((p) => p.id),
+  ).size;
 
   const stageRows: MetricBarRow[] = [
     ...stages.map((row) => ({
@@ -227,11 +222,42 @@ export default function PartnerPerformanceView({
   ];
 
   const funnelRows: MetricBarRow[] = [
-    { label: 'Submitted', value: funnel.submitted, displayValue: `${funnel.submitted}`, secondary: formatUsdCompact(funnel.submittedValue), color: '#8a8380' },
-    { label: 'Approved', value: funnel.approved, displayValue: `${funnel.approved}`, secondary: formatUsdCompact(funnel.approvedValue), color: '#b8b3b0' },
-    { label: 'Converted to opp', value: funnel.converted, displayValue: `${funnel.converted}`, secondary: formatUsdCompact(funnel.convertedValue), color: '#a0ca92' },
-    { label: 'Rejected', value: funnel.rejected, displayValue: `${funnel.rejected}`, secondary: formatUsdCompact(funnel.rejectedValue), color: '#4d4947', dimmed: true },
-    { label: 'Pending review', value: funnel.pending, displayValue: `${funnel.pending}`, secondary: formatUsdCompact(funnel.pendingValue), color: '#ee6018' },
+    {
+      label: 'Submitted',
+      value: funnel.submitted,
+      displayValue: `${funnel.submitted}`,
+      secondary: formatUsdCompact(funnel.submittedValue),
+      color: '#8a8380',
+    },
+    {
+      label: 'Approved',
+      value: funnel.approved,
+      displayValue: `${funnel.approved}`,
+      secondary: formatUsdCompact(funnel.approvedValue),
+      color: '#b8b3b0',
+    },
+    {
+      label: 'Converted to opp',
+      value: funnel.converted,
+      displayValue: `${funnel.converted}`,
+      secondary: formatUsdCompact(funnel.convertedValue),
+      color: '#a0ca92',
+    },
+    {
+      label: 'Rejected',
+      value: funnel.rejected,
+      displayValue: `${funnel.rejected}`,
+      secondary: formatUsdCompact(funnel.rejectedValue),
+      color: '#4d4947',
+      dimmed: true,
+    },
+    {
+      label: 'Pending review',
+      value: funnel.pending,
+      displayValue: `${funnel.pending}`,
+      secondary: formatUsdCompact(funnel.pendingValue),
+      color: '#ee6018',
+    },
   ];
 
   const fmtDays = (days: number | null) => (days === null ? '—' : `${days.toFixed(1)}d`);
@@ -368,8 +394,8 @@ export default function PartnerPerformanceView({
             </select>
           </label>
           <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-            Scope · {managerId === 'all' ? 'whole org' : selectedManager?.name} ·{' '}
-            {uniquePartners} partner{uniquePartners === 1 ? '' : 's'}
+            Scope · {managerId === 'all' ? 'whole org' : selectedManager?.name} · {uniquePartners}{' '}
+            partner{uniquePartners === 1 ? '' : 's'}
           </p>
         </div>
       </div>
@@ -473,8 +499,8 @@ export default function PartnerPerformanceView({
             <ProgressBar label="Partner meetings" value={goal.meetings} goal={goal.meetingsGoal} />
             <ProgressBar label="PIO interlocks" value={goal.pioMeetings} goal={goal.pioGoal} />
             <p className="text-xs text-granite">
-              {MEETING_TYPE_META['pio-interlock'].fullLabel}. Classify calls in Activity Tracking
-              to update these bars.
+              {MEETING_TYPE_META['pio-interlock'].fullLabel}. Classify calls in Activity Tracking to
+              update these bars.
             </p>
           </div>
         </Card>
@@ -524,15 +550,11 @@ export default function PartnerPerformanceView({
         title="Exclusivity lapsed · approved, not converted"
         subtitle={`${scopedLeaking.length} approved registrations without an opportunity · ${scopedLapsed.length} past the ${REGISTRATION_EXCLUSIVITY_DAYS}-day exclusivity window`}
       >
-        <ExclusivityTable
-          registrations={scopedLeaking}
-          partners={data.partners}
-          limit={8}
-        />
+        <ExclusivityTable registrations={scopedLeaking} partners={data.partners} limit={8} />
         <p className="mt-4 text-xs text-granite">
-          An approved lead keeps exclusivity for {REGISTRATION_EXCLUSIVITY_DAYS} calendar days —
-          the partner must introduce the lead within it. Rows past the window are flagged
-          "Exclusivity lapsed".
+          An approved lead keeps exclusivity for {REGISTRATION_EXCLUSIVITY_DAYS} calendar days — the
+          partner must introduce the lead within it. Rows past the window are flagged "Exclusivity
+          lapsed".
         </p>
       </Card>
 
@@ -549,8 +571,8 @@ export default function PartnerPerformanceView({
         >
           <MetricBars rows={leakageRows} />
           <p className="mt-4 text-xs text-granite">
-            Leakage is approved registrations that never became opportunities, registrations
-            outside their service levels, and clients registered by more than one partner.
+            Leakage is approved registrations that never became opportunities, registrations outside
+            their service levels, and clients registered by more than one partner.
           </p>
         </Card>
       </div>
@@ -559,11 +581,7 @@ export default function PartnerPerformanceView({
         title="Duplicate & conflicting registrations"
         subtitle={`${scopedDuplicates.length} clients registered by more than one partner · submission dates show who registered first · internal only`}
       >
-        <DuplicateRegistrationsTable
-          groups={scopedDuplicates}
-          partners={data.partners}
-          limit={6}
-        />
+        <DuplicateRegistrationsTable groups={scopedDuplicates} partners={data.partners} limit={6} />
         <p className="mt-4 text-xs text-granite">
           Multiple partners registering the same client need to be tracked and qualified closely;
           the earliest submission holds exclusivity. This view never appears in the partner portal.

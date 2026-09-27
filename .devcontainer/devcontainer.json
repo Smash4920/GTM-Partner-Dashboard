@@ -12,10 +12,7 @@
   },
   "customizations": {
     "vscode": {
-      "extensions": [
-        "dbaeumer.vscode-eslint",
-        "bradlc.vscode-tailwindcss"
-      ],
+      "extensions": ["dbaeumer.vscode-eslint", "bradlc.vscode-tailwindcss"],
       "settings": {
         "eslint.useFlatConfig": true,
         "typescript.enablePromptUseWorkspaceTsdk": true,

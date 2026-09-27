@@ -153,8 +153,8 @@ export default function DealRegistrationOpsView({ data }: DealRegistrationOpsVie
             limit={10}
           />
           <p className="mt-4 text-xs text-granite">
-            {pastSla.length} of {pending.length} pending registrations are already past the
-            response SLA.
+            {pastSla.length} of {pending.length} pending registrations are already past the response
+            SLA.
           </p>
         </Card>
         <Card

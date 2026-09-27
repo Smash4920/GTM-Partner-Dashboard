@@ -25,7 +25,13 @@ export default function ProgressBar({ label, value, goal, hint }: ProgressBarPro
           {value}/{goal}
         </p>
       </div>
-      <div className="h-2 rounded-sm bg-carbon" role="progressbar" aria-valuenow={value} aria-valuemin={0} aria-valuemax={goal}>
+      <div
+        className="h-2 rounded-sm bg-carbon"
+        role="progressbar"
+        aria-valuenow={value}
+        aria-valuemin={0}
+        aria-valuemax={goal}
+      >
         <div
           className={`h-full rounded-sm transition-[width] duration-300 ${
             reached ? 'bg-metric' : 'bg-bone'
