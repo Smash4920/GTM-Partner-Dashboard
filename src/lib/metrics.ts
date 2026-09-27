@@ -1,5 +1,6 @@
 import {
   FISCAL_PHASES,
+  FISCAL_PHASE_META,
   FISCAL_QUARTERS,
   FISCAL_YEAR,
   FISCAL_YEAR_START,
@@ -320,6 +321,30 @@ export interface PhaseWindow {
 
 function minDate(a: Date, b: Date): Date {
   return a.getTime() <= b.getTime() ? a : b;
+}
+
+/**
+ * The phase whose window is a given fiscal quarter, so a caller holding a
+ * quarter label can reach the phase-based functions below. The inverse of the
+ * `FISCAL_PHASE_META[phase].quarter` mapping, kept beside it so the two cannot
+ * drift apart — the scoped DataProvider contract is phrased in quarters (that
+ * is the unit a caller thinks in) while every window here is a phase.
+ *
+ * Throws on a quarter the fiscal calendar does not define rather than
+ * defaulting to Q1. A fallback would answer a question about FY28-Q4 with FY27
+ * Q1's numbers, and a plausible wrong number is worse than a crash: nobody
+ * checks a figure that looks like a figure.
+ */
+export function phaseForQuarter(quarter: string): Exclude<FiscalPhase, 'fy'> {
+  const phase = (['q1', 'q2', 'q3', 'q4'] as const).find(
+    (candidate) => FISCAL_PHASE_META[candidate].quarter === quarter,
+  );
+  if (!phase) {
+    throw new Error(
+      `No fiscal phase matches quarter '${quarter}'; this build models ${FISCAL_YEAR}.`,
+    );
+  }
+  return phase;
 }
 
 export function phaseWindow(phase: FiscalPhase): PhaseWindow {

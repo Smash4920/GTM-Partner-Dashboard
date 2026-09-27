@@ -22,7 +22,9 @@ metric green for positive data.
 ## Navigation
 
 A collapsible sidebar on the left carries the four pages; the icon in the upper
-left expands and collapses it to an icon rail.
+left expands and collapses it to an icon rail. The header also carries a
+**provider selector** — local mock, simulated remote, or a 100× book — which is
+the demo of the integration seam described under Data contract below.
 
 ## Pages
 
@@ -113,7 +115,9 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
 
 - In-quarter opportunities grouped into a collapsible section per partner
   manager; each header shows their opportunity count, open pipeline, and
-  closed-won, and expands to their book
+  closed-won, and expands to their book. The view reads five aggregates and
+  fetches **one page of 25 rows per expanded manager**, so nothing on the page
+  grows with the size of the book
 - Table fields: Client, Partner, Revenue Forecast, Opportunity Type, Stage,
   Forecast Category, Close Date, Next Step, and Notes
 - **Revenue Forecast**, **Forecast Category**, **Notes**, and **Next Step**
@@ -196,10 +200,21 @@ The picker simulates which partner is viewing the shared platform today.
 
 ### Production Requirements
 
-Two tracked backlogs. The **Architecture roadmap** documents the server-side
-foundation required before connecting protected systems (identity and row-level
-authorization, source-system integration, persistence and audit, security and
-compliance, reliability). The **Utility Improvements** section is the GTM
+Two tracked backlogs and the order they get built in. The **Architecture
+roadmap** documents the server-side foundation required before connecting
+protected systems (identity and row-level authorization, source-system
+integration, persistence and audit, security and compliance, reliability). The
+**Migration Path** sequences that foundation into six phases. The first two
+needed no infrastructure and no production data, and both have landed in demo
+mode against `MockDataProvider`: Phase 0 is the test infrastructure (27.88% →
+91.72% statements, gated in CI) and Phase 1 is the contract rewrite, with
+Forecasting migrated end to end, weekly history off the client contract, and the
+provider switcher in the header. They are what make the later phases safe. Full
+reasoning — where the current design breaks at volume, the contract change
+everything else follows from, what shipped and what it measured, and rough
+sizing — lives in
+[`docs/migration-plan.md`](docs/migration-plan.md). The **Utility
+Improvements** section is the GTM
 Partnerships leader's product roadmap — forecast quality, partner health and
 lifecycle, deal-registration operations, actionability, partner portal utility,
 attribution and crediting, and services delivery (which partner delivers which
@@ -257,14 +272,15 @@ longer support it.
 
 ```bash
 npm ci
-npm run dev       # http://localhost:5173
-npm run format    # format source, configuration, and documentation
-npm run format:check
+npm run dev             # http://localhost:5173
+npm run format          # format source, configuration, and documentation
+npm run format:check    # verify formatting without changing files
 npm run lint
-npm test          # vitest: fiscal/metric helpers + the mock data contract
-npm run test:e2e  # playwright: browser workflows and partner-data boundaries
-npm run test:list # collect and list tests without running them
-npm run build     # type-checks, then bundles to dist/
+npm test                # vitest: fiscal/metric helpers, the data contract, the provider seam, the view layer
+npm run test:coverage   # the same suite with coverage, enforcing the thresholds in vite.config.ts
+npm run test:e2e        # playwright: browser workflows and partner-data boundaries
+npm run test:list       # collect and list tests without running them
+npm run build           # type-checks, then bundles to dist/
 npm run preview
 ```
 
@@ -286,6 +302,7 @@ command, not `preview`:
 ```bash
 VITE_LOG_LEVEL=debug npm run dev
 ```
+
 `npm ci` installs a Husky pre-commit hook. Every commit runs the linter and
 Vitest suite, preventing known lint violations and unit test failures from
 entering the repository.
@@ -303,42 +320,71 @@ the browser automatically.
 ## Data contract (the integration seam)
 
 The UI only talks to the `DataProvider` interface
-([`src/data/DataProvider.ts`](src/data/DataProvider.ts)):
+([`src/data/DataProvider.ts`](src/data/DataProvider.ts)), which is mid-migration
+and deliberately reads that way. Two families:
 
-| Method                    | Returns                  | Future source                            |
-| ------------------------- | ------------------------ | ---------------------------------------- |
-| `listPartnerManagers()`   | `PartnerManager[]`       | Salesforce Account owner alignment       |
-| `listPartners()`          | `Partner[]`              | PRM / CRM partner accounts               |
-| `listRegistrations()`     | `DealRegistration[]`     | CRM "Deal Registration" custom object    |
-| `listOpportunities()`     | `Opportunity[]`          | Salesforce opportunities                 |
-| `listPipelineSnapshots()` | `PipelineSnapshot[]`     | `OpportunityHistory` / weekly fact table |
-| `getTargets()`            | `Target[]`               | Quota objects or warehouse               |
-| `listActivities()`        | `ActivityMeeting[]`      | Google Calendar events                   |
-| `listCertifications()`    | `PartnerCertification[]` | Partner enablement system                |
-| `listTeamUsers()`         | `TeamUser[]`             | Identity provider / SCIM directory       |
+**The target shape — scoped aggregates and paginated rows.** A caller states a
+scope (a fiscal quarter, optionally one partner manager, plus the session's
+uncommitted edits) and receives an answer whose size does not depend on the size
+of the book. **Forecasting is built on this today.**
 
-`MockDataProvider` fills the seam with deterministic, seeded data today. To go
-live, implement the interface against your CRM (HubSpot, Salesforce) or
-warehouse (Snowflake, Looker) and swap the provider in `App.tsx`. No view code
-changes.
+| Method                       | Returns                                                     |
+| ---------------------------- | ----------------------------------------------------------- |
+| `getForecastSummary()`       | `ForecastSummary` (9 numbers)                               |
+| `getWeightedForecast()`      | `WeightedForecastSummary`                                   |
+| `getForecastQuality()`       | `ForecastQualitySummary` (counts, exposure, bounded sample) |
+| `getManagerForecastGroups()` | `ManagerForecastGroup[]` (one row per manager)              |
+| `getWeeklyForecastSeries()`  | `WeeklySeriesRow[]` (13 buckets)                            |
+| `listQuarterOpportunities()` | `Page<Opportunity>` (cursor, 25 rows)                       |
+| `getPartnerDirectory()`      | `PartnerRef[]` (id → name)                                  |
+
+**The shape being retired — eight list-everything calls.** `listPartners()`,
+`listOpportunities()`, `listRegistrations()`, `getTargets()`,
+`listPartnerManagers()`, `listActivities()`, `listCertifications()`,
+`listTeamUsers()`. The seven views still on this contract take the whole book
+and aggregate it in the browser.
+
+`MockDataProvider` fills both with deterministic, seeded data. To go live,
+implement the interface against your CRM (HubSpot, Salesforce) or warehouse
+(Snowflake, Looker) and swap the provider — no view code changes. The scoped
+side is where a server does the arithmetic: `src/lib/metrics.ts` is the
+implementation today and the _specification_ a server implementation has to
+match, which is what makes its test suite a conformance check rather than a
+unit suite.
+
+**Swap the provider from the header** to see the claim performed:
+
+- **Local mock** — the deterministic in-memory book, answering on the next
+  microtask. Fast, and it hides every loading state.
+- **Simulated remote** — the same book behind ~250 ms round trips with a 15%
+  simulated failure rate, so the per-widget loading, error, and retry paths are
+  exercised rather than theoretical. Seeded, so a failing run can be replayed.
+- **Scaled 100×** — 100 copies of the book: 2,500 partners, 21,300
+  opportunities, 191,000 weekly snapshot rows, ~45 MB. The scoped queries return
+  the same kilobytes (five aggregates, 25 rows a page); the load-everything path
+  is what changes. That is the argument, and it is why the default is the local
+  mock: this provider deliberately makes the un-migrated views slow.
 
 The interface is read-only. `App.tsx` layers the session's in-app edits —
 revenue overrides, forecast-category calls, notes, next steps, meeting
 classifications, added prospects, roster changes, and sent notifications — on
-top of the provider's book before handing a single merged
-`DashboardData` to every page, so writes are the one thing a live provider
-still needs to add.
+top of the provider's book before handing a single merged `DashboardData` to the
+views still on the old contract; Forecasting instead passes the edits _into_ its
+queries, so the provider aggregates the corrected book itself. Writes are the
+one thing a live provider still needs to add.
 
-`listPipelineSnapshots()` is the one collection that is history rather than
-current state: an append-only weekly recording of the open book, carrying each
-open deal's amount, called category, stage, and expected close as they stood.
-An `Opportunity` holds one of each, so current state cannot answer a question
-about a past week, and any view that tries to derive one backdates every later
-change. Snapshots are also what makes forecast accuracy measurable at all — a
-call can only be scored against an outcome if the call as made was kept. A
-provider with no history may return an empty array; views that can degrade fall
-back to what create and close dates alone support, and say which weeks those
-are. In Salesforce the equivalent lives in `OpportunityHistory` and
+**Weekly pipeline history never crosses the seam whole.** It used to arrive as
+`listPipelineSnapshots()`: 1,911 rows in the demo and ~87% of the payload at
+production volume, carrying each open deal's amount, called category, stage, and
+expected close as they stood every Monday. It was millions of rows to answer a
+question about fourteen weeks, so the collection is off the client contract
+entirely and leaves through `getWeeklyForecastSeries()` as ~13 buckets. A
+`PipelineSnapshot` is still the only way to answer a question about a past week
+— an `Opportunity` holds one amount and one call, so reading the past off
+current state backdates every later change — and it is still what makes forecast
+accuracy measurable, since a call can only be scored against an outcome if the
+call as made was kept. It lives in `ProviderBook` (provider-side) rather than
+`DashboardData` (client-side), and in Salesforce it is `OpportunityHistory` and
 `OpportunityFieldHistory`; a warehouse would model it as a weekly fact table
 written by a scheduled job.
 

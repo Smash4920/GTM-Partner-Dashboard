@@ -134,7 +134,10 @@ describe('record serialization', () => {
     const { records, sink } = capture();
     const log = createLogger({ sink });
 
-    log.debug('shapes', { sentAt: new Date('2026-09-18T00:00:00Z'), hook: function namedHook() {} });
+    log.debug('shapes', {
+      sentAt: new Date('2026-09-18T00:00:00Z'),
+      hook: function namedHook() {},
+    });
 
     const entry = lastRecord(records);
     expect(entry.sentAt).toBe('2026-09-18T00:00:00.000Z');

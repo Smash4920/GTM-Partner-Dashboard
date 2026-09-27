@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CURRENT_FISCAL_QUARTER,
   FISCAL_QUARTERS,
   FISCAL_YEAR_START,
   FORECAST_CATEGORIES,
@@ -387,7 +388,6 @@ describe('MockDataProvider', () => {
       partners,
       registrations,
       opportunities,
-      snapshots,
       targets,
       activities,
       certifications,
@@ -397,7 +397,6 @@ describe('MockDataProvider', () => {
       provider.listPartners(),
       provider.listRegistrations(),
       provider.listOpportunities(),
-      provider.listPipelineSnapshots(),
       provider.getTargets(),
       provider.listActivities(),
       provider.listCertifications(),
@@ -407,10 +406,22 @@ describe('MockDataProvider', () => {
     expect(partners).toHaveLength(25);
     expect(registrations).toHaveLength(180);
     expect(opportunities.length).toBeGreaterThan(200);
-    expect(snapshots.length).toBeGreaterThan(1_000);
     expect(targets).toHaveLength(100);
     expect(activities.length).toBeGreaterThan(100);
     expect(certifications).toHaveLength(25);
     expect(teamUsers).toHaveLength(8);
+  });
+
+  it('keeps weekly history off the client contract', async () => {
+    const provider = new MockDataProvider();
+    // The collection that used to cross the seam — ~1,900 rows here, ~2.3 M at
+    // production volume — is gone from the contract entirely. History leaves
+    // only as the week-over-week series, which is ~13 buckets.
+    expect('listPipelineSnapshots' in provider).toBe(false);
+
+    const weeks = await provider.getWeeklyForecastSeries({ quarter: CURRENT_FISCAL_QUARTER });
+    expect(weeks.length).toBeGreaterThan(10);
+    expect(weeks.length).toBeLessThan(20);
+    expect(weeks.some((week) => week.recordedAt !== undefined)).toBe(true);
   });
 });

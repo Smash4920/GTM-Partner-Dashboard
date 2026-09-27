@@ -17,6 +17,9 @@ test-results
 # Editor / OS
 .DS_Store
 
+# Test coverage report
+coverage/
+
 # Factory droid session state. Grows into the gigabytes, so it must never be
 # committed -- a single `git add -A` would otherwise balloon the history.
 .factory/

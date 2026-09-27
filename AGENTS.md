@@ -9,7 +9,8 @@ GTM Partner Dashboard is a client-only React and TypeScript dashboard built
 with Vite and Tailwind CSS. It currently uses deterministic mock data. There is
 no backend, database, authentication layer, or required local environment file.
 Read `README.md` for the product behavior and data contract before changing
-business logic.
+business logic, and `docs/migration-plan.md` for how the data layer is being
+moved to production volume.
 
 ## Setup
 
@@ -35,6 +36,7 @@ npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
 npm run lint      # lint all TypeScript and TSX files
 npm test          # run the Vitest suite once
+npm run test:coverage # run Vitest with coverage, enforcing the thresholds in vite.config.ts
 npm run test:e2e  # run the Playwright browser suite
 npm run test:list # collect and list tests without running them
 npm run build     # run TypeScript project checks, then create dist/
@@ -52,10 +54,15 @@ Before handing off a change, run the same checks as CI, in this order:
 ```bash
 npm run format:check
 npm run lint
-npm test
+npm run test:coverage
 npm run test:e2e
 npm run build
 ```
+
+The coverage thresholds are a ratchet: raise them as coverage lands, never
+lower them to make a red build green. The view layer sat at 0% before Phase 0
+of `docs/migration-plan.md`, which is how a 5,700-line refactor came to look
+survivable.
 
 ## Repository map
 
@@ -66,13 +73,21 @@ npm run build
 - `src/components/`: reusable UI and domain components.
 - `src/lib/`: pure formatting, fiscal-calendar, structured logging,
   notification, and metric helpers. Unit tests are colocated as `*.test.ts`.
-- `src/data/types.ts`: shared domain types and the `DashboardData` shape.
+- `src/data/types.ts`: shared domain types, the `DashboardData` shape the client
+  receives, and `ProviderBook`, which extends it with the provider-only history.
 - `src/data/constants.ts`: fiscal dates, service levels, labels, and other
   shared domain constants.
 - `src/data/DataProvider.ts`: the read-side integration boundary used by the UI.
-- `src/data/useDashboardData.ts`: loads and combines every provider collection.
-- `src/data/mock/`: seeded data generation and the current provider
-  implementation. Its tests pin referential integrity and documented volumes.
+  It is mid-migration between two interfaces; see below.
+- `src/data/useDashboardData.ts`: loads and combines every provider collection
+  the seven un-migrated views still need.
+- `src/data/useForecastQueries.ts`: loads the scoped contract for Forecasting,
+  with per-widget loading and error state.
+- `src/data/providers.ts`: selects between the three providers the header's
+  provider dropdown exposes.
+- `src/data/mock/`: seeded data generation and the provider implementations —
+  `MockDataProvider`, `SimulatedRemoteProvider`, and `ScaleDataProvider`. Its
+  tests pin referential integrity and documented volumes.
 - `src/data/connections.ts`: catalog behind the Data Connections view.
 - `src/index.css` and `tailwind.config.js`: global styles and design tokens.
 - `.github/workflows/ci.yml`: required pull-request checks.
@@ -80,10 +95,28 @@ npm run build
 ## Architecture and data rules
 
 - Views consume the merged `DashboardData` passed down from `App.tsx`; they
-  must not import mock records directly.
-- Keep source-system reads behind `DataProvider`. When adding a provider method,
-  update the interface, `DashboardData`, `useDashboardData`, the mock provider,
-  the connection catalog, and the connection coverage test together.
+  must not import mock records directly. The one exception is Forecasting,
+  which reads the scoped contract through `useForecastQueries.ts` and passes
+  the session's edits _into_ its queries rather than receiving the folded book.
+- **`DataProvider` is two interfaces, deliberately.** `ScopedQueryProvider` is
+  the target shape — a scope in, an aggregate whose size does not depend on the
+  book or one page of rows out. `LegacyBookProvider` is the eight
+  list-everything calls still being retired. Forecasting reads only the scoped
+  side. When a view moves across, add the queries it needs to the scoped
+  interface, implement them in `MockDataProvider` by delegating to
+  `src/lib/metrics.ts`, and migrate the view onto a hook.
+- When adding a method to `DataProvider`, list it in `DATA_PROVIDER_METHODS`
+  (a compile error until you do, because the record is keyed by
+  `keyof DataProvider`) and give it a wire or a box in `connections.ts`;
+  `connections.test.ts` fails until both are done, by design.
+- **Weekly pipeline history never crosses the seam whole.** It is ~87% of the
+  payload at production volume, so `listPipelineSnapshots()` is gone from the
+  client contract and history leaves only through `getWeeklyForecastSeries()` as
+  a handful of buckets. `ProviderBook` holds the snapshot rows; `DashboardData`
+  does not.
+- `src/lib/metrics.ts` is the _specification_ a server implementation has to
+  match, not just the current implementation. Its suite plus
+  `MockDataProvider.test.ts` are the conformance check.
 - User edits currently live in React state in `App.tsx`. Do not imply that an
   edit persists or add browser storage unless persistence is part of the task.
 - Mock data is reproducible with a fixed seed and `SNAPSHOT_DATE`. Use the
@@ -91,7 +124,10 @@ npm run build
   Runtime action timestamps, such as a notification sent by the user, may use
   the real current time.
 - Preserve the February-start fiscal calendar and the distinction between
-  open-pipeline dates, close dates, and append-only weekly snapshots.
+  open-pipeline dates, close dates, and append-only weekly snapshots. A quarter
+  label bridges to the phase-scoped windows through `phaseForQuarter()`, which
+  throws rather than falling back — a plausible wrong number is worse than a
+  crash.
 - Treat five-day registration SLAs as business days and the 60-day exclusivity
   period as calendar days.
 - Keep partner-facing data boundaries intact. Partner View must not expose
@@ -118,13 +154,17 @@ npm run build
 - Reuse types, labels, thresholds, and metadata from `src/data/types.ts` and
   `src/data/constants.ts`. Avoid parallel string literals for domain values.
 - Preserve the existing formatting style: single quotes, semicolons, trailing
-  commas in multiline structures, and two-space indentation.
+  commas in multiline structures, and two-space indentation. Prettier owns the
+  line wrapping — run `npm run format` rather than hand-wrapping to taste.
 - Add comments for business invariants and non-obvious time or data semantics,
   not for self-evident JSX.
 - Log through `src/lib/logging.ts`, not raw `console` calls: one structured
   record per event — `log.info('msg', { fields })` — with
   `logger.child({ component: '...' })` for shared context. Log identifiers
   and counts, not user prose.
+- A data-fetching hook's effect must depend on the _values_ a query needs
+  (a quarter, a manager, each edit map), never on a scope object rebuilt every
+  render, which would refetch in a loop.
 - Preserve accessible labels and native controls when changing interactions.
 
 ## Visual conventions

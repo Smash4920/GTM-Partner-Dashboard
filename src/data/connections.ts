@@ -15,6 +15,8 @@
  * where a node sits.
  */
 
+import { DATA_PROVIDER_METHODS } from './DataProvider';
+
 export type ConnectionStatus = 'live' | 'required' | 'planned';
 
 /** Column a node belongs to, left to right in the flow of data. */
@@ -114,7 +116,12 @@ export const CONNECTION_NODES: ConnectionNode[] = [
       'Deal registrations and decisions',
       'Targets and fiscal periods',
     ],
-    methods: ['listOpportunities()', 'listRegistrations()', 'getTargets()'],
+    methods: [
+      'listOpportunities()',
+      'listQuarterOpportunities()',
+      'listRegistrations()',
+      'getTargets()',
+    ],
     source: 'Opportunity, Deal_Registration__c, Account, quota objects',
     auth: 'Connected app, OAuth 2.0 JWT bearer, service account',
     cadence: '15-minute incremental sync plus webhooks',
@@ -190,7 +197,7 @@ export const CONNECTION_NODES: ConnectionNode[] = [
     status: 'planned',
     summary: 'Partner accounts, lifecycle stage, and the manager alignment that routes work.',
     supplies: ['Partner roster and lifecycle', 'Account → partner manager alignment'],
-    methods: ['listPartners()', 'listPartnerManagers()'],
+    methods: ['listPartners()', 'listPartnerManagers()', 'getPartnerDirectory()'],
     source: 'Partner account and Account.Partner_Manager__c',
     auth: 'OAuth 2.0, read scope',
     cadence: 'Hourly',
@@ -207,14 +214,18 @@ export const CONNECTION_NODES: ConnectionNode[] = [
     label: 'Warehouse (Snowflake)',
     tier: 'source',
     status: 'planned',
-    summary: 'Weekly snapshots of the open book — the only source of pipeline history.',
-    supplies: ['Week-over-week pipeline movement', 'Forecast accuracy, once calls can be scored'],
-    methods: ['listPipelineSnapshots()'],
+    summary:
+      'Weekly snapshots of the open book — the only source of pipeline history, and the only collection that can never ship whole.',
+    supplies: [
+      'Week-over-week pipeline movement as ~14 weekly buckets, not 2.3 M rows',
+      'Forecast accuracy, once calls can be scored',
+    ],
+    methods: ['getWeeklyForecastSeries()'],
     source: 'OpportunityHistory, or a weekly fact table',
     auth: 'Service account with a read-only role',
     cadence: 'Weekly job after each Monday recording',
     blocker:
-      'The snapshot job does not exist yet; the demo fabricates a deterministic history instead.',
+      'The snapshot job does not exist yet; the demo fabricates a deterministic history instead. The client contract is already shaped around it: the old listPipelineSnapshots() call is gone, and history leaves the seam only as the aggregate below.',
     owner: 'architecture',
     x: 0,
     y: 436,
@@ -266,9 +277,18 @@ export const CONNECTION_NODES: ConnectionNode[] = [
     tier: 'platform',
     status: 'live',
     summary:
-      'Aggregated, paginated, row-authorized reads, plus every session edit layered on top of the provider book.',
-    supplies: ['Screens, exports, and scheduled reporting'],
-    methods: ['DashboardData — every view'],
+      'Aggregated, paginated, row-authorized reads, plus every session edit layered on top of the provider book. The four forecast rollups are computed here in production, over the canonical model, so the browser receives kilobytes.',
+    supplies: [
+      'Screens, exports, and scheduled reporting',
+      'Pre-aggregated forecast figures, cached per scope',
+    ],
+    methods: [
+      'getForecastSummary()',
+      'getWeightedForecast()',
+      'getForecastQuality()',
+      'getManagerForecastGroups()',
+      'DashboardData — every view',
+    ],
     blocker:
       'Writes are session-only in the demo: revenue overrides, forecast calls, notes, next steps, meeting classifications, and added prospects are not persisted (Architecture roadmap: persistence and operating workflows).',
     owner: 'architecture',
@@ -449,15 +469,15 @@ export const CONNECTION_EDGES: ConnectionEdge[] = [
   },
 ];
 
-/** The DataProvider methods the map claims to cover, for the coverage check in tests. */
-export const CONNECTION_METHOD_COVERAGE = [
-  'listPartnerManagers()',
-  'listPartners()',
-  'listRegistrations()',
-  'listOpportunities()',
-  'listPipelineSnapshots()',
-  'getTargets()',
-  'listActivities()',
-  'listCertifications()',
-  'listTeamUsers()',
-];
+/**
+ * The DataProvider methods the map claims to cover, for the coverage check in
+ * tests.
+ *
+ * Derived from the contract rather than written out, so the two cannot drift:
+ * `DATA_PROVIDER_METHODS` is keyed by `keyof DataProvider`, which means a new
+ * method on the seam is a compile error there and a test failure here until it
+ * has a wire or a box on this map. The check is the map's whole reason for
+ * existing — a method with no wire is a connection nobody planned for — and it
+ * only works if nobody has to remember to update a second list.
+ */
+export const CONNECTION_METHOD_COVERAGE = DATA_PROVIDER_METHODS.map((method) => `${method}()`);

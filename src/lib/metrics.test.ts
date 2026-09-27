@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SNAPSHOT_DATE } from '../data/constants';
+import { CURRENT_FISCAL_QUARTER, FISCAL_PHASE_META, SNAPSHOT_DATE } from '../data/constants';
 import type {
   ActivityMeeting,
   DashboardData,
@@ -30,6 +30,7 @@ import {
   openOpportunities,
   openPipeline,
   partnerLeaderboard,
+  phaseForQuarter,
   phaseWindow,
   quarterlyClosedWonAndTarget,
   registrationConversionTimes,
@@ -92,7 +93,6 @@ function dashboard(overrides: Partial<DashboardData>): DashboardData {
     partners: [],
     registrations: [],
     opportunities: [],
-    snapshots: [],
     targets: [],
     activities: [],
     certifications: [],
@@ -1170,5 +1170,30 @@ describe('duplicateRegistrationGroups', () => {
     expect(group.distinctPartners).toBe(2);
     expect(group.firstSubmitted.id).toBe('r1');
     expect(group.registrations.map((item) => item.id)).toEqual(['r1', 'r2']);
+  });
+});
+
+// ---- quarter → phase bridge ------------------------------------------------
+
+describe('phaseForQuarter', () => {
+  it('is the inverse of the phase → quarter mapping', () => {
+    // The scoped contract is phrased in quarters, since that is the unit a
+    // caller thinks in; every window in this file is a phase. One mapping, in
+    // one place, so the two cannot drift.
+    for (const phase of ['q1', 'q2', 'q3', 'q4'] as const) {
+      expect(phaseForQuarter(FISCAL_PHASE_META[phase].quarter!)).toBe(phase);
+    }
+  });
+
+  it('throws on a quarter the fiscal calendar does not define', () => {
+    // A fallback to Q1 would answer a question about FY28-Q4 with FY27 Q1's
+    // numbers, and a plausible wrong number is worse than a crash.
+    expect(() => phaseForQuarter('FY28-Q1')).toThrowError(/FY28-Q1/);
+    expect(() => phaseForQuarter('fy')).toThrowError(/fy/);
+  });
+
+  it('agrees with the phase whose window is the snapshot quarter', () => {
+    const phase = phaseForQuarter(CURRENT_FISCAL_QUARTER);
+    expect(phaseWindow(phase).targetQuarters).toEqual([CURRENT_FISCAL_QUARTER]);
   });
 });

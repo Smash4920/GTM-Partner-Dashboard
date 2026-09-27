@@ -14,7 +14,6 @@ import { businessDaysBefore, quarterWindow, startOfWeekUtc } from '../../lib/fis
 import type {
   ActivityMeeting,
   DealRegistration,
-  DashboardData,
   ForecastCategory,
   Opportunity,
   OpportunityStage,
@@ -25,6 +24,7 @@ import type {
   PartnerTier,
   PartnerType,
   PipelineSnapshot,
+  ProviderBook,
   Region,
   Target,
   TeamUser,
@@ -910,7 +910,7 @@ function generateTeamUsers(partnerManagers: PartnerManager[]): TeamUser[] {
   });
 }
 
-export function generateDashboardData(): DashboardData {
+export function generateDashboardData(): ProviderBook {
   rand = mulberry32(SEED);
   const partnerManagers = generatePartnerManagers();
   const partners = generatePartners(partnerManagers);

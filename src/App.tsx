@@ -1,8 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
+import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar, { type Route } from './components/Sidebar';
 import { MenuIcon } from './components/icons';
 import { SNAPSHOT_DATE } from './data/constants';
-import { MockDataProvider } from './data/mock/MockDataProvider';
+import { createProvider, PROVIDER_OPTIONS, providerOption } from './data/providers';
+import type { ProviderId } from './data/providers';
+import { applySessionEdits } from './data/sessionEdits';
+import type { SessionEdits } from './data/sessionEdits';
 import type {
   DashboardNotification,
   ForecastCategory,
@@ -31,9 +35,12 @@ import ProductionRequirementsView from './views/ProductionRequirementsView';
 const log = logger.child({ component: 'App' });
 
 export default function App() {
-  // The provider is the integration seam. Swap MockDataProvider for a
-  // CRM-backed provider and everything below keeps working.
-  const provider = useMemo(() => new MockDataProvider(), []);
+  // The provider is the integration seam. The header swaps it between the
+  // local mock, a simulated remote one, and a 100× book; nothing below this
+  // line knows which. See src/data/providers.ts.
+  const [providerId, setProviderId] = useState<ProviderId>('local');
+  const provider = useMemo(() => createProvider(providerId), [providerId]);
+  const providerMeta = providerOption(providerId);
   const { data, loading, error } = useDashboardData(provider);
   const [route, setRoute] = useState<Route>('home');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -85,30 +92,16 @@ export default function App() {
   // the opportunity book itself, so every KPI, chart, and table in the app
   // reads the corrected figure rather than the one Salesforce supplied. The
   // weighted forecast therefore moves the moment a manager re-calls a deal.
-  const opportunities = useMemo(() => {
-    const book = data?.opportunities ?? [];
-    return book.map((opportunity) => {
-      const revenue = revenueOverrides[opportunity.id];
-      const note = notes[opportunity.id];
-      const nextStep = nextSteps[opportunity.id];
-      const call = forecastCalls[opportunity.id];
-      if (
-        revenue === undefined &&
-        note === undefined &&
-        nextStep === undefined &&
-        call === undefined
-      ) {
-        return opportunity;
-      }
-      return {
-        ...opportunity,
-        forecastedRevenue: revenue ?? opportunity.forecastedRevenue,
-        notes: note ?? opportunity.notes,
-        nextStep: nextStep ?? opportunity.nextStep,
-        forecastCategory: call ?? opportunity.forecastCategory,
-      };
-    });
-  }, [data?.opportunities, revenueOverrides, notes, nextSteps, forecastCalls]);
+  const opportunities = useMemo(
+    () =>
+      applySessionEdits(data?.opportunities ?? [], {
+        revenueOverrides,
+        notes,
+        nextSteps,
+        forecastCalls,
+      }),
+    [data?.opportunities, revenueOverrides, notes, nextSteps, forecastCalls],
+  );
 
   // The single book every view renders: provider data plus in-app edits.
   const live = useMemo(
@@ -116,28 +109,33 @@ export default function App() {
     [data, partners, opportunities, teamUsers],
   );
 
+  // The same edits in the shape the scoped contract takes. Forecasting's
+  // queries carry them so the provider aggregates the corrected book itself,
+  // rather than the client re-applying edits to an answer computed without
+  // them. The fold above is the same work for the seven views still on the
+  // load-everything contract; both exist only until those views move across,
+  // at which point the provider owns the edit path alone.
+  const forecastEdits = useMemo<SessionEdits>(
+    () => ({ revenueOverrides, notes, nextSteps, forecastCalls }),
+    [revenueOverrides, notes, nextSteps, forecastCalls],
+  );
+
   const setRevenue = (opportunityId: string, value: number) => {
     log.debug('Revenue forecast edited', { opportunityId, revenue: value });
     setRevenueOverrides((prev) => ({ ...prev, [opportunityId]: value }));
   };
 
-  const setNote = (opportunityId: string, note: string) => {
-    setNotes((prev) => {
-      const next = { ...prev };
-      if (note) next[opportunityId] = note;
-      else delete next[opportunityId];
-      return next;
-    });
-  };
+  // An emptied field is stored as '' rather than deleted. Deleting the key
+  // would drop back through the `??` below to the provider's value, so
+  // clearing a next step the CRM supplied would silently restore it and the
+  // edit would appear to fail. Empty string is the tombstone: "the manager
+  // cleared this", which is a different fact from "the manager never touched
+  // it" and has to outlive the keystroke that produced it.
+  const setNote = (opportunityId: string, note: string) =>
+    setNotes((prev) => ({ ...prev, [opportunityId]: note }));
 
-  const setNextStep = (opportunityId: string, nextStep: string) => {
-    setNextSteps((prev) => {
-      const next = { ...prev };
-      if (nextStep) next[opportunityId] = nextStep;
-      else delete next[opportunityId];
-      return next;
-    });
-  };
+  const setNextStep = (opportunityId: string, nextStep: string) =>
+    setNextSteps((prev) => ({ ...prev, [opportunityId]: nextStep }));
 
   const setForecastCall = (opportunityId: string, category: ForecastCategory) => {
     log.debug('Forecast call changed', { opportunityId, category });
@@ -265,6 +263,23 @@ export default function App() {
           <p className="ml-auto hidden font-mono text-[10px] uppercase tracking-[0.06em] text-granite md:block">
             Mock data · snapshot {formatDate(SNAPSHOT_DATE.toISOString())}
           </p>
+          <label className="ml-auto flex items-center gap-2 md:ml-4">
+            <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              Provider
+            </span>
+            <select
+              value={providerId}
+              onChange={(event) => setProviderId(event.target.value as ProviderId)}
+              aria-label="Data provider"
+              className="rounded border border-ash bg-carbon px-2 py-1 font-mono text-[10px] uppercase tracking-[0.06em] text-bone focus:border-signal focus:outline-none"
+            >
+              {PROVIDER_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       </header>
 
@@ -280,25 +295,34 @@ export default function App() {
         />
 
         <main className="min-w-0 flex-1 px-4 py-8 sm:px-6">
+          {providerId !== 'local' && (
+            <p className="mb-6 rounded-card border border-ash p-4 text-xs text-granite">
+              <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-signal">
+                {providerMeta.label}
+              </span>{' '}
+              {providerMeta.summary}
+            </p>
+          )}
           {error && <p className="rounded-card border border-ash p-4 text-sm text-bone">{error}</p>}
-          {loading && (
+          {/* Only the first load is a blank page. A reload — changing the
+              provider, say — keeps the book already on screen, and the notice
+              above says what is being fetched. */}
+          {loading && !live && (
             <p className="flex items-center gap-2 py-32 font-mono text-xs uppercase tracking-[0.08em] text-granite">
               <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal" />
               Loading dashboard data
             </p>
           )}
           {live && (
-            <>
+            <ErrorBoundary resetKey={`${providerId}:${route}`}>
               {route === 'home' && <HomeView data={live} classifications={classifications} />}
               {route === 'partners' && (
                 <PartnerPerformanceView data={live} classifications={classifications} />
               )}
               {route === 'forecasting' && (
                 <ForecastingView
-                  data={live}
-                  revenueOverrides={revenueOverrides}
-                  notes={notes}
-                  nextSteps={nextSteps}
+                  provider={provider}
+                  edits={forecastEdits}
                   onSetRevenue={setRevenue}
                   onSetNote={setNote}
                   onSetNextStep={setNextStep}
@@ -327,7 +351,7 @@ export default function App() {
                   onSendNotification={sendNotification}
                 />
               )}
-            </>
+            </ErrorBoundary>
           )}
         </main>
       </div>

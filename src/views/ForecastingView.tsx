@@ -5,42 +5,26 @@ import KpiTile from '../components/KpiTile';
 import WeeklyForecastChart from '../components/WeeklyForecastChart';
 import { ChevronIcon } from '../components/icons';
 import {
-  FISCAL_PHASES,
   FISCAL_PHASE_META,
   FORECAST_CATEGORY_META,
   SNAPSHOT_DATE,
   STAGE_META,
 } from '../data/constants';
-import type { DashboardData, FiscalPhase, ForecastCategory } from '../data/types';
-import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
+import type { DataProvider, ForecastScope } from '../data/DataProvider';
+import type { SessionEdits } from '../data/sessionEdits';
+import type { ForecastCategory } from '../data/types';
+import { useForecastAggregates, useManagerBook, usePartnerNames } from '../data/useForecastQueries';
 import { fiscalQuarterOfDate, quarterWindow } from '../lib/fiscal';
-import {
-  avgOpenDealSize,
-  categoryStageMismatches,
-  closedWonForPhase,
-  coverageRatio,
-  daysLeftInQuarter,
-  filterByPhase,
-  formatCoverage,
-  openOpportunities,
-  openPipeline,
-  remainingQuota,
-  targetsForPhase,
-  weightedForecast,
-  weeklyForecastRows,
-} from '../lib/metrics';
+import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
+import { formatCoverage, phaseForQuarter } from '../lib/metrics';
 
 const quarter = fiscalQuarterOfDate(SNAPSHOT_DATE.toISOString());
-const phase =
-  (FISCAL_PHASES.find((candidate) => FISCAL_PHASE_META[candidate].quarter === quarter) as
-    Exclude<FiscalPhase, 'fy'> | undefined) ?? 'q1';
+const phase = phaseForQuarter(quarter);
 const quarterEnd = quarterWindow(quarter).end;
 
 interface ForecastingViewProps {
-  data: DashboardData;
-  revenueOverrides: Record<string, number>;
-  notes: Record<string, string>;
-  nextSteps: Record<string, string>;
+  provider: DataProvider;
+  edits: SessionEdits;
   onSetRevenue: (opportunityId: string, value: number) => void;
   onSetNote: (opportunityId: string, note: string) => void;
   onSetNextStep: (opportunityId: string, nextStep: string) => void;
@@ -51,120 +35,90 @@ interface ForecastingViewProps {
  * Forecasting: the VP of Partnerships' in-quarter view. Callout tiles sum the
  * quarter's sourced pipeline and probability-weighted forecast, then an
  * editable table lists every in-quarter opportunity, filterable by partner
- * manager. Revenue and Notes carry a pencil so managers can correct
- * Salesforce locally; Next Step is the row-level editable action.
+ * manager.
+ *
+ * This view reads the provider's scoped contract rather than the whole book:
+ * five aggregates, the partner directory, and one page of rows per expanded
+ * manager. Nothing here scales with the size of the book, which is the claim
+ * Phase 1 of docs/migration-plan.md exists to test. It is the first view
+ * moved across, and deliberately the hardest: it is the hottest edit path and
+ * the only view driven by the weekly snapshots that can never ship whole.
+ *
+ * Edits ride along with each query instead of being re-applied here, so the
+ * tiles, the chart, and the rows are all computed from the same corrected
+ * book. A committed edit refetches the aggregates; the table row shows the
+ * typed figure immediately either way, because the row renders the session's
+ * override over the provider's value.
  */
 export default function ForecastingView({
-  data,
-  revenueOverrides,
-  notes,
-  nextSteps,
+  provider,
+  edits,
   onSetRevenue,
   onSetNote,
   onSetNextStep,
   onSetForecastCall,
 }: ForecastingViewProps) {
   const [filterManagerId, setFilterManagerId] = useState('all');
-  // First manager opens by default so the page never lands fully collapsed.
-  const [expandedManagers, setExpandedManagers] = useState<string[]>(() =>
-    data.partnerManagers[0] ? [data.partnerManagers[0].id] : [],
+  const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+
+  const scope = useMemo<ForecastScope>(() => ({ quarter, edits }), [edits]);
+  const aggregates = useForecastAggregates(provider, scope);
+  const partnerNames = usePartnerNames(provider);
+
+  const groups = aggregates.data?.groups ?? [];
+  const visibleGroups = groups.filter(
+    (group) => filterManagerId === 'all' || group.managerId === filterManagerId,
   );
 
-  const toggleManager = (managerId: string) =>
-    setExpandedManagers((prev) =>
-      prev.includes(managerId) ? prev.filter((id) => id !== managerId) : [...prev, managerId],
-    );
+  const filteredCount = visibleGroups.reduce((sum, group) => sum + group.opportunityCount, 0);
+
+  // The first manager opens by default so the page never lands fully collapsed.
+  // Toggles are recorded as overrides rather than as a copy of the default, so
+  // the default still applies after the groups reload.
+  const isExpanded = (managerId: string, index: number) =>
+    expandedOverrides[managerId] ?? index === 0;
+
+  const toggleManager = (managerId: string, index: number) =>
+    setExpandedOverrides((prev) => ({
+      ...prev,
+      [managerId]: !(prev[managerId] ?? index === 0),
+    }));
 
   const phaseLabel = FISCAL_PHASE_META[phase].label;
 
-  const inQuarterOpps = useMemo(
-    () => filterByPhase(data.opportunities, phase),
-    [data.opportunities, phase],
-  );
-
-  // Opportunities are grouped under the partner manager who owns the partner
-  // account, so the VP expands one manager at a time rather than reading one
-  // flat 65-row table.
-  const groups = useMemo(() => {
-    const managerByPartner = new Map(
-      data.partners.map((partner) => [partner.id, partner.partnerManagerId]),
+  if (aggregates.loading) {
+    return (
+      <p className="flex items-center gap-2 py-32 font-mono text-xs uppercase tracking-[0.08em] text-granite">
+        <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal" />
+        Loading the {quarter} forecast
+      </p>
     );
-    return data.partnerManagers
-      .filter((manager) => filterManagerId === 'all' || manager.id === filterManagerId)
-      .map((manager) => {
-        const opportunities = inQuarterOpps.filter(
-          (opp) => managerByPartner.get(opp.partnerId) === manager.id,
-        );
-        const open = openPipeline(opportunities);
-        return {
-          manager,
-          opportunities,
-          openValue: open.value,
-          openCount: open.count,
-          closedWon: closedWonForPhase(opportunities, phase),
-        };
-      });
-  }, [data.partners, data.partnerManagers, inQuarterOpps, filterManagerId, phase]);
+  }
 
-  const groupedCount = useMemo(
-    () => groups.reduce((sum, group) => sum + group.opportunities.length, 0),
-    [groups],
-  );
+  if (!aggregates.data) {
+    return (
+      <Card title="The forecast did not load">
+        <p className="text-sm text-granite">
+          {aggregates.error ?? 'The provider returned no data.'}
+        </p>
+        <button
+          type="button"
+          onClick={aggregates.retry}
+          className="mt-4 rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20"
+        >
+          Try again
+        </button>
+      </Card>
+    );
+  }
 
-  const openInQuarter = useMemo(() => openPipeline(inQuarterOpps), [inQuarterOpps]);
-  const closedWon = useMemo(() => closedWonForPhase(inQuarterOpps, phase), [inQuarterOpps, phase]);
-  const target = useMemo(
-    () => targetsForPhase(data.targets, phase).reduce((sum, t) => sum + t.revenueTarget, 0),
-    [data.targets, phase],
+  const { summary, weighted, quality, weeks } = aggregates.data;
+  const categoryTiles = [...weighted.rows].sort(
+    (a, b) => FORECAST_CATEGORY_META[b.category].weight - FORECAST_CATEGORY_META[a.category].weight,
   );
-  const coverage = useMemo(
-    () => coverageRatio(inQuarterOpps, data.targets, phase),
-    [inQuarterOpps, data.targets, phase],
-  );
-  const remaining = useMemo(
-    () => remainingQuota(inQuarterOpps, data.targets, phase),
-    [inQuarterOpps, data.targets, phase],
-  );
-  const avgDeal = useMemo(() => avgOpenDealSize(inQuarterOpps), [inQuarterOpps]);
-  const attainment = target > 0 ? closedWon / target : 0;
-  const daysLeft = useMemo(() => daysLeftInQuarter(quarter), [quarter]);
-
-  // Weighted forecast: each open deal contributes its revenue × the
-  // probability weight of its forecast category (commit 90%, best case 50%,
-  // pipeline 25%, long shot 10%), so the total is expected revenue, not raw
-  // pipeline.
-  const openInQuarterOpps = useMemo(() => openOpportunities(inQuarterOpps), [inQuarterOpps]);
-  const weighted = useMemo(() => weightedForecast(openInQuarterOpps), [openInQuarterOpps]);
-  const categoryTiles = useMemo(
-    () =>
-      [...weighted.rows].sort(
-        (a, b) =>
-          FORECAST_CATEGORY_META[b.category].weight - FORECAST_CATEGORY_META[a.category].weight,
-      ),
-    [weighted],
-  );
-
-  // Deals whose called category disagrees with their stage. This is the only
-  // place the forecast stops being a restatement of the pipeline report: a
-  // Commit in Discovery and a Long Shot in Deal Desk Review both need a
-  // conversation, and neither is visible from stage alone.
-  const mismatches = useMemo(() => categoryStageMismatches(openInQuarterOpps), [openInQuarterOpps]);
-
-  // Week-over-week pipeline: closed weeks come from the recorded snapshots, so
-  // editing a deal today moves the current week's bar and leaves history
-  // alone; the in-progress week is the live book, so it equals the tiles above.
-  const weeklyRows = useMemo(
-    () => weeklyForecastRows(data.opportunities, quarter, SNAPSHOT_DATE, data.snapshots),
-    [data.opportunities, data.snapshots, quarter],
-  );
-  const startedWeeks = useMemo(
-    () => weeklyRows.filter((row) => row.hasStarted).length,
-    [weeklyRows],
-  );
-  const recordedWeeks = useMemo(
-    () => weeklyRows.filter((row) => row.recordedAt !== undefined).length,
-    [weeklyRows],
-  );
+  const mismatchCount = quality.aboveCount + quality.belowCount;
+  const startedWeeks = weeks.filter((row) => row.hasStarted).length;
+  const recordedWeeks = weeks.filter((row) => row.recordedAt !== undefined).length;
 
   return (
     <div className="space-y-6">
@@ -179,49 +133,80 @@ export default function ForecastingView({
             {formatDate(SNAPSHOT_DATE.toISOString())}
           </p>
         </div>
-        <label className="flex items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-            Partner manager
-          </span>
-          <select
-            value={filterManagerId}
-            onChange={(event) => setFilterManagerId(event.target.value)}
-            className="rounded border border-ash bg-carbon px-3 py-1.5 text-sm text-bone focus:border-signal focus:outline-none"
-          >
-            <option value="all">All partner managers</option>
-            {data.partnerManagers.map((manager) => (
-              <option key={manager.id} value={manager.id}>
-                {manager.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex items-end gap-4">
+          {/* Figures stay on screen while the refetch is in flight, so an edit
+              never blanks the page it just changed. */}
+          {aggregates.refreshing && (
+            <span
+              role="status"
+              className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+            >
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-signal" />
+              Updating
+            </span>
+          )}
+          <label className="flex items-center gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              Partner manager
+            </span>
+            <select
+              value={filterManagerId}
+              onChange={(event) => setFilterManagerId(event.target.value)}
+              className="rounded border border-ash bg-carbon px-3 py-1.5 text-sm text-bone focus:border-signal focus:outline-none"
+            >
+              <option value="all">All partner managers</option>
+              {groups.map((group) => (
+                <option key={group.managerId} value={group.managerId}>
+                  {group.managerName}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
+
+      {aggregates.error && (
+        <p className="flex flex-wrap items-center gap-3 rounded-card border border-ash p-4 text-sm text-bone">
+          <span className="text-signal">Latest refresh failed:</span>
+          {aggregates.error}
+          <button
+            type="button"
+            onClick={aggregates.retry}
+            className="rounded border border-ash px-3 py-1 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20"
+          >
+            Retry
+          </button>
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <KpiTile
           label="Partner sourced pipeline"
-          value={formatUsdCompact(openInQuarter.value)}
-          sub={`${openInQuarter.count} open ${phaseLabel} opps`}
+          value={formatUsdCompact(summary.openPipelineValue)}
+          sub={`${summary.openCount} open ${phaseLabel} opps`}
         />
         <KpiTile
           label={`Closed-won ${phaseLabel}`}
-          value={formatUsdCompact(closedWon)}
-          sub={`${Math.round(attainment * 100)}% of ${phaseLabel} goal`}
+          value={formatUsdCompact(summary.closedWon)}
+          sub={`${Math.round(summary.attainment * 100)}% of ${phaseLabel} goal`}
         />
         <KpiTile
           label="Pipeline coverage to goal"
-          value={formatCoverage(coverage)}
-          sub={remaining > 0 ? `${formatUsdCompact(remaining)} goal remaining` : 'Goal achieved'}
+          value={formatCoverage(summary.coverage)}
+          sub={
+            summary.remainingQuota > 0
+              ? `${formatUsdCompact(summary.remainingQuota)} goal remaining`
+              : 'Goal achieved'
+          }
         />
         <KpiTile
           label="Average deal size"
-          value={formatUsdCompact(avgDeal)}
+          value={formatUsdCompact(summary.avgOpenDealSize)}
           sub="open opps, in quarter"
         />
         <KpiTile
           label="Days left in quarter"
-          value={`${daysLeft}`}
+          value={`${summary.daysLeftInQuarter}`}
           sub={`${quarter} ends ${formatDate(quarterEnd.toISOString())}`}
         />
       </div>
@@ -247,9 +232,9 @@ export default function ForecastingView({
 
       <Card
         title="Week-over-week pipeline"
-        subtitle={`Open ${phaseLabel} pipeline (solid) vs the probability-weighted forecast (faded), stacked by forecast category · dashed line = ${phaseLabel} revenue goal · ${startedWeeks} of ${weeklyRows.length} weeks in, ${recordedWeeks} from recorded history`}
+        subtitle={`Open ${phaseLabel} pipeline (solid) vs the probability-weighted forecast (faded), stacked by forecast category · dashed line = ${phaseLabel} revenue goal · ${startedWeeks} of ${weeks.length} weeks in, ${recordedWeeks} from recorded history`}
       >
-        <WeeklyForecastChart rows={weeklyRows} goal={target} />
+        <WeeklyForecastChart rows={weeks} goal={summary.target} />
         <p className="mt-4 text-xs text-granite">
           {recordedWeeks} closed weeks are read from the weekly pipeline snapshot, each one the open
           book as it stood that Friday, so they never move: re-call a deal or correct its revenue
@@ -262,9 +247,9 @@ export default function ForecastingView({
 
       <Card
         title="Calls that disagree with stage"
-        subtitle={`${mismatches.above.length + mismatches.below.length} of ${openInQuarterOpps.length} open ${phaseLabel} deals are called off the category their stage implies`}
+        subtitle={`${mismatchCount} of ${quality.openCount} open ${phaseLabel} deals are called off the category their stage implies`}
       >
-        {mismatches.above.length + mismatches.below.length === 0 ? (
+        {mismatchCount === 0 ? (
           <p className="text-sm text-granite">Every open deal is called in line with its stage.</p>
         ) : (
           <>
@@ -274,10 +259,10 @@ export default function ForecastingView({
                   Called above stage
                 </p>
                 <p className="mt-2 text-2xl tabular-nums text-bone">
-                  {formatUsdCompact(mismatches.aboveValue)}
+                  {formatUsdCompact(quality.aboveValue)}
                 </p>
                 <p className="mt-1 text-xs text-granite">
-                  {mismatches.above.length} deals called more confidently than the funnel supports.
+                  {quality.aboveCount} deals called more confidently than the funnel supports.
                   Either the stage is stale or the call is optimistic.
                 </p>
               </div>
@@ -286,31 +271,31 @@ export default function ForecastingView({
                   Called below stage
                 </p>
                 <p className="mt-2 text-2xl tabular-nums text-bone">
-                  {formatUsdCompact(mismatches.belowValue)}
+                  {formatUsdCompact(quality.belowValue)}
                 </p>
                 <p className="mt-1 text-xs text-granite">
-                  {mismatches.below.length} late-funnel deals the manager has downgraded. These
-                  still read as healthy on a stage report.
+                  {quality.belowCount} late-funnel deals the manager has downgraded. These still
+                  read as healthy on a stage report.
                 </p>
               </div>
             </div>
             <ul className="mt-4 space-y-1.5">
-              {/* Up to three of each, so a long list of optimistic calls never
-                  crowds out the downgraded late-stage deals. */}
-              {[...mismatches.above.slice(0, 3), ...mismatches.below.slice(0, 3)].map((row) => (
+              {/* Bounded twice: the provider sends a sample, and the view shows
+                  it as-is. Neither side can turn this card into a long list. */}
+              {quality.sample.map((row) => (
                 <li
-                  key={row.opportunity.id}
+                  key={row.opportunityId}
                   className="flex flex-wrap items-baseline gap-x-2 text-xs"
                 >
-                  <span className="text-stone">{row.opportunity.accountName}</span>
+                  <span className="text-stone">{row.accountName}</span>
                   <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-granite">
-                    {STAGE_META[row.opportunity.stage].label} → called{' '}
+                    {STAGE_META[row.stage].label} → called{' '}
                     <span className={row.direction === 'above' ? 'text-signal' : 'text-stone'}>
                       {FORECAST_CATEGORY_META[row.called].label}
                     </span>
                   </span>
                   <span className="tabular-nums text-granite">
-                    {formatUsdCompact(row.opportunity.forecastedRevenue)}
+                    {formatUsdCompact(row.forecastedRevenue)}
                   </span>
                 </li>
               ))}
@@ -327,23 +312,23 @@ export default function ForecastingView({
 
       <Card
         title={`In-quarter opportunities · ${quarter}`}
-        subtitle={`${groupedCount} opportunities grouped by partner manager · expand a manager to see their book`}
+        subtitle={`${filteredCount} opportunities grouped by partner manager · expand a manager to see their book`}
         action={
           <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
             {filterManagerId === 'all'
               ? 'All managers'
-              : data.partnerManagers.find((m) => m.id === filterManagerId)?.name}
+              : groups.find((group) => group.managerId === filterManagerId)?.managerName}
           </span>
         }
       >
         <div className="space-y-2">
-          {groups.map((group) => {
-            const expanded = expandedManagers.includes(group.manager.id);
+          {visibleGroups.map((group, index) => {
+            const expanded = isExpanded(group.managerId, index);
             return (
-              <div key={group.manager.id} className="rounded border border-carbon">
+              <div key={group.managerId} className="rounded border border-carbon">
                 <button
                   type="button"
-                  onClick={() => toggleManager(group.manager.id)}
+                  onClick={() => toggleManager(group.managerId, index)}
                   aria-expanded={expanded}
                   className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-ash/10"
                 >
@@ -353,10 +338,10 @@ export default function ForecastingView({
                     }`}
                   />
                   <span className="flex-1 truncate font-mono text-[11px] uppercase tracking-[0.08em] text-bone">
-                    {group.manager.name}
+                    {group.managerName}
                   </span>
                   <span className="hidden font-mono text-[10px] uppercase tracking-[0.06em] text-granite sm:inline">
-                    {group.opportunities.length} opps
+                    {group.opportunityCount} opps
                   </span>
                   <span className="w-24 text-right font-mono text-xs tabular-nums text-stone">
                     {formatUsdCompact(group.openValue)}
@@ -366,19 +351,17 @@ export default function ForecastingView({
                   </span>
                 </button>
                 {expanded && (
-                  <div className="border-t border-carbon px-4 pb-4 pt-2">
-                    <ForecastTable
-                      opportunities={group.opportunities}
-                      partners={data.partners}
-                      revenueOverrides={revenueOverrides}
-                      notes={notes}
-                      nextSteps={nextSteps}
-                      onSetRevenue={onSetRevenue}
-                      onSetNote={onSetNote}
-                      onSetNextStep={onSetNextStep}
-                      onSetForecastCall={onSetForecastCall}
-                    />
-                  </div>
+                  <ManagerBook
+                    provider={provider}
+                    scope={scope}
+                    managerId={group.managerId}
+                    partnerNames={partnerNames}
+                    edits={edits}
+                    onSetRevenue={onSetRevenue}
+                    onSetNote={onSetNote}
+                    onSetNextStep={onSetNextStep}
+                    onSetForecastCall={onSetForecastCall}
+                  />
                 )}
               </div>
             );
@@ -391,9 +374,96 @@ export default function ForecastingView({
           and re-calls the deal, which re-weights the forecast tiles above — closed rows have no
           call left to make; notes are saved as comments and appear on hover over the comment icon;
           next step is the row-level editable action that feeds the roadmap's missing-next-step
-          alerts.
+          alerts. One page of 25 rows is fetched per expanded manager, not the whole book.
         </p>
       </Card>
+    </div>
+  );
+}
+
+interface ManagerBookProps {
+  provider: DataProvider;
+  scope: ForecastScope;
+  managerId: string;
+  partnerNames: Record<string, string>;
+  edits: SessionEdits;
+  onSetRevenue: (opportunityId: string, value: number) => void;
+  onSetNote: (opportunityId: string, note: string) => void;
+  onSetNextStep: (opportunityId: string, nextStep: string) => void;
+  onSetForecastCall: (opportunityId: string, category: ForecastCategory) => void;
+}
+
+/**
+ * One manager's book, fetched when their group is expanded. A component rather
+ * than a call in the parent's loop because the page state belongs to this
+ * manager: collapsing a group and reopening it starts from the first page
+ * again, and one manager's failed page cannot take the others down with it.
+ */
+function ManagerBook({
+  provider,
+  scope,
+  managerId,
+  partnerNames,
+  edits,
+  onSetRevenue,
+  onSetNote,
+  onSetNextStep,
+  onSetForecastCall,
+}: ManagerBookProps) {
+  const book = useManagerBook(provider, scope, managerId);
+
+  if (book.loading) {
+    return (
+      <p className="border-t border-carbon px-4 py-6 font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+        Loading {managerId}…
+      </p>
+    );
+  }
+
+  if (book.error) {
+    return (
+      <p className="flex flex-wrap items-center gap-3 border-t border-carbon px-4 py-6 text-sm text-granite">
+        <span className="text-signal">This book did not load.</span>
+        {book.error}
+        <button
+          type="button"
+          onClick={book.retry}
+          className="rounded border border-ash px-3 py-1 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20"
+        >
+          Retry
+        </button>
+      </p>
+    );
+  }
+
+  return (
+    <div className="border-t border-carbon px-4 pb-4 pt-2">
+      <ForecastTable
+        opportunities={book.rows}
+        partnerNames={partnerNames}
+        revenueOverrides={edits.revenueOverrides}
+        notes={edits.notes}
+        nextSteps={edits.nextSteps}
+        onSetRevenue={onSetRevenue}
+        onSetNote={onSetNote}
+        onSetNextStep={onSetNextStep}
+        onSetForecastCall={onSetForecastCall}
+      />
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+          Showing {book.rows.length} of {book.totalCount}
+        </p>
+        {book.hasMore && (
+          <button
+            type="button"
+            onClick={book.loadMore}
+            disabled={book.loadingMore}
+            className="rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20 disabled:opacity-50"
+          >
+            {book.loadingMore ? 'Loading…' : 'Load 25 more'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

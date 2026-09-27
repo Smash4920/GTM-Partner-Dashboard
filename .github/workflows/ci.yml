@@ -18,7 +18,9 @@ jobs:
       - run: npm ci
       - run: npm run format:check
       - run: npm run lint
-      - run: npm run test
+      # Coverage, not a bare test run: the thresholds in vite.config.ts are
+      # what keep the view layer from drifting back toward 0%.
+      - run: npm run test:coverage
       - run: npm run build
 
   e2e:

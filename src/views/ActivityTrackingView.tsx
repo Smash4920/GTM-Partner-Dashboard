@@ -95,6 +95,22 @@ export default function ActivityTrackingView({
     [goalWeekByType],
   );
 
+  // Whether the draft still differs from what has been submitted, which is
+  // what decides if closing the modal would throw work away. Recording an
+  // explicit classification that happens to match the calendar's own default
+  // counts as a change: the record now says a manager confirmed it, and
+  // erring toward keeping the draft is the cheaper mistake.
+  const draftDirty = useMemo(() => {
+    const ids = new Set([...Object.keys(draft), ...Object.keys(classifications)]);
+    for (const id of ids) {
+      const drafted = draft[id];
+      const committed = classifications[id];
+      if (drafted?.partnerId !== committed?.partnerId) return true;
+      if (drafted?.type !== committed?.type) return true;
+    }
+    return false;
+  }, [draft, classifications]);
+
   const openCalendar = () => {
     setDraft({ ...classifications });
     setModalOpen(true);
@@ -260,6 +276,7 @@ export default function ActivityTrackingView({
             setDraft((prev) => ({ ...prev, [meetingId]: classification }))
           }
           onAddPartner={(name) => onAddPartner(name, managerId)}
+          dirty={draftDirty}
           onClose={() => setModalOpen(false)}
           onSubmit={() => onCommitClassifications(draft)}
         />

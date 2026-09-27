@@ -121,6 +121,101 @@ const UTILITY_REQUIREMENTS = [
   },
 ];
 
+/**
+ * The order the two roadmaps above get built in, and the reason for it.
+ *
+ * Phases 0 and 1 needed no infrastructure and no production data, and both have
+ * landed in demo mode against MockDataProvider. That is deliberate. Phase 1 was
+ * a refactor of the view layer, and the view layer was the least tested part of
+ * the codebase, so the test harness came first. Doing both against mock data
+ * answered the only question that really matters — do the views survive
+ * pagination and server-side aggregation? — for the price of a refactor rather
+ * than the price of a warehouse. The answer was yes, with one view migrated and
+ * seven to go.
+ */
+interface MigrationPhase {
+  phase: string;
+  title: string;
+  subtitle: string;
+  /** Where the phase stands, shown in green when it has landed. */
+  status?: string;
+  /** True when the work needs no infrastructure and can be built against the mock. */
+  demoMode: boolean;
+  items: string[];
+}
+
+const MIGRATION_PHASES: MigrationPhase[] = [
+  {
+    phase: 'Phase 0',
+    title: 'Test infrastructure',
+    subtitle: 'No infrastructure required · landed in demo mode',
+    status: 'Done · 202 tests, 91.7% statements, gated in CI',
+    demoMode: true,
+    items: [
+      'jsdom, Testing Library, and a coverage provider, with the thresholds in vite.config.ts as a ratchet and CI running coverage rather than a bare test run.',
+      'Coverage went from 27.88% statements overall and 0% across every view, component, App.tsx, and useDashboardData, to 91% — the 5,700 lines Phase 1 was about to move by hand are now watched.',
+      'Four correctness bugs found by the first tests, each with a regression test: a cleared next step coming back, a throw in any view blanking the whole app, unguarded division rendering "∞% of goal", and the meeting modal discarding a week of unsubmitted classifications on a stray click.',
+    ],
+  },
+  {
+    phase: 'Phase 1',
+    title: 'Contract rewrite against the mock',
+    subtitle: 'No infrastructure required · landed in demo mode',
+    status: 'Done for Forecasting · seven views still on the old contract',
+    demoMode: true,
+    items: [
+      'DataProvider is split in two: the scoped aggregates and cursor-paginated row lists that are the target shape, and the eight list-everything calls still being retired. Forecasting reads only the first.',
+      'MockDataProvider writes the answers behind the seam, using the same metrics functions the views used to call themselves — so src/lib/metrics is now the specification a server has to match, and its test suite is the conformance check.',
+      'listPipelineSnapshots() is gone from the client contract entirely. History was ~87% of the payload at production volume and reached the client as millions of rows to answer a question about fourteen weeks; it now leaves as a ~13-bucket series, and only where a view asks.',
+      'Forecasting was migrated first: the hottest edit path and the only view driven by that history. Its aggregate queries return the same kilobytes at 1× and at 100×, and its tables fetch 25 rows at a time per expanded manager.',
+      'Two providers behind the same contract: a simulated remote one with ~250 ms round trips and a 15% failure rate, so per-widget loading, error, and retry states are exercised rather than theoretical, and a 100× book — 21,300 opportunities, 191,000 snapshot rows, ~45 MB — so the claim is demonstrated rather than asserted. Swap them from the header.',
+    ],
+  },
+  {
+    phase: 'Phase 2',
+    title: 'Warehouse and fiscal calendar',
+    subtitle: 'Requires infrastructure',
+    demoMode: false,
+    items: [
+      'Fact and dimension model, with weekly pipeline snapshots partitioned by week and write-once — the "a snapshot already written never changes" invariant becomes a database permission rather than a comment.',
+      'Generate the date dimension from the fiscal calendar module so the dashboard and the warehouse cannot disagree about a quarter boundary or a business day.',
+      'Idempotent weekly snapshot job, keyed so a re-run cannot double-write.',
+    ],
+  },
+  {
+    phase: 'Phase 3',
+    title: 'API with row-level authorization',
+    subtitle: 'Requires infrastructure',
+    demoMode: false,
+    items: [
+      'Serve the Phase 1 contract for real, with pre-aggregated rollups rather than live aggregation over millions of snapshot rows.',
+      'Enforce partner and manager scope in the query itself, so a partner never receives another partner\u2019s data.',
+      'Run the existing metrics tests against the server implementation as a conformance suite.',
+    ],
+  },
+  {
+    phase: 'Phase 4',
+    title: 'Incremental ingestion',
+    subtitle: 'Requires infrastructure',
+    demoMode: false,
+    items: [
+      'Watermark-based incremental sync from the CRM, with bulk backfill inside API quota.',
+      'Calendar and enablement sync over approved OAuth scopes, with reconciliation and dead-letter handling.',
+    ],
+  },
+  {
+    phase: 'Phase 5',
+    title: 'Write path and audit',
+    subtitle: 'Requires infrastructure',
+    demoMode: false,
+    items: [
+      'Persist overrides with author, timestamp, reason, and the source version they were made against.',
+      'Decide and surface what happens when the source system changes a figure underneath an override.',
+      'Optimistic client updates, so an edited forecast still moves every metric instantly instead of waiting on a round trip.',
+    ],
+  },
+];
+
 /** Documents the intentional boundary between this deterministic demo and a live data product. */
 export default function ProductionRequirementsView() {
   return (
@@ -152,6 +247,53 @@ export default function ProductionRequirementsView() {
             </ul>
           </Card>
         ))}
+      </div>
+
+      <div className="pt-6">
+        <div className="border-t border-carbon pt-6">
+          <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-granite">
+            Delivery plan
+          </p>
+          <h2 className="mt-2 text-2xl tracking-tight text-bone">Migration Path</h2>
+          <p className="mt-1 max-w-3xl text-sm text-granite">
+            The order the architecture work gets built in. The first two phases need no
+            infrastructure and no production data — they are done in demo mode against the mock
+            provider, and they are what make every phase after them safe. Full reasoning in{' '}
+            <span className="font-mono text-[11px] text-stone">docs/migration-plan.md</span>.
+          </p>
+        </div>
+        <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {MIGRATION_PHASES.map((phase) => (
+            <Card
+              key={phase.phase}
+              title={`${phase.phase} · ${phase.title}`}
+              subtitle={phase.subtitle}
+            >
+              {phase.status && (
+                <p className="mb-4 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.06em] text-metric">
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-1.5 w-1.5 rounded-full bg-metric"
+                  />
+                  {phase.status}
+                </p>
+              )}
+              <ul className="space-y-3 text-sm text-stone">
+                {phase.items.map((item) => (
+                  <li key={item} className="flex gap-3">
+                    <span
+                      aria-hidden="true"
+                      className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${
+                        phase.demoMode ? 'bg-metric' : 'bg-graphite'
+                      }`}
+                    />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ))}
+        </div>
       </div>
 
       <div className="pt-6">
