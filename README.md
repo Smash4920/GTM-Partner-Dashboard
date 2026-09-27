@@ -263,6 +263,16 @@ npm run build     # type-checks, then bundles to dist/
 npm run preview
 ```
 
+### Dev container
+
+Open the repository in VS Code with the
+[Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+or create a GitHub Codespace to use the checked-in development environment.
+The container provides Node.js 22 on Debian, installs the locked dependencies
+with `npm ci`, and configures ESLint, Tailwind CSS, and the workspace TypeScript
+version. Start the app with `npm run dev`; port 5173 is forwarded and opens in
+the browser automatically.
+
 ## Data contract (the integration seam)
 
 The UI only talks to the `DataProvider` interface

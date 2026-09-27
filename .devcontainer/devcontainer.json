@@ -1,0 +1,26 @@
+{
+  "name": "GTM Partner Dashboard",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "remoteUser": "node",
+  "postCreateCommand": "npm ci",
+  "forwardPorts": [5173],
+  "portsAttributes": {
+    "5173": {
+      "label": "Vite development server",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss"
+      ],
+      "settings": {
+        "eslint.useFlatConfig": true,
+        "typescript.enablePromptUseWorkspaceTsdk": true,
+        "typescript.tsdk": "node_modules/typescript/lib"
+      }
+    }
+  }
+}
