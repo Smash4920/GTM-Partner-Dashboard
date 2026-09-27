@@ -35,6 +35,7 @@ npm run dev       # start the Vite development server
 npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
 npm run lint      # lint all TypeScript and TSX files
+npm run lint:duplicates # detect source duplication with jscpd
 npm test          # run the Vitest suite once
 npm run test:coverage # run Vitest with coverage, enforcing the thresholds in vite.config.ts
 npm run test:e2e  # run the Playwright browser suite
@@ -54,6 +55,7 @@ Before handing off a change, run the same checks as CI, in this order:
 ```bash
 npm run format:check
 npm run lint
+npm run lint:duplicates
 npm run test:coverage
 npm run test:e2e
 npm run build

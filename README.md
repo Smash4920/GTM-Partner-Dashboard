@@ -285,6 +285,7 @@ npm run dev             # http://localhost:5173
 npm run format          # format source, configuration, and documentation
 npm run format:check    # verify formatting without changing files
 npm run lint
+npm run lint:duplicates # jscpd: fail if source duplication exceeds 1.5%
 npm test                # vitest: fiscal/metric helpers, the data contract, the provider seam, the view layer
 npm run test:coverage   # the same suite with coverage, enforcing the thresholds in vite.config.ts
 npm run test:e2e        # playwright: browser workflows and partner-data boundaries
@@ -473,5 +474,5 @@ from the environment: `/` when `VERCEL` is set (Vercel serves at a domain
 root), and `/GTM-Partner-Dashboard/` otherwise (Pages serves project sites
 under the repo name). Set `BASE_PATH` to override for any other host.
 
-CI (`ci.yml`) runs lint + test + build on every pull request and on every push
-to `main`.
+CI (`ci.yml`) runs formatting + lint + duplicate-code detection + coverage +
+build on every pull request and on every push to `main`.
