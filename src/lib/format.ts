@@ -4,10 +4,17 @@ const usd = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 0,
 });
 
+// `minimumFractionDigits: 0` is load-bearing, not redundant. Without it the
+// compact output depends on the ICU build: ICU 75 and earlier (Node 22, which
+// package.json requires and CI runs) treat `maximumFractionDigits: 1` as a
+// minimum too and render "$250.0K", "$999.0" and "$0.0", while ICU 76+
+// (Node 24) drops the trailing zero and renders "$250K". Pinning the minimum
+// gives one answer everywhere, and it is the intended one.
 const usdCompact = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
   notation: 'compact',
+  minimumFractionDigits: 0,
   maximumFractionDigits: 1,
 });
 
