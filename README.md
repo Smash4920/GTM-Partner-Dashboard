@@ -200,7 +200,15 @@ The picker simulates which partner is viewing the shared platform today.
 
 ### Production Requirements
 
-Two tracked backlogs and the order they get built in. The **Architecture
+Two tracked backlogs and the order they get built in. Every item on all three
+boards carries a **status** stamped against what the code actually does today —
+**Complete** (landed and working in the demo), **WIP** (partially implemented,
+usually the client-side half), **Pending** (not started, but buildable in demo
+mode without production access), and **Prod Only** (blocked until production
+connections or infrastructure exist — connecting the CRM, identity provider, or
+warehouse happens at go-live, not before) — next to a "statuses last updated"
+date, the day the stamps were last reviewed against the code, so a Complete
+that has gone stale is visibly stale. The **Architecture
 roadmap** documents the server-side foundation required before connecting
 protected systems (identity and row-level authorization, source-system
 integration, persistence and audit, security and compliance, reliability). The

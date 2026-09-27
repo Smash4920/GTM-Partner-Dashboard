@@ -8,6 +8,13 @@ rather than loading the entire ecosystem into the browser". This document is
 the _how_: where the current design breaks, the one contract change everything
 else follows from, and the order the work has to happen in.
 
+Every item on that board — the architecture roadmap, the migration path, and
+the utility backlog — carries a status stamped against the code as it stands
+(Complete, WIP, Pending, or Prod Only for the steps that wait on production
+connections or infrastructure), together with the date the statuses were last
+reviewed. This document is the reasoning underneath those statuses, not a
+duplicate of them.
+
 ## Where the current design breaks
 
 Every view today reads a single in-memory `DashboardData` containing the entire
