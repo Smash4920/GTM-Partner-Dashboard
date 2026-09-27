@@ -16,6 +16,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run check:file-limits
       - run: npm run format:check
       - run: npm run lint
       # Coverage, not a bare test run: the thresholds in vite.config.ts are
