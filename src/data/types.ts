@@ -278,3 +278,21 @@ export interface ProviderBook extends DashboardData {
   /** Append-only weekly recordings of the open book. Never corrected. */
   snapshots: PipelineSnapshot[];
 }
+
+/**
+ * Where a Production Requirements roadmap item stands, stamped against what the
+ * code actually does today:
+ * - complete:  landed and working in the demo against the mock provider
+ * - wip:        partially implemented; part has landed, the rest is in flight
+ * - pending:    not started, and buildable in demo mode without production access
+ * - prod-only:  blocked until production connections or infrastructure exist
+ *               (CRM, identity provider, warehouse, environments), so it runs
+ *               at go-live rather than before it
+ */
+export type RoadmapStatus = 'complete' | 'wip' | 'pending' | 'prod-only';
+
+/** One checklist line on the Production Requirements boards. */
+export interface RoadmapItem {
+  text: string;
+  status: RoadmapStatus;
+}

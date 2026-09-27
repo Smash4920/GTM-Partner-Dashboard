@@ -9,6 +9,7 @@ import type {
   PartnerTier,
   PartnerType,
   Region,
+  RoadmapStatus,
   TeamRole,
   TeamUserStatus,
 } from './types';
@@ -283,3 +284,45 @@ export const NOTIFICATION_CHANNEL_META: Record<
 };
 
 export const NOTIFICATION_CHANNELS: NotificationChannel[] = ['email', 'slack', 'in-app'];
+
+/**
+ * The statuses stamped on every Production Requirements item, in the order the
+ * page legend lists them. Prod-only steps carry a dashed border, echoing the
+ * dashed "planned" wires on the Data Connections map: not real yet.
+ */
+export const ROADMAP_STATUSES: RoadmapStatus[] = ['complete', 'wip', 'pending', 'prod-only'];
+
+export const ROADMAP_STATUS_META: Record<
+  RoadmapStatus,
+  { label: string; description: string; badgeClass: string }
+> = {
+  complete: {
+    label: 'Complete',
+    description: 'Landed and working in the demo against the mock provider.',
+    badgeClass: 'border border-metric text-metric',
+  },
+  wip: {
+    label: 'WIP',
+    description: 'Partially implemented — part has landed, the rest is in flight.',
+    badgeClass: 'border border-signal text-signal',
+  },
+  pending: {
+    label: 'Pending',
+    description: 'Not started, and buildable in demo mode without production access.',
+    badgeClass: 'border border-graphite text-granite',
+  },
+  'prod-only': {
+    label: 'Prod Only',
+    description: 'Blocked until production connections or infrastructure exist; runs at go-live.',
+    badgeClass: 'border border-dashed border-ash text-stone',
+  },
+};
+
+/**
+ * When the roadmap statuses above were last reviewed against the code. Bump it
+ * in the same change that moves any status: a board that stamps items
+ * "Complete" without saying when that was checked is a claim without a date.
+ * A fixed UTC calendar date, like SNAPSHOT_DATE, so the render is deterministic
+ * and never depends on the wall clock.
+ */
+export const ROADMAP_LAST_UPDATED = new Date('2026-09-27T00:00:00Z');
