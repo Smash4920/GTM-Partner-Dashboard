@@ -378,7 +378,8 @@ export default function ForecastTable({
                   ) : (
                     <span className="inline-flex items-center gap-1.5">
                       <span className={nextStep ? 'text-stone' : 'font-mono text-[10px] uppercase tracking-[0.05em] text-graphite'}>
-                        {nextStep ?? '—'}
+                        {/* `||`, not `??`: a cleared next step is '' and still reads as "none". */}
+                        {nextStep || '—'}
                       </span>
                       <button
                         type="button"

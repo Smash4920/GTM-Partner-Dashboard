@@ -195,10 +195,17 @@ The picker simulates which partner is viewing the shared platform today.
 
 ### Production Requirements
 
-Two tracked backlogs. The **Architecture roadmap** documents the server-side
-foundation required before connecting protected systems (identity and row-level
-authorization, source-system integration, persistence and audit, security and
-compliance, reliability). The **Utility Improvements** section is the GTM
+Two tracked backlogs and the order they get built in. The **Architecture
+roadmap** documents the server-side foundation required before connecting
+protected systems (identity and row-level authorization, source-system
+integration, persistence and audit, security and compliance, reliability). The
+**Migration Path** sequences that foundation into six phases; the first two
+need no infrastructure and no production data, so they are built in demo mode
+against `MockDataProvider`, and they are what make the later phases safe. Full
+reasoning — where the current design breaks at volume, the contract change
+everything else follows from, and rough sizing — lives in
+[`docs/migration-plan.md`](docs/migration-plan.md). The **Utility
+Improvements** section is the GTM
 Partnerships leader's product roadmap — forecast quality, partner health and
 lifecycle, deal-registration operations, actionability, partner portal utility,
 attribution and crediting, and services delivery (which partner delivers which

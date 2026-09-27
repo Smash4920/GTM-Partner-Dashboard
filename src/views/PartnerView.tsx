@@ -56,6 +56,16 @@ const PHASE_OPTIONS: ChipOption<FiscalPhase>[] = FISCAL_PHASES.map((phase) => ({
 }));
 
 /**
+ * Attainment against a certification goal. A goal of zero is a real state in
+ * an enablement system (a partner tier with nothing required of it), and
+ * dividing by it would reach Intl.NumberFormat as Infinity and render "∞% of
+ * goal". The same guard sits on the leaderboard's certification cell.
+ */
+function attainmentText(certified: number, goal: number): string {
+  return goal > 0 ? `${formatPct(certified / goal)} of goal` : 'No goal set';
+}
+
+/**
  * Partner-facing portal. In production this view is scoped by partner SSO;
  * the picker here simulates that. Only Sell With and Allocate opportunities
  * are visible — Sell To is internal-only.
@@ -299,9 +309,10 @@ export default function PartnerView({ data }: { data: DashboardData }) {
           value={certification ? `${certification.partnerStrategistsCertified}/${certification.partnerStrategistsGoal}` : '—'}
           sub={
             certification
-              ? `${formatPct(
-                  certification.partnerStrategistsCertified / certification.partnerStrategistsGoal,
-                )} of goal`
+              ? attainmentText(
+                  certification.partnerStrategistsCertified,
+                  certification.partnerStrategistsGoal,
+                )
               : 'No certification data'
           }
         />
@@ -310,9 +321,10 @@ export default function PartnerView({ data }: { data: DashboardData }) {
           value={certification ? `${certification.partnerEngineersCertified}/${certification.partnerEngineersGoal}` : '—'}
           sub={
             certification
-              ? `${formatPct(
-                  certification.partnerEngineersCertified / certification.partnerEngineersGoal,
-                )} of goal`
+              ? attainmentText(
+                  certification.partnerEngineersCertified,
+                  certification.partnerEngineersGoal,
+                )
               : 'No certification data'
           }
         />

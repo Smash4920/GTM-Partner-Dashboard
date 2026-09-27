@@ -1,8 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
+import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar, { type Route } from './components/Sidebar';
 import { MenuIcon } from './components/icons';
 import { SNAPSHOT_DATE } from './data/constants';
 import { MockDataProvider } from './data/mock/MockDataProvider';
+import { applySessionEdits } from './data/sessionEdits';
 import type {
   DashboardNotification,
   ForecastCategory,
@@ -79,30 +81,16 @@ export default function App() {
   // the opportunity book itself, so every KPI, chart, and table in the app
   // reads the corrected figure rather than the one Salesforce supplied. The
   // weighted forecast therefore moves the moment a manager re-calls a deal.
-  const opportunities = useMemo(() => {
-    const book = data?.opportunities ?? [];
-    return book.map((opportunity) => {
-      const revenue = revenueOverrides[opportunity.id];
-      const note = notes[opportunity.id];
-      const nextStep = nextSteps[opportunity.id];
-      const call = forecastCalls[opportunity.id];
-      if (
-        revenue === undefined &&
-        note === undefined &&
-        nextStep === undefined &&
-        call === undefined
-      ) {
-        return opportunity;
-      }
-      return {
-        ...opportunity,
-        forecastedRevenue: revenue ?? opportunity.forecastedRevenue,
-        notes: note ?? opportunity.notes,
-        nextStep: nextStep ?? opportunity.nextStep,
-        forecastCategory: call ?? opportunity.forecastCategory,
-      };
-    });
-  }, [data?.opportunities, revenueOverrides, notes, nextSteps, forecastCalls]);
+  const opportunities = useMemo(
+    () =>
+      applySessionEdits(data?.opportunities ?? [], {
+        revenueOverrides,
+        notes,
+        nextSteps,
+        forecastCalls,
+      }),
+    [data?.opportunities, revenueOverrides, notes, nextSteps, forecastCalls],
+  );
 
   // The single book every view renders: provider data plus in-app edits.
   const live = useMemo(
@@ -113,23 +101,17 @@ export default function App() {
   const setRevenue = (opportunityId: string, value: number) =>
     setRevenueOverrides((prev) => ({ ...prev, [opportunityId]: value }));
 
-  const setNote = (opportunityId: string, note: string) => {
-    setNotes((prev) => {
-      const next = { ...prev };
-      if (note) next[opportunityId] = note;
-      else delete next[opportunityId];
-      return next;
-    });
-  };
+  // An emptied field is stored as '' rather than deleted. Deleting the key
+  // would drop back through the `??` below to the provider's value, so
+  // clearing a next step the CRM supplied would silently restore it and the
+  // edit would appear to fail. Empty string is the tombstone: "the manager
+  // cleared this", which is a different fact from "the manager never touched
+  // it" and has to outlive the keystroke that produced it.
+  const setNote = (opportunityId: string, note: string) =>
+    setNotes((prev) => ({ ...prev, [opportunityId]: note }));
 
-  const setNextStep = (opportunityId: string, nextStep: string) => {
-    setNextSteps((prev) => {
-      const next = { ...prev };
-      if (nextStep) next[opportunityId] = nextStep;
-      else delete next[opportunityId];
-      return next;
-    });
-  };
+  const setNextStep = (opportunityId: string, nextStep: string) =>
+    setNextSteps((prev) => ({ ...prev, [opportunityId]: nextStep }));
 
   const setForecastCall = (opportunityId: string, category: ForecastCategory) =>
     setForecastCalls((prev) => ({ ...prev, [opportunityId]: category }));
@@ -263,7 +245,7 @@ export default function App() {
             </p>
           )}
           {live && (
-            <>
+            <ErrorBoundary resetKey={route}>
               {route === 'home' && (
                 <HomeView data={live} classifications={classifications} />
               )}
@@ -304,7 +286,7 @@ export default function App() {
                   onSendNotification={sendNotification}
                 />
               )}
-            </>
+            </ErrorBoundary>
           )}
         </main>
       </div>

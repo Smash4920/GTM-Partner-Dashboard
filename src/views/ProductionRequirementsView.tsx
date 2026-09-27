@@ -121,6 +121,86 @@ const UTILITY_REQUIREMENTS = [
   },
 ];
 
+/**
+ * The order the two roadmaps above get built in, and the reason for it.
+ *
+ * Phases 0 and 1 need no infrastructure and no production data: they are done
+ * in demo mode against MockDataProvider. That is deliberate. Phase 1 is a
+ * refactor of the view layer, and the view layer is the least tested part of
+ * the codebase, so the test harness has to come first. Doing both against
+ * mock data answers the only question that really matters — do the views
+ * survive pagination and server-side aggregation? — for the price of a
+ * refactor rather than the price of a warehouse.
+ */
+const MIGRATION_PHASES = [
+  {
+    phase: 'Phase 0',
+    title: 'Test infrastructure',
+    subtitle: 'No infrastructure required · buildable in demo mode',
+    demoMode: true,
+    items: [
+      'Add jsdom, Testing Library, and a coverage provider; gate coverage in CI so it cannot drift down.',
+      'Cover the edit surface first: the forecast table, the session-edit merge layer, and the meeting log modal.',
+      'Fix the known correctness bugs with regression tests: a cleared next step reverting, the missing error boundary, unguarded division into a percentage, and the modal discarding uncommitted work.',
+    ],
+  },
+  {
+    phase: 'Phase 1',
+    title: 'Contract rewrite against the mock',
+    subtitle: 'No infrastructure required · buildable in demo mode',
+    demoMode: true,
+    items: [
+      'Reshape DataProvider from nine list-everything calls into scoped aggregates and cursor-paginated row lists.',
+      'Implement the new contract in MockDataProvider by calling the existing metrics functions internally, which moves the aggregation behind the seam — exactly where it lives on a server — while the data stays local.',
+      'Migrate Forecasting first: it is the hottest edit path and the only view driven by the weekly snapshot collection, which is ~87% of the payload at production volume and can never ship whole.',
+      'Add a simulated remote provider (latency, pagination, injected failures) so per-widget loading and error states are exercised rather than theoretical, and a scale provider at ~100× volume so the contract is demonstrated to hold rather than asserted.',
+    ],
+  },
+  {
+    phase: 'Phase 2',
+    title: 'Warehouse and fiscal calendar',
+    subtitle: 'Requires infrastructure',
+    demoMode: false,
+    items: [
+      'Fact and dimension model, with weekly pipeline snapshots partitioned by week and write-once — the "a snapshot already written never changes" invariant becomes a database permission rather than a comment.',
+      'Generate the date dimension from the fiscal calendar module so the dashboard and the warehouse cannot disagree about a quarter boundary or a business day.',
+      'Idempotent weekly snapshot job, keyed so a re-run cannot double-write.',
+    ],
+  },
+  {
+    phase: 'Phase 3',
+    title: 'API with row-level authorization',
+    subtitle: 'Requires infrastructure',
+    demoMode: false,
+    items: [
+      'Serve the Phase 1 contract for real, with pre-aggregated rollups rather than live aggregation over millions of snapshot rows.',
+      'Enforce partner and manager scope in the query itself, so a partner never receives another partner\u2019s data.',
+      'Run the existing metrics tests against the server implementation as a conformance suite.',
+    ],
+  },
+  {
+    phase: 'Phase 4',
+    title: 'Incremental ingestion',
+    subtitle: 'Requires infrastructure',
+    demoMode: false,
+    items: [
+      'Watermark-based incremental sync from the CRM, with bulk backfill inside API quota.',
+      'Calendar and enablement sync over approved OAuth scopes, with reconciliation and dead-letter handling.',
+    ],
+  },
+  {
+    phase: 'Phase 5',
+    title: 'Write path and audit',
+    subtitle: 'Requires infrastructure',
+    demoMode: false,
+    items: [
+      'Persist overrides with author, timestamp, reason, and the source version they were made against.',
+      'Decide and surface what happens when the source system changes a figure underneath an override.',
+      'Optimistic client updates, so an edited forecast still moves every metric instantly instead of waiting on a round trip.',
+    ],
+  },
+];
+
 /** Documents the intentional boundary between this deterministic demo and a live data product. */
 export default function ProductionRequirementsView() {
   return (
@@ -149,6 +229,44 @@ export default function ProductionRequirementsView() {
             </ul>
           </Card>
         ))}
+      </div>
+
+      <div className="pt-6">
+        <div className="border-t border-carbon pt-6">
+          <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-granite">
+            Delivery plan
+          </p>
+          <h2 className="mt-2 text-2xl tracking-tight text-bone">Migration Path</h2>
+          <p className="mt-1 max-w-3xl text-sm text-granite">
+            The order the architecture work gets built in. The first two phases need no
+            infrastructure and no production data — they are done in demo mode against the mock
+            provider, and they are what make every phase after them safe. Full reasoning in{' '}
+            <span className="font-mono text-[11px] text-stone">docs/migration-plan.md</span>.
+          </p>
+        </div>
+        <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {MIGRATION_PHASES.map((phase) => (
+            <Card
+              key={phase.phase}
+              title={`${phase.phase} · ${phase.title}`}
+              subtitle={phase.subtitle}
+            >
+              <ul className="space-y-3 text-sm text-stone">
+                {phase.items.map((item) => (
+                  <li key={item} className="flex gap-3">
+                    <span
+                      aria-hidden="true"
+                      className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${
+                        phase.demoMode ? 'bg-metric' : 'bg-graphite'
+                      }`}
+                    />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ))}
+        </div>
       </div>
 
       <div className="pt-6">
