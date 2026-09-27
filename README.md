@@ -255,10 +255,11 @@ end-of-life in April 2026 and the current Vite / Vitest / ESLint majors no
 longer support it.
 
 ```bash
-npm install
+npm ci
 npm run dev       # http://localhost:5173
 npm run lint
 npm test          # vitest: fiscal/metric helpers + the mock data contract
+npm run test:list # collect and list tests without running them
 npm run build     # type-checks, then bundles to dist/
 npm run preview
 ```
