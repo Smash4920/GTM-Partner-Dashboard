@@ -1,7 +1,4 @@
-import {
-  NOTIFICATION_CHANNEL_META,
-  TEAM_ROLE_META,
-} from '../data/constants';
+import { NOTIFICATION_CHANNEL_META, TEAM_ROLE_META } from '../data/constants';
 import type {
   DashboardNotification,
   DealRegistration,
@@ -10,10 +7,7 @@ import type {
   TeamUser,
 } from '../data/types';
 import { formatDate, formatTime } from '../lib/format';
-import {
-  NOTIFICATION_TEMPLATES,
-  type NotificationTemplateId,
-} from '../lib/notifications';
+import { NOTIFICATION_TEMPLATES, type NotificationTemplateId } from '../lib/notifications';
 import type { RegistrationSlaAlert } from '../lib/metrics';
 import { SendIcon } from './icons';
 
@@ -37,7 +31,10 @@ interface NotificationComposerProps {
   /** The most recent send this session, shown as a delivery confirmation. */
   lastSent?: DashboardNotification;
   /** Builds the copy for a template/registration pair. */
-  describe: (template: NotificationTemplateId, registrationId: string | null) => {
+  describe: (
+    template: NotificationTemplateId,
+    registrationId: string | null,
+  ) => {
     subject: string;
     body: string;
   };

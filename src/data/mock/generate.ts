@@ -10,11 +10,7 @@ import {
   SNAPSHOT_DATE,
   STAGES,
 } from '../constants';
-import {
-  businessDaysBefore,
-  quarterWindow,
-  startOfWeekUtc,
-} from '../../lib/fiscal';
+import { businessDaysBefore, quarterWindow, startOfWeekUtc } from '../../lib/fiscal';
 import type {
   ActivityMeeting,
   DealRegistration,
@@ -100,20 +96,69 @@ const PARTNER_NAMES = [
 ];
 
 const NAME_PREFIX = [
-  'Apex', 'Vertex', 'Nova', 'Juniper', 'Orion', 'Helix', 'Prime', 'Sterling',
-  'Atlas', 'Zephyr', 'Aurora', 'Granite', 'Pinnacle', 'Quartz', 'Cedar', 'Onyx',
-  'Sable', 'Talon', 'Vireo', 'Willow', 'Borealis', 'Dunelight', 'Ember', 'Fjord',
-  'Halcyon', 'Indigo', 'Kestrel', 'Lumen',
+  'Apex',
+  'Vertex',
+  'Nova',
+  'Juniper',
+  'Orion',
+  'Helix',
+  'Prime',
+  'Sterling',
+  'Atlas',
+  'Zephyr',
+  'Aurora',
+  'Granite',
+  'Pinnacle',
+  'Quartz',
+  'Cedar',
+  'Onyx',
+  'Sable',
+  'Talon',
+  'Vireo',
+  'Willow',
+  'Borealis',
+  'Dunelight',
+  'Ember',
+  'Fjord',
+  'Halcyon',
+  'Indigo',
+  'Kestrel',
+  'Lumen',
 ];
 
 const NAME_INDUSTRY = [
-  'Logistics', 'Health', 'Manufacturing', 'Retail', 'Banking', 'Energy', 'Media',
-  'Insurance', 'Construction', 'Pharma', 'Hospitality', 'Telecom', 'AgTech',
-  'Aerospace', 'Education', 'Real Estate', 'Automotive', 'Food', 'Legal', 'Sports',
+  'Logistics',
+  'Health',
+  'Manufacturing',
+  'Retail',
+  'Banking',
+  'Energy',
+  'Media',
+  'Insurance',
+  'Construction',
+  'Pharma',
+  'Hospitality',
+  'Telecom',
+  'AgTech',
+  'Aerospace',
+  'Education',
+  'Real Estate',
+  'Automotive',
+  'Food',
+  'Legal',
+  'Sports',
 ];
 
 const NAME_SUFFIX = [
-  'Group', 'Inc.', 'Co.', 'Corp.', 'Holdings', 'Systems', 'Industries', 'Ventures', 'Labs',
+  'Group',
+  'Inc.',
+  'Co.',
+  'Corp.',
+  'Holdings',
+  'Systems',
+  'Industries',
+  'Ventures',
+  'Labs',
 ];
 
 const REJECTION_REASONS = [
@@ -140,7 +185,11 @@ const OVERLAP_SOURCES = [9, 23, 38, 52, 67, 81, 96, 110, 125, 139, 154, 168];
 const SLA_WARNING_ROWS = 3;
 
 /** Internal partner-team roster: the five partner managers plus the roles around them. */
-const TEAM_USERS: readonly (readonly [name: string, role: TeamUser['role'], status: TeamUser['status']])[] = [
+const TEAM_USERS: readonly (readonly [
+  name: string,
+  role: TeamUser['role'],
+  status: TeamUser['status'],
+])[] = [
   // The five managers align to the five partner managers in order.
   ['Alex Morgan', 'partner-manager', 'active'],
   ['Jordan Lee', 'partner-manager', 'active'],
@@ -362,9 +411,7 @@ function makeAccountName(taken: Set<string>): string {
 
 function generateRegistrations(partners: Partner[]): DealRegistration[] {
   const taken = new Set<string>();
-  const partnerWeights = partners.map(
-    (partner) => [partner, TIER_ACTIVITY[partner.tier]] as const,
-  );
+  const partnerWeights = partners.map((partner) => [partner, TIER_ACTIVITY[partner.tier]] as const);
   const registrations: DealRegistration[] = [];
 
   for (let i = 0; i < REGISTRATION_COUNT; i += 1) {
@@ -506,9 +553,7 @@ function generateOpportunities(
 ): Opportunity[] {
   const taken = new Set<string>();
   const partnerById = new Map(partners.map((partner) => [partner.id, partner]));
-  const partnerWeights = partners.map(
-    (partner) => [partner, TIER_ACTIVITY[partner.tier]] as const,
-  );
+  const partnerWeights = partners.map((partner) => [partner, TIER_ACTIVITY[partner.tier]] as const);
   const opportunities: Opportunity[] = [];
 
   // Approved + converted registrations become Sell With opportunities.
@@ -555,7 +600,8 @@ function generateOpportunities(
     if (!opportunity.registrationId) continue;
     const createdAt = Math.min(
       SNAPSHOT.getTime(),
-      new Date(opportunity.createdAt).getTime() + conversionGapDays(opportunity.registrationId) * DAY,
+      new Date(opportunity.createdAt).getTime() +
+        conversionGapDays(opportunity.registrationId) * DAY,
     );
     opportunity.createdAt = iso(new Date(createdAt));
   }
@@ -578,9 +624,7 @@ function generateOpportunities(
  */
 function generatePriorYearOpportunities(partners: Partner[]): Opportunity[] {
   const taken = new Set<string>();
-  const partnerWeights = partners.map(
-    (partner) => [partner, TIER_ACTIVITY[partner.tier]] as const,
-  );
+  const partnerWeights = partners.map((partner) => [partner, TIER_ACTIVITY[partner.tier]] as const);
   const typeWeights: readonly (readonly [OpportunityType, number])[] = [
     ['sell-with', 5],
     ['sell-to', 3],
@@ -656,8 +700,7 @@ function snapshotRevenue(opportunity: Opportunity, weeksAgo: number): number {
   const stepWeeksAgo = 2 + (hash % 6);
   if (weeksAgo < stepWeeksAgo) return opportunity.forecastedRevenue;
   // A cut deal was larger before the step; a grown deal was smaller.
-  const factor =
-    hash % 9 === 0 ? 1.1 + ((hash >> 3) % 4) * 0.08 : 0.62 + ((hash >> 3) % 5) * 0.07;
+  const factor = hash % 9 === 0 ? 1.1 + ((hash >> 3) % 4) * 0.08 : 0.62 + ((hash >> 3) % 5) * 0.07;
   return Math.round((opportunity.forecastedRevenue * factor) / 1_000) * 1_000;
 }
 
@@ -671,8 +714,7 @@ function snapshotCall(
   opportunity: Opportunity,
   weeksAgo: number,
 ): { category: ForecastCategory; stage: OpportunityStage } {
-  const current =
-    opportunity.forecastCategory ?? FORECAST_CATEGORY_FOR_STAGE[opportunity.stage];
+  const current = opportunity.forecastCategory ?? FORECAST_CATEGORY_FOR_STAGE[opportunity.stage];
   const hash = idHash(opportunity.id, 11);
   if (hash % 4 !== 0) return { category: current, stage: opportunity.stage };
   const calledWeeksAgo = 1 + (hash % 5);
@@ -724,9 +766,7 @@ function generateSnapshots(opportunities: Opportunity[]): PipelineSnapshot[] {
     const weeksAgo = Math.round((lastMonday - takenAt) / WEEK);
     for (const opportunity of opportunities) {
       if (new Date(opportunity.createdAt).getTime() > takenAt) continue;
-      const closedAt = opportunity.closedAt
-        ? new Date(opportunity.closedAt).getTime()
-        : undefined;
+      const closedAt = opportunity.closedAt ? new Date(opportunity.closedAt).getTime() : undefined;
       // A snapshot is the open book: membership is what records that the deal
       // had neither closed nor been created yet at that moment.
       if (closedAt !== undefined && closedAt <= takenAt) continue;
@@ -761,7 +801,10 @@ function generateTargets(partners: Partner[]): Target[] {
   return targets;
 }
 
-function generateActivities(partners: Partner[], partnerManagers: PartnerManager[]): ActivityMeeting[] {
+function generateActivities(
+  partners: Partner[],
+  partnerManagers: PartnerManager[],
+): ActivityMeeting[] {
   const activities: ActivityMeeting[] = [];
   // Activity weeks anchor to the Monday of the snapshot week (fiscal.ts owns
   // the week rule, so the generator and the tracker cannot drift apart).
@@ -775,13 +818,12 @@ function generateActivities(partners: Partner[], partnerManagers: PartnerManager
     // so give every manager a full week of their own calendar (the weekly
     // goal is 10 meetings). Prior weeks are a single seeded pool across all
     // managers, which reads as lighter activity further back.
-    const meetingsThisWeek =
-      weekIndex === 0
-        ? 0
-        : randInt(rand, 12, 24);
+    const meetingsThisWeek = weekIndex === 0 ? 0 : randInt(rand, 12, 24);
     for (let meetingIndex = 0; meetingIndex < meetingsThisWeek; meetingIndex += 1) {
       const partner = pick(rand, partners);
-      const manager = partnerManagers.find((candidate) => candidate.id === partner.partnerManagerId);
+      const manager = partnerManagers.find(
+        (candidate) => candidate.id === partner.partnerManagerId,
+      );
       const occurredAt = new Date(
         weekStart.getTime() + randInt(rand, 0, 4) * DAY + randInt(rand, 9, 16) * 3_600_000,
       );

@@ -79,7 +79,8 @@ export default function ForecastTable({
     setRevenueDraft(
       String(
         revenueOverrides[opportunityId] ??
-          opportunities.find((opportunity) => opportunity.id === opportunityId)?.forecastedRevenue ??
+          opportunities.find((opportunity) => opportunity.id === opportunityId)
+            ?.forecastedRevenue ??
           '',
       ),
     );
@@ -259,7 +260,9 @@ export default function ForecastTable({
                 </td>
                 <td className="py-3 pr-3">
                   {opportunity.outcome ? (
-                    <span className={opportunity.outcome === 'won' ? 'text-metric' : 'text-granite'}>
+                    <span
+                      className={opportunity.outcome === 'won' ? 'text-metric' : 'text-granite'}
+                    >
                       {opportunity.outcome === 'won' ? 'Closed won' : 'Closed lost'}
                     </span>
                   ) : (
@@ -279,10 +282,7 @@ export default function ForecastTable({
                           autoFocus
                           value={called}
                           onChange={(event) =>
-                            commitCategory(
-                              opportunity.id,
-                              event.target.value as ForecastCategory,
-                            )
+                            commitCategory(opportunity.id, event.target.value as ForecastCategory)
                           }
                           onKeyDown={(event) => {
                             if (event.key === 'Escape') cancelCategoryEdit();
@@ -292,11 +292,7 @@ export default function ForecastTable({
                           className="cursor-pointer rounded border border-ash bg-carbon px-1.5 py-1 text-sm text-bone focus:border-signal focus:outline-none"
                         >
                           {CATEGORY_OPTIONS.map((category) => (
-                            <option
-                              key={category}
-                              value={category}
-                              className="bg-carbon text-bone"
-                            >
+                            <option key={category} value={category} className="bg-carbon text-bone">
                               {`${FORECAST_CATEGORY_META[category].label} (${Math.round(
                                 FORECAST_CATEGORY_META[category].weight * 100,
                               )}%)`}
@@ -377,7 +373,13 @@ export default function ForecastTable({
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1.5">
-                      <span className={nextStep ? 'text-stone' : 'font-mono text-[10px] uppercase tracking-[0.05em] text-graphite'}>
+                      <span
+                        className={
+                          nextStep
+                            ? 'text-stone'
+                            : 'font-mono text-[10px] uppercase tracking-[0.05em] text-graphite'
+                        }
+                      >
                         {nextStep ?? '—'}
                       </span>
                       <button
@@ -427,10 +429,7 @@ export default function ForecastTable({
                   ) : (
                     <span className="inline-flex items-center justify-end gap-1.5">
                       {note ? (
-                        <span
-                          className="flex items-center gap-1 text-granite"
-                          title={note}
-                        >
+                        <span className="flex items-center gap-1 text-granite" title={note}>
                           <CommentIcon className="h-3.5 w-3.5 text-signal" />
                         </span>
                       ) : (

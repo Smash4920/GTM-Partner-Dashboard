@@ -109,7 +109,11 @@ export const CONNECTION_NODES: ConnectionNode[] = [
     tier: 'source',
     status: 'required',
     summary: 'System of record for the opportunity book, deal registrations, accounts, and quota.',
-    supplies: ['Opportunity book and stages', 'Deal registrations and decisions', 'Targets and fiscal periods'],
+    supplies: [
+      'Opportunity book and stages',
+      'Deal registrations and decisions',
+      'Targets and fiscal periods',
+    ],
     methods: ['listOpportunities()', 'listRegistrations()', 'getTargets()'],
     source: 'Opportunity, Deal_Registration__c, Account, quota objects',
     auth: 'Connected app, OAuth 2.0 JWT bearer, service account',
