@@ -34,7 +34,7 @@ Run commands from the repository root.
 npm run dev       # start the Vite development server
 npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
-npm run lint      # lint all TypeScript and TSX files
+npm run lint      # lint TypeScript/TSX and enforce module boundaries
 npm test          # run the Vitest suite once
 npm run test:coverage # run Vitest with coverage, enforcing the thresholds in vite.config.ts
 npm run test:e2e  # run the Playwright browser suite
@@ -94,6 +94,10 @@ survivable.
 
 ## Architecture and data rules
 
+- ESLint enforces the dependency direction declared in `eslint.config.js`:
+  app shell → views → components → data/domain helpers. Providers are isolated
+  under `src/data/mock/`, and production views and components cannot import
+  them directly. Tests may cross these boundaries to build fixtures.
 - Views consume the merged `DashboardData` passed down from `App.tsx`; they
   must not import mock records directly. The one exception is Forecasting,
   which reads the scoped contract through `useForecastQueries.ts` and passes

@@ -284,7 +284,7 @@ npm ci
 npm run dev             # http://localhost:5173
 npm run format          # format source, configuration, and documentation
 npm run format:check    # verify formatting without changing files
-npm run lint
+npm run lint            # lint source and enforce module boundaries
 npm test                # vitest: fiscal/metric helpers, the data contract, the provider seam, the view layer
 npm run test:coverage   # the same suite with coverage, enforcing the thresholds in vite.config.ts
 npm run test:e2e        # playwright: browser workflows and partner-data boundaries
@@ -315,6 +315,13 @@ VITE_LOG_LEVEL=debug npm run dev
 `npm ci` installs a Husky pre-commit hook. Every commit runs the linter and
 Vitest suite, preventing known lint violations and unit test failures from
 entering the repository.
+
+The linter also enforces the source dependency direction configured in
+[`eslint.config.js`](eslint.config.js): the app shell may compose views, views
+may use reusable components, and UI layers may depend on data contracts and
+domain helpers. Data and domain modules cannot reach back into the UI, and
+production views and components cannot import mock providers directly. Tests
+may cross these boundaries to construct fixtures.
 
 ### Dev container
 
