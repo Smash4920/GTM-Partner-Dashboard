@@ -20,10 +20,11 @@ function renderTable(options: {
     onSetNextStep: vi.fn(),
     onSetForecastCall: vi.fn(),
   };
+  const partner = makePartner();
   render(
     <ForecastTable
       opportunities={options.opportunities ?? [makeOpportunity()]}
-      partners={[makePartner()]}
+      partnerNames={{ [partner.id]: partner.name }}
       revenueOverrides={options.revenueOverrides ?? {}}
       notes={options.notes ?? {}}
       nextSteps={options.nextSteps ?? {}}

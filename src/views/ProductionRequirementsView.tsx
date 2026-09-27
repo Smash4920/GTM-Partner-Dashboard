@@ -124,36 +124,51 @@ const UTILITY_REQUIREMENTS = [
 /**
  * The order the two roadmaps above get built in, and the reason for it.
  *
- * Phases 0 and 1 need no infrastructure and no production data: they are done
- * in demo mode against MockDataProvider. That is deliberate. Phase 1 is a
- * refactor of the view layer, and the view layer is the least tested part of
- * the codebase, so the test harness has to come first. Doing both against
- * mock data answers the only question that really matters — do the views
- * survive pagination and server-side aggregation? — for the price of a
- * refactor rather than the price of a warehouse.
+ * Phases 0 and 1 needed no infrastructure and no production data, and both have
+ * landed in demo mode against MockDataProvider. That is deliberate. Phase 1 was
+ * a refactor of the view layer, and the view layer was the least tested part of
+ * the codebase, so the test harness came first. Doing both against mock data
+ * answered the only question that really matters — do the views survive
+ * pagination and server-side aggregation? — for the price of a refactor rather
+ * than the price of a warehouse. The answer was yes, with one view migrated and
+ * seven to go.
  */
-const MIGRATION_PHASES = [
+interface MigrationPhase {
+  phase: string;
+  title: string;
+  subtitle: string;
+  /** Where the phase stands, shown in green when it has landed. */
+  status?: string;
+  /** True when the work needs no infrastructure and can be built against the mock. */
+  demoMode: boolean;
+  items: string[];
+}
+
+const MIGRATION_PHASES: MigrationPhase[] = [
   {
     phase: 'Phase 0',
     title: 'Test infrastructure',
-    subtitle: 'No infrastructure required · buildable in demo mode',
+    subtitle: 'No infrastructure required · landed in demo mode',
+    status: 'Done · 202 tests, 91.7% statements, gated in CI',
     demoMode: true,
     items: [
-      'Add jsdom, Testing Library, and a coverage provider; gate coverage in CI so it cannot drift down.',
-      'Cover the edit surface first: the forecast table, the session-edit merge layer, and the meeting log modal.',
-      'Fix the known correctness bugs with regression tests: a cleared next step reverting, the missing error boundary, unguarded division into a percentage, and the modal discarding uncommitted work.',
+      'jsdom, Testing Library, and a coverage provider, with the thresholds in vite.config.ts as a ratchet and CI running coverage rather than a bare test run.',
+      'Coverage went from 27.88% statements overall and 0% across every view, component, App.tsx, and useDashboardData, to 91% — the 5,700 lines Phase 1 was about to move by hand are now watched.',
+      'Four correctness bugs found by the first tests, each with a regression test: a cleared next step coming back, a throw in any view blanking the whole app, unguarded division rendering "∞% of goal", and the meeting modal discarding a week of unsubmitted classifications on a stray click.',
     ],
   },
   {
     phase: 'Phase 1',
     title: 'Contract rewrite against the mock',
-    subtitle: 'No infrastructure required · buildable in demo mode',
+    subtitle: 'No infrastructure required · landed in demo mode',
+    status: 'Done for Forecasting · seven views still on the old contract',
     demoMode: true,
     items: [
-      'Reshape DataProvider from nine list-everything calls into scoped aggregates and cursor-paginated row lists.',
-      'Implement the new contract in MockDataProvider by calling the existing metrics functions internally, which moves the aggregation behind the seam — exactly where it lives on a server — while the data stays local.',
-      'Migrate Forecasting first: it is the hottest edit path and the only view driven by the weekly snapshot collection, which is ~87% of the payload at production volume and can never ship whole.',
-      'Add a simulated remote provider (latency, pagination, injected failures) so per-widget loading and error states are exercised rather than theoretical, and a scale provider at ~100× volume so the contract is demonstrated to hold rather than asserted.',
+      'DataProvider is split in two: the scoped aggregates and cursor-paginated row lists that are the target shape, and the eight list-everything calls still being retired. Forecasting reads only the first.',
+      'MockDataProvider writes the answers behind the seam, using the same metrics functions the views used to call themselves — so src/lib/metrics is now the specification a server has to match, and its test suite is the conformance check.',
+      'listPipelineSnapshots() is gone from the client contract entirely. History was ~87% of the payload at production volume and reached the client as millions of rows to answer a question about fourteen weeks; it now leaves as a ~13-bucket series, and only where a view asks.',
+      'Forecasting was migrated first: the hottest edit path and the only view driven by that history. Its aggregate queries return the same kilobytes at 1× and at 100×, and its tables fetch 25 rows at a time per expanded manager.',
+      'Two providers behind the same contract: a simulated remote one with ~250 ms round trips and a 15% failure rate, so per-widget loading, error, and retry states are exercised rather than theoretical, and a 100× book — 21,300 opportunities, 191,000 snapshot rows, ~45 MB — so the claim is demonstrated rather than asserted. Swap them from the header.',
     ],
   },
   {
@@ -251,6 +266,12 @@ export default function ProductionRequirementsView() {
               title={`${phase.phase} · ${phase.title}`}
               subtitle={phase.subtitle}
             >
+              {phase.status && (
+                <p className="mb-4 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.06em] text-metric">
+                  <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-metric" />
+                  {phase.status}
+                </p>
+              )}
               <ul className="space-y-3 text-sm text-stone">
                 {phase.items.map((item) => (
                   <li key={item} className="flex gap-3">

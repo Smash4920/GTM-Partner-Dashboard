@@ -93,4 +93,29 @@ describe('App', () => {
     expect(screen.getByText(/Phase 0 · Test infrastructure/)).toBeInTheDocument();
     expect(screen.getByText(/Phase 1 · Contract rewrite against the mock/)).toBeInTheDocument();
   }, 20_000);
+
+  it('swaps the provider behind the seam from the header', async () => {
+    const user = await renderApp();
+    const selector = screen.getByLabelText('Data provider');
+    expect(selector).toHaveValue('local');
+    // The option labels are always in the DOM, so the notice is what says the
+    // provider actually changed. The default is the fast one, so it is absent
+    // to begin with.
+    const remoteNotice = /round trips with a 15% simulated failure rate/;
+    expect(screen.queryByText(remoteNotice)).not.toBeInTheDocument();
+
+    await user.selectOptions(selector, 'remote');
+    expect(await screen.findByText(remoteNotice)).toBeInTheDocument();
+    // The views are the same views; only the answer's origin changed. This is
+    // the whole claim of the abstraction, and it is one select.
+    expect(screen.getByRole('heading', { name: 'Partner Performance Overview' })).toBeInTheDocument();
+
+    await user.selectOptions(selector, 'local');
+    expect(screen.queryByText(remoteNotice)).not.toBeInTheDocument();
+
+    // The failure this guards: useDashboardData used to set `error` and never
+    // clear it, so a provider that failed a call left its message on screen
+    // over perfectly good data from the next provider.
+    expect(screen.queryByText(/failed in transit/)).not.toBeInTheDocument();
+  }, 30_000);
 });

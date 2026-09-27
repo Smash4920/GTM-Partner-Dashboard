@@ -5,6 +5,7 @@ import type {
   Opportunity,
   Partner,
   PartnerCertification,
+  ProviderBook,
   Target,
 } from '../data/types';
 
@@ -94,18 +95,25 @@ export function makeTarget(overrides: Partial<Target> = {}): Target {
   };
 }
 
-/** A whole book, small enough to reason about, for view-level tests. */
+/** A whole book as the client receives it, small enough to reason about. */
 export function makeDashboardData(overrides: Partial<DashboardData> = {}): DashboardData {
   return {
     partnerManagers: [{ id: 'pm-1', name: 'J. Alvarez' }],
     partners: [makePartner()],
     registrations: [makeRegistration()],
     opportunities: [makeOpportunity()],
-    snapshots: [],
     targets: [makeTarget()],
     activities: [makeMeeting()],
     certifications: [makeCertification()],
     teamUsers: [],
     ...overrides,
   };
+}
+
+/**
+ * The same book as a provider holds it: the client shape plus the weekly
+ * history that never crosses the seam whole.
+ */
+export function makeProviderBook(overrides: Partial<ProviderBook> = {}): ProviderBook {
+  return { ...makeDashboardData(), snapshots: [], ...overrides };
 }

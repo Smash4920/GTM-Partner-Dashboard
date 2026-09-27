@@ -60,37 +60,63 @@ types already exist as exported interfaces: `RegistrationFunnel`, `StageRow`,
 work is moving the function bodies behind the seam and keeping the return types.
 
 The contract becomes two families — aggregates that return kilobytes, and row
-lists that paginate:
+lists that paginate. As shipped in Phase 1:
 
 ```ts
-interface Scope {
-  fiscalPhase: FiscalPhase;
-  partnerManagerId?: string;
-  partnerIds?: string[];
-  oppType?: OpportunityType | 'all';
+interface ForecastScope {
+  quarter: string;              // 'FY27-Q3'
+  partnerManagerId?: string;    // everything except the weekly series
+  edits?: SessionEdits;         // this session's uncommitted corrections
 }
+interface PageRequest { cursor?: string; limit: number }
+interface Page<T> { rows: T[]; nextCursor?: string; totalCount: number }
 
-interface DataProvider {
+interface ScopedQueryProvider {
   // Aggregates: computed behind the seam, returned small.
-  getKpiSummary(scope: Scope): Promise<KpiSummary>;
-  getRegistrationFunnel(scope: Scope): Promise<RegistrationFunnel>;
-  getWeightedForecast(scope: Scope): Promise<WeightedForecast>;
-  getWeeklyForecastSeries(scope: Scope, quarter: string): Promise<WeeklyForecastRow[]>;
-  getPartnerLeaderboard(scope: Scope, limit: number): Promise<LeaderboardRow[]>;
+  getForecastSummary(scope: ForecastScope): Promise<ForecastSummary>;
+  getWeightedForecast(scope: ForecastScope): Promise<WeightedForecastSummary>;
+  getForecastQuality(scope: ForecastScope, sampleSize: number): Promise<ForecastQualitySummary>;
+  getManagerForecastGroups(scope: ForecastScope): Promise<ManagerForecastGroup[]>;
+  getWeeklyForecastSeries(scope: ForecastScope): Promise<WeeklySeriesRow[]>;
 
   // Rows: cursor-paginated, server-sorted, server-filtered.
-  listOpportunities(scope: Scope, page: PageRequest): Promise<Page<Opportunity>>;
-  listPendingRegistrations(scope: Scope, page: PageRequest): Promise<Page<DealRegistration>>;
+  listQuarterOpportunities(scope: ForecastScope, page: PageRequest): Promise<Page<Opportunity>>;
+  getPartnerDirectory(): Promise<PartnerRef[]>;
 }
 ```
 
-`listPipelineSnapshots()` disappears from the client contract entirely, replaced
-by `getWeeklyForecastSeries()` returning ~14 rows instead of millions.
+The scope is a quarter rather than a fiscal phase, because a quarter is the unit
+a caller thinks in and `phaseForQuarter()` in `metrics.ts` bridges to the
+phase-scoped windows. The aggregate DTOs are deliberately declared in
+`DataProvider.ts` rather than imported from `metrics.ts`: the seam stays
+self-contained and liftable, and `MockDataProvider`'s delegations are what
+check the two shapes against each other at compile time.
+
+Two design points worth naming, because both were discovered by writing the
+tests rather than by thinking about it:
+
+- **`partnerManagerId` narrows everything except the weekly series.** A snapshot
+  row records an amount, a call, and an expected close, but not whose book the
+  deal was in. Filtering the live weeks by manager while the recorded weeks kept
+  everyone's deals would draw a cliff into the chart that never happened, so the
+  series stays quarter-level and the contract says so.
+- **Aggregates are scoped, and the Forecasting view asks unscoped.** Its tiles
+  are statements about the quarter, so it passes a quarter-only scope to the
+  aggregate hook and a manager scope to the row list. The filtering is the
+  caller's decision, not a hidden property of the method.
+
+`listPipelineSnapshots()` is already gone from the client contract, replaced by
+`getWeeklyForecastSeries()` returning ~13 rows instead of millions — the one
+line in this plan that pays for itself immediately, since the client no longer
+receives the collection that is 87% of the payload. `ProviderBook` in
+`types.ts` is the provider-side shape that still holds it.
 
 **Known blast radius.** `src/data/connections.ts` records the DataProvider
 methods each integration node fills, and `connections.test.ts` asserts every
-method on the contract appears somewhere on the map. Reshaping the contract
-forces updating both. That test was built to catch exactly this, and it will.
+method on the contract appears somewhere on the map. That list is now *derived*
+from `DATA_PROVIDER_METHODS`, which is keyed by `keyof DataProvider`, so a new
+method on the seam is a compile error until it is listed and a test failure
+until it has a wire. That test was built to catch exactly this, and it did.
 
 ## What has to be built
 
@@ -155,18 +181,20 @@ The weekly snapshot job must be **idempotent**: a unique key on
 
 - Replace the single `Promise.all` in `useDashboardData` with a server-state
   library (TanStack Query) and **per-widget** loading and error states, so one
-  slow endpoint no longer blanks the whole page.
+  slow endpoint no longer blanks the whole page. *Partly done:* the migrated
+  view has hand-rolled per-widget states (`useForecastQueries.ts`) and a global
+  spinner still covers the other seven. The library is worth adopting when there
+  are several migrated views to share it, not before.
 - Virtualize `OpportunityTable` and `ForecastTable`; give `Leaderboard` a real
-  limit instead of `limit={uniquePartners}`.
+  limit instead of `limit={uniquePartners}`. *Not started* — the scoped contract
+  now bounds what reaches the client, so this is comfort rather than survival.
 - Route-level `React.lazy` so the ~485 KB Recharts chunk stops loading for users
-  who only open Data Connections.
-- **Keep edits feeling instant.** An edited forecast currently updates every
-  metric in the app immediately. Under server aggregation that survives only
-  with an optimistic local delta: for the edited deal, apply
-  `new_revenue × new_weight − old_revenue × old_weight` to the affected tiles at
-  once, then reconcile against the authoritative refetch. Without it every
-  pencil save becomes a visible round trip and the forecasting workflow gets
-  worse, not better.
+  who only open Data Connections. *Not started.* Measured after Phase 1: 193 KB
+  app + 484 KB Recharts + 63 KB charts vendor, raw.
+- **Keep edits feeling instant.** *Partly done:* rows render the session's
+  override immediately and the aggregates hold their previous figures during the
+  refetch, so an edit never flashes the page. The full optimistic delta is Phase
+  5, because it needs the write path to reconcile against.
 
 ## What is kept
 
@@ -200,6 +228,15 @@ Also fix the correctness bugs found in review, each with a regression test:
 next step cannot be cleared, no error boundary, unguarded division into
 `formatPct`, and the meeting modal discarding uncommitted work.
 
+**Outcome, as built:** 27.88% → 91.72% statements, 86.74% branches, 202 tests
+across 17 files, with the four thresholds in `vite.config.ts` as a ratchet and
+CI running `test:coverage` rather than a bare test run. All four bugs fixed with
+regression tests. The next-step one is worth noting for what it says about the
+test suite: the first version of its test passed against the buggy code, because
+the assertion was matching the em dash in a neighbouring column. It only became
+a test after mutation-testing the fix — reverting the `||` to `??` and watching
+it fail.
+
 ### Phase 1 — Contract rewrite against the mock
 
 Reshape `DataProvider` to the scope/page/aggregate contract and implement it in
@@ -224,6 +261,44 @@ Ship two additional providers behind the same contract:
   exercised rather than theoretical;
 - a **scale provider** generating ~100× data, so the claim that the contract
   holds at volume is demonstrable rather than asserted.
+
+**Outcome, as built.** Forecast migrated end to end, the other seven views
+untouched and still on the list-everything contract. Measured on the built demo,
+which is honest about what the mock can and cannot show. Medians over five runs
+at 100× — 2,500 partners, 21,300 opportunities, 191,000 snapshot rows, ~45 MB of
+JSON:
+
+| Call | Payload | Median |
+| --- | --- | --- |
+| `getForecastSummary` | 217 B | 15 ms |
+| `getManagerForecastGroups` | 578 B | 13 ms |
+| `getForecastQuality` | < 1 KB | 14 ms |
+| `listQuarterOpportunities` | 7.8 KB, one page of 25 | 15 ms |
+| `getWeeklyForecastSeries` | 4.2 KB, 13 buckets | 106 ms |
+| the five aggregates, as one view load | ~13 KB | ~165 ms |
+| `listOpportunities` (still on the old contract) | **7.5 MB** | 0 ms in-process |
+
+The week-over-week series is the whole argument in one line: 191,100 rows,
+35.9 MB, and the client now receives 13 buckets. What is left is in-process
+work, because `MockDataProvider` stands in for the server and does the
+aggregation the browser used to do; that is the 100 ms and it is exactly the
+work a rollup table removes in Phase 3. What changed is the *shape* of what
+crosses the seam, which is the part that cannot be fixed later by throwing
+hardware at it.
+
+Three things came out of building it that the plan did not predict:
+
+- Pagination forced a real decision about where a manager's book lives. It is a
+  component per expanded group, so collapsing and reopening restarts from page
+  one, and one manager's failed page cannot take the others down.
+- `ForecastTable` was taking the entire `Partner[]` collection to render one
+  column. It now takes a `Record<id, name>` from `getPartnerDirectory()` — a
+  dimension, not a fact.
+- The edit path needed a rule, not a mechanism: the aggregates keep the previous
+  answer on screen while a refetch is in flight, so an edit never flashes the
+  page it just changed. A true optimistic delta (apply the revenue and weight
+  change to the affected tiles immediately) is still Phase 5 work, because it
+  needs the write path to reconcile against.
 
 ### Phase 2 — Warehouse and `dim_date`
 

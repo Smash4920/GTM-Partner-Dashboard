@@ -6,14 +6,19 @@ import {
   OPP_TYPE_META,
   STAGE_META,
 } from '../data/constants';
-import type { ForecastCategory, Opportunity, Partner } from '../data/types';
+import type { ForecastCategory, Opportunity } from '../data/types';
 import { formatDate, formatUsd } from '../lib/format';
 import { forecastCategoryOf } from '../lib/metrics';
 import { CheckIcon, CommentIcon, PencilIcon, XIcon } from './icons';
 
 interface ForecastTableProps {
   opportunities: Opportunity[];
-  partners: Partner[];
+  /**
+   * Partner id to name. A lookup rather than the partner collection, because
+   * the table needs one field of it and the collection is the whole partner
+   * book — the thing the scoped contract exists to stop shipping.
+   */
+  partnerNames: Record<string, string>;
   /** Edited revenue per opportunity id, overriding the Salesforce figure. */
   revenueOverrides: Record<string, number>;
   /** Free-form partner-manager notes per opportunity id. */
@@ -49,7 +54,7 @@ const CATEGORY_OPTIONS = [...FORECAST_CATEGORIES].sort(
  */
 export default function ForecastTable({
   opportunities,
-  partners,
+  partnerNames,
   revenueOverrides,
   notes,
   nextSteps,
@@ -67,8 +72,6 @@ export default function ForecastTable({
   const [noteDraft, setNoteDraft] = useState('');
   const [nextStepDraft, setNextStepDraft] = useState('');
   const [revenueError, setRevenueError] = useState<string | null>(null);
-
-  const partnerById = new Map(partners.map((partner) => [partner.id, partner]));
 
   const startRevenueEdit = (opportunityId: string) => {
     setEditingNotes(null);
@@ -191,7 +194,7 @@ export default function ForecastTable({
                   </p>
                 </td>
                 <td className="py-3 pr-3 text-granite">
-                  {partnerById.get(opportunity.partnerId)?.name ?? opportunity.partnerId}
+                  {partnerNames[opportunity.partnerId] ?? opportunity.partnerId}
                 </td>
                 <td className="py-3 pr-3 text-right">
                   {editingRevenue === opportunity.id ? (

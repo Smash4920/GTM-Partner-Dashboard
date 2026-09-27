@@ -6,31 +6,56 @@ Tailwind + Recharts. Deterministic mock data, no backend.
 ## Commands
 
 ```bash
-npm run dev      # http://localhost:5173
-npm run lint     # eslint
-npm test         # vitest
-npm run build    # tsc -b && vite build
+npm run dev             # http://localhost:5173
+npm run lint            # eslint
+npm test                # vitest run
+npm run test:watch      # vitest, watch mode
+npm run test:coverage   # vitest run --coverage, enforces the thresholds in vite.config.ts
+npm run build           # tsc -b && vite build
 ```
 
-CI (`.github/workflows/ci.yml`) runs lint + test + build on every PR and on
-pushes to `main`. All three must pass.
+CI (`.github/workflows/ci.yml`) runs lint + `test:coverage` + build on every PR
+and on pushes to `main`. All three must pass. The coverage thresholds are a
+ratchet: raise them as coverage lands, never lower them to make a red build
+green.
 
 ## Architecture
 
 - **`src/data/DataProvider.ts` is the integration seam.** The UI only ever talks
-  to this interface. `MockDataProvider` fills it today; a CRM-backed provider
-  fills it tomorrow with no view changes. Do not reach around it.
-- **`src/lib/metrics.ts`** holds every business rule and aggregation.
-  **`src/lib/fiscal.ts`** holds the fiscal calendar and business-day math,
-  shared by the metrics layer and the mock generator so the two cannot drift.
+  to this interface. Do not reach around it.
+  - It is mid-migration and reads that way: `ScopedQueryProvider` is the target
+    shape (a scope in, an aggregate or one page of rows out), `LegacyBookProvider`
+    is the eight list-everything calls still being retired. Forecasting reads
+    only the scoped side.
+  - `DATA_PROVIDER_METHODS` is keyed by `keyof DataProvider`, so **adding a
+    method to the contract is a compile error until it is listed there**, and
+    `connections.test.ts` then fails until the method has a wire or a box on the
+    Data Connections map. Update both in the same change.
+- **`src/lib/metrics.ts`** holds every business rule and aggregation, and is now
+  the *specification* a server implementation has to match; its test suite plus
+  `MockDataProvider.test.ts` are the conformance check. **`src/lib/fiscal.ts`**
+  holds the fiscal calendar and business-day math, shared by the metrics layer
+  and the mock generator so the two cannot drift.
+- **`src/data/types.ts`**: `DashboardData` is what the client receives;
+  `ProviderBook` extends it with `snapshots`, which never crosses the seam whole
+  and leaves only through `getWeeklyForecastSeries()`.
+- **`src/data/mock/`** holds the providers: `MockDataProvider` (deterministic
+  book, scoped answers computed behind the seam), `SimulatedRemoteProvider`
+  (delegating wrapper adding latency and injected failures), `ScaleDataProvider`
+  (100× the book). **`src/data/providers.ts`** selects between them — the
+  header's provider dropdown is that selector, and it is the demo of the seam.
+- **`src/data/useForecastQueries.ts`** fetches the scoped contract for the
+  Forecasting view. Effects depend on the *values* a query needs (quarter,
+  manager, each edit map), never on the scope object, which is rebuilt every
+  render and would loop.
 - **`src/App.tsx`** layers session-only edits (revenue overrides, forecast
   calls, notes, next steps, meeting classifications, roster changes,
   notifications) on top of the provider's book and hands one merged
-  `DashboardData` to every view. The provider interface is read-only; writes are
-  the gap a live provider still has to close.
+  `DashboardData` to the views still on the old contract. Forecasting instead
+  passes the edits *into* its queries, so the provider aggregates the corrected
+  book. Both paths exist only until the remaining views migrate.
 - **`src/data/connections.ts`** is the catalog behind the Data Connections wire
-  diagram. `connections.test.ts` asserts every `DataProvider` method appears
-  somewhere on the map, so **changing the contract requires updating both.**
+  diagram.
 
 ## Conventions
 
@@ -51,17 +76,25 @@ pushes to `main`. All three must pass.
 
 ## Known state
 
-Reviewed 2026-09-26. Full findings and the staged production plan live in
-[`docs/migration-plan.md`](docs/migration-plan.md). Key facts:
+Reviewed 2026-09-26, Phases 0 and 1 landed 2026-09-27. Full findings and the
+staged plan live in [`docs/migration-plan.md`](docs/migration-plan.md). Key
+facts:
 
-- Test coverage was **27.88%** overall at review time, with **0% across all
-  eight views, all components, `App.tsx`, and `useDashboardData`**.
-- The current design loads the entire ecosystem into the browser. Weekly
-  pipeline snapshots are ~87% of the payload at production volume, so
-  `listPipelineSnapshots()` is the collection that can never ship whole.
-- Phases 0 (test infrastructure) and 1 (reshape `DataProvider` to a
-  scope/page/aggregate contract) are done **in demo mode against the mock** and
-  require no infrastructure. Everything after them depends on them.
+- Test coverage was **27.88%** at review time, with **0% across all eight views,
+  all components, `App.tsx`, and `useDashboardData`**. It is now **91.72%
+  statements / 86.74% branches over 202 tests in 17 files**, gated in CI.
+- The design still loads most of the ecosystem into the browser. Weekly pipeline
+  snapshots were ~87% of the payload at production volume; that collection is
+  **off the client contract entirely** and leaves as a 13-bucket series.
+- **Forecasting is the only view on the scoped contract.** The other seven still
+  take the whole book through `useDashboardData`. Migrating each is now a
+  template exercise: add the queries the view needs to `ScopedQueryProvider`,
+  implement them in `MockDataProvider` by delegating to `metrics.ts`, wire the
+  map, then move the view onto a hook.
+- Provider switching is a demo affordance, not a product feature: `Scaled 100×`
+  builds 191,000 snapshot rows (~83 ms, ~45 MB) on selection, and the legacy
+  views aggregate all of it in the tab. That is the point being demonstrated,
+  but it is why the default is `Local mock`.
 
 ## Writing style
 
