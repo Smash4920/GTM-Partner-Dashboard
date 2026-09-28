@@ -35,17 +35,19 @@ jobs:
           key: typescript-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.ts', 'src/**/*.tsx', 'vite.config.ts', 'tsconfig*.json') }}
           restore-keys: |
             typescript-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
-      - name: Build and record performance
+      - name: Build, analyze, and enforce bundle budgets
         env:
           BUILD_BUDGET_MS: 60000
           TYPESCRIPT_CACHE_HIT: ${{ steps.typescript-cache.outputs.cache-hit }}
-        run: npm run build
-      - name: Upload build performance metrics
+        run: npm run bundle:check
+      - name: Upload build and bundle analysis
         if: ${{ always() && hashFiles('build-metrics/build.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: build-performance-${{ github.run_id }}-${{ github.run_attempt }}
-          path: build-metrics/build.json
+          name: build-analysis-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build-metrics/build.json
+            build-metrics/bundle-report.html
           retention-days: 90
 
   e2e:

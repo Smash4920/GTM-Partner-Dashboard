@@ -297,21 +297,27 @@ npm run test:coverage   # the same suite with coverage, enforcing the thresholds
 npm run test:e2e        # playwright: browser workflows and partner-data boundaries
 npm run test:list       # collect and list tests without running them
 npm run build           # type-checks, bundles to dist/, and records build performance
+npm run bundle:check    # build, enforce compressed JS budgets, and create a treemap report
 npm run preview
 ```
 
-### Build performance
+### Build and bundle performance
 
 `npm run build` measures the TypeScript and Vite stages separately and writes a
 machine-readable report to `build-metrics/build.json`. The report includes the
 total duration, stage timings, build status, output file count and bytes, commit
 SHA in CI, and whether the exact TypeScript incremental-cache key was restored.
+It also creates `build-metrics/bundle-report.html`, an interactive treemap that
+shows each module's raw, gzip, and Brotli contribution to the production chunks.
 
 The build has a 60-second performance budget. Set `BUILD_BUDGET_MS` to tune it
 for a known environment; exceeding the budget fails the build so regressions
-cannot pass unnoticed. CI restores TypeScript's incremental build state,
-publishes the measurements in the workflow summary, and retains each JSON
-report as a `build-performance-*` artifact for 90 days.
+cannot pass unnoticed. `npm run bundle:check` additionally enforces the
+compressed JavaScript budgets in `package.json`, both for the whole bundle and
+for the application, Recharts, and chart dependency chunks. CI runs that check,
+restores TypeScript's incremental build state, publishes the measurements in
+the workflow summary, and retains the JSON metrics and HTML treemap as a
+`build-analysis-*` artifact for 90 days.
 
 ### Technical debt
 

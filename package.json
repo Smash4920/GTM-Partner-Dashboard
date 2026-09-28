@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "node scripts/build-with-metrics.mjs",
+    "bundle:check": "npm run build && size-limit",
     "test:build-metrics": "node --test scripts/build-with-metrics.test.mjs",
     "dead-code": "knip",
     "check:file-limits": "node --test scripts/check-file-limits.test.mjs && node scripts/check-file-limits.mjs",
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "@size-limit/file": "^12.1.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
@@ -53,6 +55,8 @@
     "knip": "^6.38.0",
     "postcss": "^8.4.49",
     "prettier": "^3.9.9",
+    "rollup-plugin-visualizer": "^7.1.1",
+    "size-limit": "^12.1.0",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.6.3",
     "typescript-eslint": "^8.70.1",
@@ -61,5 +65,27 @@
   },
   "allowScripts": {
     "esbuild@0.28.2": true
-  }
+  },
+  "size-limit": [
+    {
+      "name": "Total JavaScript",
+      "path": "dist/assets/*.js",
+      "limit": "235 kB"
+    },
+    {
+      "name": "Application chunk",
+      "path": "dist/assets/index-*.js",
+      "limit": "65 kB"
+    },
+    {
+      "name": "Recharts chunk",
+      "path": "dist/assets/recharts-*.js",
+      "limit": "150 kB"
+    },
+    {
+      "name": "Chart dependencies chunk",
+      "path": "dist/assets/charts-vendor-*.js",
+      "limit": "24 kB"
+    }
+  ]
 }
