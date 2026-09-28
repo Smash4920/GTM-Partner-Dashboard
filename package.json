@@ -8,7 +8,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/build-with-metrics.mjs",
+    "test:build-metrics": "node --test scripts/build-with-metrics.test.mjs",
     "dead-code": "knip",
     "check:file-limits": "node --test scripts/check-file-limits.test.mjs && node scripts/check-file-limits.mjs",
     "debt:check": "node scripts/check-technical-debt.mjs",
