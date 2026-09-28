@@ -5,7 +5,10 @@ import '@fontsource/geist-sans/500.css';
 import '@fontsource/geist-mono/400.css';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
+import { initializePerformanceTelemetry } from './lib/performanceTelemetry';
 import './index.css';
+
+initializePerformanceTelemetry();
 
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>

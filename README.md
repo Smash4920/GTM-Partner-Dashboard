@@ -334,6 +334,32 @@ restores TypeScript's incremental build state, publishes the measurements in
 the workflow summary, and retains the JSON metrics and HTML treemap as a
 `build-analysis-*` artifact for 90 days.
 
+### Runtime performance metrics
+
+Production builds can send real-user Web Vitals to any HTTP metrics collector.
+Set `VITE_METRICS_ENDPOINT` at build time to enable collection. The app observes
+CLS, FCP, INP, LCP, and TTFB with the maintained
+[`web-vitals`](https://github.com/GoogleChrome/web-vitals) library and delivers
+each measurement with `navigator.sendBeacon`, falling back to a keepalive
+`fetch` request.
+
+```bash
+VITE_METRICS_ENDPOINT=https://metrics.example.com/v1/browser \
+VITE_METRICS_SAMPLE_RATE=0.25 \
+VITE_DEPLOYMENT_ENV=production \
+VITE_RELEASE="$GIT_SHA" \
+npm run build
+```
+
+`VITE_METRICS_SAMPLE_RATE` is the fraction of page loads to observe, from `0`
+through `1`, and defaults to `1`. The JSON payload includes a schema version,
+application, environment, optional release, timestamp, route pathname, and the
+metric name, value, delta, rating, ID, and navigation type. Query strings,
+hashes, user input, and customer records are never included. Cross-origin
+collectors must allow anonymous JSON `POST` requests from the dashboard origin;
+the client deliberately omits credentials. Leaving the endpoint empty disables
+runtime collection, which is the default for local development.
+
 ### Technical debt
 
 Source-level debt must remain visible and actionable. Use `TODO(#123): reason`,
