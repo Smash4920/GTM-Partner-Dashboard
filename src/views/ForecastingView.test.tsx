@@ -102,7 +102,13 @@ describe('ForecastingView', () => {
       screen.getByText('1 of 28 open Q3 deals are called off the category their stage implies'),
     ).toBeInTheDocument();
     // Bounded sample: the account name, and nothing more than the sample size.
-    expect(screen.getByText('Acme 0')).toBeInTheDocument();
+    // The query is scoped to the card because the table below renders the same
+    // account name once its page lands, and a global text query races the two
+    // async loads — whichever resolves first decides what it finds.
+    const mismatchCard = (
+      await screen.findByRole('heading', { name: 'Calls that disagree with stage' })
+    ).closest('section');
+    expect(within(mismatchCard!).getByText('Acme 0')).toBeInTheDocument();
   });
 
   it('fetches one page per expanded manager, and pages on request', async () => {
