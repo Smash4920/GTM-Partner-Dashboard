@@ -36,9 +36,8 @@ npm run check:file-limits # reject oversized files before review
 npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
 npm run dead-code # find unused files, exports, and dependencies with Knip
-npm run lint      # lint TypeScript/TSX and enforce module boundaries
 npm run debt:check # require source debt markers to link to GitHub issues
-npm run lint      # lint all TypeScript and TSX files
+npm run lint      # lint TypeScript/TSX and enforce module boundaries
 npm run lint:duplicates # detect source duplication with jscpd
 npm test          # run the Vitest suite once
 npm run test:debt # test the technical-debt policy scanner
