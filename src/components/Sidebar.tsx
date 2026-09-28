@@ -39,11 +39,20 @@ interface SidebarProps {
   collapsed: boolean;
   mobileOpen: boolean;
   route: Route;
+  hiddenRoutes?: readonly Route[];
   onNavigate: (route: Route) => void;
 }
 
 /** Left navigation rail; collapses to an icon strip when the header toggle is hit. */
-export default function Sidebar({ collapsed, mobileOpen, route, onNavigate }: SidebarProps) {
+export default function Sidebar({
+  collapsed,
+  mobileOpen,
+  route,
+  hiddenRoutes = [],
+  onNavigate,
+}: SidebarProps) {
+  const visibleRoutes = ROUTES.filter(({ id }) => !hiddenRoutes.includes(id));
+
   return (
     <nav
       aria-label="Primary"
@@ -51,7 +60,7 @@ export default function Sidebar({ collapsed, mobileOpen, route, onNavigate }: Si
         mobileOpen ? 'flex' : 'hidden'
       } sm:flex ${collapsed ? 'sm:w-14' : 'sm:w-52'}`}
     >
-      {ROUTES.map(({ id, label, icon: Icon }) => (
+      {visibleRoutes.map(({ id, label, icon: Icon }) => (
         <button
           key={id}
           type="button"

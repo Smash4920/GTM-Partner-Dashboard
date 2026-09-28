@@ -345,6 +345,35 @@ command, not `preview`:
 VITE_LOG_LEVEL=debug npm run dev
 ```
 
+### Feature flags
+
+Feature flags are defined in
+[`src/lib/featureFlags.ts`](src/lib/featureFlags.ts). Each definition has an
+owner, description, safe default, explicit environment override, and optional
+percentage rollout. The Production Requirements workspace is the first
+flagged feature and is removed from navigation when disabled.
+
+Copy [`.env.example`](.env.example) to `.env.local` for local configuration,
+or set the variables in the deployment environment:
+
+```bash
+# Immediate off switch
+VITE_FEATURE_PRODUCTION_REQUIREMENTS=false npm run build
+
+# Stable 25% rollout when no explicit override is set
+VITE_FEATURE_PRODUCTION_REQUIREMENTS_ROLLOUT=25 npm run build
+```
+
+Explicit `true` or `false` overrides take precedence over percentage rollout.
+Accepted aliases are `1`/`0` and `on`/`off`. Invalid values fall back to the
+flag's safe default instead of making an accidental rollout decision.
+
+Percentage assignment hashes the flag key with an opaque browser identifier.
+The identifier is stored under `gtm.feature-flags.subject.v1`; it contains no
+user or partner data. If browser storage is unavailable, assignment remains
+stable for the current page. Vite inlines flag configuration at build time, so
+changing a deployment flag requires a rebuild.
+
 `npm ci` installs a Husky pre-commit hook. Every commit checks file-size limits,
 runs the linter, and runs the Vitest suite, preventing oversized files and
 known quality failures from entering the repository. Generated package-manager

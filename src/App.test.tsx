@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
+import { createFeatureFlagClient, type FeatureFlagClient } from './lib/featureFlags';
 
 /**
  * Whole-app smoke tests against the real MockDataProvider.
@@ -12,9 +13,9 @@ import App from './App';
  * seam, every route mounts against real generated data, and no view trips the
  * error boundary.
  */
-async function renderApp() {
+async function renderApp(flagClient?: FeatureFlagClient) {
   const user = userEvent.setup();
-  render(<App />);
+  render(<App flagClient={flagClient} />);
   await screen.findByRole(
     'heading',
     { name: 'Partner Performance Overview', level: 1 },
@@ -93,6 +94,18 @@ describe('App', () => {
     expect(screen.getByText(/Phase 0 · Test infrastructure/)).toBeInTheDocument();
     expect(screen.getByText(/Phase 1 · Contract rewrite against the mock/)).toBeInTheDocument();
   }, 20_000);
+
+  it('removes a disabled feature from navigation', async () => {
+    const disabledFlags = createFeatureFlagClient({
+      VITE_FEATURE_PRODUCTION_REQUIREMENTS: 'false',
+    });
+
+    await renderApp(disabledFlags);
+
+    expect(
+      nav().queryByRole('button', { name: 'Production Requirements' }),
+    ).not.toBeInTheDocument();
+  });
 
   it('swaps the provider behind the seam from the header', async () => {
     const user = await renderApp();
