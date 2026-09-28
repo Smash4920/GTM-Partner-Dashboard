@@ -37,6 +37,106 @@ const CATEGORY_OPTIONS = [...FORECAST_CATEGORIES].sort(
   (a, b) => FORECAST_CATEGORY_META[b].weight - FORECAST_CATEGORY_META[a].weight,
 );
 
+function ForecastCategoryCell({
+  opportunity,
+  editing,
+  onStartEdit,
+  onCommit,
+  onCancel,
+}: {
+  opportunity: Opportunity;
+  editing: boolean;
+  onStartEdit: () => void;
+  onCommit: (category: ForecastCategory) => void;
+  onCancel: () => void;
+}) {
+  const called = forecastCategoryOf(opportunity);
+  const categoryMeta = FORECAST_CATEGORY_META[called];
+
+  if (opportunity.outcome !== undefined) {
+    return (
+      <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-graphite">—</span>
+    );
+  }
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          aria-hidden="true"
+          className="h-1.5 w-1.5 shrink-0 rounded-full"
+          style={{ backgroundColor: categoryMeta.color }}
+        />
+        <select
+          autoFocus
+          value={called}
+          onChange={(event) => onCommit(event.target.value as ForecastCategory)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') onCancel();
+          }}
+          onBlur={onCancel}
+          aria-label={`Forecast category for ${opportunity.accountName}`}
+          className="cursor-pointer rounded border border-ash bg-carbon px-1.5 py-1 text-sm text-bone focus:border-signal focus:outline-none"
+        >
+          {CATEGORY_OPTIONS.map((category) => (
+            <option key={category} value={category} className="bg-carbon text-bone">
+              {`${FORECAST_CATEGORY_META[category].label} (${Math.round(
+                FORECAST_CATEGORY_META[category].weight * 100,
+              )}%)`}
+            </option>
+          ))}
+        </select>
+      </span>
+    );
+  }
+
+  const impliedByStage = FORECAST_CATEGORY_FOR_STAGE[opportunity.stage];
+  const offStage = called !== impliedByStage;
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        aria-hidden="true"
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ backgroundColor: categoryMeta.color }}
+      />
+      <span className="text-stone">{categoryMeta.label}</span>
+      <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-granite">
+        {Math.round(categoryMeta.weight * 100)}%
+      </span>
+      <button
+        type="button"
+        onClick={onStartEdit}
+        className="rounded p-0.5 text-granite transition-colors hover:text-stone"
+        title="Edit forecast category"
+        aria-label={`Edit forecast category for ${opportunity.accountName}`}
+      >
+        <PencilIcon className="h-3.5 w-3.5" />
+      </button>
+      {offStage && (
+        <span
+          className="shrink-0 font-mono text-[10px] uppercase tracking-[0.05em] text-signal"
+          title={`Called ${categoryMeta.label} while the deal sits in ${STAGE_META[opportunity.stage].label}, which implies ${FORECAST_CATEGORY_META[impliedByStage].label}.`}
+        >
+          Off stage
+        </span>
+      )}
+    </span>
+  );
+}
+
+function OpportunityStage({ opportunity }: { opportunity: Opportunity }) {
+  if (opportunity.outcome === undefined) {
+    return <span className="text-stone">{STAGE_META[opportunity.stage].label}</span>;
+  }
+
+  return (
+    <span className={opportunity.outcome === 'won' ? 'text-metric' : 'text-granite'}>
+      {opportunity.outcome === 'won' ? 'Closed won' : 'Closed lost'}
+    </span>
+  );
+}
+
 /**
  * In-quarter opportunity table for the VP of Partnerships. Revenue and Notes
  * carry a pencil so partner managers can edit the forecast locally; notes are
@@ -180,11 +280,6 @@ export default function ForecastTable({
             const edited = revenueOverrides[opportunity.id] !== undefined;
             const note = notes[opportunity.id] ?? opportunity.notes;
             const nextStep = nextSteps[opportunity.id] ?? opportunity.nextStep;
-            const called = forecastCategoryOf(opportunity);
-            const categoryMeta = FORECAST_CATEGORY_META[called];
-            const open = opportunity.outcome === undefined;
-            const impliedByStage = FORECAST_CATEGORY_FOR_STAGE[opportunity.stage];
-            const offStage = open && called !== impliedByStage;
 
             return (
               <tr key={opportunity.id} className="border-b border-carbon last:border-0">
@@ -262,82 +357,16 @@ export default function ForecastTable({
                   {OPP_TYPE_META[opportunity.oppType].label}
                 </td>
                 <td className="py-3 pr-3">
-                  {opportunity.outcome ? (
-                    <span
-                      className={opportunity.outcome === 'won' ? 'text-metric' : 'text-granite'}
-                    >
-                      {opportunity.outcome === 'won' ? 'Closed won' : 'Closed lost'}
-                    </span>
-                  ) : (
-                    <span className="text-stone">{STAGE_META[opportunity.stage].label}</span>
-                  )}
+                  <OpportunityStage opportunity={opportunity} />
                 </td>
                 <td className="py-3 pr-3">
-                  {open ? (
-                    editingCategory === opportunity.id ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <span
-                          aria-hidden="true"
-                          className="h-1.5 w-1.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: categoryMeta.color }}
-                        />
-                        <select
-                          autoFocus
-                          value={called}
-                          onChange={(event) =>
-                            commitCategory(opportunity.id, event.target.value as ForecastCategory)
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === 'Escape') cancelCategoryEdit();
-                          }}
-                          onBlur={cancelCategoryEdit}
-                          aria-label={`Forecast category for ${opportunity.accountName}`}
-                          className="cursor-pointer rounded border border-ash bg-carbon px-1.5 py-1 text-sm text-bone focus:border-signal focus:outline-none"
-                        >
-                          {CATEGORY_OPTIONS.map((category) => (
-                            <option key={category} value={category} className="bg-carbon text-bone">
-                              {`${FORECAST_CATEGORY_META[category].label} (${Math.round(
-                                FORECAST_CATEGORY_META[category].weight * 100,
-                              )}%)`}
-                            </option>
-                          ))}
-                        </select>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5">
-                        <span
-                          aria-hidden="true"
-                          className="h-1.5 w-1.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: categoryMeta.color }}
-                        />
-                        <span className="text-stone">{categoryMeta.label}</span>
-                        <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-granite">
-                          {Math.round(categoryMeta.weight * 100)}%
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => startCategoryEdit(opportunity.id)}
-                          className="rounded p-0.5 text-granite transition-colors hover:text-stone"
-                          title="Edit forecast category"
-                          aria-label={`Edit forecast category for ${opportunity.accountName}`}
-                        >
-                          <PencilIcon className="h-3.5 w-3.5" />
-                        </button>
-                        {offStage && (
-                          <span
-                            className="shrink-0 font-mono text-[10px] uppercase tracking-[0.05em] text-signal"
-                            title={`Called ${categoryMeta.label} while the deal sits in ${STAGE_META[opportunity.stage].label}, which implies ${FORECAST_CATEGORY_META[impliedByStage].label}.`}
-                          >
-                            Off stage
-                          </span>
-                        )}
-                      </span>
-                    )
-                  ) : (
-                    <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-graphite">
-                      —
-                    </span>
-                  )}
+                  <ForecastCategoryCell
+                    opportunity={opportunity}
+                    editing={editingCategory === opportunity.id}
+                    onStartEdit={() => startCategoryEdit(opportunity.id)}
+                    onCommit={(category) => commitCategory(opportunity.id, category)}
+                    onCancel={cancelCategoryEdit}
+                  />
                 </td>
                 <td className="py-3 pr-3 text-right font-mono text-xs tabular-nums text-granite">
                   {formatDate(opportunity.closedAt ?? opportunity.expectedCloseDate)}

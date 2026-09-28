@@ -44,6 +44,34 @@ const selectClass =
   'w-full rounded border border-ash bg-canvas px-2 py-1.5 text-sm text-bone focus:border-signal focus:outline-none';
 const labelClass = 'font-mono text-[10px] uppercase tracking-[0.06em] text-granite';
 
+function RegistrationStatus({
+  registration,
+  alert,
+  partner,
+}: {
+  registration?: DealRegistration;
+  alert?: RegistrationSlaAlert;
+  partner?: Partner;
+}) {
+  if (!registration) return null;
+
+  if (alert) {
+    return (
+      <p className="text-[10px] leading-snug text-signal">
+        On the SLA clock: {alert.state === 'approaching' ? 'last business day before' : 'past'} the
+        5-business-day deadline (due {formatDate(alert.dueAt)}).
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-[10px] leading-snug text-metric">
+      Inside the SLA — {partner?.name ?? registration.partnerId} still has time before the response
+      is due.
+    </p>
+  );
+}
+
 /**
  * Send a notification to one named person, from inside the connection map:
  * picking a teammate in the notification node lands here, and the SLA queue
@@ -143,18 +171,7 @@ export default function NotificationComposer({
         </select>
       </label>
 
-      {registration && alert && (
-        <p className="text-[10px] leading-snug text-signal">
-          On the SLA clock: {alert.state === 'approaching' ? 'last business day before' : 'past'}{' '}
-          the 5-business-day deadline (due {formatDate(alert.dueAt)}).
-        </p>
-      )}
-      {registration && !alert && (
-        <p className="text-[10px] leading-snug text-metric">
-          Inside the SLA — {partner?.name ?? registration.partnerId} still has time before the
-          response is due.
-        </p>
-      )}
+      <RegistrationStatus registration={registration} alert={alert} partner={partner} />
 
       <label className="block">
         <span className={labelClass}>Subject</span>

@@ -65,6 +65,101 @@ function attainmentText(certified: number, goal: number): string {
   return goal > 0 ? `${formatPct(certified / goal)} of goal` : 'No goal set';
 }
 
+function PartnerKpis({
+  slice,
+  sliceLabel,
+  pipelineValue,
+  pipelineCount,
+  coverage,
+  phase,
+  won,
+  attainment,
+  winRate,
+  pendingCount,
+  certification,
+}: {
+  slice: PartnerSlice;
+  sliceLabel: string;
+  pipelineValue: number;
+  pipelineCount: number;
+  coverage: number | null;
+  phase: FiscalPhase;
+  won: number;
+  attainment: number;
+  winRate: number;
+  pendingCount: number;
+  certification: DashboardData['certifications'][number] | undefined;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <KpiTile
+        label={slice === 'all' ? 'Open pipeline' : `Open ${sliceLabel} pipeline`}
+        value={formatUsdCompact(pipelineValue)}
+        sub={
+          slice === 'all'
+            ? `${pipelineCount} open · ${
+                coverage === null ? 'target met' : `${formatCoverage(coverage)} coverage`
+              }`
+            : `${pipelineCount} open ${sliceLabel} opp${pipelineCount === 1 ? '' : 's'}`
+        }
+      />
+      <KpiTile
+        label={`Closed-won ${FISCAL_PHASE_META[phase].label}`}
+        value={formatUsdCompact(won)}
+        sub={
+          slice === 'all'
+            ? `${formatPct(attainment)} of their ${
+                phase === 'fy' ? FISCAL_YEAR : FISCAL_PHASE_META[phase].label
+              } target`
+            : `${sliceLabel} only · target covers all revenue`
+        }
+      />
+      <KpiTile
+        label="Win rate"
+        value={formatPct(winRate)}
+        sub={
+          slice === 'all'
+            ? `of closed ${FISCAL_PHASE_META[phase].label}`
+            : `of closed ${sliceLabel} ${FISCAL_PHASE_META[phase].label}`
+        }
+      />
+      <KpiTile label="Awaiting review" value={`${pendingCount}`} sub="registrations pending" />
+      <KpiTile
+        label="Partner strategists certified"
+        value={
+          certification
+            ? `${certification.partnerStrategistsCertified}/${certification.partnerStrategistsGoal}`
+            : '—'
+        }
+        sub={
+          certification
+            ? attainmentText(
+                certification.partnerStrategistsCertified,
+                certification.partnerStrategistsGoal,
+              )
+            : 'No certification data'
+        }
+      />
+      <KpiTile
+        label="Partner engineers certified"
+        value={
+          certification
+            ? `${certification.partnerEngineersCertified}/${certification.partnerEngineersGoal}`
+            : '—'
+        }
+        sub={
+          certification
+            ? attainmentText(
+                certification.partnerEngineersCertified,
+                certification.partnerEngineersGoal,
+              )
+            : 'No certification data'
+        }
+      />
+    </div>
+  );
+}
+
 /**
  * Partner-facing portal. In production this view is scoped by partner SSO;
  * the picker here simulates that. Only Sell With and Allocate opportunities
@@ -257,72 +352,19 @@ export default function PartnerView({ data }: { data: DashboardData }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiTile
-          label={slice === 'all' ? 'Open pipeline' : `Open ${sliceLabel} pipeline`}
-          value={formatUsdCompact(pipeline.value)}
-          sub={
-            slice === 'all'
-              ? `${pipeline.count} open · ${
-                  coverage === null ? 'target met' : `${formatCoverage(coverage)} coverage`
-                }`
-              : `${pipeline.count} open ${sliceLabel} opp${pipeline.count === 1 ? '' : 's'}`
-          }
-        />
-        <KpiTile
-          label={`Closed-won ${FISCAL_PHASE_META[phase].label}`}
-          value={formatUsdCompact(wonYtd)}
-          sub={
-            slice === 'all'
-              ? `${formatPct(attainment)} of their ${
-                  phase === 'fy' ? FISCAL_YEAR : FISCAL_PHASE_META[phase].label
-                } target`
-              : `${sliceLabel} only · target covers all revenue`
-          }
-        />
-        <KpiTile
-          label="Win rate"
-          value={formatPct(winRate)}
-          sub={
-            slice === 'all'
-              ? `of closed ${FISCAL_PHASE_META[phase].label}`
-              : `of closed ${sliceLabel} ${FISCAL_PHASE_META[phase].label}`
-          }
-        />
-        <KpiTile label="Awaiting review" value={`${pending.length}`} sub="registrations pending" />
-        <KpiTile
-          label="Partner strategists certified"
-          value={
-            certification
-              ? `${certification.partnerStrategistsCertified}/${certification.partnerStrategistsGoal}`
-              : '—'
-          }
-          sub={
-            certification
-              ? attainmentText(
-                  certification.partnerStrategistsCertified,
-                  certification.partnerStrategistsGoal,
-                )
-              : 'No certification data'
-          }
-        />
-        <KpiTile
-          label="Partner engineers certified"
-          value={
-            certification
-              ? `${certification.partnerEngineersCertified}/${certification.partnerEngineersGoal}`
-              : '—'
-          }
-          sub={
-            certification
-              ? attainmentText(
-                  certification.partnerEngineersCertified,
-                  certification.partnerEngineersGoal,
-                )
-              : 'No certification data'
-          }
-        />
-      </div>
+      <PartnerKpis
+        slice={slice}
+        sliceLabel={sliceLabel}
+        pipelineValue={pipeline.value}
+        pipelineCount={pipeline.count}
+        coverage={coverage}
+        phase={phase}
+        won={wonYtd}
+        attainment={attainment}
+        winRate={winRate}
+        pendingCount={pending.length}
+        certification={certification}
+      />
 
       <Card title="Deal registrations" subtitle="Most recent first · all statuses">
         <RegistrationsTable
