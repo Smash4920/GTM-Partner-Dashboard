@@ -1,4 +1,5 @@
 import type { SessionEdits } from './sessionEdits';
+import type { TraceContext } from '../lib/tracing';
 import type {
   ActivityMeeting,
   DealRegistration,
@@ -43,20 +44,20 @@ import type {
  * and small dimensions, and it goes the same way view by view.
  */
 interface LegacyBookProvider {
-  listPartnerManagers(): Promise<PartnerManager[]>;
-  listPartners(): Promise<Partner[]>;
-  listRegistrations(): Promise<DealRegistration[]>;
-  listOpportunities(): Promise<Opportunity[]>;
-  getTargets(): Promise<Target[]>;
-  listActivities(): Promise<ActivityMeeting[]>;
-  listCertifications(): Promise<PartnerCertification[]>;
+  listPartnerManagers(trace?: TraceContext): Promise<PartnerManager[]>;
+  listPartners(trace?: TraceContext): Promise<Partner[]>;
+  listRegistrations(trace?: TraceContext): Promise<DealRegistration[]>;
+  listOpportunities(trace?: TraceContext): Promise<Opportunity[]>;
+  getTargets(trace?: TraceContext): Promise<Target[]>;
+  listActivities(trace?: TraceContext): Promise<ActivityMeeting[]>;
+  listCertifications(trace?: TraceContext): Promise<PartnerCertification[]>;
   /**
    * The internal partner-team roster, projected from the identity provider.
    * This is what decides who a deal-registration alert belongs to; a provider
    * with no roster yet may return an empty array, and the alerts simply carry
    * no owner.
    */
-  listTeamUsers(): Promise<TeamUser[]>;
+  listTeamUsers(trace?: TraceContext): Promise<TeamUser[]>;
 }
 
 // ---- the target shape ------------------------------------------------------
@@ -187,20 +188,31 @@ export interface WeeklySeriesRow {
 }
 
 interface ScopedQueryProvider {
-  getForecastSummary(scope: ForecastScope): Promise<ForecastSummary>;
-  getWeightedForecast(scope: ForecastScope): Promise<WeightedForecastSummary>;
-  getForecastQuality(scope: ForecastScope, sampleSize: number): Promise<ForecastQualitySummary>;
-  getManagerForecastGroups(scope: ForecastScope): Promise<ManagerForecastGroup[]>;
+  getForecastSummary(scope: ForecastScope, trace?: TraceContext): Promise<ForecastSummary>;
+  getWeightedForecast(scope: ForecastScope, trace?: TraceContext): Promise<WeightedForecastSummary>;
+  getForecastQuality(
+    scope: ForecastScope,
+    sampleSize: number,
+    trace?: TraceContext,
+  ): Promise<ForecastQualitySummary>;
+  getManagerForecastGroups(
+    scope: ForecastScope,
+    trace?: TraceContext,
+  ): Promise<ManagerForecastGroup[]>;
   /**
    * Week-over-week state of the quarter's pipeline: one row per week, about
    * fourteen of them, in place of every snapshot row ever written.
    */
-  getWeeklyForecastSeries(scope: ForecastScope): Promise<WeeklySeriesRow[]>;
+  getWeeklyForecastSeries(scope: ForecastScope, trace?: TraceContext): Promise<WeeklySeriesRow[]>;
   /**
    * One manager's in-quarter book, a page at a time. Requested when a group is
    * expanded, rather than loaded for every manager up front.
    */
-  listQuarterOpportunities(scope: ForecastScope, page: PageRequest): Promise<Page<Opportunity>>;
+  listQuarterOpportunities(
+    scope: ForecastScope,
+    page: PageRequest,
+    trace?: TraceContext,
+  ): Promise<Page<Opportunity>>;
   /**
    * Partner id to name, for the partner column of a row.
    *
@@ -211,7 +223,7 @@ interface ScopedQueryProvider {
    * rather than by a scope argument: a partner signed into the portal receives
    * one entry, their own.
    */
-  getPartnerDirectory(): Promise<PartnerRef[]>;
+  getPartnerDirectory(trace?: TraceContext): Promise<PartnerRef[]>;
 }
 
 /**

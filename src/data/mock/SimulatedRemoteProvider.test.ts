@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MockDataProvider } from './MockDataProvider';
 import { ScaleDataProvider } from './ScaleDataProvider';
 import { SimulatedRemoteProvider } from './SimulatedRemoteProvider';
@@ -76,5 +76,24 @@ describe('SimulatedRemoteProvider', () => {
     expect((await provider.listOpportunities()).length).toBe(
       generateDashboardData().opportunities.length * 3,
     );
+  });
+
+  it('preserves trace context across the simulated network boundary', async () => {
+    const inner = new MockDataProvider();
+    const call = vi.spyOn(inner, 'getPartnerDirectory');
+    const provider = new SimulatedRemoteProvider(inner, instant);
+    const trace = {
+      traceId: 'a'.repeat(32),
+      spanId: 'b'.repeat(16),
+      requestId: 'e2962c45-5c35-4b5a-b34d-5ea48e4ad00f',
+      headers: {
+        traceparent: `00-${'a'.repeat(32)}-${'b'.repeat(16)}-01`,
+        'x-request-id': 'e2962c45-5c35-4b5a-b34d-5ea48e4ad00f',
+      },
+    };
+
+    await provider.getPartnerDirectory(trace);
+
+    expect(call).toHaveBeenCalledWith(trace);
   });
 });

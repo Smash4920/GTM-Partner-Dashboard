@@ -1,4 +1,5 @@
 import type { DataProvider } from './DataProvider';
+import { TracedDataProvider } from './TracedDataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { ScaleDataProvider } from './mock/ScaleDataProvider';
 import { SimulatedRemoteProvider } from './mock/SimulatedRemoteProvider';
@@ -50,10 +51,10 @@ export function providerOption(id: ProviderId): ProviderOption {
 export function createProvider(id: ProviderId): DataProvider {
   switch (id) {
     case 'remote':
-      return new SimulatedRemoteProvider(new MockDataProvider());
+      return new TracedDataProvider(new SimulatedRemoteProvider(new MockDataProvider()));
     case 'scaled':
-      return new ScaleDataProvider();
+      return new TracedDataProvider(new ScaleDataProvider());
     case 'local':
-      return new MockDataProvider();
+      return new TracedDataProvider(new MockDataProvider());
   }
 }

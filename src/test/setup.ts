@@ -1,5 +1,6 @@
 import { afterEach } from 'vitest';
 import { cleanup } from '@testing-library/react';
+import { logger } from '../lib/logging';
 // Registers the DOM matchers against vitest's `expect` and augments its
 // Assertion type. This entry point imports `expect` directly, so it works
 // without turning on `globals` — the existing suites import describe/it/expect
@@ -9,6 +10,11 @@ import '@testing-library/jest-dom/vitest';
 // Auto-cleanup ships with Testing Library only under `globals`, so unmounting
 // between tests is wired by hand for the same reason.
 afterEach(cleanup);
+
+// Application requests emit a start and completion record in development.
+// Keep those records from flooding concurrent test-worker output; dedicated
+// logging and tracing suites use their own sinks to assert the full records.
+logger.setLevel('warn');
 
 // jsdom implements no layout, so it has no ResizeObserver. Recharts'
 // ResponsiveContainer constructs one on mount and throws without it, which
