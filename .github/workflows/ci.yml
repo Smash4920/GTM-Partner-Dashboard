@@ -19,6 +19,7 @@ jobs:
       - run: npm run check:file-limits
       - run: npm run format:check
       - run: npm run test:debt
+      - run: npm run test:build-metrics
       - run: npm run debt:check
       - run: npm run lint
       - run: npm run dead-code
@@ -26,7 +27,26 @@ jobs:
       # Coverage, not a bare test run: the thresholds in vite.config.ts are
       # what keep the view layer from drifting back toward 0%.
       - run: npm run test:coverage
-      - run: npm run build
+      - name: Restore TypeScript build cache
+        id: typescript-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.tmp
+          key: typescript-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.ts', 'src/**/*.tsx', 'vite.config.ts', 'tsconfig*.json') }}
+          restore-keys: |
+            typescript-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+      - name: Build and record performance
+        env:
+          BUILD_BUDGET_MS: 60000
+          TYPESCRIPT_CACHE_HIT: ${{ steps.typescript-cache.outputs.cache-hit }}
+        run: npm run build
+      - name: Upload build performance metrics
+        if: ${{ always() && hashFiles('build-metrics/build.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-performance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build-metrics/build.json
+          retention-days: 90
 
   e2e:
     runs-on: ubuntu-latest

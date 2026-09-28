@@ -291,13 +291,27 @@ npm run debt:check      # require source debt markers to link to GitHub issues
 npm run lint
 npm run lint:duplicates # jscpd: fail if source duplication exceeds 1.5%
 npm test                # vitest: fiscal/metric helpers, the data contract, the provider seam, the view layer
+npm run test:build-metrics # verify build timing, budgets, and output measurements
 npm run test:debt       # verify the technical-debt policy scanner
 npm run test:coverage   # the same suite with coverage, enforcing the thresholds in vite.config.ts
 npm run test:e2e        # playwright: browser workflows and partner-data boundaries
 npm run test:list       # collect and list tests without running them
-npm run build           # type-checks, then bundles to dist/
+npm run build           # type-checks, bundles to dist/, and records build performance
 npm run preview
 ```
+
+### Build performance
+
+`npm run build` measures the TypeScript and Vite stages separately and writes a
+machine-readable report to `build-metrics/build.json`. The report includes the
+total duration, stage timings, build status, output file count and bytes, commit
+SHA in CI, and whether the exact TypeScript incremental-cache key was restored.
+
+The build has a 60-second performance budget. Set `BUILD_BUDGET_MS` to tune it
+for a known environment; exceeding the budget fails the build so regressions
+cannot pass unnoticed. CI restores TypeScript's incremental build state,
+publishes the measurements in the workflow summary, and retains each JSON
+report as a `build-performance-*` artifact for 90 days.
 
 ### Technical debt
 
