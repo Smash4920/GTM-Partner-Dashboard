@@ -6,6 +6,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -25,8 +29,28 @@ jobs:
       - run: npm run dead-code
       - run: npm run lint:duplicates
       # Coverage, not a bare test run: the thresholds in vite.config.ts are
-      # what keep the view layer from drifting back toward 0%.
-      - run: npm run test:coverage
+      # what keep the view layer from drifting back toward 0%. The CI variant
+      # also emits JUnit timings for the report and retained artifact below.
+      - name: Run unit tests with coverage and timings
+        run: npm run test:coverage:ci
+      - name: Upload unit test timings
+        if: ${{ always() && hashFiles('test-results/vitest-junit.xml') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/vitest-junit.xml
+          retention-days: 90
+      - name: Publish unit test results
+        if: >-
+          ${{ !cancelled() &&
+          hashFiles('test-results/vitest-junit.xml') != '' &&
+          (github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: dorny/test-reporter@v2
+        with:
+          name: Unit test results
+          path: test-results/vitest-junit.xml
+          reporter: java-junit
       - name: Restore TypeScript build cache
         id: typescript-cache
         uses: actions/cache@v4
