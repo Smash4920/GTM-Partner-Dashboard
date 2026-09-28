@@ -171,6 +171,35 @@ itself, so their browser never receives another partner's data at all. The
 architecture roadmap already calls for removing the partner picker outside an
 internal demo mode; that is the same requirement seen from the UI side.
 
+### Feature-flag methodology and maintainer control plane
+
+The current typed registry provides safe defaults, explicit build-time
+overrides, deterministic percentage cohorts, and a first real gate. It reduces
+release risk now, but changing a flag still requires someone to edit deployment
+configuration and rebuild the app. That is not an appropriate long-term
+workflow for a nontechnical maintainer.
+
+Before production rollout, select or build an authenticated control plane that
+provides a straightforward web interface and:
+
+- separates development, staging, and production values;
+- limits changes to approved roles, supports approval rules for high-impact
+  flags, and records who changed what and when;
+- applies on/off changes, percentage rollouts, and emergency kill switches
+  without a code change or redeployment;
+- shows current value, owner, purpose, rollout audience, last review date, and
+  expected removal date for every flag;
+- exposes evaluation and rollout health so a release can be compared with
+  errors and business outcomes;
+- caches the last known configuration and falls back to the declared safe
+  default when the service is unavailable.
+
+The accompanying methodology must define naming, ownership, safe defaults,
+targeting rules, staged rollout and rollback, review cadence, expiration, and
+code removal. A flag is temporary release machinery, not permanent
+configuration. Authorization and partner-data boundaries remain server-enforced
+even when a related feature is hidden; a flag must never grant access.
+
 ### A real write path
 
 Every in-app edit today is a `Record<string, T>` in React state, lost on reload.
@@ -342,6 +371,7 @@ Bands rather than estimates, assuming CRM access is already granted:
 | -------------------------------------------- | ------------ |
 | Test infrastructure + conformance harness    | 2–3 weeks    |
 | Contract rewrite against mock (Phase 1)      | 3–4 weeks    |
+| Flag methodology + managed control plane     | 1–2 weeks    |
 | Warehouse, models, snapshot job              | 4–6 weeks    |
 | API + row-level authorization                | 6–8 weeks    |
 | Ingestion (Salesforce, Calendar, enablement) | 6–10 weeks   |

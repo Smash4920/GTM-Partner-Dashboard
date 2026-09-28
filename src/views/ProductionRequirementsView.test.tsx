@@ -100,6 +100,7 @@ describe('ProductionRequirementsView', () => {
       itemRow(/Authenticate internal users and partners/).getByText('Prod Only'),
     ).toBeInTheDocument();
     expect(itemRow(/Idempotent weekly snapshot job/).getByText('Prod Only')).toBeInTheDocument();
+    expect(itemRow(/authenticated control plane/).getByText('Prod Only')).toBeInTheDocument();
   });
 
   it('marks the not-started, demo-buildable work as Pending', () => {
@@ -110,6 +111,15 @@ describe('ProductionRequirementsView', () => {
     ).toBeInTheDocument();
     expect(
       itemRow(/Define the system of record and write-back workflow/).getByText('Pending'),
+    ).toBeInTheDocument();
+  });
+
+  it('tracks feature-flag methodology and control-plane safeguards', () => {
+    render(<ProductionRequirementsView />);
+
+    expect(itemRow(/Define a feature-flag methodology/).getByText('WIP')).toBeInTheDocument();
+    expect(
+      itemRow(/authorization and data-access enforcement independent/).getByText('Pending'),
     ).toBeInTheDocument();
   });
 });

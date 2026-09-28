@@ -211,7 +211,8 @@ date, the day the stamps were last reviewed against the code, so a Complete
 that has gone stale is visibly stale. The **Architecture
 roadmap** documents the server-side foundation required before connecting
 protected systems (identity and row-level authorization, source-system
-integration, persistence and audit, security and compliance, reliability). The
+integration, persistence and audit, security and compliance, reliability, and
+feature-delivery governance). The
 **Migration Path** sequences that foundation into six phases. The first two
 needed no infrastructure and no production data, and both have landed in demo
 mode against `MockDataProvider`: Phase 0 is the test infrastructure (27.88% →
@@ -379,6 +380,16 @@ The identifier is stored under `gtm.feature-flags.subject.v1`; it contains no
 user or partner data. If browser storage is unavailable, assignment remains
 stable for the current page. Vite inlines flag configuration at build time, so
 changing a deployment flag requires a rebuild.
+
+This build-time implementation is the safe starting point, not the final
+maintainer experience. The Production Requirements roadmap calls for a
+documented flag lifecycle and an authenticated control plane where approved
+nontechnical maintainers can change flags without editing code or redeploying.
+That control plane must include separate environment settings, role-based
+access, approvals, audit history, emergency kill switches, and safe behavior
+when the flag service is unavailable. Feature flags must never replace
+authorization or data-access controls. See
+[`docs/migration-plan.md`](docs/migration-plan.md#feature-flag-methodology-and-maintainer-control-plane).
 
 `npm ci` installs a Husky pre-commit hook. Every commit checks file-size limits,
 runs the linter, and runs the Vitest suite, preventing oversized files and
