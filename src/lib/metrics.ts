@@ -50,7 +50,7 @@ export { businessDaysBetween } from './fiscal';
 
 const DAY = 86_400_000;
 
-export function isOpen(opp: Opportunity): boolean {
+function isOpen(opp: Opportunity): boolean {
   return opp.outcome === undefined;
 }
 
@@ -71,7 +71,7 @@ export function openPipeline(opps: Opportunity[]): { value: number; count: numbe
 }
 
 /** Closed-won revenue whose close date falls in [start, end). */
-export function closedWonBetween(opps: Opportunity[], startIso: string, endIso: string): number {
+function closedWonBetween(opps: Opportunity[], startIso: string, endIso: string): number {
   const start = new Date(startIso).getTime();
   const end = new Date(endIso).getTime();
   return opps
@@ -633,7 +633,7 @@ export function forecastCategoryOf(opp: Opportunity): ForecastCategory {
   return opp.forecastCategory ?? FORECAST_CATEGORY_FOR_STAGE[opp.stage];
 }
 
-export interface WeightedForecastRow {
+interface WeightedForecastRow {
   category: ForecastCategory;
   /** Probability-weighted value: Σ forecasted revenue × category weight. */
   value: number;
@@ -796,7 +796,7 @@ export function weeklyForecastRows(
   });
 }
 
-export interface CategoryMismatch {
+interface CategoryMismatch {
   opportunity: Opportunity;
   /** The category the deal's stage implies. */
   fromStage: ForecastCategory;
@@ -903,7 +903,7 @@ export function businessDaysWaiting(reg: DealRegistration): number {
   return businessDaysBetween(reg.submittedAt, SNAPSHOT_DATE.toISOString());
 }
 
-export type RegistrationSlaAlertState = 'approaching' | 'breached';
+type RegistrationSlaAlertState = 'approaching' | 'breached';
 
 /**
  * A pending registration that has reached (or is about to reach) the response

@@ -285,6 +285,7 @@ npm run dev             # http://localhost:5173
 npm run check:file-limits # reject files over 1 MiB or 1,200 text lines
 npm run format          # format source, configuration, and documentation
 npm run format:check    # verify formatting without changing files
+npm run dead-code       # find unused files, exports, and dependencies with Knip
 npm run lint            # lint source and enforce module boundaries
 npm run debt:check      # require source debt markers to link to GitHub issues
 npm run lint
