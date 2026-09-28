@@ -32,6 +32,7 @@ Run commands from the repository root.
 
 ```bash
 npm run dev       # start the Vite development server
+npm run check:file-limits # reject oversized files before review
 npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
 npm run lint      # lint TypeScript/TSX and enforce module boundaries
@@ -56,6 +57,7 @@ npm test -- src/lib/metrics.test.ts
 Before handing off a change, run the same checks as CI, in this order:
 
 ```bash
+npm run check:file-limits
 npm run format:check
 npm run test:debt
 npm run debt:check

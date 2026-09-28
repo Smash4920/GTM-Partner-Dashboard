@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check:file-limits": "node --test scripts/check-file-limits.test.mjs && node scripts/check-file-limits.mjs",
+    "lint": "eslint .",
+    "check:pre-commit": "npm run check:file-limits && npm run lint && npm test",
     "debt:check": "node scripts/check-technical-debt.mjs",
     "lint": "eslint .",
     "check:pre-commit": "npm run debt:check && npm run lint && npm test",
