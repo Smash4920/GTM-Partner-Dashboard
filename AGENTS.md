@@ -42,6 +42,7 @@ npm run lint:duplicates # detect source duplication with jscpd
 npm test          # run the Vitest suite once
 npm run test:debt # test the technical-debt policy scanner
 npm run test:coverage # run Vitest with coverage, enforcing the thresholds in vite.config.ts
+npm run test:coverage:ci # also write per-test JUnit timings for CI reporting
 npm run test:e2e  # run the Playwright browser suite
 npm run test:list # collect and list tests without running them
 npm run build     # run TypeScript project checks, then create dist/

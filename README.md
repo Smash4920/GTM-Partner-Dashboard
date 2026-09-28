@@ -295,12 +295,26 @@ npm test                # vitest: fiscal/metric helpers, the data contract, the 
 npm run test:build-metrics # verify build timing, budgets, and output measurements
 npm run test:debt       # verify the technical-debt policy scanner
 npm run test:coverage   # the same suite with coverage, enforcing the thresholds in vite.config.ts
+npm run test:coverage:ci # coverage plus the per-test timing report used by CI
 npm run test:e2e        # playwright: browser workflows and partner-data boundaries
 npm run test:list       # collect and list tests without running them
 npm run build           # type-checks, bundles to dist/, and records build performance
 npm run bundle:check    # build, enforce compressed JS budgets, and create a treemap report
 npm run preview
 ```
+
+### Test performance
+
+CI records the duration of every Vitest test and suite in
+`test-results/vitest-junit.xml`. Each workflow run publishes those timings as a
+GitHub test report, so pull requests expose slow tests alongside pass/fail
+results, and retains the raw report as a `unit-test-results-*` artifact for 90
+days. This makes gradual test-suite slowdowns visible instead of allowing them
+to silently make developer feedback slower.
+
+Run `npm run test:coverage:ci` to produce the same timing report locally. The
+regular `npm run test:coverage` command remains the faster choice when no
+machine-readable report is needed.
 
 ### Build and bundle performance
 
