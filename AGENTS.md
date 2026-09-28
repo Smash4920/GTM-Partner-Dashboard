@@ -45,6 +45,7 @@ npm run test:coverage # run Vitest with coverage, enforcing the thresholds in vi
 npm run test:e2e  # run the Playwright browser suite
 npm run test:list # collect and list tests without running them
 npm run build     # run TypeScript project checks, then create dist/
+npm run bundle:check # build, enforce compressed JavaScript budgets, and create a treemap report
 npm run preview   # serve the production build locally
 ```
 
@@ -66,7 +67,7 @@ npm run dead-code
 npm run lint:duplicates
 npm run test:coverage
 npm run test:e2e
-npm run build
+npm run bundle:check
 ```
 
 The coverage thresholds are a ratchet: raise them as coverage lands, never

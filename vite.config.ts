@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 /**
  * Asset base path depends on where the build is served from:
@@ -12,7 +13,15 @@ import react from '@vitejs/plugin-react';
 const base = process.env.BASE_PATH ?? (process.env.VERCEL ? '/' : '/GTM-Partner-Dashboard/');
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    visualizer({
+      filename: 'build-metrics/bundle-report.html',
+      template: 'treemap',
+      gzipSize: true,
+      brotliSize: true,
+    }),
+  ],
   base,
   test: {
     // `{ts,tsx}`, not `*.test.ts`: the component suites are `.tsx`, and the
