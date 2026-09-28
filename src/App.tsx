@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar, { type Route } from './components/Sidebar';
 import { MenuIcon } from './components/icons';
@@ -19,6 +19,7 @@ import type {
 import { useDashboardData } from './data/useDashboardData';
 import type { NotificationDraft } from './lib/notifications';
 import { formatDate } from './lib/format';
+import { featureFlags, getFeatureFlagSubject, type FeatureFlagClient } from './lib/featureFlags';
 import { logger } from './lib/logging';
 import ActivityTrackingView from './views/ActivityTrackingView';
 import DataConnectionsView from './views/DataConnectionsView';
@@ -33,8 +34,22 @@ import ProductionRequirementsView from './views/ProductionRequirementsView';
 // session can be replayed from the console; opportunity notes and next steps
 // are user prose and are deliberately not logged.
 const log = logger.child({ component: 'App' });
+const PRODUCTION_REQUIREMENTS_ROUTE: readonly Route[] = ['production-requirements'];
+const NO_HIDDEN_ROUTES: readonly Route[] = [];
 
-export default function App() {
+interface AppProps {
+  flagClient?: FeatureFlagClient;
+}
+
+function hiddenRoutes(productionRequirementsEnabled: boolean): readonly Route[] {
+  return productionRequirementsEnabled ? NO_HIDDEN_ROUTES : PRODUCTION_REQUIREMENTS_ROUTE;
+}
+
+function FlaggedContent({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+  return enabled ? children : null;
+}
+
+export default function App({ flagClient = featureFlags }: AppProps) {
   // The provider is the integration seam. The header swaps it between the
   // local mock, a simulated remote one, and a 100× book; nothing below this
   // line knows which. See src/data/providers.ts.
@@ -45,6 +60,10 @@ export default function App() {
   const [route, setRoute] = useState<Route>('home');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [flagSubject] = useState(getFeatureFlagSubject);
+  const productionRequirementsEnabled = flagClient.isEnabled('productionRequirements', {
+    subjectKey: flagSubject,
+  });
 
   // In-app edits that override the CRM-backed mock data and re-render every
   // view live: forecast revenue deltas, opp notes, next steps, meeting
@@ -288,6 +307,7 @@ export default function App() {
           collapsed={!sidebarOpen}
           mobileOpen={mobileNavOpen}
           route={route}
+          hiddenRoutes={hiddenRoutes(productionRequirementsEnabled)}
           onNavigate={(nextRoute) => {
             setRoute(nextRoute);
             setMobileNavOpen(false);
@@ -339,7 +359,11 @@ export default function App() {
                 />
               )}
               {route === 'partner-view' && <PartnerView data={live} />}
-              {route === 'production-requirements' && <ProductionRequirementsView />}
+              {route === 'production-requirements' && (
+                <FlaggedContent enabled={productionRequirementsEnabled}>
+                  <ProductionRequirementsView />
+                </FlaggedContent>
+              )}
               {route === 'data-connections' && (
                 <DataConnectionsView
                   data={live}
