@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "agents:check": "node --test scripts/check-agents-md.test.mjs && node scripts/check-agents-md.mjs",
     "build": "node scripts/build-with-metrics.mjs",
     "bundle:check": "npm run build && size-limit",
     "test:build-metrics": "node --test scripts/build-with-metrics.test.mjs",
@@ -16,7 +17,7 @@
     "debt:check": "node scripts/check-technical-debt.mjs",
     "lint": "eslint .",
     "lint:duplicates": "jscpd src",
-    "check:pre-commit": "npm run check:file-limits && npm run debt:check && npm run lint && npm run dead-code && npm run lint:duplicates && npm test",
+    "check:pre-commit": "npm run agents:check && npm run check:file-limits && npm run debt:check && npm run lint && npm run dead-code && npm run lint:duplicates && npm test",
     "prepare": "husky",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

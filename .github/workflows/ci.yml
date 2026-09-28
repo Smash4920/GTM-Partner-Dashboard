@@ -20,6 +20,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Validate AGENTS.md freshness
+        run: npm run agents:check
       - run: npm run check:file-limits
       - run: npm run format:check
       - run: npm run test:debt

@@ -32,6 +32,7 @@ Run commands from the repository root.
 
 ```bash
 npm run dev       # start the Vite development server
+npm run agents:check # validate this file's commands and repository paths
 npm run check:file-limits # reject oversized files before review
 npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
@@ -59,6 +60,7 @@ npm test -- src/lib/metrics.test.ts
 Before handing off a change, run the same checks as CI, in this order:
 
 ```bash
+npm run agents:check
 npm run check:file-limits
 npm run format:check
 npm run test:debt
@@ -110,9 +112,9 @@ survivable.
   app shell → views → components → data/domain helpers. Providers are isolated
   under `src/data/mock/`, and production views and components cannot import
   them directly. Tests may cross these boundaries to build fixtures.
-- Views consume the merged `DashboardData` passed down from `App.tsx`; they
+- Views consume the merged `DashboardData` passed down from `src/App.tsx`; they
   must not import mock records directly. The one exception is Forecasting,
-  which reads the scoped contract through `useForecastQueries.ts` and passes
+  which reads the scoped contract through `src/data/useForecastQueries.ts` and passes
   the session's edits _into_ its queries rather than receiving the folded book.
 - **`DataProvider` is two interfaces, deliberately.** `ScopedQueryProvider` is
   the target shape — a scope in, an aggregate whose size does not depend on the
@@ -123,8 +125,8 @@ survivable.
   `src/lib/metrics.ts`, and migrate the view onto a hook.
 - When adding a method to `DataProvider`, list it in `DATA_PROVIDER_METHODS`
   (a compile error until you do, because the record is keyed by
-  `keyof DataProvider`) and give it a wire or a box in `connections.ts`;
-  `connections.test.ts` fails until both are done, by design.
+  `keyof DataProvider`) and give it a wire or a box in `src/data/connections.ts`;
+  `src/data/connections.test.ts` fails until both are done, by design.
 - **Weekly pipeline history never crosses the seam whole.** It is ~87% of the
   payload at production volume, so `listPipelineSnapshots()` is gone from the
   client contract and history leaves only through `getWeeklyForecastSeries()` as
@@ -132,8 +134,8 @@ survivable.
   does not.
 - `src/lib/metrics.ts` is the _specification_ a server implementation has to
   match, not just the current implementation. Its suite plus
-  `MockDataProvider.test.ts` are the conformance check.
-- User edits currently live in React state in `App.tsx`. Do not imply that an
+  `src/data/mock/MockDataProvider.test.ts` are the conformance check.
+- User edits currently live in React state in `src/App.tsx`. Do not imply that an
   edit persists or add browser storage unless persistence is part of the task.
 - Mock data is reproducible with a fixed seed and `SNAPSHOT_DATE`. Use the
   snapshot for business reporting calculations instead of the wall clock.
