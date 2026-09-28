@@ -149,6 +149,28 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
       },
     ],
   },
+  {
+    title: 'Feature delivery governance',
+    items: [
+      {
+        // The typed registry, safe defaults, environment override, and stable
+        // percentage rollout have landed. Review, expiry, and removal policy
+        // still need to be designed and adopted.
+        text: 'Define a feature-flag methodology covering naming, ownership, safe defaults, environment scope, targeting, rollout and rollback, observability, review, expiration, and removal.',
+        status: 'wip',
+      },
+      {
+        // The client-only app has no authentication or server through which a
+        // privileged management credential could safely pass.
+        text: 'Provide an authenticated control plane where approved nontechnical maintainers can change flags without code changes or redeployment, with role-based access, approvals, audit history, and emergency kill switches.',
+        status: 'prod-only',
+      },
+      {
+        text: 'Keep authorization and data-access enforcement independent from feature flags, and define cached fail-safe behavior when the control plane is unavailable.',
+        status: 'pending',
+      },
+    ],
+  },
 ];
 
 /**
