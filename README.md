@@ -284,6 +284,7 @@ npm ci
 npm run dev             # http://localhost:5173
 npm run format          # format source, configuration, and documentation
 npm run format:check    # verify formatting without changing files
+npm run dead-code       # find unused files, exports, and dependencies with Knip
 npm run debt:check      # require source debt markers to link to GitHub issues
 npm run lint
 npm run lint:duplicates # jscpd: fail if source duplication exceeds 1.5%

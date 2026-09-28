@@ -29,9 +29,9 @@ import type { Opportunity } from './types';
 const MISMATCH_SAMPLE_SIZE = 3;
 
 /** Rows per page of one manager's book. */
-export const MANAGER_BOOK_PAGE_SIZE = 25;
+const MANAGER_BOOK_PAGE_SIZE = 25;
 
-export interface ForecastAggregates {
+interface ForecastAggregates {
   summary: ForecastSummary;
   weighted: WeightedForecastSummary;
   quality: ForecastQualitySummary;

@@ -20,7 +20,7 @@ export type Route =
   | 'production-requirements'
   | 'data-connections';
 
-export const ROUTES: {
+const ROUTES: {
   id: Route;
   label: string;
   icon: (props: { className?: string }) => ReactNode;

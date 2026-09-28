@@ -34,6 +34,7 @@ Run commands from the repository root.
 npm run dev       # start the Vite development server
 npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
+npm run dead-code # find unused files, exports, and dependencies with Knip
 npm run debt:check # require source debt markers to link to GitHub issues
 npm run lint      # lint all TypeScript and TSX files
 npm run lint:duplicates # detect source duplication with jscpd
@@ -59,6 +60,7 @@ npm run format:check
 npm run test:debt
 npm run debt:check
 npm run lint
+npm run dead-code
 npm run lint:duplicates
 npm run test:coverage
 npm run test:e2e

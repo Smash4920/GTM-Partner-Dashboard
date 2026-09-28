@@ -64,7 +64,7 @@ export type OpportunityStage =
  */
 export type OpportunityType = 'sell-to' | 'sell-with' | 'allocate';
 
-export type OpportunityOutcome = 'won' | 'lost';
+type OpportunityOutcome = 'won' | 'lost';
 
 /**
  * Probability bucket a partner manager assigns to an open deal, the input to
@@ -235,7 +235,7 @@ export type NotificationKind =
   | 'manual';
 
 /** Mock delivery states; a real sender would add retries and failures. */
-export type NotificationStatus = 'queued' | 'delivered' | 'failed';
+type NotificationStatus = 'queued' | 'delivered' | 'failed';
 
 /** One notification sent to one internal user, recorded for the session. */
 export interface DashboardNotification {

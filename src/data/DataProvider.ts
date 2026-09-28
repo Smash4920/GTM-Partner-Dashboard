@@ -42,7 +42,7 @@ import type {
  * replaced by `getWeeklyForecastSeries()` below. What remains is bookkeeping
  * and small dimensions, and it goes the same way view by view.
  */
-export interface LegacyBookProvider {
+interface LegacyBookProvider {
   listPartnerManagers(): Promise<PartnerManager[]>;
   listPartners(): Promise<Partner[]>;
   listRegistrations(): Promise<DealRegistration[]>;
@@ -124,7 +124,7 @@ export interface ForecastSummary {
   daysLeftInQuarter: number;
 }
 
-export interface WeightedForecastRow {
+interface WeightedForecastRow {
   category: ForecastCategory;
   value: number;
   count: number;
@@ -186,7 +186,7 @@ export interface WeeklySeriesRow {
   recordedAt?: string;
 }
 
-export interface ScopedQueryProvider {
+interface ScopedQueryProvider {
   getForecastSummary(scope: ForecastScope): Promise<ForecastSummary>;
   getWeightedForecast(scope: ForecastScope): Promise<WeightedForecastSummary>;
   getForecastQuality(scope: ForecastScope, sampleSize: number): Promise<ForecastQualitySummary>;

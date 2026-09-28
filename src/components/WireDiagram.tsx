@@ -294,16 +294,3 @@ function NodeCard({
     </div>
   );
 }
-
-/** Re-exported so the view can render the same status dot in its detail panel. */
-export function ConnectionStatusDot({ status }: { status: ConnectionNode['status'] }) {
-  const meta = CONNECTION_STATUS_META[status];
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span className={`h-1.5 w-1.5 rounded-full ${meta.dotClass}`} />
-      <span className={`font-mono text-[10px] uppercase tracking-[0.06em] ${meta.textClass}`}>
-        {meta.label}
-      </span>
-    </span>
-  );
-}
