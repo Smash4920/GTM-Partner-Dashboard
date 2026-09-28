@@ -282,9 +282,11 @@ instead of rolling onto a future release automatically.
 ```bash
 npm ci
 npm run dev             # http://localhost:5173
+npm run check:file-limits # reject files over 1 MiB or 1,200 text lines
 npm run format          # format source, configuration, and documentation
 npm run format:check    # verify formatting without changing files
 npm run dead-code       # find unused files, exports, and dependencies with Knip
+npm run lint            # lint source and enforce module boundaries
 npm run debt:check      # require source debt markers to link to GitHub issues
 npm run lint
 npm run lint:duplicates # jscpd: fail if source duplication exceeds 1.5%
@@ -329,9 +331,21 @@ command, not `preview`:
 VITE_LOG_LEVEL=debug npm run dev
 ```
 
+`npm ci` installs a Husky pre-commit hook. Every commit checks file-size limits,
+runs the linter, and runs the Vitest suite, preventing oversized files and
+known quality failures from entering the repository. Generated package-manager
+lockfiles are exempt from the 1,200-line limit, but all files remain subject to
+the 1 MiB limit.
 `npm ci` installs a Husky pre-commit hook. Every commit checks technical-debt
 markers, runs the linter, and runs the Vitest suite, preventing untracked debt,
 known lint violations, and unit test failures from entering the repository.
+
+The linter also enforces the source dependency direction configured in
+[`eslint.config.js`](eslint.config.js): the app shell may compose views, views
+may use reusable components, and UI layers may depend on data contracts and
+domain helpers. Data and domain modules cannot reach back into the UI, and
+production views and components cannot import mock providers directly. Tests
+may cross these boundaries to construct fixtures.
 
 ### Dev container
 
@@ -490,5 +504,7 @@ from the environment: `/` when `VERCEL` is set (Vercel serves at a domain
 root), and `/GTM-Partner-Dashboard/` otherwise (Pages serves project sites
 under the repo name). Set `BASE_PATH` to override for any other host.
 
+CI (`ci.yml`) checks file-size limits, formatting, lint, coverage, and the
+production build on every pull request and on every push to `main`.
 CI (`ci.yml`) runs formatting + lint + duplicate-code detection + coverage +
 build on every pull request and on every push to `main`.

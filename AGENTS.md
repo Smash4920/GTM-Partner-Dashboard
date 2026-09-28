@@ -32,9 +32,11 @@ Run commands from the repository root.
 
 ```bash
 npm run dev       # start the Vite development server
+npm run check:file-limits # reject oversized files before review
 npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
 npm run dead-code # find unused files, exports, and dependencies with Knip
+npm run lint      # lint TypeScript/TSX and enforce module boundaries
 npm run debt:check # require source debt markers to link to GitHub issues
 npm run lint      # lint all TypeScript and TSX files
 npm run lint:duplicates # detect source duplication with jscpd
@@ -56,6 +58,7 @@ npm test -- src/lib/metrics.test.ts
 Before handing off a change, run the same checks as CI, in this order:
 
 ```bash
+npm run check:file-limits
 npm run format:check
 npm run test:debt
 npm run debt:check
@@ -102,6 +105,10 @@ survivable.
 
 ## Architecture and data rules
 
+- ESLint enforces the dependency direction declared in `eslint.config.js`:
+  app shell → views → components → data/domain helpers. Providers are isolated
+  under `src/data/mock/`, and production views and components cannot import
+  them directly. Tests may cross these boundaries to build fixtures.
 - Views consume the merged `DashboardData` passed down from `App.tsx`; they
   must not import mock records directly. The one exception is Forecasting,
   which reads the scoped contract through `useForecastQueries.ts` and passes
