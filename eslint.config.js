@@ -70,6 +70,9 @@ export default tseslint.config(
       },
     },
     rules: {
+      // Keep control flow reviewable. New hotspots fail locally and in CI
+      // before they can grow beyond the team's agreed complexity budget.
+      complexity: ['error', { max: 20 }],
       '@typescript-eslint/naming-convention': [
         'error',
         {

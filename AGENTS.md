@@ -35,7 +35,11 @@ npm run dev       # start the Vite development server
 npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
 npm run lint      # lint TypeScript/TSX and enforce module boundaries
+npm run debt:check # require source debt markers to link to GitHub issues
+npm run lint      # lint all TypeScript and TSX files
+npm run lint:duplicates # detect source duplication with jscpd
 npm test          # run the Vitest suite once
+npm run test:debt # test the technical-debt policy scanner
 npm run test:coverage # run Vitest with coverage, enforcing the thresholds in vite.config.ts
 npm run test:e2e  # run the Playwright browser suite
 npm run test:list # collect and list tests without running them
@@ -53,7 +57,10 @@ Before handing off a change, run the same checks as CI, in this order:
 
 ```bash
 npm run format:check
+npm run test:debt
+npm run debt:check
 npm run lint
+npm run lint:duplicates
 npm run test:coverage
 npm run test:e2e
 npm run build
@@ -162,6 +169,9 @@ survivable.
   line wrapping — run `npm run format` rather than hand-wrapping to taste.
 - Add comments for business invariants and non-obvious time or data semantics,
   not for self-evident JSX.
+- Link intentional debt markers to an issue in this repository and explain the
+  removal condition, for example `TODO(#123): remove after the provider cutover`.
+  `npm run debt:check` enforces this in CI.
 - Log through `src/lib/logging.ts`, not raw `console` calls: one structured
   record per event — `log.info('msg', { fields })` — with
   `logger.child({ component: '...' })` for shared context. Log identifiers
