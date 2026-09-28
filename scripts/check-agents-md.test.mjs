@@ -74,7 +74,7 @@ describe('AGENTS.md freshness checks', () => {
         'Documented command `npm run removed` references missing package script `removed`.',
         'Documented shell command is not validated: `npm run lint && node scripts/manual.mjs`.',
         'Documented repository path does not exist: `docs/removed.md`.',
-        'Documented repository path does not exist: `missing.config.ts`.',
+        'Documented repository file does not exist anywhere: `missing.config.ts`.',
       ],
     );
   });

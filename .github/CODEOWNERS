@@ -1,0 +1,54 @@
+# Code ownership for Smash4920/GTM-Partner-Dashboard.
+#
+# GitHub applies the LAST matching rule in the file, so the catch-all owner
+# sits first and more specific entries below it refine the assignment. Every
+# pattern resolves to @Smash4920, the repository owner, so there are no gaps:
+# branch protection can require review from Code Owners on any path. Pair
+# this file with "Require review from Code Owners" on main (Settings ->
+# Branches) -- see docs/security.md for the settings a repository file cannot
+# express. GitHub reads CODEOWNERS from the default branch only.
+
+# Catch-all: default owner for everything in the repository.
+* @Smash4920
+
+# Application shell, routing, and provider wiring.
+/src/App.tsx @Smash4920
+
+# Page-level dashboard views.
+/src/views/ @Smash4920
+
+# Reusable UI and domain components.
+/src/components/ @Smash4920
+
+# Domain types, mock data, and the provider seam under migration.
+/src/data/ @Smash4920
+
+# Fiscal-calendar, metric, logging, and notification helpers.
+/src/lib/ @Smash4920
+
+# Entry point and global styles.
+/index.html @Smash4920
+/src/ @Smash4920
+
+# Governance: workflows, automation, issue intake, and this file.
+/.github/ @Smash4920
+
+# Dependency automation policy.
+/renovate.json @Smash4920
+
+# Documentation.
+/README.md @Smash4920
+/AGENTS.md @Smash4920
+/docs/ @Smash4920
+
+# Build, lint, and test tooling configuration.
+/package.json @Smash4920
+/package-lock.json @Smash4920
+/vite.config.ts @Smash4920
+/playwright.config.ts @Smash4920
+/tailwind.config.js @Smash4920
+/postcss.config.js @Smash4920
+/eslint.config.js @Smash4920
+/tsconfig.json @Smash4920
+/tsconfig.app.json @Smash4920
+/tsconfig.node.json @Smash4920

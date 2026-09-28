@@ -1,0 +1,88 @@
+# Machine-readable label taxonomy for issue and pull-request triage.
+#
+# Synced to GitHub by the label-taxonomy job in
+# .github/workflows/security.yml (crazy-max/ghaction-github-labeler). The
+# sync is strict: labels that exist on GitHub but not in this file are
+# deleted, so this file is the single source of truth.
+#
+# Scheme: <category>:<value>. Categories are stable; add values, not
+# categories. Colors follow the Tailwind palette tokens in
+# tailwind.config.js where one matches, so labels read like the dashboard.
+
+# -- Priority: how fast triage should act. Exactly one per report. --------
+
+- name: 'priority:critical'
+  color: 'dc2626'
+  description: >-
+    Partner data exposure, wrong numbers reaching users, or a broken main.
+    Drop everything.
+
+- name: 'priority:high'
+  color: 'f97316'
+  description: Major breakage or an incorrect metric; fix before the next release.
+
+- name: 'priority:medium'
+  color: 'eab308'
+  description: Real defect with a workaround; fix within the current cycle.
+
+- name: 'priority:low'
+  color: '94a3b8'
+  description: Edge case or polish; batch with related work.
+
+# -- Type: what kind of work it is. Exactly one per report. ----------------
+
+- name: 'type:bug'
+  color: 'ef4444'
+  description: Incorrect behavior against the documented contract.
+
+- name: 'type:security'
+  color: '991b1b'
+  description: Confidentiality, integrity, or availability concern. Report privately first.
+
+- name: 'type:feature'
+  color: '22c55e'
+  description: New capability or a deliberate behavior change.
+
+- name: 'type:test'
+  color: '14b8a6'
+  description: Coverage gap, flaky suite, or test-debt policy work.
+
+- name: 'type:maintenance'
+  color: '64748b'
+  description: Tooling, refactoring, and other non-functional upkeep.
+
+- name: 'type:documentation'
+  color: '3b82f6'
+  description: README, guides, and documentation accuracy.
+
+# -- Area: where the change lands. At least one per report. -----------------
+
+- name: 'area:ui'
+  color: '38bdf8'
+  description: src/views, src/components, styling, and interaction.
+
+- name: 'area:data'
+  color: '8b5cf6'
+  description: src/data, src/lib, metrics, and the provider seam.
+
+- name: 'area:build'
+  color: '6366f1'
+  description: Build, CI, tooling, dependencies, and workflow configuration.
+
+- name: 'area:tests'
+  color: '84cc16'
+  description: Test suites, fixtures, and the coverage ratchet.
+
+# -- Workflow: automation and triage states. --------------------------------
+
+- name: 'dependencies'
+  color: 'a855f7'
+  description: Automated dependency update from Dependabot or Renovate.
+
+- name: 'needs-triage'
+  color: 'e11d48'
+  description: Awaiting priority, type, and area labels.
+
+- name: 'good first issue'
+  color: '7057ff'
+  description: Small, well-scoped starter task.

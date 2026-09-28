@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   LOG_LEVELS,
+  addGlobalSink,
   consoleSink,
   createLogger,
   isLogLevel,
@@ -210,5 +211,57 @@ describe('isLogLevel', () => {
     for (const value of ['trace', 'verbose', '', undefined, 3, null]) {
       expect(isLogLevel(value)).toBe(false);
     }
+  });
+});
+
+describe('addGlobalSink', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('fans each record out to registered sinks on top of the primary sink', () => {
+    const { records, sink } = capture();
+    const shipped: LogRecord[] = [];
+    const otherShipped: LogRecord[] = [];
+    const log = createLogger({ sink });
+    const remove = addGlobalSink((record) => shipped.push(record));
+    const removeOther = addGlobalSink((record) => otherShipped.push(record));
+
+    try {
+      log.info('reaches both', { component: 'App' });
+    } finally {
+      remove();
+      removeOther();
+    }
+
+    expect(records).toHaveLength(1);
+    expect(shipped).toHaveLength(1);
+    expect(otherShipped).toHaveLength(1);
+    expect(shipped[0]).toBe(records[0]);
+
+    log.info('after removal');
+    expect(shipped).toHaveLength(1);
+  });
+
+  it('contains a sink that throws to that record, and reports it once', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { records, sink } = capture();
+    const shipped: LogRecord[] = [];
+    const log = createLogger({ sink });
+    const remove = addGlobalSink((record) => {
+      shipped.push(record);
+      throw new Error('sink bug');
+    });
+
+    try {
+      log.warn('still reaches the console sink', { registrationId: 'reg-0001' });
+    } finally {
+      remove();
+    }
+
+    expect(records).toHaveLength(1);
+    expect(shipped).toHaveLength(1);
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError.mock.calls[0]?.[0]).toBe('[logging] sink failed');
   });
 });

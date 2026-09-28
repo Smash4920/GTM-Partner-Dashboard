@@ -1,6 +1,8 @@
 node_modules
 dist
 build-metrics
+coverage
+.vite
 playwright-report
 test-results
 .factory

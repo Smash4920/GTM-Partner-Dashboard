@@ -17,7 +17,12 @@ export const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
-const LEVEL_WEIGHT: Record<LogLevel, number> = {
+/**
+ * Numeric weight per level, so any consumer can compare severities — the
+ * telemetry log-shipping sink uses it to decide which records are worth
+ * sending without re-encoding the level order.
+ */
+export const LEVEL_WEIGHT: Record<LogLevel, number> = {
   debug: 10,
   info: 20,
   warn: 30,
@@ -122,6 +127,43 @@ interface LoggerState {
   sink: LogSink;
 }
 
+/**
+ * Sinks every record reaches, on top of its logger's own sink. This is how
+ * records can leave the browser (telemetry log shipping) without any call
+ * site changing, and without the console sink losing the unredacted record a
+ * local developer needs. Registrations are app-wide and apply to loggers
+ * created before or after the registration.
+ */
+const globalSinks: LogSink[] = [];
+
+/**
+ * Adds a sink that receives every record every logger emits, and returns the
+ * function that removes it. Sinks are expected not to throw — a shipping
+ * failure is theirs to handle — but one that does is contained to its own
+ * record rather than the call site that logged.
+ */
+export function addGlobalSink(sink: LogSink): () => void {
+  globalSinks.push(sink);
+  return () => {
+    const index = globalSinks.indexOf(sink);
+    if (index !== -1) globalSinks.splice(index, 1);
+  };
+}
+
+function emitToSinks(state: LoggerState, record: LogRecord): void {
+  state.sink(record);
+  for (const sink of globalSinks) {
+    try {
+      sink(record);
+    } catch (error) {
+      // The one raw console call in the logging layer, as the last resort:
+      // a sink that throws cannot be logged through a sink without recursing,
+      // and hiding the failure entirely would leave a dead sink undiscovered.
+      console.error('[logging] sink failed', error);
+    }
+  }
+}
+
 // The envelope is written last, so context named time/level/msg cannot clobber it.
 function emit(
   state: LoggerState,
@@ -144,7 +186,7 @@ function emit(
   record.time = new Date().toISOString();
   record.level = level;
   record.msg = msg;
-  state.sink(record as LogRecord);
+  emitToSinks(state, record as LogRecord);
 }
 
 /**

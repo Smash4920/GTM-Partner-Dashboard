@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Gzip budget for the production bundle. Every budget is enforced by scripts/check-bundle-budgets.mjs after `npm run build`; raise a limit only with a matching reason, never to make a red build green.",
+  "budgets": [
+    {
+      "name": "Total JavaScript",
+      "pattern": "dist/assets/*.js",
+      "aggregate": "sum",
+      "limitBytes": 245760,
+      "reason": "The app shell plus the lazily-shared charting stack. Scripts/check-bundle-budgets.mjs fails when the sum of gzip sizes grows past this."
+    },
+    {
+      "name": "Application chunk",
+      "pattern": "dist/assets/index-*.js",
+      "aggregate": "each",
+      "limitBytes": 69632,
+      "reason": "The entry chunk that every visitor downloads before charts render. Keep app code out of the vendor chunks. Raised from 65 KiB when the runtime observability stack (telemetry envelopes, health checks, error capture) and the feature-flag runtime landed together: a measured, deliberate addition to the entry chunk, not drift."
+    },
+    {
+      "name": "Recharts chunk",
+      "pattern": "dist/assets/recharts-*.js",
+      "aggregate": "each",
+      "limitBytes": 158720,
+      "reason": "Recharts and its redux/immer runtime. The heaviest direct dependency; a jump here is the earliest signal that a chart dependency was upgraded or pulled in eagerly."
+    },
+    {
+      "name": "Chart dependencies chunk",
+      "pattern": "dist/assets/charts-vendor-*.js",
+      "aggregate": "each",
+      "limitBytes": 28672,
+      "reason": "victory-vendor and the d3 packages Recharts reaches through it."
+    },
+    {
+      "name": "Stylesheet",
+      "pattern": "dist/assets/*.css",
+      "aggregate": "each",
+      "limitBytes": 30720,
+      "reason": "Tailwind output. Keep utility growth and unused custom CSS from accumulating unnoticed."
+    }
+  ]
+}

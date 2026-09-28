@@ -1,0 +1,54 @@
+name: Feature request
+description: Propose a new capability or a change in behavior.
+title: '[feature]: '
+labels: [type:feature, needs-triage]
+assignees: [Smash4920]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Who hits the problem, and what they do about it today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should happen instead, concretely.
+    validations:
+      required: true
+  - type: dropdown
+    id: data-contract
+    attributes:
+      label: Expected data contract impact
+      description: >-
+        The migration in docs/migration-plan.md moves views onto scoped
+        queries; new scope follows that seam.
+      options:
+        - None -- pure presentation change
+        - Adds a ScopedQueryProvider query
+        - Retires a LegacyBookProvider call
+        - Changes the DashboardData or ProviderBook shape
+        - Not sure yet
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area does this touch?
+      description: 'Triage applies the matching area: label.'
+      options:
+        - area:ui -- views and components
+        - area:data -- data layer and metrics
+        - area:build -- tooling and CI
+        - area:tests -- coverage and e2e
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What was ruled out, and why.
+    validations:
+      required: false

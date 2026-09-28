@@ -1,0 +1,64 @@
+# Dependabot version updates.
+#
+# Ecosystem split with Renovate (see renovate.json): Dependabot owns GitHub
+# Actions and devcontainer updates, while Renovate owns npm packages. The
+# split means the two tools never open duplicate pull requests.
+#
+# Both tools enforce a release-age policy: `cooldown` here (7 days, covering
+# version updates; Dependabot's implicit default is 3 days) and
+# `minimumReleaseAge` in renovate.json (7 days, 14 days for majors).
+# Dependabot security alerts and automated security updates are enabled in
+# repository settings, cover every ecosystem, and are never delayed by a
+# cooldown. Settings that a repository file cannot express are listed in
+# docs/security.md.
+
+version: 2
+
+updates:
+  # Pinned action versions across .github/workflows/*.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: America/New_York
+    target-branch: main
+    open-pull-requests-limit: 5
+    assignees:
+      - Smash4920
+    labels:
+      - dependencies
+      - area:build
+    commit-message:
+      prefix: 'chore'
+      include: scope
+    # Hold new action releases for a week before proposing them, matching the
+    # npm policy in renovate.json.
+    cooldown:
+      default-days: 7
+    # One PR for all action bumps keeps the review queue short.
+    groups:
+      actions:
+        patterns:
+          - '*'
+
+  # Devcontainer Features, should .devcontainer adopt pinned features.
+  # The current devcontainer.json pins a base image, which Dependabot does
+  # not rewrite; this entry stays dormant until a manifest exists.
+  - package-ecosystem: devcontainers
+    directory: /.devcontainer
+    schedule:
+      interval: monthly
+    target-branch: main
+    open-pull-requests-limit: 1
+    assignees:
+      - Smash4920
+    labels:
+      - dependencies
+      - area:build
+    commit-message:
+      prefix: 'chore'
+      include: scope
+    cooldown:
+      default-days: 7

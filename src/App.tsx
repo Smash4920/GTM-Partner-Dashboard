@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar, { type Route } from './components/Sidebar';
 import { MenuIcon } from './components/icons';
@@ -20,7 +20,9 @@ import { useDashboardData } from './data/useDashboardData';
 import type { NotificationDraft } from './lib/notifications';
 import { formatDate } from './lib/format';
 import { featureFlags, getFeatureFlagSubject, type FeatureFlagClient } from './lib/featureFlags';
+import { assessHealth, publishHealthArtifact } from './lib/health';
 import { logger } from './lib/logging';
+import { telemetry } from './lib/telemetry/telemetry';
 import ActivityTrackingView from './views/ActivityTrackingView';
 import DataConnectionsView from './views/DataConnectionsView';
 import DealRegistrationOpsView from './views/DealRegistrationOpsView';
@@ -107,6 +109,19 @@ export default function App({ flagClient = featureFlags }: AppProps) {
     [addedTeamUsers],
   );
 
+  // Route and provider are the two halves of "where is this session": every
+  // telemetry envelope, error capture, and the health artifact carry them, so
+  // a signal can always be answered with "on the Forecasting view, against
+  // the simulated remote provider". The provider effect also records the
+  // initial selection — a session's first record of what it was wired to.
+  useEffect(() => {
+    telemetry.setRoute(route);
+  }, [route]);
+
+  useEffect(() => {
+    telemetry.setProviderId(providerId);
+  }, [providerId]);
+
   // Edited forecasts, notes, next steps, and called categories are folded into
   // the opportunity book itself, so every KPI, chart, and table in the app
   // reads the corrected figure rather than the one Salesforce supplied. The
@@ -139,8 +154,30 @@ export default function App({ flagClient = featureFlags }: AppProps) {
     [revenueOverrides, notes, nextSteps, forecastCalls],
   );
 
+  // Once the book is on screen, the app checks its own runtime readiness
+  // (data seam latency, flags, telemetry delivery, recent errors) and
+  // publishes the result at `window.GTM_HEALTH` for the deployed page.
+  // Once per load is deliberate: it is a readiness check, not a monitor, and
+  // the published endpoint can be refreshed on demand. The refresh handle
+  // reads the provider through a ref, so it pings the seam the session is on
+  // now, not the one it happened to boot with.
+  const healthPublished = useRef(false);
+  const providerRef = useRef(provider);
+  useEffect(() => {
+    providerRef.current = provider;
+  }, [provider]);
+  useEffect(() => {
+    if (!live || healthPublished.current) return;
+    healthPublished.current = true;
+    void assessHealth({ provider }).then((artifact) => {
+      telemetry.reportHealth(artifact);
+      publishHealthArtifact(artifact, () => assessHealth({ provider: providerRef.current }));
+    });
+  }, [live, provider]);
+
   const setRevenue = (opportunityId: string, value: number) => {
     log.debug('Revenue forecast edited', { opportunityId, revenue: value });
+    telemetry.track('forecast_revenue_edited', { opportunityId });
     setRevenueOverrides((prev) => ({ ...prev, [opportunityId]: value }));
   };
 
@@ -158,16 +195,20 @@ export default function App({ flagClient = featureFlags }: AppProps) {
 
   const setForecastCall = (opportunityId: string, category: ForecastCategory) => {
     log.debug('Forecast call changed', { opportunityId, category });
+    telemetry.track('forecast_call_changed', { opportunityId, category });
     setForecastCalls((prev) => ({ ...prev, [opportunityId]: category }));
   };
 
-  const commitClassifications = (next: Record<string, MeetingClassification>) =>
+  const commitClassifications = (next: Record<string, MeetingClassification>) => {
+    telemetry.track('meeting_classifications_committed', { count: Object.keys(next).length });
     setClassifications(next);
+  };
 
   const addPartner = (name: string, partnerManagerId: string) => {
     prospectSeq.current += 1;
     const id = `prospect-${prospectSeq.current}`;
     log.debug('Prospect partner added', { partnerId: id, name, partnerManagerId });
+    telemetry.track('partner_added', { partnerId: id, partnerManagerId });
     setProspects((prev) => [
       ...prev,
       {
@@ -192,6 +233,13 @@ export default function App({ flagClient = featureFlags }: AppProps) {
     log.debug('Team user invited', {
       name: input.name,
       email: input.email,
+      role: input.role,
+      partnerManagerId: input.partnerManagerId,
+    });
+    // The analytics event carries the role and the manager, never the name or
+    // address: identifiers and counts only, the same rule the log layer
+    // applies, and redaction would mask the rest on the way out regardless.
+    telemetry.track('team_user_invited', {
       role: input.role,
       partnerManagerId: input.partnerManagerId,
     });
@@ -240,6 +288,7 @@ export default function App({ flagClient = featureFlags }: AppProps) {
       kind: draft.kind,
       channels: draft.channels,
     });
+    telemetry.track('notification_sent', { kind: draft.kind, channels: draft.channels });
     setNotifications((prev) => [
       {
         id,
