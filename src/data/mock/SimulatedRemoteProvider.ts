@@ -10,6 +10,7 @@ import type {
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from '../DataProvider';
+import type { TraceContext } from '../../lib/tracing';
 import type {
   ActivityMeeting,
   DealRegistration,
@@ -79,79 +80,92 @@ export class SimulatedRemoteProvider implements DataProvider {
 
   // ---- the shape being retired --------------------------------------------
 
-  async listPartnerManagers(): Promise<PartnerManager[]> {
-    return this.roundTrip('listPartnerManagers', () => this.inner.listPartnerManagers());
+  async listPartnerManagers(trace?: TraceContext): Promise<PartnerManager[]> {
+    return this.roundTrip('listPartnerManagers', () => this.inner.listPartnerManagers(trace));
   }
 
-  async listPartners(): Promise<Partner[]> {
-    return this.roundTrip('listPartners', () => this.inner.listPartners());
+  async listPartners(trace?: TraceContext): Promise<Partner[]> {
+    return this.roundTrip('listPartners', () => this.inner.listPartners(trace));
   }
 
-  async listRegistrations(): Promise<DealRegistration[]> {
-    return this.roundTrip('listRegistrations', () => this.inner.listRegistrations());
+  async listRegistrations(trace?: TraceContext): Promise<DealRegistration[]> {
+    return this.roundTrip('listRegistrations', () => this.inner.listRegistrations(trace));
   }
 
-  async listOpportunities(): Promise<Opportunity[]> {
-    return this.roundTrip('listOpportunities', () => this.inner.listOpportunities());
+  async listOpportunities(trace?: TraceContext): Promise<Opportunity[]> {
+    return this.roundTrip('listOpportunities', () => this.inner.listOpportunities(trace));
   }
 
-  async getTargets(): Promise<Target[]> {
-    return this.roundTrip('getTargets', () => this.inner.getTargets());
+  async getTargets(trace?: TraceContext): Promise<Target[]> {
+    return this.roundTrip('getTargets', () => this.inner.getTargets(trace));
   }
 
-  async listActivities(): Promise<ActivityMeeting[]> {
-    return this.roundTrip('listActivities', () => this.inner.listActivities());
+  async listActivities(trace?: TraceContext): Promise<ActivityMeeting[]> {
+    return this.roundTrip('listActivities', () => this.inner.listActivities(trace));
   }
 
-  async listCertifications(): Promise<PartnerCertification[]> {
-    return this.roundTrip('listCertifications', () => this.inner.listCertifications());
+  async listCertifications(trace?: TraceContext): Promise<PartnerCertification[]> {
+    return this.roundTrip('listCertifications', () => this.inner.listCertifications(trace));
   }
 
-  async listTeamUsers(): Promise<TeamUser[]> {
-    return this.roundTrip('listTeamUsers', () => this.inner.listTeamUsers());
+  async listTeamUsers(trace?: TraceContext): Promise<TeamUser[]> {
+    return this.roundTrip('listTeamUsers', () => this.inner.listTeamUsers(trace));
   }
 
   // ---- the target shape ----------------------------------------------------
 
-  async getForecastSummary(scope: ForecastScope): Promise<ForecastSummary> {
-    return this.roundTrip('getForecastSummary', () => this.inner.getForecastSummary(scope));
+  async getForecastSummary(scope: ForecastScope, trace?: TraceContext): Promise<ForecastSummary> {
+    return this.roundTrip('getForecastSummary', () => this.inner.getForecastSummary(scope, trace));
   }
 
-  async getWeightedForecast(scope: ForecastScope): Promise<WeightedForecastSummary> {
-    return this.roundTrip('getWeightedForecast', () => this.inner.getWeightedForecast(scope));
+  async getWeightedForecast(
+    scope: ForecastScope,
+    trace?: TraceContext,
+  ): Promise<WeightedForecastSummary> {
+    return this.roundTrip('getWeightedForecast', () =>
+      this.inner.getWeightedForecast(scope, trace),
+    );
   }
 
   async getForecastQuality(
     scope: ForecastScope,
     sampleSize: number,
+    trace?: TraceContext,
   ): Promise<ForecastQualitySummary> {
     return this.roundTrip('getForecastQuality', () =>
-      this.inner.getForecastQuality(scope, sampleSize),
+      this.inner.getForecastQuality(scope, sampleSize, trace),
     );
   }
 
-  async getManagerForecastGroups(scope: ForecastScope): Promise<ManagerForecastGroup[]> {
+  async getManagerForecastGroups(
+    scope: ForecastScope,
+    trace?: TraceContext,
+  ): Promise<ManagerForecastGroup[]> {
     return this.roundTrip('getManagerForecastGroups', () =>
-      this.inner.getManagerForecastGroups(scope),
+      this.inner.getManagerForecastGroups(scope, trace),
     );
   }
 
-  async getWeeklyForecastSeries(scope: ForecastScope): Promise<WeeklySeriesRow[]> {
+  async getWeeklyForecastSeries(
+    scope: ForecastScope,
+    trace?: TraceContext,
+  ): Promise<WeeklySeriesRow[]> {
     return this.roundTrip('getWeeklyForecastSeries', () =>
-      this.inner.getWeeklyForecastSeries(scope),
+      this.inner.getWeeklyForecastSeries(scope, trace),
     );
   }
 
   async listQuarterOpportunities(
     scope: ForecastScope,
     page: PageRequest,
+    trace?: TraceContext,
   ): Promise<Page<Opportunity>> {
     return this.roundTrip('listQuarterOpportunities', () =>
-      this.inner.listQuarterOpportunities(scope, page),
+      this.inner.listQuarterOpportunities(scope, page, trace),
     );
   }
 
-  async getPartnerDirectory(): Promise<PartnerRef[]> {
-    return this.roundTrip('getPartnerDirectory', () => this.inner.getPartnerDirectory());
+  async getPartnerDirectory(trace?: TraceContext): Promise<PartnerRef[]> {
+    return this.roundTrip('getPartnerDirectory', () => this.inner.getPartnerDirectory(trace));
   }
 }
