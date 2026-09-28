@@ -285,14 +285,30 @@ npm run dev             # http://localhost:5173
 npm run check:file-limits # reject files over 1 MiB or 1,200 text lines
 npm run format          # format source, configuration, and documentation
 npm run format:check    # verify formatting without changing files
+npm run debt:check      # require source debt markers to link to GitHub issues
 npm run lint
+npm run lint:duplicates # jscpd: fail if source duplication exceeds 1.5%
 npm test                # vitest: fiscal/metric helpers, the data contract, the provider seam, the view layer
+npm run test:debt       # verify the technical-debt policy scanner
 npm run test:coverage   # the same suite with coverage, enforcing the thresholds in vite.config.ts
 npm run test:e2e        # playwright: browser workflows and partner-data boundaries
 npm run test:list       # collect and list tests without running them
 npm run build           # type-checks, then bundles to dist/
 npm run preview
 ```
+
+### Technical debt
+
+Source-level debt must remain visible and actionable. Use `TODO(#123): reason`,
+`FIXME(#123): reason`, `HACK(#123): reason`, or `XXX(#123): reason`, where the
+number links to an issue in this repository. A full
+`https://github.com/smash4920/gtm-partner-dashboard/issues/123` URL is also
+accepted. The explanation should state what needs to change or when the marker
+can be removed.
+
+`npm run debt:check` scans tracked and untracked, non-ignored source and
+configuration files. CI runs it on every pull request and push to `main`, so an
+unlinked marker cannot silently become permanent.
 
 ### Logging
 
@@ -318,6 +334,9 @@ runs the linter, and runs the Vitest suite, preventing oversized files and
 known quality failures from entering the repository. Generated package-manager
 lockfiles are exempt from the 1,200-line limit, but all files remain subject to
 the 1 MiB limit.
+`npm ci` installs a Husky pre-commit hook. Every commit checks technical-debt
+markers, runs the linter, and runs the Vitest suite, preventing untracked debt,
+known lint violations, and unit test failures from entering the repository.
 
 ### Dev container
 
@@ -478,3 +497,5 @@ under the repo name). Set `BASE_PATH` to override for any other host.
 
 CI (`ci.yml`) checks file-size limits, formatting, lint, coverage, and the
 production build on every pull request and on every push to `main`.
+CI (`ci.yml`) runs formatting + lint + duplicate-code detection + coverage +
+build on every pull request and on every push to `main`.

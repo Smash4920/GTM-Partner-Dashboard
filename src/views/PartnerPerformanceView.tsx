@@ -66,6 +66,23 @@ function targetForPhase(targets: DashboardData['targets'], phase: FiscalPhase): 
   return targetsForPhase(targets, phase).reduce((sum, target) => sum + target.revenueTarget, 0);
 }
 
+function managerScope(managerId: string): string | undefined {
+  return managerId === 'all' ? undefined : managerId;
+}
+
+function selectedScopeLabel(
+  partnerId: string,
+  managerId: string,
+  managerName: string | undefined,
+  partners: Partner[],
+): string {
+  if (partnerId !== 'all') {
+    return partners.find((partner) => partner.id === partnerId)?.name ?? 'Partner';
+  }
+  if (managerId === 'all') return 'All Partners';
+  return `${managerName ?? 'Partner manager'} · All Partners`;
+}
+
 /**
  * Partner Performance: drill down into one partner manager's book or a single
  * partner. Dropdowns on the right pick the manager and partner; a meeting
@@ -83,6 +100,7 @@ export default function PartnerPerformanceView({
   const [partnerId, setPartnerId] = useState('all');
 
   const selectedManager = data.partnerManagers.find((manager) => manager.id === managerId);
+  const scopedManagerId = managerScope(managerId);
   const managerPartners = useMemo(
     () =>
       data.partners.filter(
@@ -153,24 +171,12 @@ export default function PartnerPerformanceView({
     [partnerScopeRegistrations, partnerScopeOpps],
   );
   const activity = useMemo(
-    () =>
-      weeklyActivity(
-        data.activities,
-        managerId === 'all' ? undefined : managerId,
-        selectedPartnerIds,
-        classifications,
-      ),
-    [data.activities, managerId, selectedPartnerIds, classifications],
+    () => weeklyActivity(data.activities, scopedManagerId, selectedPartnerIds, classifications),
+    [data.activities, scopedManagerId, selectedPartnerIds, classifications],
   );
   const goal = useMemo(
-    () =>
-      weeklyGoalProgress(
-        data.activities,
-        classifications,
-        managerId === 'all' ? undefined : managerId,
-        selectedPartnerIds,
-      ),
-    [data.activities, classifications, managerId, selectedPartnerIds],
+    () => weeklyGoalProgress(data.activities, classifications, scopedManagerId, selectedPartnerIds),
+    [data.activities, classifications, scopedManagerId, selectedPartnerIds],
   );
 
   const pipeline = openPipeline(phaseOpps);
@@ -184,12 +190,12 @@ export default function PartnerPerformanceView({
   const phaseLabel = FISCAL_PHASE_META[phase].label;
   const outcomeScope = phase === 'fy' ? `${FISCAL_YEAR} to date` : `${FISCAL_YEAR} ${phaseLabel}`;
 
-  const selectedLabel =
-    partnerId === 'all'
-      ? managerId === 'all'
-        ? 'All Partners'
-        : `${selectedManager?.name ?? 'Partner manager'} · All Partners`
-      : (data.partners.find((partner) => partner.id === partnerId)?.name ?? 'Partner');
+  const selectedLabel = selectedScopeLabel(
+    partnerId,
+    managerId,
+    selectedManager?.name,
+    data.partners,
+  );
 
   const selectedPartner = data.partners.find((partner) => partner.id === partnerId);
   const uniquePartners = new Set(

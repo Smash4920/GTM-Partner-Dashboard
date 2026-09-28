@@ -18,7 +18,10 @@ jobs:
       - run: npm ci
       - run: npm run check:file-limits
       - run: npm run format:check
+      - run: npm run test:debt
+      - run: npm run debt:check
       - run: npm run lint
+      - run: npm run lint:duplicates
       # Coverage, not a bare test run: the thresholds in vite.config.ts are
       # what keep the view layer from drifting back toward 0%.
       - run: npm run test:coverage
