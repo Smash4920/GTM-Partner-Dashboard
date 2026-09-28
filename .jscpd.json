@@ -1,0 +1,7 @@
+{
+  "minLines": 8,
+  "minTokens": 60,
+  "ignore": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+  "reporters": ["console"],
+  "threshold": 1.5
+}
