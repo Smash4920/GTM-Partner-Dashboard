@@ -400,6 +400,22 @@ with `npm ci`, and configures ESLint, Tailwind CSS, and the workspace TypeScript
 version. Start the app with `npm run dev`; port 5173 is forwarded and opens in
 the browser automatically.
 
+### Releases and changelog
+
+The [Release Please workflow](.github/workflows/release-please.yml) runs after
+changes reach `main`. It maintains a release pull request that updates
+`CHANGELOG.md` and the package version from conventional commit messages.
+Merging that pull request creates the version tag and GitHub release with the
+same generated notes.
+
+Use `feat:` for user-visible features, `fix:` for user-visible fixes, and
+`type(scope):` when a scope makes the entry clearer. Mark a breaking change
+with a `BREAKING CHANGE:` footer. Other conventional types such as `docs:`,
+`test:`, and `chore:` remain valid but do not create misleading feature or fix
+entries. Do not edit `.release-please-manifest.json` by hand outside a release
+bootstrap or recovery. The configured bootstrap commit marks the start of
+automated release history, so the first release does not claim older changes.
+
 ## Data contract (the integration seam)
 
 The UI only talks to the `DataProvider` interface
