@@ -99,6 +99,76 @@ describe('ForecastTable', () => {
   });
 
   describe('next step editing', () => {
+    // Regression: the editor used to open blank even when the provider (or an
+    // earlier session edit) already held a value, so a blind save erased it.
+    it('opens with the provider next step when there is no session edit', async () => {
+      const user = userEvent.setup();
+      renderTable({ opportunities: [makeOpportunity({ nextStep: 'Send pricing' })] });
+
+      await user.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
+
+      expect(screen.getByRole('textbox', { name: /Next step for Acme Freight/ })).toHaveValue(
+        'Send pricing',
+      );
+    });
+
+    it('opens with the session override rather than the provider next step', async () => {
+      const user = userEvent.setup();
+      renderTable({
+        opportunities: [makeOpportunity({ nextStep: 'Send pricing' })],
+        nextSteps: { 'opp-1': 'Escalate to the AD' },
+      });
+
+      await user.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
+
+      expect(screen.getByRole('textbox', { name: /Next step for Acme Freight/ })).toHaveValue(
+        'Escalate to the AD',
+      );
+    });
+
+    it('opens empty when the session edit is an explicit clear', async () => {
+      const user = userEvent.setup();
+      renderTable({
+        opportunities: [makeOpportunity({ nextStep: 'Send pricing' })],
+        nextSteps: { 'opp-1': '' },
+      });
+
+      await user.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
+
+      expect(screen.getByRole('textbox', { name: /Next step for Acme Freight/ })).toHaveValue('');
+    });
+
+    it('cancel preserves the prior next step', async () => {
+      const user = userEvent.setup();
+      const { onSetNextStep } = renderTable({
+        opportunities: [makeOpportunity({ nextStep: 'Send pricing' })],
+      });
+
+      await user.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
+      const input = screen.getByRole('textbox', { name: /Next step for Acme Freight/ });
+      await user.clear(input);
+      await user.type(input, 'Book the security review');
+      await user.click(screen.getByRole('button', { name: 'Cancel next step edit' }));
+
+      expect(onSetNextStep).not.toHaveBeenCalled();
+      expect(screen.getByText('Send pricing')).toBeInTheDocument();
+    });
+
+    it('Escape preserves the prior next step', async () => {
+      const user = userEvent.setup();
+      const { onSetNextStep } = renderTable({
+        opportunities: [makeOpportunity({ nextStep: 'Send pricing' })],
+      });
+
+      await user.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
+      const input = screen.getByRole('textbox', { name: /Next step for Acme Freight/ });
+      await user.clear(input);
+      await user.type(input, 'Book the security review{Escape}');
+
+      expect(onSetNextStep).not.toHaveBeenCalled();
+      expect(screen.getByText('Send pricing')).toBeInTheDocument();
+    });
+
     it('commits an edited next step', async () => {
       const user = userEvent.setup();
       const { onSetNextStep } = renderTable();
@@ -195,6 +265,108 @@ describe('ForecastTable', () => {
   });
 
   describe('notes', () => {
+    // Regression: the note editor used to open blank even when the provider
+    // (or an earlier session edit) already held a note, so a blind save
+    // erased it with an accidental clear tombstone.
+    it('opens with the provider note when there is no session edit', async () => {
+      const user = userEvent.setup();
+      renderTable({ opportunities: [makeOpportunity({ notes: 'Champion is on leave' })] });
+
+      await user.click(screen.getByRole('button', { name: 'Edit note for Acme Freight' }));
+
+      expect(screen.getByRole('textbox', { name: /Note for Acme Freight/ })).toHaveValue(
+        'Champion is on leave',
+      );
+    });
+
+    it('opens with the session override rather than the provider note', async () => {
+      const user = userEvent.setup();
+      renderTable({
+        opportunities: [makeOpportunity({ notes: 'Champion is on leave' })],
+        notes: { 'opp-1': 'New champion found' },
+      });
+
+      await user.click(screen.getByRole('button', { name: 'Edit note for Acme Freight' }));
+
+      expect(screen.getByRole('textbox', { name: /Note for Acme Freight/ })).toHaveValue(
+        'New champion found',
+      );
+    });
+
+    it('opens empty when the session edit is an explicit clear', async () => {
+      const user = userEvent.setup();
+      renderTable({
+        opportunities: [makeOpportunity({ notes: 'Champion is on leave' })],
+        notes: { 'opp-1': '' },
+      });
+
+      await user.click(screen.getByRole('button', { name: 'Add note for Acme Freight' }));
+
+      expect(screen.getByRole('textbox', { name: /Note for Acme Freight/ })).toHaveValue('');
+    });
+
+    it('cancel preserves the prior note', async () => {
+      const user = userEvent.setup();
+      const { onSetNote } = renderTable({
+        opportunities: [makeOpportunity({ notes: 'Champion is on leave' })],
+      });
+
+      await user.click(screen.getByRole('button', { name: 'Edit note for Acme Freight' }));
+      const input = screen.getByRole('textbox', { name: /Note for Acme Freight/ });
+      await user.clear(input);
+      await user.click(screen.getByRole('button', { name: 'Cancel note edit' }));
+
+      expect(onSetNote).not.toHaveBeenCalled();
+      // The prior note is still the effective value: its disclosure remains.
+      expect(
+        screen.getByRole('button', { name: 'View note for Acme Freight' }),
+      ).toBeInTheDocument();
+    });
+
+    it('Escape preserves the prior note', async () => {
+      const user = userEvent.setup();
+      const { onSetNote } = renderTable({
+        opportunities: [makeOpportunity({ notes: 'Champion is on leave' })],
+      });
+
+      await user.click(screen.getByRole('button', { name: 'Edit note for Acme Freight' }));
+      const input = screen.getByRole('textbox', { name: /Note for Acme Freight/ });
+      await user.clear(input);
+      await user.type(input, '{Escape}');
+
+      expect(onSetNote).not.toHaveBeenCalled();
+      expect(
+        screen.getByRole('button', { name: 'View note for Acme Freight' }),
+      ).toBeInTheDocument();
+    });
+
+    it('reports an emptied note as an empty string, not as no edit', async () => {
+      const user = userEvent.setup();
+      const { onSetNote } = renderTable({
+        opportunities: [makeOpportunity({ notes: 'Champion is on leave' })],
+      });
+
+      await user.click(screen.getByRole('button', { name: 'Edit note for Acme Freight' }));
+      const input = screen.getByRole('textbox', { name: /Note for Acme Freight/ });
+      await user.clear(input);
+      await user.type(input, '{Enter}');
+
+      expect(onSetNote).toHaveBeenCalledWith('opp-1', '');
+    });
+
+    it('renders a cleared note as no note, not as the provider value', () => {
+      renderTable({
+        opportunities: [makeOpportunity({ notes: 'Champion is on leave' })],
+        notes: { 'opp-1': '' },
+      });
+
+      expect(screen.queryByText('Champion is on leave')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'View note for Acme Freight' }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Add note for Acme Freight' })).toBeInTheDocument();
+    });
+
     it('commits a note and keeps it out of the row body', async () => {
       const user = userEvent.setup();
       const { onSetNote } = renderTable();
@@ -220,6 +392,55 @@ describe('ForecastTable', () => {
       );
 
       expect(onSetNote).toHaveBeenCalledWith('opp-1', 'spaced');
+    });
+  });
+
+  describe('note disclosure', () => {
+    it('keeps the note out of the row body until the disclosure is activated', () => {
+      renderTable({ opportunities: [makeOpportunity({ notes: 'Champion is on leave' })] });
+
+      expect(screen.queryByText('Champion is on leave')).not.toBeInTheDocument();
+      const toggle = screen.getByRole('button', { name: 'View note for Acme Freight' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('reveals the note through the disclosure and hides it again', async () => {
+      const user = userEvent.setup();
+      renderTable({ opportunities: [makeOpportunity({ notes: 'Champion is on leave' })] });
+      const toggle = screen.getByRole('button', { name: 'View note for Acme Freight' });
+
+      await user.click(toggle);
+
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      // The control relationship names the region that holds the note.
+      const disclosed = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+      expect(disclosed).toHaveTextContent('Champion is on leave');
+
+      await user.click(screen.getByRole('button', { name: 'Hide note for Acme Freight' }));
+
+      expect(screen.queryByText('Champion is on leave')).not.toBeInTheDocument();
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('is operable from the keyboard', async () => {
+      const user = userEvent.setup();
+      renderTable({ opportunities: [makeOpportunity({ notes: 'Champion is on leave' })] });
+      const toggle = screen.getByRole('button', { name: 'View note for Acme Freight' });
+
+      toggle.focus();
+      await user.keyboard('{Enter}');
+      expect(screen.getByText('Champion is on leave')).toBeInTheDocument();
+
+      await user.keyboard(' ');
+      expect(screen.queryByText('Champion is on leave')).not.toBeInTheDocument();
+    });
+
+    it('offers no disclosure when there is no note', () => {
+      renderTable();
+
+      expect(
+        screen.queryByRole('button', { name: /View note for Acme Freight/ }),
+      ).not.toBeInTheDocument();
     });
   });
 

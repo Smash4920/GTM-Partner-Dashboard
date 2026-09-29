@@ -138,11 +138,124 @@ function OpportunityStage({ opportunity }: { opportunity: Opportunity }) {
 }
 
 /**
+ * The Notes cell: an inline editor, or the pencil plus — when a note exists —
+ * a disclosure that reveals the note on demand. The note itself never renders
+ * in the row body by default, and the disclosure (not hover text) is what
+ * makes it available to keyboard, touch, and screen readers.
+ */
+function NotesCell({
+  opportunity,
+  note,
+  editing,
+  disclosed,
+  draft,
+  onDraftChange,
+  onCommit,
+  onCancel,
+  onStartEdit,
+  onToggleDisclosure,
+}: {
+  opportunity: Opportunity;
+  /** The effective note: session override when present, else the provider's. */
+  note: string | undefined;
+  editing: boolean;
+  disclosed: boolean;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+  onStartEdit: () => void;
+  onToggleDisclosure: () => void;
+}) {
+  const disclosureId = `note-${opportunity.id}`;
+
+  return (
+    <td className="py-3 text-right">
+      {editing ? (
+        <span className="inline-flex items-center justify-end gap-1.5">
+          <input
+            autoFocus
+            value={draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') onCommit();
+              if (event.key === 'Escape') onCancel();
+            }}
+            placeholder="Add a note…"
+            aria-label={`Note for ${opportunity.accountName}`}
+            className="w-44 rounded border border-ash bg-carbon px-2 py-1 text-sm text-bone placeholder:text-graphite focus:border-signal focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={onCommit}
+            aria-label="Save note"
+            className="rounded p-0.5 text-metric hover:bg-ash/30"
+          >
+            <CheckIcon className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Cancel note edit"
+            className="rounded p-0.5 text-granite hover:bg-ash/30"
+          >
+            <XIcon className="h-3.5 w-3.5" />
+          </button>
+        </span>
+      ) : (
+        <span className="inline-flex items-center justify-end gap-1.5">
+          {note ? (
+            <button
+              type="button"
+              onClick={onToggleDisclosure}
+              aria-expanded={disclosed}
+              aria-controls={disclosureId}
+              aria-label={`${disclosed ? 'Hide' : 'View'} note for ${opportunity.accountName}`}
+              className="rounded p-0.5 text-signal transition-colors hover:bg-ash/30"
+            >
+              <CommentIcon className="h-3.5 w-3.5" />
+            </button>
+          ) : (
+            <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-graphite">
+              —
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onStartEdit}
+            className="rounded p-0.5 text-granite transition-colors hover:text-stone"
+            title={note ? 'Edit note' : 'Add a note'}
+            aria-label={`${note ? 'Edit' : 'Add'} note for ${opportunity.accountName}`}
+          >
+            <PencilIcon className="h-3.5 w-3.5" />
+          </button>
+        </span>
+      )}
+      {disclosed && note && (
+        <p
+          id={disclosureId}
+          className="mt-1 max-w-[16rem] text-left text-xs leading-snug text-stone"
+        >
+          {note}
+        </p>
+      )}
+    </td>
+  );
+}
+
+/**
  * In-quarter opportunity table for the VP of Partnerships. Revenue and Notes
- * carry a pencil so partner managers can edit the forecast locally; notes are
- * stored as comments and surface on hover, not inline. Next Step renders
- * inline and is editable per row — the row-level answer to "what happens
- * next" that the forecast call-outs and roadmap alerts build on.
+ * carry a pencil so partner managers can edit the forecast locally; a note
+ * never renders in the row body — the comment button is a disclosure that
+ * reveals it on demand for pointer, keyboard, and touch alike. Next Step
+ * renders inline and is editable per row — the row-level answer to "what
+ * happens next" that the forecast call-outs and roadmap alerts build on.
+ *
+ * Every editor opens with the effective value — the session override when one
+ * exists, else the provider's — so reading a field and saving it unchanged is
+ * a no-op rather than an accidental clear. Escape and the cancel button
+ * abandon the draft without a callback; saving an emptied field is an
+ * explicit clear (an '' tombstone) that keeps the provider value hidden.
  *
  * Forecast category is a manager judgment, not a stage echo: it renders as a
  * static call until its pencil is clicked, which swaps in a dropdown of the
@@ -168,6 +281,7 @@ export default function ForecastTable({
   const [editingNotes, setEditingNotes] = useState<string | null>(null);
   const [editingNextStep, setEditingNextStep] = useState<string | null>(null);
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [disclosedNote, setDisclosedNote] = useState<string | null>(null);
   const [revenueDraft, setRevenueDraft] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
   const [nextStepDraft, setNextStepDraft] = useState('');
@@ -206,7 +320,15 @@ export default function ForecastTable({
     setEditingCategory(null);
     setRevenueError(null);
     setEditingNotes(opportunityId);
-    setNoteDraft(notes[opportunityId] ?? '');
+    // Initialize from the effective value — the session override when one
+    // exists, else the provider's note. Opening blank would turn a blind
+    // save into an accidental clear. `??`, not `||`: an explicit '' clear is
+    // the draft to start from, not a reason to resurrect the provider value.
+    setNoteDraft(
+      notes[opportunityId] ??
+        opportunities.find((opportunity) => opportunity.id === opportunityId)?.notes ??
+        '',
+    );
   };
 
   const commitNote = (opportunityId: string) => {
@@ -220,7 +342,13 @@ export default function ForecastTable({
     setEditingCategory(null);
     setRevenueError(null);
     setEditingNextStep(opportunityId);
-    setNextStepDraft(nextSteps[opportunityId] ?? '');
+    // Same effective-value rule as the note editor: session override first,
+    // then the provider's next step; a stored '' clear stays ''.
+    setNextStepDraft(
+      nextSteps[opportunityId] ??
+        opportunities.find((opportunity) => opportunity.id === opportunityId)?.nextStep ??
+        '',
+    );
   };
 
   const commitNextStep = (opportunityId: string) => {
@@ -427,61 +555,22 @@ export default function ForecastTable({
                     </span>
                   )}
                 </td>
-                <td className="py-3 text-right">
-                  {editingNotes === opportunity.id ? (
-                    <span className="inline-flex items-center justify-end gap-1.5">
-                      <input
-                        autoFocus
-                        value={noteDraft}
-                        onChange={(event) => setNoteDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') commitNote(opportunity.id);
-                          if (event.key === 'Escape') setEditingNotes(null);
-                        }}
-                        placeholder="Add a note…"
-                        aria-label={`Note for ${opportunity.accountName}`}
-                        className="w-44 rounded border border-ash bg-carbon px-2 py-1 text-sm text-bone placeholder:text-graphite focus:border-signal focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => commitNote(opportunity.id)}
-                        aria-label="Save note"
-                        className="rounded p-0.5 text-metric hover:bg-ash/30"
-                      >
-                        <CheckIcon className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingNotes(null)}
-                        aria-label="Cancel note edit"
-                        className="rounded p-0.5 text-granite hover:bg-ash/30"
-                      >
-                        <XIcon className="h-3.5 w-3.5" />
-                      </button>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center justify-end gap-1.5">
-                      {note ? (
-                        <span className="flex items-center gap-1 text-granite" title={note}>
-                          <CommentIcon className="h-3.5 w-3.5 text-signal" />
-                        </span>
-                      ) : (
-                        <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-graphite">
-                          —
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => startNoteEdit(opportunity.id)}
-                        className="rounded p-0.5 text-granite transition-colors hover:text-stone"
-                        title={note ? `Note: ${note}` : 'Add a note'}
-                        aria-label={`${note ? 'Edit' : 'Add'} note for ${opportunity.accountName}`}
-                      >
-                        <PencilIcon className="h-3.5 w-3.5" />
-                      </button>
-                    </span>
-                  )}
-                </td>
+                <NotesCell
+                  opportunity={opportunity}
+                  note={note}
+                  editing={editingNotes === opportunity.id}
+                  disclosed={disclosedNote === opportunity.id}
+                  draft={noteDraft}
+                  onDraftChange={setNoteDraft}
+                  onCommit={() => commitNote(opportunity.id)}
+                  onCancel={() => setEditingNotes(null)}
+                  onStartEdit={() => startNoteEdit(opportunity.id)}
+                  onToggleDisclosure={() =>
+                    setDisclosedNote((current) =>
+                      current === opportunity.id ? null : opportunity.id,
+                    )
+                  }
+                />
               </tr>
             );
           })}

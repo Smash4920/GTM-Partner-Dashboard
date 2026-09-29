@@ -120,9 +120,11 @@ describe('VAL-RES-007 edit invalidation is narrow', () => {
     expect(await screen.findByText('Showing 27 of 27')).toBeInTheDocument();
     expect(counts().book).toBe(2);
 
-    // A note edit: no query. The row shows the session's note immediately.
+    // A note edit: no query. The row exposes the session's note immediately
+    // through its disclosure — reading it needs no refetch.
     commit({ ...edits, notes: { 'opp-a0': 'Called the CFO' } });
-    expect(await screen.findByTitle('Called the CFO')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'View note for Acme 0' }));
+    expect(screen.getByText('Called the CFO')).toBeInTheDocument();
     expect(counts()).toEqual({
       summary: 1,
       weighted: 1,
