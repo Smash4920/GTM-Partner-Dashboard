@@ -12,6 +12,19 @@ export interface DashboardState {
 const log = logger.child({ component: 'useDashboardData' });
 
 /**
+ * What the last finished load settled into, tagged with the provider that
+ * produced it. The tag is the race guard: a result is only ever exposed while
+ * the provider that produced it is still the one being asked, so a provider
+ * switch can never leave the old book rendering under the new label — not
+ * even for the frame before this hook's effect re-runs.
+ */
+interface SettledLoad {
+  provider: DataProvider;
+  data?: DashboardData;
+  error?: string;
+}
+
+/**
  * Loads the book the views render, through the DataProvider seam.
  *
  * Note what is *not* here: weekly pipeline history. It used to be a ninth
@@ -26,22 +39,17 @@ const log = logger.child({ component: 'useDashboardData' });
  * still the difference between a page and a blank one. Phase 1 gives the
  * migrated views their own loading and error states; this one follows as the
  * remaining views move across.
+ *
+ * Cancellation: the seam's methods take no abort signal yet, so cleanup
+ * aborts a controller the hook checks before writing. A provider that cannot
+ * honour abort still cannot get a late answer committed — the write is
+ * skipped and the settled record stays tagged to the provider that owns it.
  */
 export function useDashboardData(provider: DataProvider): DashboardState {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [settled, setSettled] = useState<SettledLoad | null>(null);
 
   useEffect(() => {
-    let alive = true;
-    // A new load replaces the last one, so the previous attempt's state has to
-    // go with it. Without this, `error` is write-once: a failed load leaves a
-    // message that no later success clears, and swapping to a provider that
-    // answers cleanly — which is what the header's provider selector does —
-    // sits there reporting a failure that is over. `data` is deliberately kept,
-    // so a reload shows the book it already has instead of an empty page.
-    setError(null);
-    setLoading(true);
+    const controller = new AbortController();
     log.debug('Loading dashboard data');
     const startedAt = Date.now();
     Promise.all([
@@ -53,36 +61,38 @@ export function useDashboardData(provider: DataProvider): DashboardState {
       provider.listActivities(),
       provider.listCertifications(),
       provider.listTeamUsers(),
-    ])
-      .then(
-        ([
-          partners,
-          registrations,
-          opportunities,
-          targets,
-          partnerManagers,
-          activities,
-          certifications,
-          teamUsers,
-        ]) => {
-          if (!alive) {
-            // StrictMode double-invokes effects in development; the first
-            // run's result is expected to be discarded, and the record says so.
-            log.debug('Load finished after unmount; result discarded');
-            return;
-          }
-          log.info('Dashboard data loaded', {
-            partnerManagers: partnerManagers.length,
-            partners: partners.length,
-            registrations: registrations.length,
-            opportunities: opportunities.length,
-            targets: targets.length,
-            activities: activities.length,
-            certifications: certifications.length,
-            teamUsers: teamUsers.length,
-            durationMs: Date.now() - startedAt,
-          });
-          setData({
+    ]).then(
+      ([
+        partners,
+        registrations,
+        opportunities,
+        targets,
+        partnerManagers,
+        activities,
+        certifications,
+        teamUsers,
+      ]) => {
+        if (controller.signal.aborted) {
+          // StrictMode double-invokes effects in development; the first
+          // run's result is expected to be discarded, and the record says so.
+          // A provider swap mid-load lands here too.
+          log.debug('Load finished after abort; result discarded');
+          return;
+        }
+        log.info('Dashboard data loaded', {
+          partnerManagers: partnerManagers.length,
+          partners: partners.length,
+          registrations: registrations.length,
+          opportunities: opportunities.length,
+          targets: targets.length,
+          activities: activities.length,
+          certifications: certifications.length,
+          teamUsers: teamUsers.length,
+          durationMs: Date.now() - startedAt,
+        });
+        setSettled({
+          provider,
+          data: {
             partnerManagers,
             partners,
             registrations,
@@ -91,23 +101,32 @@ export function useDashboardData(provider: DataProvider): DashboardState {
             activities,
             certifications,
             teamUsers,
-          });
-          setLoading(false);
-        },
-      )
-      .catch((err: unknown) => {
-        if (!alive) {
-          log.debug('Load failed after unmount; failure discarded');
+          },
+        });
+      },
+      (err: unknown) => {
+        if (controller.signal.aborted) {
+          log.debug('Load failed after abort; failure discarded');
           return;
         }
         log.error('Failed to load dashboard data', { error: err });
-        setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
-        setLoading(false);
-      });
+        setSettled({
+          provider,
+          error: err instanceof Error ? err.message : 'Failed to load dashboard data',
+        });
+      },
+    );
     return () => {
-      alive = false;
+      controller.abort();
     };
   }, [provider]);
 
-  return { data, loading, error };
+  // The frame between "the committed provider changed" and "this effect
+  // re-ran" is exactly where old-provider data used to show under the new
+  // label. Gating at read time, rather than resetting in the effect, closes
+  // that frame: a result belongs to its provider or to no one.
+  const current = settled !== null && settled.provider === provider ? settled : null;
+  const data = current?.data ?? null;
+  const error = current?.error ?? null;
+  return { data, error, loading: data === null && error === null };
 }

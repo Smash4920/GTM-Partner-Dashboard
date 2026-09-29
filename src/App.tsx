@@ -1,12 +1,16 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
+import ProviderTransitionNotice from './components/ProviderTransitionNotice';
 import Sidebar, { type Route } from './components/Sidebar';
 import { MenuIcon } from './components/icons';
 import { SNAPSHOT_DATE } from './data/constants';
-import { createProvider, PROVIDER_OPTIONS, providerOption } from './data/providers';
+import type { DataProvider } from './data/DataProvider';
+import { PROVIDER_OPTIONS, providerOption } from './data/providers';
 import type { ProviderId } from './data/providers';
 import { applySessionEdits } from './data/sessionEdits';
 import type { SessionEdits } from './data/sessionEdits';
+import { useCommittedProvider } from './data/useCommittedProvider';
+import type { CommittedProvider } from './data/useCommittedProvider';
 import type {
   DashboardNotification,
   ForecastCategory,
@@ -41,6 +45,14 @@ const NO_HIDDEN_ROUTES: readonly Route[] = [];
 
 interface AppProps {
   flagClient?: FeatureFlagClient;
+  /**
+   * Test seam: builds provider instances for the transition coordinator. The
+   * production default is `createProvider`; tests inject tagged or
+   * failure-free providers so transitions are deterministic.
+   */
+  providerFactory?: (id: ProviderId) => DataProvider;
+  /** Test seam: the readiness probe a candidate must pass to commit. */
+  probeProvider?: (candidate: DataProvider, signal: AbortSignal) => Promise<unknown>;
 }
 
 function hiddenRoutes(productionRequirementsEnabled: boolean): readonly Route[] {
@@ -51,14 +63,11 @@ function FlaggedContent({ enabled, children }: { enabled: boolean; children: Rea
   return enabled ? children : null;
 }
 
-export default function App({ flagClient = featureFlags }: AppProps) {
-  // The provider is the integration seam. The header swaps it between the
-  // local mock, a simulated remote one, and a 100× book; nothing below this
-  // line knows which. See src/data/providers.ts.
-  const [providerId, setProviderId] = useState<ProviderId>('local');
-  const provider = useMemo(() => createProvider(providerId), [providerId]);
-  const providerMeta = providerOption(providerId);
-  const { data, loading, error } = useDashboardData(provider);
+export default function App({
+  flagClient = featureFlags,
+  providerFactory,
+  probeProvider,
+}: AppProps) {
   const [route, setRoute] = useState<Route>('home');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -90,6 +99,49 @@ export default function App({ flagClient = featureFlags }: AppProps) {
   const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
   const teamUserSeq = useRef(0);
   const notificationSeq = useRef(0);
+
+  // The provider is the integration seam, and the header's selector is a
+  // *request*, not a switch: a candidate provider has to pass a readiness
+  // probe before it commits. Until then the previous provider — its label,
+  // its data, and the session's edits — stays authoritative, so no frame ever
+  // pairs one provider's label with another's rows. The commit is a single
+  // batched update: provider object, id, and generation move together, and
+  // every piece of session state resets in the same batch, because an edit
+  // recorded against one provider's ids is meaningless to another's.
+  const resetSessionState = useCallback(() => {
+    setRevenueOverrides({});
+    setNotes({});
+    setNextSteps({});
+    setForecastCalls({});
+    setClassifications({});
+    setProspects([]);
+    prospectSeq.current = 0;
+    setTeamUserOverrides({});
+    setAddedTeamUsers([]);
+    teamUserSeq.current = 0;
+    setNotifications([]);
+    notificationSeq.current = 0;
+  }, []);
+
+  const handleProviderCommit = useCallback(
+    (next: CommittedProvider) => {
+      log.info('Provider committed', { providerId: next.id, generation: next.generation });
+      resetSessionState();
+    },
+    [resetSessionState],
+  );
+
+  const transition = useCommittedProvider({
+    createCandidate: providerFactory,
+    probe: probeProvider,
+    onCommit: handleProviderCommit,
+  });
+  const { committed } = transition;
+  const provider = committed.provider;
+  const providerId = committed.id;
+  const providerMeta = providerOption(providerId);
+  const requestedMeta = providerOption(transition.requestedId);
+  const { data, loading, error } = useDashboardData(provider);
 
   const partners = useMemo(
     () => [...(data?.partners ?? []), ...prospects],
@@ -340,8 +392,8 @@ export default function App({ flagClient = featureFlags }: AppProps) {
               Provider
             </span>
             <select
-              value={providerId}
-              onChange={(event) => setProviderId(event.target.value as ProviderId)}
+              value={transition.requestedId}
+              onChange={(event) => transition.requestProvider(event.target.value as ProviderId)}
               aria-label="Data provider"
               className="rounded border border-ash bg-carbon px-2 py-1 font-mono text-[10px] uppercase tracking-[0.06em] text-bone focus:border-signal focus:outline-none"
             >
@@ -368,6 +420,19 @@ export default function App({ flagClient = featureFlags }: AppProps) {
         />
 
         <main className="min-w-0 flex-1 px-4 py-8 sm:px-6">
+          {/* A requested provider is not the provider. While the candidate's
+              readiness probe runs — or after it fails — the committed provider
+              keeps the screen, and the notice says so out loud. The banner
+              below only ever names the committed provider, so the label and
+              the data always belong to the same source. */}
+          <ProviderTransitionNotice
+            status={transition.status}
+            failure={transition.failure}
+            requestedLabel={requestedMeta.label}
+            committedLabel={providerMeta.label}
+            onRetry={transition.retry}
+            onCancel={transition.cancel}
+          />
           {providerId !== 'local' && (
             <p className="mb-6 rounded-card border border-ash p-4 text-xs text-granite">
               <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-signal">
@@ -377,9 +442,10 @@ export default function App({ flagClient = featureFlags }: AppProps) {
             </p>
           )}
           {error && <p className="rounded-card border border-ash p-4 text-sm text-bone">{error}</p>}
-          {/* Only the first load is a blank page. A reload — changing the
-              provider, say — keeps the book already on screen, and the notice
-              above says what is being fetched. */}
+          {/* The book on screen always belongs to the committed provider: a
+              switch keeps the old book while the candidate is only requested,
+              and the commit drops it for a loading state until the new
+              provider's own data arrives. There is no frame in between. */}
           {loading && !live && (
             <p className="flex items-center gap-2 py-32 font-mono text-xs uppercase tracking-[0.08em] text-granite">
               <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal" />
@@ -387,7 +453,15 @@ export default function App({ flagClient = featureFlags }: AppProps) {
             </p>
           )}
           {live && (
-            <ErrorBoundary resetKey={`${providerId}:${route}`}>
+            // The key is the selection-reconciliation rule: a new committed
+            // provider generation remounts the route, so view-local
+            // selections — a manager filter, an expanded group, a picked
+            // partner — reset to their defaults instead of pointing at ids
+            // another provider's directory may not even contain.
+            <ErrorBoundary
+              key={`${providerId}:${committed.generation}`}
+              resetKey={`${providerId}:${committed.generation}:${route}`}
+            >
               {route === 'home' && <HomeView data={live} classifications={classifications} />}
               {route === 'partners' && (
                 <PartnerPerformanceView data={live} classifications={classifications} />

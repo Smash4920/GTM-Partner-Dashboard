@@ -49,12 +49,33 @@ export function providerOption(id: ProviderId): ProviderOption {
   return PROVIDER_OPTIONS.find((option) => option.id === id) ?? PROVIDER_OPTIONS[0]!;
 }
 
+/**
+ * Demo and browser-test plumbing: `?remoteFailFirst=2` puts the simulated
+ * remote on a deterministic failure plan — its first two calls fail and
+ * everything after succeeds — so the provider-switch failure and retry path
+ * can be exercised in a browser without depending on the seeded draw. Unset
+ * in normal use, and meaningless for the local and scaled providers, which
+ * never fail.
+ */
+function scriptedRemoteFailures(): number | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const raw = new URLSearchParams(window.location.search).get('remoteFailFirst');
+  if (raw === null) return undefined;
+  const count = Number.parseInt(raw, 10);
+  return Number.isFinite(count) && count > 0 ? count : undefined;
+}
+
 export function createProvider(id: ProviderId): DataProvider {
   let base: DataProvider;
   switch (id) {
-    case 'remote':
-      base = new SimulatedRemoteProvider(new MockDataProvider());
+    case 'remote': {
+      const failFirstCalls = scriptedRemoteFailures();
+      base = new SimulatedRemoteProvider(
+        new MockDataProvider(),
+        failFirstCalls === undefined ? {} : { failFirstCalls },
+      );
       break;
+    }
     case 'scaled':
       base = new ScaleDataProvider();
       break;

@@ -67,6 +67,54 @@ describe('SimulatedRemoteProvider', () => {
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(20);
   });
 
+  it('fails exactly the planned first calls, whatever order the rest arrive in', async () => {
+    const inner = new MockDataProvider();
+    const call = vi.spyOn(inner, 'getForecastSummary');
+    const provider = new SimulatedRemoteProvider(inner, {
+      latencyMs: 0,
+      // A high random rate that must be ignored while the plan runs: the
+      // plan, not the draw, decides.
+      failureRate: 1,
+      failFirstCalls: 2,
+    });
+
+    await expect(provider.getForecastSummary({ quarter })).rejects.toThrow(
+      'getForecastSummary failed in transit (simulated)',
+    );
+    await expect(provider.getForecastSummary({ quarter })).rejects.toThrow(
+      'getForecastSummary failed in transit (simulated)',
+    );
+    // The plan is spent; every later call passes through, despite the 100%
+    // failure rate the draw would have applied.
+    await expect(provider.getForecastSummary({ quarter })).resolves.toMatchObject({
+      openCount: expect.any(Number),
+    });
+    // A failed call never reaches the inner provider.
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays a named failure plan identically across instances', async () => {
+    const outcomes = async () => {
+      const provider = new SimulatedRemoteProvider(new MockDataProvider(), {
+        latencyMs: 0,
+        failFirstCalls: 1,
+      });
+      const results: boolean[] = [];
+      for (let call = 0; call < 4; call += 1) {
+        results.push(
+          await provider.getTargets().then(
+            () => true,
+            () => false,
+          ),
+        );
+      }
+      return results;
+    };
+
+    expect(await outcomes()).toEqual([false, true, true, true]);
+    expect(await outcomes()).toEqual([false, true, true, true]);
+  });
+
   it('wraps any provider, including the scaled book', async () => {
     const provider = new SimulatedRemoteProvider(new ScaleDataProvider(3), instant);
     const page = await provider.listQuarterOpportunities({ quarter }, { limit: 4 });

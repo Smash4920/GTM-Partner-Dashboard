@@ -31,6 +31,15 @@ export interface RemoteOptions {
   failureRate?: number;
   /** Seeds the jitter and the failure draws, so a demo run is repeatable. */
   seed?: number;
+  /**
+   * A deterministic failure plan: exactly the first N calls on this instance
+   * fail, everything after succeeds. While a plan is set, the seeded failure
+   * draw is off and the latency holds at the base value — a demo or a browser
+   * test that needs a named call to fail (the provider-switch readiness
+   * probe, say) gets exactly that failure, independent of how the calls
+   * around it are ordered.
+   */
+  failFirstCalls?: number;
 }
 
 const DEFAULT_LATENCY_MS = 250;
@@ -57,17 +66,34 @@ export class SimulatedRemoteProvider implements DataProvider {
   private readonly inner: DataProvider;
   private readonly latencyMs: number;
   private readonly failureRate: number;
+  private readonly failFirstCalls: number | undefined;
   private readonly random: () => number;
+  /** Public invocations so far; the failure plan counts them. */
+  private calls = 0;
 
   constructor(inner: DataProvider = new MockDataProvider(), options: RemoteOptions = {}) {
     this.inner = inner;
     this.latencyMs = options.latencyMs ?? DEFAULT_LATENCY_MS;
     this.failureRate = options.failureRate ?? DEFAULT_FAILURE_RATE;
+    this.failFirstCalls =
+      options.failFirstCalls !== undefined
+        ? Math.max(0, Math.floor(options.failFirstCalls))
+        : undefined;
     this.random = mulberry32(options.seed ?? 20260918);
   }
 
   /** The wire: a wait, then either the answer or a failure. */
   private async roundTrip<T>(method: string, run: () => Promise<T>): Promise<T> {
+    this.calls += 1;
+    if (this.failFirstCalls !== undefined) {
+      // The plan owns the failure decision outright: no draw, no jitter, so a
+      // scripted run replays identically no matter what else was called.
+      await new Promise((resolve) => setTimeout(resolve, this.latencyMs));
+      if (this.calls <= this.failFirstCalls) {
+        throw new Error(`${method} failed in transit (simulated)`);
+      }
+      return run();
+    }
     // Jitter, because a fixed delay hides the difference between a fast page
     // and a slow one.
     const wait = Math.round(this.latencyMs * (0.6 + this.random() * 0.8));
