@@ -26,6 +26,7 @@ jobs:
       - run: npm run format:check
       - run: npm run test:debt
       - run: npm run test:build-metrics
+      - run: npm run test:sentry-sync
       - run: npm run debt:check
       - run: npm run lint
       - run: npm run dead-code

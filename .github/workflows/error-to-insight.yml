@@ -1,0 +1,57 @@
+name: Error to Insight
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report actions without changing GitHub issues
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: error-to-insight
+  cancel-in-progress: false
+
+jobs:
+  sync-sentry-errors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+      SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ISSUE_QUERY: is:unresolved level:[error,fatal]
+      SENTRY_MAX_NEW_ISSUES: '10'
+      GITHUB_TOKEN: ${{ github.token }}
+      DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Test the error-to-issue sync
+        run: npm run test:sentry-sync
+      - name: Check Sentry configuration
+        id: sentry-config
+        shell: bash
+        run: |
+          if [[ -n "$SENTRY_ORG" && -n "$SENTRY_PROJECT" && -n "$SENTRY_AUTH_TOKEN" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Error to insight sync"
+              echo
+              echo "Skipped: configure SENTRY_ORG, SENTRY_PROJECT, and SENTRY_AUTH_TOKEN."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Create issues from unresolved Sentry errors
+        if: steps.sentry-config.outputs.configured == 'true'
+        run: node scripts/sync-sentry-issues.mjs
