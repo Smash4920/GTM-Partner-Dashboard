@@ -280,19 +280,49 @@ export interface ProviderBook extends DashboardData {
 }
 
 /**
- * Where a Production Requirements roadmap item stands, stamped against what the
- * code actually does today:
- * - complete:  landed and working in the demo against the mock provider
- * - wip:        partially implemented; part has landed, the rest is in flight
- * - pending:    not started, and buildable in demo mode without production access
- * - prod-only:  blocked until production connections or infrastructure exist
- *               (CRM, identity provider, warehouse, environments), so it runs
- *               at go-live rather than before it
+ * A roadmap row carries two independent statuses so a client-only demo is never
+ * confused with a production dependency:
+ *
+ * - The Demo status describes only verified client behavior in this deterministic
+ *   demo. It is `complete`, `wip`, or `pending`. It can never be `prod-only`.
+ * - The optional Production status marks the continuation that a real deployment
+ *   needs (trusted identity, a scoped API/RLS, a warehouse, source credentials,
+ *   durable storage, production telemetry, or deployment accounts). Its only value
+ *   is `prod-only`, so demo completion can never imply the production step is done.
+ *
+ * A mixed row therefore renders `Demo: <complete|wip|pending>` alongside
+ * `Production: Prod Only`, and names both the usable demo portion and the exact
+ * production blocker in typed text rather than in prose the render cannot check.
  */
-export type RoadmapStatus = 'complete' | 'wip' | 'pending' | 'prod-only';
+export type RoadmapDemoStatus = 'complete' | 'wip' | 'pending';
+
+export type RoadmapProductionStatus = 'prod-only';
+
+export type RoadmapStatus = RoadmapDemoStatus | RoadmapProductionStatus;
+
+/** The two labeled axes a roadmap badge can describe. */
+export type RoadmapScope = 'demo' | 'production';
+
+/**
+ * The production continuation of a row: the step is intentionally paused until a
+ * real deployment exists, with the exact blocker stated for the reader.
+ */
+interface RoadmapProduction {
+  status: RoadmapProductionStatus;
+  /** The concrete production prerequisite this step waits on. */
+  blocker: string;
+}
 
 /** One checklist line on the Production Requirements boards. */
 export interface RoadmapItem {
   text: string;
-  status: RoadmapStatus;
+  /** State of the client-only demo portion. Never a production claim. */
+  demo: RoadmapDemoStatus;
+  /**
+   * What is usable in the demo today, stated when the demo portion is partial so
+   * a `Demo: WIP` row is unambiguous about the landed half.
+   */
+  demoScope?: string;
+  /** Present when a production continuation is intentionally paused. */
+  production?: RoadmapProduction;
 }

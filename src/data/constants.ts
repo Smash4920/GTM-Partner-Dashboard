@@ -9,6 +9,9 @@ import type {
   PartnerTier,
   PartnerType,
   Region,
+  RoadmapDemoStatus,
+  RoadmapProductionStatus,
+  RoadmapScope,
   RoadmapStatus,
   TeamRole,
   TeamUserStatus,
@@ -286,11 +289,28 @@ export const NOTIFICATION_CHANNEL_META: Record<
 export const NOTIFICATION_CHANNELS: NotificationChannel[] = ['email', 'slack', 'in-app'];
 
 /**
- * The statuses stamped on every Production Requirements item, in the order the
- * page legend lists them. Prod-only steps carry a dashed border, echoing the
- * dashed "planned" wires on the Data Connections map: not real yet.
+ * The two labeled axes a roadmap badge can describe. A row always carries a Demo
+ * status; a Production status appears only where a production dependency is
+ * intentionally paused. Keeping them separate stops a finished demo from reading
+ * as a finished production step.
  */
-export const ROADMAP_STATUSES: RoadmapStatus[] = ['complete', 'wip', 'pending', 'prod-only'];
+export const ROADMAP_SCOPE_LABELS: Record<RoadmapScope, string> = {
+  demo: 'Demo',
+  production: 'Production',
+};
+
+/**
+ * The Demo statuses stamped on every Production Requirements item, in the order
+ * the page legend lists them. A Demo status reports only verified client
+ * behavior and is never `prod-only`.
+ */
+export const ROADMAP_DEMO_STATUSES: RoadmapDemoStatus[] = ['complete', 'wip', 'pending'];
+
+/**
+ * The Production statuses a row may carry. Prod-only steps carry a dashed border,
+ * echoing the dashed "planned" wires on the Data Connections map: not real yet.
+ */
+export const ROADMAP_PRODUCTION_STATUSES: RoadmapProductionStatus[] = ['prod-only'];
 
 export const ROADMAP_STATUS_META: Record<
   RoadmapStatus,
@@ -298,22 +318,23 @@ export const ROADMAP_STATUS_META: Record<
 > = {
   complete: {
     label: 'Complete',
-    description: 'Landed and working in the demo against the mock provider.',
+    description: 'Demo: landed and verified in the client-only demo.',
     badgeClass: 'border border-metric text-metric',
   },
   wip: {
     label: 'WIP',
-    description: 'Partially implemented — part has landed, the rest is in flight.',
+    description: 'Demo: partially landed — the usable portion works, the rest is in flight.',
     badgeClass: 'border border-signal text-signal',
   },
   pending: {
     label: 'Pending',
-    description: 'Not started, and buildable in demo mode without production access.',
+    description: 'Demo: not yet built in the client-only demo.',
     badgeClass: 'border border-graphite text-granite',
   },
   'prod-only': {
     label: 'Prod Only',
-    description: 'Blocked until production connections or infrastructure exist; runs at go-live.',
+    description:
+      'Production: paused until trusted identity, a scoped API, warehouse, credentials, durable storage, production telemetry, or deployment accounts exist.',
     badgeClass: 'border border-dashed border-ash text-stone',
   },
 };
@@ -325,4 +346,4 @@ export const ROADMAP_STATUS_META: Record<
  * A fixed UTC calendar date, like SNAPSHOT_DATE, so the render is deterministic
  * and never depends on the wall clock.
  */
-export const ROADMAP_LAST_UPDATED = new Date('2026-09-28T00:00:00Z');
+export const ROADMAP_LAST_UPDATED = new Date('2026-09-29T00:00:00Z');

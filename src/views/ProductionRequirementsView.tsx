@@ -1,15 +1,24 @@
 import { RoadmapStatusBadge } from '../components/Badge';
 import Card from '../components/Card';
-import { ROADMAP_LAST_UPDATED, ROADMAP_STATUSES, ROADMAP_STATUS_META } from '../data/constants';
-import type { RoadmapItem, RoadmapStatus } from '../data/types';
+import {
+  ROADMAP_DEMO_STATUSES,
+  ROADMAP_LAST_UPDATED,
+  ROADMAP_PRODUCTION_STATUSES,
+  ROADMAP_SCOPE_LABELS,
+  ROADMAP_STATUS_META,
+} from '../data/constants';
+import type { RoadmapItem, RoadmapScope, RoadmapStatus } from '../data/types';
 import { formatDate } from '../lib/format';
 
 /**
  * The server-side foundation required before connecting protected business
  * systems or serving external partners. Statuses are stamped against what the
- * code actually does today, not against intent: `wip` means part of the item
- * has landed (usually the client-side half), `prod-only` means the step needs
- * production connections or infrastructure that do not exist yet.
+ * code actually does today, not against intent. Each row carries a Demo status
+ * for its verified client behavior and, where a production dependency is
+ * intentionally paused, a separate Production status. A finished demo therefore
+ * never reads as a finished production step: mixed rows render `Demo: WIP`
+ * beside `Production: Prod Only` and name both the usable demo portion and the
+ * exact production blocker.
  */
 const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
   {
@@ -17,20 +26,30 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     items: [
       {
         text: 'Authenticate internal users and partners through the company identity provider.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Requires a company identity provider and trusted sign-in; the client-only demo has no authentication.',
+        },
       },
       {
-        // Client-side partner boundaries are enforced and e2e-tested, and the
-        // scoped contract carries the manager scope; the enforcement itself is
-        // Phase 3, on a server that does not exist yet.
         text: 'Enforce role, manager, and partner access on the server, with row-level authorization for every query.',
-        status: 'wip',
+        demo: 'wip',
+        demoScope:
+          'Client-side partner boundaries are enforced and e2e-tested, and the scoped contract carries the manager scope.',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Server-side row-level authorization needs a trusted API and identity claims; client filtering is presentation, not authorization.',
+        },
       },
       {
-        // Pure client change: gate the picker behind an internal demo mode. The
-        // picker still renders unconditionally today.
+        // Excluded from this mission: the picker still renders unconditionally
+        // today and its client-only limitation is documented rather than
+        // implemented, so it stays a not-yet-built demo change.
         text: "Remove the partner picker outside an internal demo mode so a partner never receives another partner's data.",
-        status: 'pending',
+        demo: 'pending',
       },
     ],
   },
@@ -39,15 +58,28 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     items: [
       {
         text: 'Connect Salesforce or HubSpot as the opportunity and deal-registration system of record.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires a live CRM connection with server-held OAuth credentials.',
+        },
       },
       {
         text: "Sync Google Calendar activity and the enablement system's certification records with approved OAuth scopes.",
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Requires approved OAuth scopes and server-held credentials for calendar and enablement systems.',
+        },
       },
       {
         text: 'Use incremental syncs, webhooks where available, scheduled reconciliation, retries, and dead-letter handling.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires a server-side ingestion pipeline against live source systems.',
+        },
       },
     ],
   },
@@ -55,26 +87,38 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     title: 'Data model, quality, and fiscal controls',
     items: [
       {
-        // The canonical model in src/data/types.ts is the app-wide contract
-        // and is pinned by tests; what is missing is normalizing real source
-        // records into it, which waits on ingestion.
         text: 'Normalize source records into a canonical partner, opportunity, registration, target, activity, and certification model.',
-        status: 'wip',
+        demo: 'wip',
+        demoScope:
+          'The canonical model in src/data/types.ts is the app-wide contract and is pinned by tests.',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Normalizing real source records into it waits on live ingestion and source credentials.',
+        },
       },
       {
         text: 'Validate stages, statuses, revenue motions, target periods, dates, and foreign-key relationships at ingestion.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Ingestion-time validation needs a live ingestion pipeline.',
+        },
       },
       {
         text: 'Make fiscal calendar, timezone, as-of date, attribution rules, and target definitions configurable instead of static.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
-        // The Data Connections map exposes per-node source, auth, cadence, and
-        // gaps, and Forecasting has per-widget errors; live last-refresh times
-        // and incomplete-data errors are not surfaced anywhere yet.
         text: 'Expose source lineage, last-refresh time, and incomplete-data errors in the product.',
-        status: 'wip',
+        demo: 'wip',
+        demoScope:
+          'The Data Connections map exposes per-node source, auth, cadence, and gaps, and Forecasting has per-widget errors.',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Live last-refresh times and real incomplete-data errors need connected source systems.',
+        },
       },
     ],
   },
@@ -82,22 +126,27 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     title: 'Persistence and operating workflows',
     items: [
       {
-        // Every edit is session-only React state by design; the audit trail
-        // is the Phase 5 write path.
         text: 'Persist forecast overrides, notes, next steps, classifications, and partner additions with author, timestamp, reason, and audit history.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Durable persistence and audit history need a write path and datastore; edits are session-only React state by design.',
+        },
       },
       {
-        // The one item here that needs no production access: the decision can
-        // be written down now, ahead of the write path that implements it.
         text: 'Define the system of record and write-back workflow for every editable field, including conflict resolution.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
-        // Registration SLAs and rejection reasons landed with the ops view;
-        // conflict and forecast-change approval workflows did not.
         text: 'Add approvals and SLAs for deal registrations, partner conflicts, and forecast changes where required.',
-        status: 'wip',
+        demo: 'wip',
+        demoScope: 'Registration SLAs and rejection reasons landed with the ops view.',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Enforced approver identity and durable approvals for conflicts and forecast changes need trusted identity and a write path.',
+        },
       },
     ],
   },
@@ -106,15 +155,28 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     items: [
       {
         text: 'Keep CRM tokens and partner data on the server; never expose them in browser bundles.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires a server to hold CRM tokens and partner data.',
+        },
       },
       {
         text: 'Apply encryption, secrets management, least-privilege service accounts, audit logging, retention policies, and incident response.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Requires production infrastructure, secrets management, and operational controls.',
+        },
       },
       {
         text: 'Complete privacy, legal, and security review for calendar data and external partner access.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires real calendar data and external partner access to review.',
+        },
       },
     ],
   },
@@ -122,30 +184,44 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     title: 'Reliability, scale, and delivery',
     items: [
       {
-        // Forecasting reads the scoped contract; the other seven views still
-        // take the whole book. This is the Phase 1 migration, one view at a time.
         text: 'Serve aggregated, paginated API responses rather than loading the entire ecosystem into the browser.',
-        status: 'wip',
+        demo: 'wip',
+        demoScope:
+          'Forecasting reads the scoped, cursor-paginated contract against the mock provider; the other seven views are mid-migration.',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Serving these responses for real needs a production API with warehouse rollups.',
+        },
       },
       {
-        // Structured logging and per-widget error states landed; sync health,
-        // freshness, and authorization failures need the production systems
-        // they describe.
         text: 'Add observability for sync health, data freshness, API errors, performance, and authorization failures.',
-        status: 'wip',
+        demo: 'wip',
+        demoScope: 'Structured logging and per-widget error states have landed.',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Sync health, data freshness, and authorization-failure signals need the production systems they describe.',
+        },
       },
       {
-        // Unit, seam, and Playwright suites are gated in CI; accessibility
-        // and security tests, backups, and recovery are not there yet.
         text: 'Add automated unit, integration, end-to-end, accessibility, and security tests, plus backups and recovery procedures.',
-        status: 'wip',
+        demo: 'wip',
+        demoScope: 'Unit, seam, and Playwright suites are gated in CI.',
+        production: {
+          status: 'prod-only',
+          blocker: 'Backups and recovery procedures need production infrastructure.',
+        },
       },
       {
-        // CI gates every pull request and Vercel serves per-PR previews;
-        // separate staging and production environments and monitored rollbacks
-        // do not exist yet.
         text: 'Deploy through separate development, staging, and production environments with CI/CD and monitored rollbacks.',
-        status: 'wip',
+        demo: 'wip',
+        demoScope: 'CI gates every pull request and Vercel serves per-PR previews.',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Separate staging and production environments with monitored rollbacks need deployment accounts and infrastructure.',
+        },
       },
     ],
   },
@@ -153,21 +229,28 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     title: 'Feature delivery governance',
     items: [
       {
-        // The typed registry, safe defaults, environment override, and stable
-        // percentage rollout have landed. Review, expiry, and removal policy
-        // still need to be designed and adopted.
         text: 'Define a feature-flag methodology covering naming, ownership, safe defaults, environment scope, targeting, rollout and rollback, observability, review, expiration, and removal.',
-        status: 'wip',
+        demo: 'wip',
+        demoScope:
+          'The typed registry, safe defaults, environment override, and stable percentage rollout have landed.',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Flag observability and a managed control plane need production telemetry and identity.',
+        },
       },
       {
-        // The client-only app has no authentication or server through which a
-        // privileged management credential could safely pass.
         text: 'Provide an authenticated control plane where approved nontechnical maintainers can change flags without code changes or redeployment, with role-based access, approvals, audit history, and emergency kill switches.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'An authenticated flag control plane needs a server and identity the client-only app cannot provide.',
+        },
       },
       {
         text: 'Keep authorization and data-access enforcement independent from feature flags, and define cached fail-safe behavior when the control plane is unavailable.',
-        status: 'pending',
+        demo: 'pending',
       },
     ],
   },
@@ -185,22 +268,23 @@ const UTILITY_REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     items: [
       {
         text: 'Live sketch: probability-weighted forecast over the open book, with manager-editable category calls and a "disagrees with stage" call-out.',
-        status: 'complete',
+        demo: 'complete',
       },
       {
-        // The weekly snapshots already record every call as made; the
-        // slippage, aging, and confidence-history reads on top of them are
-        // not built.
+        // Deferred: weekly snapshots record every call as made, but they lack
+        // immutable historical partner-manager ownership and authoritative
+        // stage-entry events, so the manager/partner trend cannot be built
+        // honestly yet.
         text: 'Turn per-deal judgments into trend: close-date slippage, stage aging, and category-confidence history per manager and partner.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
         text: 'MEDDPICC-or-equivalent qualification structured on every open opportunity.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
         text: 'Forecast accuracy by partner, manager, motion, and quarter.',
-        status: 'pending',
+        demo: 'pending',
       },
     ],
   },
@@ -209,19 +293,19 @@ const UTILITY_REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     items: [
       {
         text: 'Track the recruitment → onboarding → enabled → activated → productive → strategic lifecycle.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
         text: 'Time-to-first-registration, time-to-first-opportunity, time-to-first-win, and time-to-repeat-win.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
         text: 'Engagement recency, executive sponsor coverage, certification velocity, and inactive-partner alerts.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
         text: 'A health score with transparent, visible drivers, not a black box.',
-        status: 'pending',
+        demo: 'pending',
       },
     ],
   },
@@ -230,15 +314,15 @@ const UTILITY_REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     items: [
       {
         text: 'Registration SLA, aging buckets, approval/rejection reasons, and duplicate/overlap rate.',
-        status: 'complete',
+        demo: 'complete',
       },
       {
         text: 'Conversion time from submitted → approved → opportunity → win.',
-        status: 'complete',
+        demo: 'complete',
       },
       {
         text: 'Leakage: approved registrations without an opportunity, expired registrations, and partner conflict.',
-        status: 'complete',
+        demo: 'complete',
       },
     ],
   },
@@ -246,20 +330,28 @@ const UTILITY_REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     title: 'Actionability',
     items: [
       {
-        // Registration SLA warnings and breaches are live with owner routing;
-        // the other four alert classes are not built.
         text: 'Alerts for stale high-value deals, missing next steps, slipping close dates, pending registrations beyond SLA, and deteriorating partner health.',
-        status: 'wip',
+        demo: 'wip',
+        demoScope: 'Registration SLA warnings and breaches are live with owner routing.',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Continuous production alerting needs connected source data and scheduled server-side evaluation and delivery.',
+        },
       },
       {
-        // Owner, due date, and disposition ride the notification flow; the
-        // workflow links need the source systems they point at.
         text: 'Owner, due date, disposition, and workflow links back to Salesforce/HubSpot, PRM, Slack, and calendar.',
-        status: 'wip',
+        demo: 'wip',
+        demoScope: 'Owner, due date, and disposition ride the session-only notification flow.',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Workflow links back to Salesforce/HubSpot, PRM, Slack, and calendar need those connected systems.',
+        },
       },
       {
         text: 'Saved views and scheduled executive/manager reporting.',
-        status: 'pending',
+        demo: 'pending',
       },
     ],
   },
@@ -268,13 +360,16 @@ const UTILITY_REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     items: [
       {
         text: 'Shared account plans, mutual action plans, deal collaboration, registration status explanations, enablement recommendations, and support escalation.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
-        // The partner scoping that exists today is client-side; the item asks
-        // for enforcement on the server, which does not exist yet.
         text: 'Granular, server-enforced visibility rules, not merely a partner-scoped dashboard.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker:
+            "Server-enforced visibility needs a trusted API and identity; today's partner scoping is client-side presentation.",
+        },
       },
     ],
   },
@@ -283,15 +378,15 @@ const UTILITY_REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     items: [
       {
         text: 'Sourced, influenced, assisted, reseller, marketplace, referral, and expansion attribution.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
         text: 'Multi-partner credit splits and sales/partner ownership.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
         text: 'Explicit attribution rules, effective dates, and a deal-credit dispute workflow.',
-        status: 'pending',
+        demo: 'pending',
       },
     ],
   },
@@ -300,23 +395,23 @@ const UTILITY_REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     items: [
       {
         text: 'A delivery record per engagement: which partner is delivering which service type — implementation, migration, managed service, custom development, enablement and training, advisory — for which client, with start, go-live, and delivery owner.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
         text: 'The commercial shape of each engagement: Factory revenue attached (license, allocated drawdown, services pass-through) versus no direct revenue, and long-term adoption plays whose return is seat expansion or renewal rather than bookings this quarter.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
         text: 'Engagements linked to their opportunity, partner, and account so delivery reads next to pipeline and closed-won instead of living in a spreadsheet.',
-        status: 'pending',
+        demo: 'pending',
       },
       {
         text: "Outcomes per engagement: adoption and consumption milestones, go-live slippage, post-delivery expansion, and which partners' delivery produces repeat revenue.",
-        status: 'pending',
+        demo: 'pending',
       },
       {
         text: "Delivery capacity by service type: certified practitioners available, engagements in flight, and where demand is outrunning a partner's bench.",
-        status: 'pending',
+        demo: 'pending',
       },
     ],
   },
@@ -355,15 +450,15 @@ const MIGRATION_PHASES: MigrationPhase[] = [
     items: [
       {
         text: 'jsdom, Testing Library, and a coverage provider, with the thresholds in vite.config.ts as a ratchet and CI running coverage rather than a bare test run.',
-        status: 'complete',
+        demo: 'complete',
       },
       {
         text: 'Coverage went from 27.88% statements overall and 0% across every view, component, App.tsx, and useDashboardData, to 91% — the 5,700 lines Phase 1 was about to move by hand are now watched.',
-        status: 'complete',
+        demo: 'complete',
       },
       {
         text: 'Four correctness bugs found by the first tests, each with a regression test: a cleared next step coming back, a throw in any view blanking the whole app, unguarded division rendering "∞% of goal", and the meeting modal discarding a week of unsubmitted classifications on a stray click.',
-        status: 'complete',
+        demo: 'complete',
       },
     ],
   },
@@ -376,23 +471,23 @@ const MIGRATION_PHASES: MigrationPhase[] = [
     items: [
       {
         text: 'DataProvider is split in two: the scoped aggregates and cursor-paginated row lists that are the target shape, and the eight list-everything calls still being retired. Forecasting reads only the first.',
-        status: 'complete',
+        demo: 'complete',
       },
       {
         text: 'MockDataProvider writes the answers behind the seam, using the same metrics functions the views used to call themselves — so src/lib/metrics is now the specification a server has to match, and its test suite is the conformance check.',
-        status: 'complete',
+        demo: 'complete',
       },
       {
         text: 'listPipelineSnapshots() is gone from the client contract entirely. History was ~87% of the payload at production volume and reached the client as millions of rows to answer a question about fourteen weeks; it now leaves as a ~13-bucket series, and only where a view asks.',
-        status: 'complete',
+        demo: 'complete',
       },
       {
         text: 'Forecasting was migrated first: the hottest edit path and the only view driven by that history. Its aggregate queries return the same kilobytes at 1× and at 100×, and its tables fetch 25 rows at a time per expanded manager.',
-        status: 'complete',
+        demo: 'complete',
       },
       {
         text: 'Two providers behind the same contract: a simulated remote one with ~250 ms round trips and a 15% failure rate, so per-widget loading, error, and retry states are exercised rather than theoretical, and a 100× book — 21,300 opportunities, 191,000 snapshot rows, ~45 MB — so the claim is demonstrated rather than asserted. Swap them from the header.',
-        status: 'complete',
+        demo: 'complete',
       },
     ],
   },
@@ -404,15 +499,27 @@ const MIGRATION_PHASES: MigrationPhase[] = [
     items: [
       {
         text: 'Fact and dimension model, with weekly pipeline snapshots partitioned by week and write-once — the "a snapshot already written never changes" invariant becomes a database permission rather than a comment.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires a warehouse with partitioned, write-once snapshot storage.',
+        },
       },
       {
         text: 'Generate the date dimension from the fiscal calendar module so the dashboard and the warehouse cannot disagree about a quarter boundary or a business day.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires a warehouse date dimension to generate against.',
+        },
       },
       {
         text: 'Idempotent weekly snapshot job, keyed so a re-run cannot double-write.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires a scheduled server-side job against warehouse storage.',
+        },
       },
     ],
   },
@@ -424,15 +531,28 @@ const MIGRATION_PHASES: MigrationPhase[] = [
     items: [
       {
         text: 'Serve the Phase 1 contract for real, with pre-aggregated rollups rather than live aggregation over millions of snapshot rows.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires a production API and warehouse rollups.',
+        },
       },
       {
         text: 'Enforce partner and manager scope in the query itself, so a partner never receives another partner\u2019s data.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Requires server-side row-level authorization backed by trusted identity claims.',
+        },
       },
       {
         text: 'Run the existing metrics tests against the server implementation as a conformance suite.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires a server implementation to run the conformance suite against.',
+        },
       },
     ],
   },
@@ -444,11 +564,19 @@ const MIGRATION_PHASES: MigrationPhase[] = [
     items: [
       {
         text: 'Watermark-based incremental sync from the CRM, with bulk backfill inside API quota.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires a live CRM connection and server-held credentials.',
+        },
       },
       {
         text: 'Calendar and enablement sync over approved OAuth scopes, with reconciliation and dead-letter handling.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires approved OAuth scopes and a server-side ingestion pipeline.',
+        },
       },
     ],
   },
@@ -460,45 +588,78 @@ const MIGRATION_PHASES: MigrationPhase[] = [
     items: [
       {
         text: 'Persist overrides with author, timestamp, reason, and the source version they were made against.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires a durable write path and datastore.',
+        },
       },
       {
         text: 'Decide and surface what happens when the source system changes a figure underneath an override.',
-        status: 'prod-only',
+        demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker: 'Requires a connected source system and write path to reconcile against.',
+        },
       },
       {
-        // Partly done ahead of the write path: rows render the session's
-        // override immediately and aggregates hold their previous figures
-        // during a refetch. The full optimistic delta needs the write path to
-        // reconcile against.
         text: 'Optimistic client updates, so an edited forecast still moves every metric instantly instead of waiting on a round trip.',
-        status: 'wip',
+        demo: 'wip',
+        demoScope:
+          "Rows render the session's override immediately and aggregates hold their previous figures during a refetch.",
+        production: {
+          status: 'prod-only',
+          blocker: 'The full optimistic delta needs the write path to reconcile against.',
+        },
       },
     ],
   },
 ];
 
 /** One row of the status legend, badge plus its one-line definition. */
-function StatusLegendEntry({ status }: { status: RoadmapStatus }) {
+function StatusLegendEntry({ scope, status }: { scope: RoadmapScope; status: RoadmapStatus }) {
   const meta = ROADMAP_STATUS_META[status];
   return (
     <div className="flex items-center gap-2">
       <dt>
-        <RoadmapStatusBadge status={status} />
+        <RoadmapStatusBadge scope={scope} status={status} />
       </dt>
       <dd className="text-xs text-granite">{meta.description}</dd>
     </div>
   );
 }
 
-/** Renders one roadmap item: text on the left, its status right-aligned. */
+/**
+ * Renders one roadmap item: text on the left with the usable demo portion and
+ * the exact production blocker beneath it, and its labeled Demo and (optional)
+ * Production status badges right-aligned.
+ */
 function RoadmapItemRow({ item, dotClass }: { item: RoadmapItem; dotClass: string }) {
   return (
     <li className="flex items-start gap-3">
       <span aria-hidden="true" className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
-      <span className="min-w-0 flex-1">{item.text}</span>
-      <span className="shrink-0">
-        <RoadmapStatusBadge status={item.status} />
+      <div className="min-w-0 flex-1 space-y-1">
+        <span className="block">{item.text}</span>
+        {item.demoScope && (
+          <p className="text-xs text-granite">
+            <span className="font-mono uppercase tracking-[0.06em] text-metric">Demo today: </span>
+            {item.demoScope}
+          </p>
+        )}
+        {item.production && (
+          <p className="text-xs text-granite">
+            <span className="font-mono uppercase tracking-[0.06em] text-stone">
+              Production blocker:{' '}
+            </span>
+            {item.production.blocker}
+          </p>
+        )}
+      </div>
+      <span className="flex shrink-0 flex-col items-end gap-1">
+        <RoadmapStatusBadge scope="demo" status={item.demo} />
+        {item.production && (
+          <RoadmapStatusBadge scope="production" status={item.production.status} />
+        )}
       </span>
     </li>
   );
@@ -516,13 +677,32 @@ export default function ProductionRequirementsView() {
         <p className="mt-1 max-w-3xl text-sm text-granite">
           This demo uses deterministic mock data and session-only edits. The capabilities below are
           required before connecting protected business systems or serving external partners. Every
-          item carries its status against what the code does today.
+          row carries a Demo status for what the client-only demo verifiably does today, and a
+          separate Production status wherever a production dependency is intentionally paused. Demo
+          completion never means the production step is done.
         </p>
-        <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
-          {ROADMAP_STATUSES.map((status) => (
-            <StatusLegendEntry key={status} status={status} />
-          ))}
-        </dl>
+        <div className="mt-4 space-y-3">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              {ROADMAP_SCOPE_LABELS.demo} status
+            </p>
+            <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+              {ROADMAP_DEMO_STATUSES.map((status) => (
+                <StatusLegendEntry key={status} scope="demo" status={status} />
+              ))}
+            </dl>
+          </div>
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              {ROADMAP_SCOPE_LABELS.production} status
+            </p>
+            <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+              {ROADMAP_PRODUCTION_STATUSES.map((status) => (
+                <StatusLegendEntry key={status} scope="production" status={status} />
+              ))}
+            </dl>
+          </div>
+        </div>
         <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
           Statuses last updated {formatDate(ROADMAP_LAST_UPDATED.toISOString())}
         </p>
