@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import Card from '../components/Card';
 import ForecastTable from '../components/ForecastTable';
 import KpiTile from '../components/KpiTile';
+import { QueryFailure, QueryMetaCaption, renderQueryState } from '../components/QueryState';
 import WeeklyForecastChart from '../components/WeeklyForecastChart';
 import { ChevronIcon } from '../components/icons';
 import {
@@ -12,7 +12,6 @@ import {
   STAGE_META,
 } from '../data/constants';
 import type { DataProvider, ForecastScope } from '../data/DataProvider';
-import type { QueryState } from '../data/queryState';
 import type { SessionEdits } from '../data/sessionEdits';
 import type { ForecastCategory } from '../data/types';
 import {
@@ -32,9 +31,6 @@ const quarter = fiscalQuarterOfDate(SNAPSHOT_DATE.toISOString());
 const phase = phaseForQuarter(quarter);
 const quarterEnd = quarterWindow(quarter).end;
 
-const RETRY_BUTTON_CLASS =
-  'rounded border border-ash px-3 py-1 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20';
-
 /** The edit intents every forecast row can dispatch. */
 interface ForecastEditHandlers {
   onSetRevenue: (opportunityId: string, value: number) => void;
@@ -46,86 +42,6 @@ interface ForecastEditHandlers {
 interface ForecastingViewProps extends ForecastEditHandlers {
   provider: DataProvider;
   edits: SessionEdits;
-}
-
-/** One query's initial load: nothing to show yet, no error either. */
-function QueryLoading({ label }: { label: string }) {
-  return (
-    <p
-      role="status"
-      className="flex items-center gap-2 py-6 font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
-    >
-      <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-signal" />
-      Loading {label}
-    </p>
-  );
-}
-
-/** A named failure with a retry that repeats only the failed query. */
-function QueryFailure({
-  text,
-  retryLabel,
-  error,
-  onRetry,
-}: {
-  text: string;
-  retryLabel: string;
-  error: string;
-  onRetry: () => void;
-}) {
-  return (
-    <p className="flex flex-wrap items-center gap-3 py-2 text-sm text-bone">
-      <span className="text-signal">{text}:</span>
-      {error}
-      <button
-        type="button"
-        onClick={onRetry}
-        aria-label={`Retry ${retryLabel}`}
-        className={RETRY_BUTTON_CLASS}
-      >
-        Retry
-      </button>
-    </p>
-  );
-}
-
-/**
- * One widget, one query: the region shows its own initial loading, its own
- * unavailable state with a focused retry, or its data — with a refresh
- * failure reported alongside figures that stay on screen (stale beats blank).
- * A sibling widget's state never enters into any of those branches.
- */
-function renderQuery<T>(
-  label: string,
-  state: QueryState<T>,
-  render: (data: T) => ReactNode,
-): ReactNode {
-  if (state.data === null) {
-    if (state.error !== null) {
-      return (
-        <QueryFailure
-          text={`${label.charAt(0).toUpperCase()}${label.slice(1)} unavailable`}
-          retryLabel={label}
-          error={state.error}
-          onRetry={state.retry}
-        />
-      );
-    }
-    return <QueryLoading label={label} />;
-  }
-  return (
-    <>
-      {state.error !== null && (
-        <QueryFailure
-          text={`Latest ${label} refresh failed`}
-          retryLabel={label}
-          error={state.error}
-          onRetry={state.retry}
-        />
-      )}
-      {render(state.data)}
-    </>
-  );
 }
 
 /**
@@ -259,7 +175,7 @@ export default function ForecastingView({
         </div>
       </div>
 
-      {renderQuery('forecast summary', summary, (summaryData) => (
+      {renderQueryState('forecast summary', summary, (summaryData) => (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <KpiTile
             label="Partner sourced pipeline"
@@ -295,7 +211,7 @@ export default function ForecastingView({
         </div>
       ))}
 
-      {renderQuery('weighted forecast', weighted, (weightedData) => {
+      {renderQueryState('weighted forecast', weighted, (weightedData) => {
         const categoryTiles = [...weightedData.rows].sort(
           (a, b) =>
             FORECAST_CATEGORY_META[b.category].weight - FORECAST_CATEGORY_META[a.category].weight,
@@ -330,7 +246,7 @@ export default function ForecastingView({
             : ''
         }`}
       >
-        {renderQuery('weekly series', weeks, (rows) => (
+        {renderQueryState('weekly series', weeks, (rows) => (
           <>
             {/* The goal line comes from the summary query, which fails and
                 retries on its own; the chart draws without it meanwhile. */}
@@ -355,7 +271,7 @@ export default function ForecastingView({
             : `Open ${phaseLabel} deals called off the category their stage implies`
         }
       >
-        {renderQuery('forecast quality', quality, (qualityData) => {
+        {renderQueryState('forecast quality', quality, (qualityData) => {
           const mismatchCount = qualityData.aboveCount + qualityData.belowCount;
           return mismatchCount === 0 ? (
             <p className="text-sm text-granite">
@@ -443,7 +359,7 @@ export default function ForecastingView({
             onRetry={directory.retry}
           />
         )}
-        {renderQuery('manager groups', managerGroups, () => (
+        {renderQueryState('manager groups', managerGroups, () => (
           <div className="space-y-2">
             {groups.map((group) => {
               const visible = filterManagerId === 'all' || group.managerId === filterManagerId;
@@ -605,6 +521,14 @@ function ManagerBook({
           )}
         </span>
       </div>
+      {/* The rows' own provenance: which provider answered, as of when, and
+          whether the answer was complete. Kept as its own line so the
+          "Showing N of M" count stays a stable, exact label. */}
+      {book.meta !== null && (
+        <div className="mt-2">
+          <QueryMetaCaption meta={book.meta} refreshing={book.refreshing} />
+        </div>
+      )}
     </div>
   );
 }

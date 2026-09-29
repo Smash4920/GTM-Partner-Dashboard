@@ -1,3 +1,4 @@
+import type { QueryResult } from './queryMetadata';
 import type { SessionEdits } from './sessionEdits';
 import type { CoverageState } from '../lib/metrics';
 import type { TraceContext } from '../lib/tracing';
@@ -194,23 +195,39 @@ export interface WeeklySeriesRow {
   recordedAt?: string;
 }
 
+/**
+ * Every scoped answer is an envelope: the data plus the metadata that makes
+ * it honest — the committed provider's id, the deterministic as-of instant,
+ * typed lineage, and a completeness state with typed warnings. A partial or
+ * stale answer can never look like a complete, current one, because the
+ * envelope says so. See src/data/queryMetadata.ts.
+ */
 interface ScopedQueryProvider {
-  getForecastSummary(scope: ForecastScope, trace?: TraceContext): Promise<ForecastSummary>;
-  getWeightedForecast(scope: ForecastScope, trace?: TraceContext): Promise<WeightedForecastSummary>;
+  getForecastSummary(
+    scope: ForecastScope,
+    trace?: TraceContext,
+  ): Promise<QueryResult<ForecastSummary>>;
+  getWeightedForecast(
+    scope: ForecastScope,
+    trace?: TraceContext,
+  ): Promise<QueryResult<WeightedForecastSummary>>;
   getForecastQuality(
     scope: ForecastScope,
     sampleSize: number,
     trace?: TraceContext,
-  ): Promise<ForecastQualitySummary>;
+  ): Promise<QueryResult<ForecastQualitySummary>>;
   getManagerForecastGroups(
     scope: ForecastScope,
     trace?: TraceContext,
-  ): Promise<ManagerForecastGroup[]>;
+  ): Promise<QueryResult<ManagerForecastGroup[]>>;
   /**
    * Week-over-week state of the quarter's pipeline: one row per week, about
    * fourteen of them, in place of every snapshot row ever written.
    */
-  getWeeklyForecastSeries(scope: ForecastScope, trace?: TraceContext): Promise<WeeklySeriesRow[]>;
+  getWeeklyForecastSeries(
+    scope: ForecastScope,
+    trace?: TraceContext,
+  ): Promise<QueryResult<WeeklySeriesRow[]>>;
   /**
    * One manager's in-quarter book, a page at a time. Requested when a group is
    * expanded, rather than loaded for every manager up front.
@@ -219,7 +236,7 @@ interface ScopedQueryProvider {
     scope: ForecastScope,
     page: PageRequest,
     trace?: TraceContext,
-  ): Promise<Page<Opportunity>>;
+  ): Promise<QueryResult<Page<Opportunity>>>;
   /**
    * Partner id to name, for the partner column of a row.
    *
@@ -230,7 +247,7 @@ interface ScopedQueryProvider {
    * rather than by a scope argument: a partner signed into the portal receives
    * one entry, their own.
    */
-  getPartnerDirectory(trace?: TraceContext): Promise<PartnerRef[]>;
+  getPartnerDirectory(trace?: TraceContext): Promise<QueryResult<PartnerRef[]>>;
 }
 
 /**

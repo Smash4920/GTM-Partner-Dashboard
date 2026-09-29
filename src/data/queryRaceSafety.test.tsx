@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { CURRENT_FISCAL_QUARTER } from './constants';
-import type { DataProvider, ForecastSummary } from './DataProvider';
+import { CURRENT_FISCAL_QUARTER, SNAPSHOT_DATE } from './constants';
+import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
+import { buildQueryMeta, queryResult } from './queryMetadata';
 import { NO_SESSION_EDITS } from './sessionEdits';
 import type { ForecastScope } from './DataProvider';
+import type { PartnerRef } from './DataProvider';
 import { useDashboardData } from './useDashboardData';
 import { useForecastSummary, useManagerBook, usePartnerNames } from './useForecastQueries';
 import { makeOpportunity, makePartner, makeProviderBook } from '../test/fixtures';
@@ -37,13 +39,27 @@ function stubProvider(overrides: Partial<DataProvider> = {}): DataProvider {
   return Object.assign(new MockDataProvider(makeProviderBook()), overrides);
 }
 
+/** A partner-directory answer wrapped the way the scoped contract wraps everything. */
+async function directoryResult(partners: PartnerRef[]) {
+  return queryResult(
+    partners,
+    buildQueryMeta({
+      providerId: 'local',
+      asOf: SNAPSHOT_DATE.toISOString(),
+      lineage: [],
+    }),
+  );
+}
+
 /** An aggregates-serving provider whose summary carries a visible tag. */
 function taggedAggregatesProvider(tag: number, gate?: () => Promise<unknown>): DataProvider {
   return stubProvider({
     getForecastSummary: async (scope) => {
       if (gate) await gate();
-      const base = await new MockDataProvider(makeProviderBook()).getForecastSummary(scope);
-      return { ...base, openPipelineValue: tag } satisfies ForecastSummary;
+      const { data: base, meta } = await new MockDataProvider(
+        makeProviderBook(),
+      ).getForecastSummary(scope);
+      return { data: { ...base, openPipelineValue: tag }, meta };
     },
   });
 }
@@ -166,10 +182,12 @@ describe('VAL-RES-002 query race safety', () => {
       const first = stubProvider({
         getForecastSummary: async (scope) => {
           calls += 1;
-          const base = await new MockDataProvider(makeProviderBook()).getForecastSummary(scope);
+          const { data: base, meta } = await new MockDataProvider(
+            makeProviderBook(),
+          ).getForecastSummary(scope);
           // The first load lands immediately; the refresh waits on the gate.
           if (calls > 1) await refreshGate.promise;
-          return { ...base, openPipelineValue: 100 + calls };
+          return { data: { ...base, openPipelineValue: 100 + calls }, meta };
         },
       });
       const second = taggedAggregatesProvider(999);
@@ -205,13 +223,14 @@ describe('VAL-RES-002 query race safety', () => {
   describe('usePartnerNames', () => {
     it('falls back to ids on a provider change and ignores the late directory', async () => {
       const first = stubProvider({
-        getPartnerDirectory: async () => [{ id: 'partner-1', name: 'FIRST partner' }],
+        getPartnerDirectory: async () =>
+          directoryResult([{ id: 'partner-1', name: 'FIRST partner' }]),
       });
       const secondGate = deferred<void>();
       const second = stubProvider({
         getPartnerDirectory: async () => {
           await secondGate.promise;
-          return [{ id: 'partner-1', name: 'SECOND partner' }];
+          return directoryResult([{ id: 'partner-1', name: 'SECOND partner' }]);
         },
       });
 
@@ -339,7 +358,7 @@ describe('VAL-RES-002 query race safety', () => {
       const provider = stubProvider({
         getPartnerDirectory: async () => {
           await gate.promise;
-          return [{ id: 'partner-1', name: 'STALE directory' }];
+          return directoryResult([{ id: 'partner-1', name: 'STALE directory' }]);
         },
       });
       const { result, unmount } = renderHook(() => usePartnerNames(provider));

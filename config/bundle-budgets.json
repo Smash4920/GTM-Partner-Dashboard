@@ -13,8 +13,8 @@
       "name": "Application chunk",
       "pattern": "dist/assets/index-*.js",
       "aggregate": "each",
-      "limitBytes": 74752,
-      "reason": "The entry chunk that every visitor downloads before charts render. Keep app code out of the vendor chunks. Raised from 65 KiB when the runtime observability stack (telemetry envelopes, health checks, error capture) and the feature-flag runtime landed together, and from 68 KiB when the telemetry egress boundary landed (per-envelope field allowlists, fail-closed endpoint policy, master-switch gating): measured, deliberate additions to the entry chunk, not drift. Raised from 71 KiB when Forecasting's single shared Promise.all split into per-widget queries (VAL-RES-004 through VAL-RES-007): the shared scoped-query and cursor-pagination primitives plus the per-widget loading, named-error, and focused-retry UI each widget renders instead of one page-level pass/fail."
+      "limitBytes": 76800,
+      "reason": "The entry chunk that every visitor downloads before charts render. Keep app code out of the vendor chunks. Raised from 65 KiB when the runtime observability stack (telemetry envelopes, health checks, error capture) and the feature-flag runtime landed together, and from 68 KiB when the telemetry egress boundary landed (per-envelope field allowlists, fail-closed endpoint policy, master-switch gating): measured, deliberate additions to the entry chunk, not drift. Raised from 71 KiB when Forecasting's single shared Promise.all split into per-widget queries (VAL-RES-004 through VAL-RES-007): the shared scoped-query and cursor-pagination primitives plus the per-widget loading, named-error, and focused-retry UI each widget renders instead of one page-level pass/fail. Raised from 73 KiB when scoped answers gained their metadata envelope (VAL-DATA-006, VAL-RES-008): the QueryResult type through the providers and hooks, the shared query-state components that render completeness warnings and as-of captions, the mount-time GTM_HEALTH publication, and the static-route failure surfaces."
     },
     {
       "name": "Recharts chunk",

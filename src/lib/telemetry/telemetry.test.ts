@@ -57,6 +57,8 @@ const healthyArtifact: HealthArtifact = {
   sessionId: TRACE_ID,
   route: 'home',
   providerId: 'local',
+  requestedProviderId: 'local',
+  providerTransitionStatus: 'committed',
   generatedAt: '2026-09-18T00:00:00.000Z',
   uptimeMs: 1_200,
   checks: [{ name: 'appShell', status: 'ok', detail: '1 root children' }],

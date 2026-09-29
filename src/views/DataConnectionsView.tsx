@@ -35,7 +35,15 @@ import { registrationSlaAlerts } from '../lib/metrics';
  */
 
 interface DataConnectionsViewProps {
-  data: DashboardData;
+  /**
+   * Null under total provider failure. The catalog — the map, the coverage
+   * counts, the detail panel — is static and renders regardless; only the
+   * roster, composer, and alert queue need business data, and those say so
+   * and offer a retry rather than taking the route down with them.
+   */
+  data: DashboardData | null;
+  loadError: string | null;
+  onRetry: () => void;
   /** Users added during this session — the only removable roster entries. */
   addedUserIds: Set<string>;
   notifications: DashboardNotification[];
@@ -47,6 +55,8 @@ interface DataConnectionsViewProps {
 
 export default function DataConnectionsView({
   data,
+  loadError,
+  onRetry,
   addedUserIds,
   notifications,
   onAddTeamUser,
@@ -55,8 +65,9 @@ export default function DataConnectionsView({
   onSendNotification,
 }: DataConnectionsViewProps) {
   const alerts = useMemo(
-    () => registrationSlaAlerts(data.registrations, data.partners, data.teamUsers),
-    [data.registrations, data.partners, data.teamUsers],
+    () =>
+      data === null ? [] : registrationSlaAlerts(data.registrations, data.partners, data.teamUsers),
+    [data],
   );
 
   const alertCountByUserId = useMemo(() => {
@@ -82,9 +93,9 @@ export default function DataConnectionsView({
     : [];
 
   const describe = (template: ComposerState['template'], registrationId: string | null) => {
-    const registration = data.registrations.find((item) => item.id === registrationId);
+    const registration = data?.registrations.find((item) => item.id === registrationId);
     const partner = registration
-      ? data.partners.find((item) => item.id === registration.partnerId)
+      ? data?.partners.find((item) => item.id === registration.partnerId)
       : undefined;
     const alert = alerts.find((item) => item.registration.id === registrationId);
     const copy = composeCopy({ template, registration, partner, alert });
@@ -92,6 +103,7 @@ export default function DataConnectionsView({
   };
 
   const send = () => {
+    if (!data) return;
     const user = data.teamUsers.find((candidate) => candidate.id === composer.userId);
     const registration = data.registrations.find((item) => item.id === composer.registrationId);
     if (!user || !composer.subject.trim() || !composer.body.trim()) return;
@@ -143,8 +155,24 @@ export default function DataConnectionsView({
   );
   const required = CONNECTION_NODES.filter((node) => node.status === 'required').length;
   const live = CONNECTION_NODES.filter((node) => node.status === 'live').length;
-  const routingOn = data.teamUsers.filter((user) => user.status === 'active').length;
+  const routingOn = data?.teamUsers.filter((user) => user.status === 'active').length ?? null;
   const approaching = alerts.filter((alert) => alert.state === 'approaching').length;
+
+  /** A section that cannot render without the book names itself and offers the retry. */
+  const dataUnavailable = (label: string) => (
+    <p className="flex flex-wrap items-center gap-3 py-2 text-sm text-bone">
+      <span className="text-signal">{label} unavailable:</span>
+      {loadError ?? 'the data provider did not answer'}
+      <button
+        type="button"
+        onClick={onRetry}
+        aria-label={`Retry ${label}`}
+        className="rounded border border-ash px-3 py-1 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20"
+      >
+        Retry
+      </button>
+    </p>
+  );
 
   return (
     <div className="space-y-6">
@@ -185,15 +213,23 @@ export default function DataConnectionsView({
         />
         <KpiTile
           label="Receiving notifications"
-          value={`${routingOn}/${data.teamUsers.length}`}
-          sub="roster entries routed simulated notifications this session"
+          value={data === null ? '—' : `${routingOn}/${data.teamUsers.length}`}
+          sub={
+            data === null
+              ? 'roster unavailable — the provider did not answer'
+              : 'roster entries routed simulated notifications this session'
+          }
         />
         <KpiTile
           label="SLA alerts due"
-          value={`${alerts.length}`}
-          sub={`${approaching} due next business day · ${
-            alerts.length - approaching
-          } past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`}
+          value={data === null ? '—' : `${alerts.length}`}
+          sub={
+            data === null
+              ? 'alert queue unavailable — the provider did not answer'
+              : `${approaching} due next business day · ${
+                  alerts.length - approaching
+                } past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`
+          }
         />
       </div>
 
@@ -205,7 +241,7 @@ export default function DataConnectionsView({
           <WireDiagram
             selectedNodeId={selectedNodeId}
             onSelectNode={setSelectedNodeId}
-            users={data.teamUsers}
+            users={data?.teamUsers ?? []}
             selectedUserId={selectedUserId}
             onSelectUser={(userId) => {
               setSelectedUserId(userId);
@@ -233,17 +269,21 @@ export default function DataConnectionsView({
                 or a registration from the alert queue below.
               </p>
               <div className="mt-4">
-                <NotificationComposer
-                  users={data.teamUsers}
-                  partners={data.partners}
-                  registrations={data.registrations}
-                  alerts={alerts}
-                  state={composer}
-                  onChange={setComposer}
-                  onSend={send}
-                  lastSent={notifications[0]}
-                  describe={describe}
-                />
+                {data === null ? (
+                  dataUnavailable('The notification composer')
+                ) : (
+                  <NotificationComposer
+                    users={data.teamUsers}
+                    partners={data.partners}
+                    registrations={data.registrations}
+                    alerts={alerts}
+                    state={composer}
+                    onChange={setComposer}
+                    onSend={send}
+                    lastSent={notifications[0]}
+                    describe={describe}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -254,27 +294,35 @@ export default function DataConnectionsView({
         title="Partner team notification routing"
         subtitle="Who is on the internal roster, which manager they are aligned to, and whether this session routes simulated notifications to them. These controls do not grant sign-in or data access."
       >
-        <TeamAccessPanel
-          users={data.teamUsers}
-          partnerManagers={data.partnerManagers}
-          addedUserIds={addedUserIds}
-          onAdd={onAddTeamUser}
-          onSetStatus={onSetTeamUserStatus}
-          onRemove={onRemoveTeamUser}
-        />
+        {data === null ? (
+          dataUnavailable('The team roster')
+        ) : (
+          <TeamAccessPanel
+            users={data.teamUsers}
+            partnerManagers={data.partnerManagers}
+            addedUserIds={addedUserIds}
+            onAdd={onAddTeamUser}
+            onSetStatus={onSetTeamUserStatus}
+            onRemove={onRemoveTeamUser}
+          />
+        )}
       </Card>
 
       <Card
         title="Deal-registration SLA alerts"
         subtitle="The rule the notification service runs, the registrations it fires on at snapshot, and what has been sent this session."
       >
-        <SlaAlertPanel
-          alerts={alerts}
-          users={data.teamUsers}
-          notifications={notifications}
-          onNotify={(alert) => notifyAlert(alert.registration.id)}
-          onNotifyAll={notifyAllOwners}
-        />
+        {data === null ? (
+          dataUnavailable('The SLA alert queue')
+        ) : (
+          <SlaAlertPanel
+            alerts={alerts}
+            users={data.teamUsers}
+            notifications={notifications}
+            onNotify={(alert) => notifyAlert(alert.registration.id)}
+            onNotifyAll={notifyAllOwners}
+          />
+        )}
       </Card>
     </div>
   );

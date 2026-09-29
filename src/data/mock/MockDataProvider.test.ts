@@ -15,8 +15,12 @@ import {
 import { MockDataProvider } from './MockDataProvider';
 import { generateDashboardData } from './generate';
 import { NO_SESSION_EDITS } from '../sessionEdits';
+import {
+  unattributedOpportunitiesWarning,
+  weeklyHistoryReconstructedWarning,
+} from '../queryMetadata';
 import { makeOpportunity, makePartner, makeProviderBook, makeTarget } from '../../test/fixtures';
-import type { Opportunity } from '../types';
+import type { Opportunity, PartnerManager } from '../types';
 
 /**
  * The scoped contract, checked against the metrics layer.
@@ -43,7 +47,7 @@ function openOf(rows: Opportunity[]): Opportunity {
 
 describe('MockDataProvider scoped contract', () => {
   it('answers the quarter summary the metrics layer computes', async () => {
-    const summary = await provider.getForecastSummary({ quarter });
+    const { data: summary } = await provider.getForecastSummary({ quarter });
     const open = openPipeline(inQuarter);
     const target = book.targets
       .filter((item) => item.quarter === quarter)
@@ -61,12 +65,12 @@ describe('MockDataProvider scoped contract', () => {
   });
 
   it('answers the weighted forecast in the shape the metrics layer returns', async () => {
-    const weighted = await provider.getWeightedForecast({ quarter });
+    const { data: weighted } = await provider.getWeightedForecast({ quarter });
     expect(weighted).toEqual(weightedForecast(openOpportunities(inQuarter)));
   });
 
   it('bounds the mismatch sample while sizing both sides in full', async () => {
-    const quality = await provider.getForecastQuality({ quarter }, 3);
+    const { data: quality } = await provider.getForecastQuality({ quarter }, 3);
     const mismatches = categoryStageMismatches(openOpportunities(inQuarter));
 
     expect(quality.openCount).toBe(openOpportunities(inQuarter).length);
@@ -85,7 +89,7 @@ describe('MockDataProvider scoped contract', () => {
   });
 
   it('groups by manager and accounts for every in-quarter opportunity once', async () => {
-    const groups = await provider.getManagerForecastGroups({ quarter });
+    const { data: groups } = await provider.getManagerForecastGroups({ quarter });
     expect(groups).toHaveLength(book.partnerManagers.length);
     expect(groups.reduce((sum, group) => sum + group.opportunityCount, 0)).toBe(inQuarter.length);
 
@@ -102,7 +106,7 @@ describe('MockDataProvider scoped contract', () => {
   });
 
   it('serves week-over-week history as buckets, not as snapshot rows', async () => {
-    const weeks = await provider.getWeeklyForecastSeries({ quarter });
+    const { data: weeks } = await provider.getWeeklyForecastSeries({ quarter });
     expect(weeks).toEqual(
       weeklyForecastRows(book.opportunities, quarter, SNAPSHOT_DATE, book.snapshots),
     );
@@ -111,26 +115,32 @@ describe('MockDataProvider scoped contract', () => {
   });
 
   it('narrows aggregates and rows to one manager, and leaves history quarter-level', async () => {
-    const groups = await provider.getManagerForecastGroups({ quarter });
+    const { data: groups } = await provider.getManagerForecastGroups({ quarter });
     const managerId = groups[0]!.managerId;
 
-    const page = await provider.listQuarterOpportunities(
+    const { data: page } = await provider.listQuarterOpportunities(
       { quarter, partnerManagerId: managerId },
       { limit: 500 },
     );
-    const allRows = await provider.listQuarterOpportunities({ quarter }, { limit: 5_000 });
+    const { data: allRows } = await provider.listQuarterOpportunities(
+      { quarter },
+      { limit: 5_000 },
+    );
     expect(page.totalCount).toBeLessThan(allRows.totalCount);
 
     const managerByPartner = new Map(
       book.partners.map((partner) => [partner.id, partner.partnerManagerId]),
     );
     const owned = inQuarter.filter((opp) => managerByPartner.get(opp.partnerId) === managerId);
-    const scoped = await provider.getForecastSummary({ quarter, partnerManagerId: managerId });
+    const { data: scoped } = await provider.getForecastSummary({
+      quarter,
+      partnerManagerId: managerId,
+    });
     expect(scoped.openCount).toBe(openPipeline(owned).count);
     expect(scoped.openPipelineValue).toBe(openPipeline(owned).value);
 
     expect(
-      await provider.getManagerForecastGroups({ quarter, partnerManagerId: managerId }),
+      (await provider.getManagerForecastGroups({ quarter, partnerManagerId: managerId })).data,
     ).toEqual(groups.filter((group) => group.managerId === managerId));
 
     // The documented exception, pinned here so nobody "fixes" it by filtering
@@ -138,18 +148,21 @@ describe('MockDataProvider scoped contract', () => {
     // so a manager-filtered series would drop the recorded weeks' history and
     // draw a cliff that never happened.
     expect(
-      await provider.getWeeklyForecastSeries({ quarter, partnerManagerId: managerId }),
-    ).toEqual(await provider.getWeeklyForecastSeries({ quarter }));
+      (await provider.getWeeklyForecastSeries({ quarter, partnerManagerId: managerId })).data,
+    ).toEqual((await provider.getWeeklyForecastSeries({ quarter })).data);
   });
 
   it('walks a paged book exactly once, in a stable order', async () => {
-    const expected = await provider.listQuarterOpportunities({ quarter }, { limit: 10_000 });
+    const { data: expected } = await provider.listQuarterOpportunities(
+      { quarter },
+      { limit: 10_000 },
+    );
     const ids = new Set<string>();
     let cursor: string | undefined;
     let pages = 0;
 
     do {
-      const page = await provider.listQuarterOpportunities(
+      const { data: page } = await provider.listQuarterOpportunities(
         { quarter },
         { ...(cursor ? { cursor } : {}), limit: 7 },
       );
@@ -166,13 +179,13 @@ describe('MockDataProvider scoped contract', () => {
 
     expect(ids.size).toBe(expected.totalCount);
     // Sorted by expected close, so the same page means the same thing twice.
-    const once = await provider.listQuarterOpportunities({ quarter }, { limit: 7 });
-    const again = await provider.listQuarterOpportunities({ quarter }, { limit: 7 });
+    const { data: once } = await provider.listQuarterOpportunities({ quarter }, { limit: 7 });
+    const { data: again } = await provider.listQuarterOpportunities({ quarter }, { limit: 7 });
     expect(once.rows.map((row) => row.id)).toEqual(again.rows.map((row) => row.id));
   });
 
   it('exposes the partner directory rather than the partner collection', async () => {
-    const directory = await provider.getPartnerDirectory();
+    const { data: directory } = await provider.getPartnerDirectory();
     expect(directory).toEqual(
       book.partners.map((partner) => ({ id: partner.id, name: partner.name })),
     );
@@ -243,7 +256,7 @@ describe('manager-scoped targets (VAL-DATA-001)', () => {
       ['partner-2', 'pm-2'],
     ]);
 
-    const org = await scopedProvider.getForecastSummary({ quarter });
+    const { data: org } = await scopedProvider.getForecastSummary({ quarter });
     expect(org.target).toBe(400_000); // partner-1 100k + partner-2 300k
     expect(org.closedWon).toBe(190_000);
     expect(org.remainingQuota).toBe(210_000);
@@ -252,14 +265,20 @@ describe('manager-scoped targets (VAL-DATA-001)', () => {
   });
 
   it('measures each manager only against their own partners’ targets', async () => {
-    const pm1 = await scopedProvider.getForecastSummary({ quarter, partnerManagerId: 'pm-1' });
+    const { data: pm1 } = await scopedProvider.getForecastSummary({
+      quarter,
+      partnerManagerId: 'pm-1',
+    });
     expect(pm1.target).toBe(100_000); // partner-1 only; partner-2's 300k stays out
     expect(pm1.closedWon).toBe(40_000);
     expect(pm1.remainingQuota).toBe(60_000);
     expect(pm1.attainment).toBeCloseTo(0.4, 10);
     expect(pm1.coverage).toEqual({ kind: 'coverage', value: 2 }); // 120k open / 60k gap
 
-    const pm2 = await scopedProvider.getForecastSummary({ quarter, partnerManagerId: 'pm-2' });
+    const { data: pm2 } = await scopedProvider.getForecastSummary({
+      quarter,
+      partnerManagerId: 'pm-2',
+    });
     expect(pm2.target).toBe(300_000); // partner-2 only
     expect(pm2.closedWon).toBe(150_000);
     expect(pm2.remainingQuota).toBe(150_000);
@@ -275,11 +294,19 @@ describe('manager-scoped targets (VAL-DATA-001)', () => {
       ),
     });
 
-    const before = await scopedProvider.getForecastSummary({ quarter, partnerManagerId: 'pm-1' });
+    const { data: before } = await scopedProvider.getForecastSummary({
+      quarter,
+      partnerManagerId: 'pm-1',
+    });
     // partner-2's target doubled, but pm-1's summary cannot tell.
-    expect(await changed.getForecastSummary({ quarter, partnerManagerId: 'pm-1' })).toEqual(before);
+    expect((await changed.getForecastSummary({ quarter, partnerManagerId: 'pm-1' })).data).toEqual(
+      before,
+    );
 
-    const pm2 = await changed.getForecastSummary({ quarter, partnerManagerId: 'pm-2' });
+    const { data: pm2 } = await changed.getForecastSummary({
+      quarter,
+      partnerManagerId: 'pm-2',
+    });
     expect(pm2.target).toBe(600_000);
     expect(pm2.remainingQuota).toBe(450_000);
     expect(pm2.attainment).toBeCloseTo(0.25, 10);
@@ -291,13 +318,16 @@ describe('manager-scoped targets (VAL-DATA-001)', () => {
       ...scopedBook,
       targets: scopedBook.targets.filter((item) => item.partnerId !== 'partner-1'),
     });
-    const pm1 = await noTarget.getForecastSummary({ quarter, partnerManagerId: 'pm-1' });
+    const { data: pm1 } = await noTarget.getForecastSummary({
+      quarter,
+      partnerManagerId: 'pm-1',
+    });
     expect(pm1.target).toBe(0);
     expect(pm1.remainingQuota).toBe(0);
     expect(pm1.attainment).toBe(0);
     expect(pm1.coverage).toEqual({ kind: 'no-target' });
     // The org still sees partner-2's target — the state is scoped, not global.
-    const org = await noTarget.getForecastSummary({ quarter });
+    const { data: org } = await noTarget.getForecastSummary({ quarter });
     expect(org.target).toBe(300_000);
 
     const met = new MockDataProvider({
@@ -306,7 +336,10 @@ describe('manager-scoped targets (VAL-DATA-001)', () => {
         item.partnerId === 'partner-1' ? { ...item, revenueTarget: 30_000 } : item,
       ),
     });
-    const pm1Met = await met.getForecastSummary({ quarter, partnerManagerId: 'pm-1' });
+    const { data: pm1Met } = await met.getForecastSummary({
+      quarter,
+      partnerManagerId: 'pm-1',
+    });
     expect(pm1Met.target).toBe(30_000);
     expect(pm1Met.closedWon).toBe(40_000);
     expect(pm1Met.remainingQuota).toBe(0);
@@ -319,9 +352,9 @@ describe('MockDataProvider folds session edits behind the seam', () => {
   const target = openOf(inQuarter);
 
   it('moves open pipeline by the edited amount', async () => {
-    const before = await provider.getForecastSummary({ quarter });
+    const { data: before } = await provider.getForecastSummary({ quarter });
     const raise = 40_000;
-    const after = await provider.getForecastSummary({
+    const { data: after } = await provider.getForecastSummary({
       quarter,
       edits: {
         ...NO_SESSION_EDITS,
@@ -334,8 +367,8 @@ describe('MockDataProvider folds session edits behind the seam', () => {
   });
 
   it('re-weights the forecast when a deal is re-called', async () => {
-    const before = await provider.getWeightedForecast({ quarter });
-    const after = await provider.getWeightedForecast({
+    const { data: before } = await provider.getWeightedForecast({ quarter });
+    const { data: after } = await provider.getWeightedForecast({
       quarter,
       edits: { ...NO_SESSION_EDITS, forecastCalls: { [target.id]: 'commit' } },
     });
@@ -352,7 +385,7 @@ describe('MockDataProvider folds session edits behind the seam', () => {
     const seeded = inQuarter.find((opp) => opp.nextStep !== undefined);
     if (!seeded) throw new Error('fixture has no seeded next step');
 
-    const page = await provider.listQuarterOpportunities(
+    const { data: page } = await provider.listQuarterOpportunities(
       { quarter, edits: { ...NO_SESSION_EDITS, nextSteps: { [seeded.id]: '' } } },
       { limit: 10_000 },
     );
@@ -360,5 +393,89 @@ describe('MockDataProvider folds session edits behind the seam', () => {
     // Presence is the edit; '' is the tombstone. A `??` fallback anywhere in
     // this path would restore the CRM's value and the clear would look broken.
     expect(row?.nextStep).toBe('');
+  });
+});
+
+describe('scoped answer metadata (VAL-DATA-006)', () => {
+  const AS_OF = '2026-09-18T00:00:00.000Z';
+
+  it('every scoped method reports the provider, the snapshot as-of, and its lineage', async () => {
+    const answers = await Promise.all([
+      provider.getForecastSummary({ quarter }),
+      provider.getWeightedForecast({ quarter }),
+      provider.getForecastQuality({ quarter }, 10),
+      provider.getManagerForecastGroups({ quarter }),
+      provider.listQuarterOpportunities({ quarter }, { limit: 25 }),
+      provider.getPartnerDirectory(),
+    ]);
+
+    for (const { meta } of answers) {
+      expect(meta.providerId).toBe('local');
+      expect(meta.asOf).toBe(AS_OF);
+      expect(meta.completeness).toBe('complete');
+      expect(meta.warnings).toEqual([]);
+      expect(meta.lineage.map((entry) => entry.source)).toEqual(['mock-book']);
+    }
+  });
+
+  it('declares session edits in the lineage once any edit exists', async () => {
+    const { meta } = await provider.getForecastSummary({
+      quarter,
+      edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-x': 1 } },
+    });
+    expect(meta.lineage.map((entry) => entry.source)).toEqual(['mock-book', 'session-edits']);
+  });
+
+  it('the weekly series warns for exactly the weeks it reconstructed', async () => {
+    const { meta } = await provider.getWeeklyForecastSeries({ quarter });
+
+    // The seeded book records the weeks it has recorded; the fixture book
+    // used elsewhere records none at all. Both answers name their basis.
+    expect(meta.lineage.some((entry) => entry.source === 'weekly-snapshots')).toBe(true);
+    expect(meta.completeness).toBe('complete');
+    expect(meta.warnings).toEqual([]);
+
+    const fixtureProvider = new MockDataProvider(makeProviderBook());
+    const { data: fixtureWeeks, meta: fixtureMeta } = await fixtureProvider.getWeeklyForecastSeries(
+      { quarter },
+    );
+    expect(fixtureWeeks.length).toBeGreaterThan(0);
+    expect(fixtureMeta.completeness).toBe('partial');
+    // Every closed week is reconstructed: the fixture book records no
+    // snapshots at all. Open weeks are not part of the warning — a week that
+    // has not closed is live data, not reconstructed history.
+    const closed = fixtureWeeks.filter(
+      (week) => week.hasStarted && Date.parse(week.weekEnd) <= SNAPSHOT_DATE.getTime(),
+    );
+    expect(closed.length).toBeGreaterThan(0);
+    expect(fixtureMeta.warnings).toEqual([
+      weeklyHistoryReconstructedWarning(closed.length, closed.length),
+    ]);
+  });
+
+  it('names unattributed in-quarter opportunities as a partial manager grouping', async () => {
+    const unattributedBook = makeProviderBook({
+      partnerManagers: [] as PartnerManager[],
+      partners: [],
+      opportunities: [makeOpportunity({ id: 'opp-orphan', partnerId: 'partner-absent' })],
+    });
+    const unattributedProvider = new MockDataProvider(unattributedBook);
+    const { data: groups, meta } = await unattributedProvider.getManagerForecastGroups({
+      quarter,
+    });
+
+    expect(groups).toEqual([]);
+    expect(meta.completeness).toBe('partial');
+    expect(meta.warnings).toEqual([unattributedOpportunitiesWarning(1)]);
+    // The org-wide summary loses nothing: the warning is scoped to the
+    // grouping that actually dropped the rows.
+    const { meta: summaryMeta } = await unattributedProvider.getForecastSummary({ quarter });
+    expect(summaryMeta.completeness).toBe('complete');
+  });
+
+  it('lets implementations stamp their own identity on the answers they serve', async () => {
+    const tagged = new MockDataProvider(book, { providerId: 'remote' });
+    const { meta } = await tagged.getPartnerDirectory();
+    expect(meta.providerId).toBe('remote');
   });
 });

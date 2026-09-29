@@ -516,11 +516,16 @@ Production builds may set these Vite variables:
 - `VITE_FLAG_TELEMETRY_ENABLED` and `VITE_FLAG_ANALYTICS_ENABLED` — explicit
   build-time feature switches.
 
-The app exposes a live readiness artifact at `window.GTM_HEALTH`. Run
-`await window.GTM_HEALTH.refresh()` in the deployed page to check the shell,
-network, flags, telemetry delivery, recent errors, and the real data-provider
-seam. Production builds ship no public source maps: a published map would
-expose the full original source to anyone who downloads the bundle.
+The app exposes a live readiness artifact at `window.GTM_HEALTH`, published
+the moment the shell mounts — before any readiness check resolves, and still
+there when every startup check fails, so its absence always means the app
+never booted rather than "healthy but quiet". The artifact names the shell,
+the committed provider, any requested-provider transition, flag and telemetry
+state, recent captured errors, and the data seam's status. Run
+`await window.GTM_HEALTH.refresh()` in the deployed page to re-probe the
+shell, network, flags, telemetry delivery, recent errors, and the committed
+provider seam. Production builds ship no public source maps: a published map
+would expose the full original source to anyone who downloads the bundle.
 
 #### Error to insight pipeline
 
@@ -602,15 +607,23 @@ scope (a fiscal quarter, optionally one partner manager, plus the session's
 uncommitted edits) and receives an answer whose size does not depend on the size
 of the book. **Forecasting is built on this today.**
 
-| Method                       | Returns                                                     |
-| ---------------------------- | ----------------------------------------------------------- |
-| `getForecastSummary()`       | `ForecastSummary` (8 numbers + coverage state)              |
-| `getWeightedForecast()`      | `WeightedForecastSummary`                                   |
-| `getForecastQuality()`       | `ForecastQualitySummary` (counts, exposure, bounded sample) |
-| `getManagerForecastGroups()` | `ManagerForecastGroup[]` (one row per manager)              |
-| `getWeeklyForecastSeries()`  | `WeeklySeriesRow[]` (13 buckets)                            |
-| `listQuarterOpportunities()` | `Page<Opportunity>` (cursor, 25 rows)                       |
-| `getPartnerDirectory()`      | `PartnerRef[]` (id → name)                                  |
+| Method                       | Returns                                                          |
+| ---------------------------- | ---------------------------------------------------------------- |
+| `getForecastSummary()`       | `QueryResult<ForecastSummary>` (8 numbers + coverage state)      |
+| `getWeightedForecast()`      | `QueryResult<WeightedForecastSummary>`                           |
+| `getForecastQuality()`       | `QueryResult<ForecastQualitySummary>` (counts, exposure, sample) |
+| `getManagerForecastGroups()` | `QueryResult<ManagerForecastGroup[]>` (one row per manager)      |
+| `getWeeklyForecastSeries()`  | `QueryResult<WeeklySeriesRow[]>` (13 buckets)                    |
+| `listQuarterOpportunities()` | `QueryResult<Page<Opportunity>>` (cursor, 25 rows)               |
+| `getPartnerDirectory()`      | `QueryResult<PartnerRef[]>` (id → name)                          |
+
+Every scoped answer arrives in a `QueryResult` envelope
+([`src/data/queryMetadata.ts`](src/data/queryMetadata.ts)): the data plus
+metadata naming the committed provider, the deterministic snapshot as-of, the
+lineage the answer was computed from, whether it is complete or partial, and
+typed warnings. Partial answers stay visible with their warnings next to them
+— a reconstructed weekly history or an unattributed opportunity is disclosed,
+never smoothed over.
 
 **The shape being retired — eight list-everything calls.** `listPartners()`,
 `listOpportunities()`, `listRegistrations()`, `getTargets()`,

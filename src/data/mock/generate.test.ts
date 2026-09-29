@@ -433,9 +433,13 @@ describe('MockDataProvider', () => {
     // only as the week-over-week series, which is ~13 buckets.
     expect('listPipelineSnapshots' in provider).toBe(false);
 
-    const weeks = await provider.getWeeklyForecastSeries({ quarter: CURRENT_FISCAL_QUARTER });
+    const { data: weeks, meta } = await provider.getWeeklyForecastSeries({
+      quarter: CURRENT_FISCAL_QUARTER,
+    });
     expect(weeks.length).toBeGreaterThan(10);
     expect(weeks.length).toBeLessThan(20);
     expect(weeks.some((week) => week.recordedAt !== undefined)).toBe(true);
+    // Every bucket has a recorded basis, so the answer is complete.
+    expect(meta.completeness).toBe('complete');
   });
 });

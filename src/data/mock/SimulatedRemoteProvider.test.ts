@@ -10,11 +10,14 @@ const quarter = CURRENT_FISCAL_QUARTER;
 const instant = { latencyMs: 0, failureRate: 0 };
 
 describe('SimulatedRemoteProvider', () => {
-  it('passes the answer through when the wire is clear', async () => {
+  it('passes the answer through when the wire is clear, under its own identity', async () => {
     const provider = new SimulatedRemoteProvider(new MockDataProvider(), instant);
     await expect(provider.listPartners()).resolves.toHaveLength(25);
+    // The envelope survives the hop, re-labelled: the committed provider is
+    // the remote one, whatever the inner implementation called itself.
     await expect(provider.getForecastSummary({ quarter })).resolves.toMatchObject({
-      openCount: expect.any(Number),
+      data: { openCount: expect.any(Number) },
+      meta: { providerId: 'remote', completeness: 'complete' },
     });
   });
 
@@ -87,7 +90,7 @@ describe('SimulatedRemoteProvider', () => {
     // The plan is spent; every later call passes through, despite the 100%
     // failure rate the draw would have applied.
     await expect(provider.getForecastSummary({ quarter })).resolves.toMatchObject({
-      openCount: expect.any(Number),
+      data: { openCount: expect.any(Number) },
     });
     // A failed call never reaches the inner provider.
     expect(call).toHaveBeenCalledTimes(1);
@@ -136,7 +139,7 @@ describe('SimulatedRemoteProvider', () => {
     // The plan is spent for that method; later calls pass despite the 100%
     // failure rate the draw would have applied.
     await expect(provider.getForecastSummary({ quarter })).resolves.toMatchObject({
-      openCount: expect.any(Number),
+      data: { openCount: expect.any(Number) },
     });
     // The failed call never reached the inner provider; the retried one ran
     // exactly once.
@@ -253,7 +256,7 @@ describe('SimulatedRemoteProvider', () => {
 
   it('wraps any provider, including the scaled book', async () => {
     const provider = new SimulatedRemoteProvider(new ScaleDataProvider(3), instant);
-    const page = await provider.listQuarterOpportunities({ quarter }, { limit: 4 });
+    const { data: page } = await provider.listQuarterOpportunities({ quarter }, { limit: 4 });
     expect(page.rows).toHaveLength(4);
     // The roomy call comes back at 3× as well, which is and always was the
     // problem the scoped calls do not have.

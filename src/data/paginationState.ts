@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DataProvider, Page, PageRequest } from './DataProvider';
+import type { QueryMeta, QueryResult } from './queryMetadata';
 import { messageOf } from './queryState';
 
 /**
@@ -27,6 +28,8 @@ export interface PaginationState<T> {
   rows: T[];
   /** Rows matching the scope in total, not the pages fetched. */
   totalCount: number;
+  /** Metadata of the most recently landed page, or null before the first. */
+  meta: QueryMeta | null;
   /** True only until the first page lands. */
   loading: boolean;
   /** True while the loaded window is being refetched underneath itself. */
@@ -44,6 +47,7 @@ interface PageEntry<T> {
   resetKey: string;
   rows: T[];
   totalCount: number;
+  meta: QueryMeta | null;
   hasMore: boolean;
   loading: boolean;
   refreshing: boolean;
@@ -57,6 +61,7 @@ function emptyEntry<T>(provider: DataProvider, resetKey: string): PageEntry<T> {
     resetKey,
     rows: [],
     totalCount: 0,
+    meta: null,
     hasMore: false,
     loading: false,
     refreshing: false,
@@ -77,7 +82,7 @@ export function usePaginatedRows<T>(args: {
   /** Data identity: a change refreshes the loaded window in place. */
   refreshKey: string;
   pageSize: number;
-  fetchPage: (page: PageRequest) => Promise<Page<T>>;
+  fetchPage: (page: PageRequest) => Promise<QueryResult<Page<T>>>;
   /** Fallback messages when a rejection carries none. */
   errorFallback: string;
   loadMoreErrorFallback: string;
@@ -128,6 +133,7 @@ export function usePaginatedRows<T>(args: {
       resetKey,
       rows: [],
       totalCount: 0,
+      meta: null,
       hasMore: false,
       loading: false,
       refreshing: false,
@@ -143,8 +149,9 @@ export function usePaginatedRows<T>(args: {
       loadedCount.current = 0;
       setEntry({ ...currentEntry(), loading: true });
       fetchPageRef.current({ limit: pageSize }).then(
-        (page) => {
+        (result) => {
           if (controller.signal.aborted || request !== latest.current) return;
+          const page = result.data;
           phase.current = 'idle';
           lastFailure.current = null;
           cursor.current = page.nextCursor;
@@ -153,6 +160,7 @@ export function usePaginatedRows<T>(args: {
             ...currentEntry(),
             rows: page.rows,
             totalCount: page.totalCount,
+            meta: result.meta,
             hasMore: page.nextCursor !== undefined,
           });
         },
@@ -178,8 +186,9 @@ export function usePaginatedRows<T>(args: {
         : previous,
     );
     fetchPageRef.current({ limit: loadedCount.current }).then(
-      (page) => {
+      (result) => {
         if (controller.signal.aborted || request !== latest.current) return;
+        const page = result.data;
         phase.current = 'idle';
         lastFailure.current = null;
         cursor.current = page.nextCursor;
@@ -190,6 +199,7 @@ export function usePaginatedRows<T>(args: {
                 ...previous,
                 rows: page.rows,
                 totalCount: page.totalCount,
+                meta: result.meta,
                 hasMore: page.nextCursor !== undefined,
                 refreshing: false,
                 error: null,
@@ -234,10 +244,11 @@ export function usePaginatedRows<T>(args: {
         : previous,
     );
     fetchPageRef.current({ cursor: next, limit }).then(
-      (page) => {
+      (result) => {
         // Superseded by a newer effect: the newer request owns the phase
         // slot, and this answer belongs to a question nobody is asking.
         if (request !== latest.current) return;
+        const page = result.data;
         phase.current = 'idle';
         lastFailure.current = null;
         cursor.current = page.nextCursor;
@@ -248,6 +259,7 @@ export function usePaginatedRows<T>(args: {
                 ...previous,
                 rows: [...previous.rows, ...page.rows],
                 totalCount: page.totalCount,
+                meta: result.meta,
                 loadingMore: false,
                 hasMore: page.nextCursor !== undefined,
               }
@@ -295,6 +307,7 @@ export function usePaginatedRows<T>(args: {
   return {
     rows: shown.rows,
     totalCount: shown.totalCount,
+    meta: shown.meta,
     loading: shown.loading,
     refreshing: shown.refreshing,
     loadingMore: shown.loadingMore,

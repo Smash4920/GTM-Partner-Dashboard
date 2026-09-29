@@ -12,6 +12,7 @@ import type { SessionEdits } from './data/sessionEdits';
 import { useCommittedProvider } from './data/useCommittedProvider';
 import type { CommittedProvider } from './data/useCommittedProvider';
 import type {
+  DashboardData,
   DashboardNotification,
   ForecastCategory,
   MeetingClassification,
@@ -24,7 +25,8 @@ import { useDashboardData } from './data/useDashboardData';
 import type { NotificationDraft } from './lib/notifications';
 import { formatDate } from './lib/format';
 import { featureFlags, getFeatureFlagSubject, type FeatureFlagClient } from './lib/featureFlags';
-import { assessHealth, publishHealthArtifact } from './lib/health';
+import { assessHealth, publishHealthArtifact, shellHealthArtifact } from './lib/health';
+import type { HealthArtifact } from './lib/health';
 import { logger } from './lib/logging';
 import { telemetry } from './lib/telemetry/telemetry';
 import ActivityTrackingView from './views/ActivityTrackingView';
@@ -141,7 +143,7 @@ export default function App({
   const providerId = committed.id;
   const providerMeta = providerOption(providerId);
   const requestedMeta = providerOption(transition.requestedId);
-  const { data, loading, error } = useDashboardData(provider);
+  const { data, loading, error, retry } = useDashboardData(provider);
 
   const partners = useMemo(
     () => [...(data?.partners ?? []), ...prospects],
@@ -207,26 +209,82 @@ export default function App({
     [revenueOverrides, notes, nextSteps, forecastCalls],
   );
 
-  // Once the book is on screen, the app checks its own runtime readiness
-  // (data seam latency, flags, telemetry delivery, recent errors) and
-  // publishes the result at `window.GTM_HEALTH` for the deployed page.
-  // Once per load is deliberate: it is a readiness check, not a monitor, and
-  // the published endpoint can be refreshed on demand. The refresh handle
-  // reads the provider through a ref, so it pings the seam the session is on
-  // now, not the one it happened to boot with.
-  const healthPublished = useRef(false);
-  const providerRef = useRef(provider);
+  // window.GTM_HEALTH exists from the first effect after the shell mounts —
+  // before any readiness check, provider ping, or route query has resolved,
+  // and it keeps existing when every one of those fails. The provisional
+  // artifact says only what the shell already knows about itself; the real
+  // assessment replaces it as soon as it lands, whatever it lands on. The
+  // refresh handle reads the provider and the transition through a ref, so
+  // an operator's refresh() probes the seam the session is on now, not the
+  // one it happened to boot with.
+  const healthContextRef = useRef({
+    provider,
+    requestedId: transition.requestedId,
+    status: transition.status,
+  });
   useEffect(() => {
-    providerRef.current = provider;
-  }, [provider]);
-  useEffect(() => {
-    if (!live || healthPublished.current) return;
-    healthPublished.current = true;
-    void assessHealth({ provider }).then((artifact) => {
-      telemetry.reportHealth(artifact);
-      publishHealthArtifact(artifact, () => assessHealth({ provider: providerRef.current }));
+    healthContextRef.current = {
+      provider,
+      requestedId: transition.requestedId,
+      status: transition.status,
+    };
+  }, [provider, transition.requestedId, transition.status]);
+
+  const refreshHealth = useCallback(async () => {
+    const current = healthContextRef.current;
+    return assessHealth({
+      provider: current.provider,
+      transition: {
+        requestedId: current.requestedId,
+        status:
+          current.status === 'idle'
+            ? 'committed'
+            : current.status === 'probing'
+              ? 'committing'
+              : 'failed',
+      },
     });
-  }, [live, provider]);
+  }, []);
+
+  const lastHealthArtifact = useRef<HealthArtifact | null>(null);
+  const publishHealth = useCallback(
+    (artifact: HealthArtifact) => {
+      lastHealthArtifact.current = artifact;
+      publishHealthArtifact(artifact, refreshHealth);
+    },
+    [refreshHealth],
+  );
+
+  const healthBooted = useRef(false);
+  useEffect(() => {
+    if (healthBooted.current) return;
+    healthBooted.current = true;
+    publishHealth(shellHealthArtifact());
+    void refreshHealth().then((artifact) => {
+      // Only the assessed artifact ships as telemetry; the provisional one
+      // would alert on a boot that has not finished judging itself.
+      telemetry.reportHealth(artifact);
+      publishHealth(artifact);
+    });
+  }, [refreshHealth, publishHealth]);
+
+  // A provider request or commit changes who the artifact speaks for, so the
+  // published document follows without re-running the whole assessment.
+  useEffect(() => {
+    const artifact = lastHealthArtifact.current;
+    if (artifact === null) return;
+    publishHealth({
+      ...artifact,
+      providerId,
+      requestedProviderId: transition.requestedId,
+      providerTransitionStatus:
+        transition.status === 'idle'
+          ? 'committed'
+          : transition.status === 'probing'
+            ? 'committing'
+            : 'failed',
+    });
+  }, [providerId, transition.requestedId, transition.status, publishHealth]);
 
   const setRevenue = (opportunityId: string, value: number) => {
     log.debug('Revenue forecast edited', { opportunityId, revenue: value });
@@ -441,69 +499,31 @@ export default function App({
               {providerMeta.summary}
             </p>
           )}
-          {error && <p className="rounded-card border border-ash p-4 text-sm text-bone">{error}</p>}
-          {/* The book on screen always belongs to the committed provider: a
-              switch keeps the old book while the candidate is only requested,
-              and the commit drops it for a loading state until the new
-              provider's own data arrives. There is no frame in between. */}
-          {loading && !live && (
-            <p className="flex items-center gap-2 py-32 font-mono text-xs uppercase tracking-[0.08em] text-granite">
-              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal" />
-              Loading dashboard data
-            </p>
-          )}
-          {live && (
-            // The key is the selection-reconciliation rule: a new committed
-            // provider generation remounts the route, so view-local
-            // selections — a manager filter, an expanded group, a picked
-            // partner — reset to their defaults instead of pointing at ids
-            // another provider's directory may not even contain.
-            <ErrorBoundary
-              key={`${providerId}:${committed.generation}`}
-              resetKey={`${providerId}:${committed.generation}:${route}`}
-            >
-              {route === 'home' && <HomeView data={live} classifications={classifications} />}
-              {route === 'partners' && (
-                <PartnerPerformanceView data={live} classifications={classifications} />
-              )}
-              {route === 'forecasting' && (
-                <ForecastingView
-                  provider={provider}
-                  edits={forecastEdits}
-                  onSetRevenue={setRevenue}
-                  onSetNote={setNote}
-                  onSetNextStep={setNextStep}
-                  onSetForecastCall={setForecastCall}
-                />
-              )}
-              {route === 'registration-ops' && <DealRegistrationOpsView data={live} />}
-              {route === 'activity' && (
-                <ActivityTrackingView
-                  data={live}
-                  classifications={classifications}
-                  onCommitClassifications={commitClassifications}
-                  onAddPartner={addPartner}
-                />
-              )}
-              {route === 'partner-view' && <PartnerView data={live} />}
-              {route === 'production-requirements' && (
-                <FlaggedContent enabled={productionRequirementsEnabled}>
-                  <ProductionRequirementsView />
-                </FlaggedContent>
-              )}
-              {route === 'data-connections' && (
-                <DataConnectionsView
-                  data={live}
-                  addedUserIds={addedUserIds}
-                  notifications={notifications}
-                  onAddTeamUser={addTeamUser}
-                  onSetTeamUserStatus={setTeamUserStatus}
-                  onRemoveTeamUser={removeTeamUser}
-                  onSendNotification={sendNotification}
-                />
-              )}
-            </ErrorBoundary>
-          )}
+          <RouteContent
+            route={route}
+            live={live}
+            loading={loading}
+            error={error}
+            retry={retry}
+            providerId={providerId}
+            generation={committed.generation}
+            productionRequirementsEnabled={productionRequirementsEnabled}
+            provider={provider}
+            forecastEdits={forecastEdits}
+            classifications={classifications}
+            addedUserIds={addedUserIds}
+            notifications={notifications}
+            onSetRevenue={setRevenue}
+            onSetNote={setNote}
+            onSetNextStep={setNextStep}
+            onSetForecastCall={setForecastCall}
+            onCommitClassifications={commitClassifications}
+            onAddPartner={addPartner}
+            onAddTeamUser={addTeamUser}
+            onSetTeamUserStatus={setTeamUserStatus}
+            onRemoveTeamUser={removeTeamUser}
+            onSendNotification={sendNotification}
+          />
         </main>
       </div>
 
@@ -514,5 +534,150 @@ export default function App({
         </p>
       </footer>
     </div>
+  );
+}
+
+/** Everything RouteContent needs from the shell, in one place. */
+interface RouteContentProps {
+  route: Route;
+  live: DashboardData | null;
+  loading: boolean;
+  error: string | null;
+  retry: () => void;
+  providerId: ProviderId;
+  generation: number;
+  productionRequirementsEnabled: boolean;
+  provider: DataProvider;
+  forecastEdits: SessionEdits;
+  classifications: Record<string, MeetingClassification>;
+  addedUserIds: Set<string>;
+  notifications: DashboardNotification[];
+  onSetRevenue: (opportunityId: string, value: number) => void;
+  onSetNote: (opportunityId: string, note: string) => void;
+  onSetNextStep: (opportunityId: string, nextStep: string) => void;
+  onSetForecastCall: (opportunityId: string, category: ForecastCategory) => void;
+  onCommitClassifications: (next: Record<string, MeetingClassification>) => void;
+  onAddPartner: (name: string, partnerManagerId: string) => string;
+  onAddTeamUser: (input: NewTeamUserInput) => void;
+  onSetTeamUserStatus: (userId: string, status: TeamUserStatus) => void;
+  onRemoveTeamUser: (userId: string) => void;
+  onSendNotification: (draft: NotificationDraft) => void;
+}
+
+/**
+ * The three route kinds, with three failure contracts:
+ *
+ * - Production Requirements and the connection catalog are static. They
+ *   render through total provider failure; only the roster and alert sections
+ *   of Data Connections need the book, and those say so themselves, with a
+ *   retry.
+ * - Forecasting reads the scoped contract and carries per-widget failure
+ *   state, so a failed whole-book load never blanks it: each widget names its
+ *   own failure and retries its own query.
+ * - The remaining routes render the folded book. While it is absent they hold
+ *   the route with a named loading or error state rather than rendering
+ *   another provider's rows.
+ */
+function RouteContent({
+  route,
+  live,
+  loading,
+  error,
+  retry,
+  providerId,
+  generation,
+  productionRequirementsEnabled,
+  provider,
+  forecastEdits,
+  classifications,
+  addedUserIds,
+  notifications,
+  onSetRevenue,
+  onSetNote,
+  onSetNextStep,
+  onSetForecastCall,
+  onCommitClassifications,
+  onAddPartner,
+  onAddTeamUser,
+  onSetTeamUserStatus,
+  onRemoveTeamUser,
+  onSendNotification,
+}: RouteContentProps) {
+  // The key is the selection-reconciliation rule: a new committed provider
+  // generation remounts the route, so view-local selections — a manager
+  // filter, an expanded group, a picked partner — reset to their defaults
+  // instead of pointing at ids another provider's directory may not even
+  // contain.
+  const boundaryKey = `${providerId}:${generation}`;
+  const isBookRoute =
+    route !== 'forecasting' && route !== 'production-requirements' && route !== 'data-connections';
+  return (
+    <>
+      {error !== null && route !== 'data-connections' && (
+        <p className="rounded-card border border-ash p-4 text-sm text-bone">{error}</p>
+      )}
+      {/* The book on screen always belongs to the committed provider: a
+          switch keeps the old book while the candidate is only requested,
+          and the commit drops it for a loading state until the new
+          provider's own data arrives. There is no frame in between. */}
+      {loading && !live && isBookRoute && (
+        <p className="flex items-center gap-2 py-32 font-mono text-xs uppercase tracking-[0.08em] text-granite">
+          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal" />
+          Loading dashboard data
+        </p>
+      )}
+      {route === 'production-requirements' && (
+        <FlaggedContent enabled={productionRequirementsEnabled}>
+          <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:production-requirements`}>
+            <ProductionRequirementsView />
+          </ErrorBoundary>
+        </FlaggedContent>
+      )}
+      {route === 'data-connections' && (
+        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:data-connections`}>
+          <DataConnectionsView
+            data={live}
+            loadError={error}
+            onRetry={retry}
+            addedUserIds={addedUserIds}
+            notifications={notifications}
+            onAddTeamUser={onAddTeamUser}
+            onSetTeamUserStatus={onSetTeamUserStatus}
+            onRemoveTeamUser={onRemoveTeamUser}
+            onSendNotification={onSendNotification}
+          />
+        </ErrorBoundary>
+      )}
+      {route === 'forecasting' && (
+        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:forecasting`}>
+          <ForecastingView
+            provider={provider}
+            edits={forecastEdits}
+            onSetRevenue={onSetRevenue}
+            onSetNote={onSetNote}
+            onSetNextStep={onSetNextStep}
+            onSetForecastCall={onSetForecastCall}
+          />
+        </ErrorBoundary>
+      )}
+      {live !== null && isBookRoute && (
+        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:${route}`}>
+          {route === 'home' && <HomeView data={live} classifications={classifications} />}
+          {route === 'partners' && (
+            <PartnerPerformanceView data={live} classifications={classifications} />
+          )}
+          {route === 'registration-ops' && <DealRegistrationOpsView data={live} />}
+          {route === 'activity' && (
+            <ActivityTrackingView
+              data={live}
+              classifications={classifications}
+              onCommitClassifications={onCommitClassifications}
+              onAddPartner={onAddPartner}
+            />
+          )}
+          {route === 'partner-view' && <PartnerView data={live} />}
+        </ErrorBoundary>
+      )}
+    </>
   );
 }

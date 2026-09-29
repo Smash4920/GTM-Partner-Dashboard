@@ -95,17 +95,33 @@ interface Page<T> {
 
 interface ScopedQueryProvider {
   // Aggregates: computed behind the seam, returned small.
-  getForecastSummary(scope: ForecastScope): Promise<ForecastSummary>;
-  getWeightedForecast(scope: ForecastScope): Promise<WeightedForecastSummary>;
-  getForecastQuality(scope: ForecastScope, sampleSize: number): Promise<ForecastQualitySummary>;
-  getManagerForecastGroups(scope: ForecastScope): Promise<ManagerForecastGroup[]>;
-  getWeeklyForecastSeries(scope: ForecastScope): Promise<WeeklySeriesRow[]>;
+  getForecastSummary(scope: ForecastScope): Promise<QueryResult<ForecastSummary>>;
+  getWeightedForecast(scope: ForecastScope): Promise<QueryResult<WeightedForecastSummary>>;
+  getForecastQuality(
+    scope: ForecastScope,
+    sampleSize: number,
+  ): Promise<QueryResult<ForecastQualitySummary>>;
+  getManagerForecastGroups(scope: ForecastScope): Promise<QueryResult<ManagerForecastGroup[]>>;
+  getWeeklyForecastSeries(scope: ForecastScope): Promise<QueryResult<WeeklySeriesRow[]>>;
 
   // Rows: cursor-paginated, server-sorted, server-filtered.
-  listQuarterOpportunities(scope: ForecastScope, page: PageRequest): Promise<Page<Opportunity>>;
-  getPartnerDirectory(): Promise<PartnerRef[]>;
+  listQuarterOpportunities(
+    scope: ForecastScope,
+    page: PageRequest,
+  ): Promise<QueryResult<Page<Opportunity>>>;
+  getPartnerDirectory(): Promise<QueryResult<PartnerRef[]>>;
 }
 ```
+
+Every scoped answer is a `QueryResult<T>`: the data plus a `QueryMeta`
+envelope carrying the committed provider's id, a deterministic ISO as-of (the
+snapshot date, never the wall clock), typed lineage entries, a completeness
+flag, and typed warnings. The envelope is how a partial answer stays honest —
+for example a weekly series whose closed weeks were reconstructed from the
+current book ships with a `weekly-history-reconstructed` warning, and a
+manager grouping that dropped unattributable opportunities ships
+`unattributed-opportunities` — and how a UI caption can say whose answer it is
+showing. See `src/data/queryMetadata.ts`.
 
 The scope is a quarter rather than a fiscal phase, because a quarter is the unit
 a caller thinks in and `phaseForQuarter()` in `metrics.ts` bridges to the

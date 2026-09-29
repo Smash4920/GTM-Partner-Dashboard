@@ -44,7 +44,12 @@ export interface HealthArtifact {
   environment: string;
   sessionId: string;
   route: string | null;
+  /** The committed provider: the one whose answers are actually on screen. */
   providerId: string | null;
+  /** The provider the operator last asked for, when it differs from the committed one. */
+  requestedProviderId: string | null;
+  /** Where the last provider request stands; 'none' when nothing was ever requested. */
+  providerTransitionStatus: 'none' | 'committing' | 'committed' | 'failed';
   generatedAt: string;
   uptimeMs: number;
   checks: HealthCheck[];
@@ -85,6 +90,11 @@ export interface ReadinessOptions {
    * running app's own.
    */
   transportStatus?: TransportStatus;
+  /**
+   * The requested-vs-committed provider transition, so the artifact can
+   * distinguish "serving remote" from "still local while remote probes".
+   */
+  transition?: { requestedId: string; status: 'committing' | 'committed' | 'failed' };
 }
 
 const DEFAULT_PING_BUDGET_MS = 10_000;
@@ -209,6 +219,16 @@ async function dataSeamCheck(
   }
 }
 
+/**
+ * The dataSeam check for a shell that never got a readiness answer: the seam
+ * did not just ping slow, it failed before any route's queries could run.
+ * Publishing this check (instead of omitting it) is what lets an operator
+ * tell "healthy app" apart from "health endpoint that never ran".
+ */
+export function unavailableDataSeamCheck(detail: string): HealthCheck {
+  return { name: 'dataSeam', status: 'unavailable', detail };
+}
+
 export async function runReadinessChecks(options: ReadinessOptions): Promise<HealthCheck[]> {
   const staticChecks = [
     appShellCheck(),
@@ -230,6 +250,35 @@ export async function runReadinessChecks(options: ReadinessOptions): Promise<Hea
   return [...staticChecks, dataSeam];
 }
 
+/**
+ * The provisional artifact the app publishes the moment the shell mounts,
+ * before any readiness check has resolved. It exists so `window.GTM_HEALTH`
+ * is never absent — a page whose only signal is "the endpoint never
+ * appeared" forces an operator to guess whether the app is healthy or never
+ * booted. The checks it lists are the two things the shell already knows
+ * about itself; everything else waits for the first real assessment.
+ */
+export function shellHealthArtifact(now: () => number = Date.now): HealthArtifact {
+  const context = telemetry.contextSnapshot();
+  return {
+    status: 'degraded',
+    service: HEALTH_SERVICE,
+    release: context.release,
+    environment: context.environment,
+    sessionId: context.sessionId,
+    route: context.route,
+    providerId: context.providerId,
+    requestedProviderId: null,
+    providerTransitionStatus: 'none',
+    generatedAt: new Date(now()).toISOString(),
+    uptimeMs: Math.max(0, now() - TELEMETRY_STARTUP_EPOCH),
+    checks: [
+      appShellCheck(),
+      { name: 'dataSeam', status: 'degraded', detail: 'readiness checks still running' },
+    ],
+  };
+}
+
 /** Runs every check and folds the results into one publishable artifact. */
 export async function assessHealth(options: ReadinessOptions): Promise<HealthArtifact> {
   const now = options.now ?? Date.now;
@@ -245,6 +294,8 @@ export async function assessHealth(options: ReadinessOptions): Promise<HealthArt
     sessionId: context.sessionId,
     route: context.route,
     providerId: context.providerId,
+    requestedProviderId: options.transition?.requestedId ?? null,
+    providerTransitionStatus: options.transition?.status ?? 'none',
     generatedAt: new Date(now()).toISOString(),
     uptimeMs: Math.max(0, now() - TELEMETRY_STARTUP_EPOCH),
     checks,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { logger } from '../lib/logging';
 import type { DataProvider } from './DataProvider';
 import type { DashboardData } from './types';
@@ -7,6 +7,8 @@ export interface DashboardState {
   data: DashboardData | null;
   loading: boolean;
   error: string | null;
+  /** Repeats the load. The error clears as the new attempt starts. */
+  retry: () => void;
 }
 
 const log = logger.child({ component: 'useDashboardData' });
@@ -47,11 +49,21 @@ interface SettledLoad {
  */
 export function useDashboardData(provider: DataProvider): DashboardState {
   const [settled, setSettled] = useState<SettledLoad | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     log.debug('Loading dashboard data');
     const startedAt = Date.now();
+    // A retry starts a new attempt: whatever a previous attempt settled into
+    // — including its error — is no longer the state of the world.
+    if (attempt > 0) {
+      setSettled((previous) =>
+        previous !== null && previous.provider === provider && previous.error !== undefined
+          ? { provider }
+          : previous,
+      );
+    }
     Promise.all([
       provider.listPartners(),
       provider.listRegistrations(),
@@ -119,7 +131,11 @@ export function useDashboardData(provider: DataProvider): DashboardState {
     return () => {
       controller.abort();
     };
-  }, [provider]);
+  }, [provider, attempt]);
+
+  const retry = useCallback(() => {
+    setAttempt((previous) => previous + 1);
+  }, []);
 
   // The frame between "the committed provider changed" and "this effect
   // re-ran" is exactly where old-provider data used to show under the new
@@ -128,5 +144,5 @@ export function useDashboardData(provider: DataProvider): DashboardState {
   const current = settled !== null && settled.provider === provider ? settled : null;
   const data = current?.data ?? null;
   const error = current?.error ?? null;
-  return { data, error, loading: data === null && error === null };
+  return { data, error, loading: data === null && error === null, retry };
 }

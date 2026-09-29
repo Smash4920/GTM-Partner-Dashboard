@@ -121,7 +121,7 @@ describe('instrumentProvider on a successful call', () => {
     const { client, seen } = observingClient();
     const provider = instrumentProvider(new MockDataProvider(), 'scaled', client);
 
-    const summary = await provider.getForecastSummary({ quarter: 'FY27-Q3' });
+    const { data: summary } = await provider.getForecastSummary({ quarter: 'FY27-Q3' });
 
     expect(summary).toHaveProperty('openPipelineValue');
     expect(summary).toHaveProperty('daysLeftInQuarter');

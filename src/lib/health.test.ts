@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DataProvider, ForecastSummary } from '../data/DataProvider';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
-import { assessHealth, publishHealthArtifact, rollupStatus, runReadinessChecks } from './health';
+import type { QueryResult } from '../data/queryMetadata';
+import {
+  assessHealth,
+  publishHealthArtifact,
+  rollupStatus,
+  runReadinessChecks,
+  shellHealthArtifact,
+  unavailableDataSeamCheck,
+} from './health';
 import { clearFlagOverrides } from './telemetry/flags';
 import { telemetry } from './telemetry/telemetry';
 
@@ -140,9 +148,10 @@ describe('runReadinessChecks', () => {
 
   it('degrades the data seam past the healthy latency budget without failing it', async () => {
     const slow = new MockDataProvider();
-    slow.getForecastSummary = async () => {
+    const real = slow.getForecastSummary.bind(slow);
+    slow.getForecastSummary = async (scope) => {
       await sleep(15);
-      return {} as ForecastSummary;
+      return real(scope);
     };
 
     const checks = await runReadinessChecks({
@@ -174,9 +183,10 @@ describe('runReadinessChecks', () => {
 
   it('cuts off a ping that exceeds its budget instead of waiting for it', async () => {
     const silent = new MockDataProvider();
-    silent.getForecastSummary = (() => sleep(200) as unknown as Promise<ForecastSummary>) as (
+    silent.getForecastSummary = (() =>
+      sleep(200) as unknown as Promise<QueryResult<ForecastSummary>>) as (
       scope: Parameters<DataProvider['getForecastSummary']>[0],
-    ) => Promise<ForecastSummary>;
+    ) => Promise<QueryResult<ForecastSummary>>;
 
     const checks = await runReadinessChecks({
       provider: silent,
@@ -200,6 +210,67 @@ describe('assessHealth', () => {
     expect(artifact.checks).toHaveLength(6);
     expect(Number.isNaN(Date.parse(artifact.generatedAt))).toBe(false);
     expect(artifact.uptimeMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('reports no transition when none was ever requested', async () => {
+    const artifact = await assessHealth({ provider: new MockDataProvider() });
+
+    expect(artifact.requestedProviderId).toBeNull();
+    expect(artifact.providerTransitionStatus).toBe('none');
+  });
+
+  it('distinguishes the requested provider from the committed one mid-transition', async () => {
+    const artifact = await assessHealth({
+      provider: new MockDataProvider(),
+      transition: { requestedId: 'remote', status: 'committing' },
+    });
+
+    // The committed provider is still local; the request for the remote one
+    // is in flight. An operator reading the artifact can tell both halves.
+    expect(artifact.requestedProviderId).toBe('remote');
+    expect(artifact.providerTransitionStatus).toBe('committing');
+  });
+
+  it('names a failed provider transition in the artifact', async () => {
+    const artifact = await assessHealth({
+      provider: new MockDataProvider(),
+      transition: { requestedId: 'remote', status: 'failed' },
+    });
+
+    expect(artifact.providerTransitionStatus).toBe('failed');
+  });
+});
+
+describe('shellHealthArtifact and the unavailable seam (VAL-RES-008)', () => {
+  it('produces a provisional artifact before any check has run', () => {
+    const artifact = shellHealthArtifact();
+
+    // Published at mount, so the endpoint exists even when the assessment
+    // never will: the shell reports itself, and the seam is marked as not
+    // yet assessed rather than silently absent or optimistically ok.
+    expect(artifact.status).toBe('degraded');
+    expect(artifact.service).toBe('gtm-partner-dashboard');
+    expect(artifact.checks.map((check) => check.name)).toEqual(['appShell', 'dataSeam']);
+    expect(artifact.checks[1]?.detail).toBe('readiness checks still running');
+  });
+
+  it('the unavailable seam check is a named check, not a missing one', async () => {
+    const check = unavailableDataSeamCheck('CRM is down');
+    expect(check).toEqual({ name: 'dataSeam', status: 'unavailable', detail: 'CRM is down' });
+
+    // And a failed provider really does roll the whole artifact up to
+    // unavailable, so "window.GTM_HEALTH exists" can never be mistaken for
+    // "the app is healthy".
+    const broken = new MockDataProvider();
+    broken.getForecastSummary = async () => {
+      throw new Error('CRM is down');
+    };
+    const artifact = await assessHealth({ provider: broken });
+    expect(artifact.status).toBe('unavailable');
+    expect(artifact.checks.find((entry) => entry.name === 'dataSeam')).toMatchObject({
+      status: 'unavailable',
+      detail: 'CRM is down',
+    });
   });
 });
 

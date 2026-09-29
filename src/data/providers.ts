@@ -89,7 +89,13 @@ export function createProvider(id: ProviderId): DataProvider {
   switch (id) {
     case 'remote': {
       const plan = scriptedRemoteFailures();
-      base = new SimulatedRemoteProvider(new MockDataProvider(), plan ?? {});
+      // The answers crossing the simulated wire are the remote provider's:
+      // their metadata is stamped accordingly, so a figure on screen can
+      // never read as local data that arrived over the remote wire.
+      base = new SimulatedRemoteProvider(new MockDataProvider(), {
+        ...(plan ?? {}),
+        providerId: 'remote',
+      });
       break;
     }
     case 'scaled':

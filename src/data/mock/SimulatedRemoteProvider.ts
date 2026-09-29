@@ -10,6 +10,7 @@ import type {
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from '../DataProvider';
+import type { QueryResult } from '../queryMetadata';
 import type { TraceContext } from '../../lib/tracing';
 import type {
   ActivityMeeting,
@@ -52,6 +53,15 @@ export interface RemoteOptions {
    * unrelated call order.
    */
   failMethods?: Partial<Record<keyof DataProvider, number>>;
+  /**
+   * The identity stamped into the metadata of every scoped answer that
+   * crosses this wire. The inner provider computed the answer, but the
+   * committed provider the session is talking to is this one — an answer
+   * labelled with the inner identity would read as local data arriving over
+   * a remote wire. Defaults to 'remote', the identity this simulation
+   * stands for; pass an explicit id only to rehearse another label.
+   */
+  providerId?: string;
 }
 
 const DEFAULT_LATENCY_MS = 250;
@@ -107,6 +117,8 @@ export class SimulatedRemoteProvider implements DataProvider {
   /** Remaining planned failures per method; decremented as they are spent. */
   private readonly failMethods: Map<string, number> | undefined;
   private readonly seed: number;
+  /** Metadata identity stamped on scoped answers, when set. */
+  private readonly providerId: string | undefined;
   /** Public invocations so far; the positional plan counts them. */
   private calls = 0;
   /** One deterministic stream per public method. */
@@ -130,6 +142,7 @@ export class SimulatedRemoteProvider implements DataProvider {
           )
         : undefined;
     this.seed = options.seed ?? DEFAULT_SEED;
+    this.providerId = options.providerId ?? 'remote';
   }
 
   private streamFor(method: string): () => number {
@@ -217,16 +230,32 @@ export class SimulatedRemoteProvider implements DataProvider {
 
   // ---- the target shape ----------------------------------------------------
 
-  async getForecastSummary(scope: ForecastScope, trace?: TraceContext): Promise<ForecastSummary> {
-    return this.roundTrip('getForecastSummary', () => this.inner.getForecastSummary(scope, trace));
+  /**
+   * Re-labels a scoped answer with this provider's identity when one is set.
+   * Latency and failure are the wire's to add; the answer's origin label is
+   * the committed provider's, or the metadata would misattribute the source.
+   */
+  private async stamp<T>(promise: Promise<QueryResult<T>>): Promise<QueryResult<T>> {
+    const result = await promise;
+    if (this.providerId === undefined) return result;
+    return { ...result, meta: { ...result.meta, providerId: this.providerId } };
+  }
+
+  async getForecastSummary(
+    scope: ForecastScope,
+    trace?: TraceContext,
+  ): Promise<QueryResult<ForecastSummary>> {
+    return this.stamp(
+      this.roundTrip('getForecastSummary', () => this.inner.getForecastSummary(scope, trace)),
+    );
   }
 
   async getWeightedForecast(
     scope: ForecastScope,
     trace?: TraceContext,
-  ): Promise<WeightedForecastSummary> {
-    return this.roundTrip('getWeightedForecast', () =>
-      this.inner.getWeightedForecast(scope, trace),
+  ): Promise<QueryResult<WeightedForecastSummary>> {
+    return this.stamp(
+      this.roundTrip('getWeightedForecast', () => this.inner.getWeightedForecast(scope, trace)),
     );
   }
 
@@ -234,27 +263,33 @@ export class SimulatedRemoteProvider implements DataProvider {
     scope: ForecastScope,
     sampleSize: number,
     trace?: TraceContext,
-  ): Promise<ForecastQualitySummary> {
-    return this.roundTrip('getForecastQuality', () =>
-      this.inner.getForecastQuality(scope, sampleSize, trace),
+  ): Promise<QueryResult<ForecastQualitySummary>> {
+    return this.stamp(
+      this.roundTrip('getForecastQuality', () =>
+        this.inner.getForecastQuality(scope, sampleSize, trace),
+      ),
     );
   }
 
   async getManagerForecastGroups(
     scope: ForecastScope,
     trace?: TraceContext,
-  ): Promise<ManagerForecastGroup[]> {
-    return this.roundTrip('getManagerForecastGroups', () =>
-      this.inner.getManagerForecastGroups(scope, trace),
+  ): Promise<QueryResult<ManagerForecastGroup[]>> {
+    return this.stamp(
+      this.roundTrip('getManagerForecastGroups', () =>
+        this.inner.getManagerForecastGroups(scope, trace),
+      ),
     );
   }
 
   async getWeeklyForecastSeries(
     scope: ForecastScope,
     trace?: TraceContext,
-  ): Promise<WeeklySeriesRow[]> {
-    return this.roundTrip('getWeeklyForecastSeries', () =>
-      this.inner.getWeeklyForecastSeries(scope, trace),
+  ): Promise<QueryResult<WeeklySeriesRow[]>> {
+    return this.stamp(
+      this.roundTrip('getWeeklyForecastSeries', () =>
+        this.inner.getWeeklyForecastSeries(scope, trace),
+      ),
     );
   }
 
@@ -262,13 +297,17 @@ export class SimulatedRemoteProvider implements DataProvider {
     scope: ForecastScope,
     page: PageRequest,
     trace?: TraceContext,
-  ): Promise<Page<Opportunity>> {
-    return this.roundTrip('listQuarterOpportunities', () =>
-      this.inner.listQuarterOpportunities(scope, page, trace),
+  ): Promise<QueryResult<Page<Opportunity>>> {
+    return this.stamp(
+      this.roundTrip('listQuarterOpportunities', () =>
+        this.inner.listQuarterOpportunities(scope, page, trace),
+      ),
     );
   }
 
-  async getPartnerDirectory(trace?: TraceContext): Promise<PartnerRef[]> {
-    return this.roundTrip('getPartnerDirectory', () => this.inner.getPartnerDirectory(trace));
+  async getPartnerDirectory(trace?: TraceContext): Promise<QueryResult<PartnerRef[]>> {
+    return this.stamp(
+      this.roundTrip('getPartnerDirectory', () => this.inner.getPartnerDirectory(trace)),
+    );
   }
 }

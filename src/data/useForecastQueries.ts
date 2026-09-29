@@ -149,10 +149,13 @@ export function usePartnerNames(provider: DataProvider): PartnerNamesState {
   const directory = useScopedQuery({
     provider,
     queryKey: 'partner-directory',
-    run: async () =>
-      Object.fromEntries(
-        (await provider.getPartnerDirectory()).map((partner) => [partner.id, partner.name]),
-      ),
+    run: async () => {
+      const result = await provider.getPartnerDirectory();
+      return {
+        data: Object.fromEntries(result.data.map((partner) => [partner.id, partner.name])),
+        meta: result.meta,
+      };
+    },
     errorFallback: 'Failed to load the partner directory',
   });
   return {

@@ -45,7 +45,9 @@ export class ScaleDataProvider extends MockDataProvider {
 
   constructor(scale: number = DEFAULT_SCALE, base: ProviderBook = generateDashboardData()) {
     const expanded = expandBook(base, scale);
-    super(expanded);
+    // Answers are stamped with the scaled identity, so metadata on screen can
+    // never attribute a 100× figure to the local mock.
+    super(expanded, { providerId: 'scaled' });
     this.scale = Math.max(1, Math.floor(scale));
     this.size = measureBook(expanded);
   }

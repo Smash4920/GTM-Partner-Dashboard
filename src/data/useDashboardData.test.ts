@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useDashboardData } from './useDashboardData';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
@@ -89,6 +89,36 @@ describe('useDashboardData', () => {
     rerender({ provider: healthy });
     await waitFor(() => expect(result.current.data).not.toBeNull());
     expect(result.current.error).toBeNull();
+  });
+
+  it('retry repeats the load against the same provider and clears the error as it starts', async () => {
+    // The failure-then-recover shape the Data Connections retry button
+    // depends on: one failing attempt, then the wire comes back.
+    let attempts = 0;
+    const provider = stubProvider({
+      listOpportunities: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('listOpportunities failed in transit (simulated)');
+        return makeProviderBook().opportunities;
+      },
+    });
+    const { result } = renderHook(() => useDashboardData(provider));
+
+    await waitFor(() =>
+      expect(result.current.error).toBe('listOpportunities failed in transit (simulated)'),
+    );
+    expect(result.current.data).toBeNull();
+    expect(attempts).toBe(1);
+
+    act(() => result.current.retry());
+    // The error clears as the new attempt starts — the banner never sits on
+    // screen describing a load that is already being repeated.
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(true);
+
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+    expect(result.current.error).toBeNull();
+    expect(attempts).toBe(2);
   });
 
   it('does not set state after unmount', async () => {

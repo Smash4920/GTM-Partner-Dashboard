@@ -52,20 +52,22 @@ describe('ScaleDataProvider', () => {
   });
 
   it('answers the scoped contract at the same size, and the legacy one at 5×', async () => {
-    const weeks = await scaled.getWeeklyForecastSeries({ quarter });
-    const flatWeeks = await flat.getWeeklyForecastSeries({ quarter });
+    const { data: weeks, meta } = await scaled.getWeeklyForecastSeries({ quarter });
+    const { data: flatWeeks } = await flat.getWeeklyForecastSeries({ quarter });
     expect(weeks.length).toBe(flatWeeks.length);
 
-    const page = await scaled.listQuarterOpportunities({ quarter }, { limit: 25 });
+    const { data: page } = await scaled.listQuarterOpportunities({ quarter }, { limit: 25 });
     expect(page.rows).toHaveLength(25);
     expect(page.totalCount).toBe(
       filterByPhase(base.opportunities, phaseForQuarter(quarter)).length * SCALE,
     );
 
-    const summary = await scaled.getForecastSummary({ quarter });
-    const flatSummary = await flat.getForecastSummary({ quarter });
+    const { data: summary } = await scaled.getForecastSummary({ quarter });
+    const { data: flatSummary } = await flat.getForecastSummary({ quarter });
     expect(summary.openCount).toBe(flatSummary.openCount * SCALE);
     expect(summary.openPipelineValue).toBe(flatSummary.openPipelineValue * SCALE);
+    // The 5× book is a different answer, and the envelope says so.
+    expect(meta.providerId).toBe('scaled');
 
     expect((await scaled.listOpportunities()).length).toBe(base.opportunities.length * SCALE);
     expect((await scaled.listPartners()).length).toBe(base.partners.length * SCALE);

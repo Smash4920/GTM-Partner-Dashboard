@@ -32,9 +32,9 @@ describe('TracedDataProvider', () => {
 
   it('returns the underlying answer unchanged', async () => {
     const provider = new TracedDataProvider(new MockDataProvider(makeProviderBook()));
-    await expect(provider.getPartnerDirectory()).resolves.toEqual([
-      { id: 'partner-1', name: 'Northwind Systems' },
-    ]);
+    const { data, meta } = await provider.getPartnerDirectory();
+    expect(data).toEqual([{ id: 'partner-1', name: 'Northwind Systems' }]);
+    expect(meta.providerId).toBe('local');
   });
 
   it('does not hide upstream failures', async () => {

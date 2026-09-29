@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import type { DataProvider } from './data/DataProvider';
+import { DATA_PROVIDER_METHODS } from './data/DataProvider';
 import { MockDataProvider } from './data/mock/MockDataProvider';
 import { generateDashboardData } from './data/mock/generate';
 import { SimulatedRemoteProvider } from './data/mock/SimulatedRemoteProvider';
@@ -438,5 +439,119 @@ describe('App provider transitions', () => {
     // The commit remounted the route: the selection is back at its explicit
     // default rather than pointing into another provider's directory.
     expect(screen.getByLabelText('Partner manager')).toHaveValue('all');
+  }, 30_000);
+});
+
+describe('App under total provider failure (VAL-RES-008)', () => {
+  /** Every method on the contract rejects; nothing the app asks for can succeed. */
+  function failingProvider(): DataProvider {
+    const base = new MockDataProvider();
+    const overrides: Record<string, unknown> = {};
+    for (const method of DATA_PROVIDER_METHODS) {
+      overrides[method] = async () => {
+        throw new Error(`${method} failed in transit (simulated)`);
+      };
+    }
+    return Object.assign(base, overrides);
+  }
+
+  /** Every method fails exactly once, then answers: the recovery path. */
+  function flakyOnceProvider(): DataProvider {
+    const base = new MockDataProvider();
+    const failed = new Set<string>();
+    const overrides: Record<string, unknown> = {};
+    for (const method of DATA_PROVIDER_METHODS) {
+      // Bound before the override lands on the instance, or "delegate to the
+      // real method" would call itself.
+      const original = (base[method] as unknown as (...args: unknown[]) => Promise<unknown>).bind(
+        base,
+      );
+      overrides[method] = async (...args: unknown[]) => {
+        if (!failed.has(method)) {
+          failed.add(method);
+          throw new Error(`${method} failed in transit (simulated)`);
+        }
+        return original(...args);
+      };
+    }
+    return Object.assign(base, overrides);
+  }
+
+  it('publishes GTM_HEALTH at mount and reports the unavailable seam, even when nothing loads', async () => {
+    render(<App providerFactory={() => failingProvider()} />);
+
+    // Before any readiness check resolves, the endpoint already exists and
+    // says only what the shell knows about itself.
+    expect(window.GTM_HEALTH).toBeDefined();
+    expect(window.GTM_HEALTH?.artifact.service).toBe('gtm-partner-dashboard');
+    expect(typeof window.GTM_HEALTH?.refresh).toBe('function');
+
+    // Once the assessment lands, the seam is named unavailable — the
+    // endpoint's existence is never mistaken for health.
+    await waitFor(() => expect(window.GTM_HEALTH?.artifact.status).toBe('unavailable'));
+    const seam = window.GTM_HEALTH?.artifact.checks.find((check) => check.name === 'dataSeam');
+    expect(seam?.status).toBe('unavailable');
+    expect(seam?.detail).toContain('getForecastSummary failed in transit (simulated)');
+
+    // refresh() re-probes the seam the session is on and returns the new
+    // artifact, without any business data having loaded.
+    const refreshed = await window.GTM_HEALTH?.refresh();
+    expect(refreshed?.status).toBe('unavailable');
+    expect(window.GTM_HEALTH?.artifact).toBe(refreshed);
+    expect(screen.queryByRole('heading', { name: 'Partner Performance Overview' })).toBeNull();
+
+    // The route itself tells the truth too.
+    await screen.findByText('listPartners failed in transit (simulated)');
+  }, 30_000);
+
+  it('keeps Production Requirements and the connection catalog up through total failure', async () => {
+    const user = userEvent.setup();
+    render(<App providerFactory={() => failingProvider()} />);
+    await screen.findByText('listPartners failed in transit (simulated)');
+
+    await user.click(nav().getByRole('button', { name: 'Production Requirements' }));
+    expect(
+      screen.getByRole('heading', { name: 'Production Requirements', level: 1 }),
+    ).toBeInTheDocument();
+
+    await user.click(nav().getByRole('button', { name: 'Data Connections' }));
+    expect(screen.getByRole('heading', { name: 'Data Connections', level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Data connection map' })).toBeInTheDocument();
+    // The business sections name their failure; the catalog never did fail.
+    expect(screen.getByText('The team roster unavailable:')).toBeInTheDocument();
+    expect(screen.getByText('The SLA alert queue unavailable:')).toBeInTheDocument();
+  }, 30_000);
+
+  it('a focused retry recovers only the failed work', async () => {
+    const user = userEvent.setup();
+    render(<App providerFactory={() => flakyOnceProvider()} />);
+    await screen.findByText('listPartners failed in transit (simulated)');
+
+    // Forecasting renders its widgets as individually unavailable, not as a
+    // blank page, while the whole-book load has failed. (The summary itself
+    // already spent its one failure on the mount-time health ping, so it is
+    // the healthy sibling here.)
+    await user.click(nav().getByRole('button', { name: 'Forecasting' }));
+    await screen.findByText('Weighted forecast unavailable:');
+    expect(screen.getByText('Forecast quality unavailable:')).toBeInTheDocument();
+    expect(screen.getByText('Days left in quarter')).toBeInTheDocument();
+
+    // Retrying one widget re-runs only its query; its sibling stays in the
+    // state it was in until its own retry.
+    await user.click(screen.getByRole('button', { name: 'Retry weighted forecast' }));
+    await waitFor(() =>
+      expect(screen.queryByText('Weighted forecast unavailable:')).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText('Forecast quality unavailable:')).toBeInTheDocument();
+
+    // The book-level retry on Data Connections recovers the whole-book load.
+    await user.click(nav().getByRole('button', { name: 'Data Connections' }));
+    await screen.findByText('The team roster unavailable:');
+    await user.click(screen.getByRole('button', { name: 'Retry The team roster' }));
+    await waitFor(() =>
+      expect(screen.queryByText('The team roster unavailable:')).not.toBeInTheDocument(),
+    );
+    const rosterTile = screen.getByText('Receiving notifications').parentElement;
+    expect(rosterTile).toHaveTextContent(/\d+\/\d+/);
   }, 30_000);
 });

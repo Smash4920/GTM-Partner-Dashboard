@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { MockDataProvider } from './mock/MockDataProvider';
+import { buildQueryMeta } from './queryMetadata';
+import type { QueryMeta, QueryResult } from './queryMetadata';
 import { editMapKey, useScopedQuery } from './queryState';
 import { makeProviderBook } from '../test/fixtures';
 
@@ -25,6 +27,17 @@ function provider() {
   return new MockDataProvider(makeProviderBook());
 }
 
+const META: QueryMeta = buildQueryMeta({
+  providerId: 'local',
+  asOf: '2026-09-18T00:00:00.000Z',
+  lineage: [],
+});
+
+/** Every run answers with the envelope the scoped contract requires. */
+function answered<T>(data: T): QueryResult<T> {
+  return { data, meta: META };
+}
+
 describe('editMapKey', () => {
   it('serializes by content, not by object identity or key order', () => {
     expect(editMapKey({ 'opp-2': 2, 'opp-1': 1 })).toBe(editMapKey({ 'opp-1': 1, 'opp-2': 2 }));
@@ -40,13 +53,14 @@ describe('useScopedQuery', () => {
       useScopedQuery({
         provider: stableProvider,
         queryKey: 'q',
-        run: async () => 42,
+        run: async () => answered(42),
         errorFallback: 'x',
       }),
     );
 
     expect(result.current).toMatchObject({
       data: null,
+      meta: null,
       loading: true,
       refreshing: false,
       error: null,
@@ -54,6 +68,7 @@ describe('useScopedQuery', () => {
 
     await waitFor(() => expect(result.current.data).toBe(42));
     expect(result.current).toMatchObject({
+      meta: META,
       loading: false,
       refreshing: false,
       error: null,
@@ -62,7 +77,7 @@ describe('useScopedQuery', () => {
 
   it('does not refetch when an equal key is rebuilt on another render', async () => {
     const stableProvider = provider();
-    const run = vi.fn(async () => 1);
+    const run = vi.fn(async () => answered(1));
     const { result, rerender } = renderHook(
       ({ queryKey }) =>
         useScopedQuery({ provider: stableProvider, queryKey, run, errorFallback: 'x' }),
@@ -82,7 +97,7 @@ describe('useScopedQuery', () => {
 
   it('keeps the previous answer on screen while a refresh is in flight', async () => {
     const stableProvider = provider();
-    let impl: () => Promise<number> = async () => 1;
+    let impl: () => Promise<QueryResult<number>> = async () => answered(1);
     const { result, rerender } = renderHook(
       ({ queryKey }) =>
         useScopedQuery({
@@ -98,7 +113,7 @@ describe('useScopedQuery', () => {
     const refreshGate = deferred<void>();
     impl = async () => {
       await refreshGate.promise;
-      return 2;
+      return answered(2);
     };
     rerender({ queryKey: 'two' });
     await waitFor(() => expect(result.current.refreshing).toBe(true));
@@ -115,7 +130,7 @@ describe('useScopedQuery', () => {
 
   it('keeps the stale answer when a refresh fails, and clears the error when a retry succeeds', async () => {
     const stableProvider = provider();
-    let impl: () => Promise<number> = async () => 1;
+    let impl: () => Promise<QueryResult<number>> = async () => answered(1);
     const { result, rerender } = renderHook(
       ({ queryKey }) =>
         useScopedQuery({
@@ -133,12 +148,14 @@ describe('useScopedQuery', () => {
     };
     rerender({ queryKey: 'two' });
     await waitFor(() => expect(result.current.error).toBe('flaky wire'));
-    // The same-provider answer stays on screen next to the error.
+    // The same-provider answer stays on screen next to the error, still
+    // carrying the as-of and lineage of the answer actually showing.
     expect(result.current.data).toBe(1);
+    expect(result.current.meta).toBe(META);
     expect(result.current.refreshing).toBe(false);
     expect(result.current.loading).toBe(false);
 
-    impl = async () => 2;
+    impl = async () => answered(2);
     act(() => result.current.retry());
     await waitFor(() => expect(result.current.data).toBe(2));
     expect(result.current.error).toBeNull();
@@ -147,9 +164,9 @@ describe('useScopedQuery', () => {
   it('an initial failure leaves the query unavailable, and retry repeats only this query', async () => {
     const stableProvider = provider();
     const run = vi
-      .fn<() => Promise<number>>()
+      .fn<() => Promise<QueryResult<number>>>()
       .mockRejectedValueOnce(new Error('boom'))
-      .mockResolvedValue(7);
+      .mockResolvedValue(answered(7));
     const { result } = renderHook(() =>
       useScopedQuery({ provider: stableProvider, queryKey: 'q', run, errorFallback: 'fallback' }),
     );
@@ -176,7 +193,7 @@ describe('useScopedQuery', () => {
             const gate = deferred<void>();
             gates.set(queryKey, () => gate.resolve());
             await gate.promise;
-            return queryKey;
+            return answered(queryKey);
           },
           errorFallback: 'x',
         }),
@@ -209,13 +226,13 @@ describe('useScopedQuery', () => {
           current: slow,
           run: async () => {
             await slowGate.promise;
-            return 'slow answer';
+            return answered('slow answer');
           },
         },
       },
     );
 
-    rerender({ current: fast, run: async () => 'fast answer' });
+    rerender({ current: fast, run: async () => answered('fast answer') });
     // Not one frame of the slow provider's (absent) data under the fast one.
     expect(result.current.data).toBeNull();
     await waitFor(() => expect(result.current.data).toBe('fast answer'));
@@ -236,7 +253,7 @@ describe('useScopedQuery', () => {
         queryKey: 'q',
         run: async () => {
           await gate.promise;
-          return 1;
+          return answered(1);
         },
         errorFallback: 'x',
       }),

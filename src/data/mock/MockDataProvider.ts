@@ -11,7 +11,15 @@ import type {
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from '../DataProvider';
+import {
+  buildQueryMeta,
+  queryResult,
+  unattributedOpportunitiesWarning,
+  weeklyHistoryReconstructedWarning,
+} from '../queryMetadata';
+import type { DataLineage, DataWarning, QueryMeta, QueryResult } from '../queryMetadata';
 import { applySessionEdits, NO_SESSION_EDITS } from '../sessionEdits';
+import type { SessionEdits } from '../sessionEdits';
 import type { Opportunity, ProviderBook, Target } from '../types';
 import { SNAPSHOT_DATE } from '../constants';
 import {
@@ -49,12 +57,18 @@ export class MockDataProvider implements DataProvider {
   protected readonly data: ProviderBook;
   /** Partner → owning partner manager, built once for scoping filters. */
   private readonly managerByPartner: Map<string, string>;
+  /**
+   * The identity stamped into every answer's metadata. `createProvider`
+   * assigns the app-level id; a bare instance is the local mock.
+   */
+  private readonly providerId: string;
 
-  constructor(data: ProviderBook = generateDashboardData()) {
+  constructor(data: ProviderBook = generateDashboardData(), options?: { providerId?: string }) {
     this.data = data;
     this.managerByPartner = new Map(
       data.partners.map((partner) => [partner.id, partner.partnerManagerId]),
     );
+    this.providerId = options?.providerId ?? 'local';
   }
 
   // ---- the shape being retired --------------------------------------------
@@ -126,7 +140,53 @@ export class MockDataProvider implements DataProvider {
     );
   }
 
-  async getForecastSummary(scope: ForecastScope): Promise<ForecastSummary> {
+  /**
+   * The envelope metadata for one scoped answer. The as-of is the fixed
+   * snapshot date — the mock never reads the wall clock for business data, so
+   * the same question always carries the same as-of — and the lineage names
+   * what the answer was computed from, including the session's edits when the
+   * caller passed any. Completeness derives from the warnings: an answer with
+   * a warning is partial by construction.
+   */
+  private meta(
+    edits: SessionEdits | undefined,
+    extra: { lineage?: DataLineage[]; warnings?: DataWarning[] } = {},
+  ): QueryMeta {
+    const applied = edits ?? NO_SESSION_EDITS;
+    const editCount =
+      Object.keys(applied.revenueOverrides).length +
+      Object.keys(applied.notes).length +
+      Object.keys(applied.nextSteps).length +
+      Object.keys(applied.forecastCalls).length;
+    const lineage: DataLineage[] = [
+      { source: 'mock-book', description: 'Deterministic seeded book at the snapshot date' },
+    ];
+    if (editCount > 0) {
+      lineage.push({
+        source: 'session-edits',
+        description: `${editCount} session edits applied before aggregation`,
+      });
+    }
+    lineage.push(...(extra.lineage ?? []));
+    return buildQueryMeta({
+      providerId: this.providerId,
+      asOf: SNAPSHOT_DATE.toISOString(),
+      lineage,
+      warnings: extra.warnings ?? [],
+    });
+  }
+
+  /**
+   * In-quarter opportunities whose partner is missing from the partner
+   * dimension. They still count toward the quarter totals, but no manager
+   * group can claim them — the group view warns rather than summing to less
+   * than the headline numbers in silence.
+   */
+  private unattributedInQuarter(inQuarter: Opportunity[]): Opportunity[] {
+    return inQuarter.filter((opp) => !this.managerByPartner.has(opp.partnerId));
+  }
+
+  async getForecastSummary(scope: ForecastScope): Promise<QueryResult<ForecastSummary>> {
     const { inQuarter } = this.scopedBook(scope);
     const phase = phaseForQuarter(scope.quarter);
     const targets = this.scopedTargets(scope);
@@ -136,28 +196,31 @@ export class MockDataProvider implements DataProvider {
       (sum, item) => sum + item.revenueTarget,
       0,
     );
-    return {
-      openPipelineValue: open.value,
-      openCount: open.count,
-      closedWon,
-      target,
-      coverage: coverageState(inQuarter, targets, phase),
-      remainingQuota: remainingQuota(inQuarter, targets, phase),
-      avgOpenDealSize: avgOpenDealSize(inQuarter),
-      attainment: target > 0 ? closedWon / target : 0,
-      daysLeftInQuarter: daysLeftInQuarter(scope.quarter),
-    };
+    return queryResult(
+      {
+        openPipelineValue: open.value,
+        openCount: open.count,
+        closedWon,
+        target,
+        coverage: coverageState(inQuarter, targets, phase),
+        remainingQuota: remainingQuota(inQuarter, targets, phase),
+        avgOpenDealSize: avgOpenDealSize(inQuarter),
+        attainment: target > 0 ? closedWon / target : 0,
+        daysLeftInQuarter: daysLeftInQuarter(scope.quarter),
+      },
+      this.meta(scope.edits),
+    );
   }
 
-  async getWeightedForecast(scope: ForecastScope): Promise<WeightedForecastSummary> {
+  async getWeightedForecast(scope: ForecastScope): Promise<QueryResult<WeightedForecastSummary>> {
     const { inQuarter } = this.scopedBook(scope);
-    return weightedForecast(openOpportunities(inQuarter));
+    return queryResult(weightedForecast(openOpportunities(inQuarter)), this.meta(scope.edits));
   }
 
   async getForecastQuality(
     scope: ForecastScope,
     sampleSize: number,
-  ): Promise<ForecastQualitySummary> {
+  ): Promise<QueryResult<ForecastQualitySummary>> {
     const { inQuarter } = this.scopedBook(scope);
     const open = openOpportunities(inQuarter);
     const mismatches = categoryStageMismatches(open);
@@ -172,22 +235,27 @@ export class MockDataProvider implements DataProvider {
       direction: row.direction,
     });
 
-    return {
-      openCount: open.length,
-      aboveCount: mismatches.above.length,
-      aboveValue: mismatches.aboveValue,
-      belowCount: mismatches.below.length,
-      belowValue: mismatches.belowValue,
-      // Both sides are sampled, so a long list of optimistic calls never
-      // crowds out the downgraded late-stage deals.
-      sample: [
-        ...mismatches.above.slice(0, sampleSize).map(toRow),
-        ...mismatches.below.slice(0, sampleSize).map(toRow),
-      ],
-    };
+    return queryResult(
+      {
+        openCount: open.length,
+        aboveCount: mismatches.above.length,
+        aboveValue: mismatches.aboveValue,
+        belowCount: mismatches.below.length,
+        belowValue: mismatches.belowValue,
+        // Both sides are sampled, so a long list of optimistic calls never
+        // crowds out the downgraded late-stage deals.
+        sample: [
+          ...mismatches.above.slice(0, sampleSize).map(toRow),
+          ...mismatches.below.slice(0, sampleSize).map(toRow),
+        ],
+      },
+      this.meta(scope.edits),
+    );
   }
 
-  async getManagerForecastGroups(scope: ForecastScope): Promise<ManagerForecastGroup[]> {
+  async getManagerForecastGroups(
+    scope: ForecastScope,
+  ): Promise<QueryResult<ManagerForecastGroup[]>> {
     const { inQuarter } = this.scopedBook(scope);
     const phase = phaseForQuarter(scope.quarter);
 
@@ -201,7 +269,7 @@ export class MockDataProvider implements DataProvider {
       else byManager.set(managerId, [opp]);
     }
 
-    return this.data.partnerManagers
+    const groups = this.data.partnerManagers
       .filter((manager) => !scope.partnerManagerId || manager.id === scope.partnerManagerId)
       .map((manager) => {
         const opportunities = byManager.get(manager.id) ?? [];
@@ -214,22 +282,55 @@ export class MockDataProvider implements DataProvider {
           closedWon: closedWonForPhase(opportunities, phase),
         };
       });
+    const unattributed = this.unattributedInQuarter(inQuarter);
+    return queryResult(
+      groups,
+      this.meta(scope.edits, {
+        warnings:
+          unattributed.length > 0 ? [unattributedOpportunitiesWarning(unattributed.length)] : [],
+      }),
+    );
   }
 
-  async getWeeklyForecastSeries(scope: ForecastScope): Promise<WeeklySeriesRow[]> {
+  async getWeeklyForecastSeries(scope: ForecastScope): Promise<QueryResult<WeeklySeriesRow[]>> {
     const { edited } = this.scopedBook(scope);
     // Deliberately the whole book, not the scoped slice. A snapshot row records
     // an amount, a call, and an expected close, but not whose book the deal was
     // in, so filtering the live weeks by manager would leave the recorded weeks
     // unfiltered and draw a cliff into the chart that never happened. The
     // contract states this as the one documented exception to the scope.
-    return weeklyForecastRows(edited, scope.quarter, SNAPSHOT_DATE, this.data.snapshots);
+    const weeks = weeklyForecastRows(edited, scope.quarter, SNAPSHOT_DATE, this.data.snapshots);
+    // A closed week with no recording is reconstructed from today's book,
+    // which backdates every later change into it. That is usable but partial
+    // history, and the envelope says so rather than drawing it as recorded
+    // fact.
+    const asOfTs = SNAPSHOT_DATE.getTime();
+    const closedWeeks = weeks.filter(
+      (week) => week.hasStarted && Date.parse(week.weekEnd) <= asOfTs,
+    );
+    const reconstructed = closedWeeks.filter((week) => week.recordedAt === undefined);
+    const recordedCount = weeks.filter((week) => week.recordedAt !== undefined).length;
+    return queryResult(
+      weeks,
+      this.meta(scope.edits, {
+        lineage: [
+          {
+            source: 'weekly-snapshots',
+            description: `${recordedCount} of ${weeks.length} weeks read from recorded snapshots`,
+          },
+        ],
+        warnings:
+          reconstructed.length > 0
+            ? [weeklyHistoryReconstructedWarning(reconstructed.length, closedWeeks.length)]
+            : [],
+      }),
+    );
   }
 
   async listQuarterOpportunities(
     scope: ForecastScope,
     page: PageRequest,
-  ): Promise<Page<Opportunity>> {
+  ): Promise<QueryResult<Page<Opportunity>>> {
     const { inQuarter } = this.scopedBook(scope);
     // Stable order, so a cursor means the same thing between calls.
     const ordered = [...inQuarter].sort((a, b) =>
@@ -240,15 +341,21 @@ export class MockDataProvider implements DataProvider {
     const offset = decodeCursor(page.cursor);
     const rows = ordered.slice(offset, offset + page.limit);
     const next = offset + rows.length;
-    return {
-      rows,
-      totalCount: ordered.length,
-      ...(next < ordered.length ? { nextCursor: encodeCursor(next) } : {}),
-    };
+    return queryResult(
+      {
+        rows,
+        totalCount: ordered.length,
+        ...(next < ordered.length ? { nextCursor: encodeCursor(next) } : {}),
+      },
+      this.meta(scope.edits),
+    );
   }
 
-  async getPartnerDirectory(): Promise<PartnerRef[]> {
-    return this.data.partners.map((partner) => ({ id: partner.id, name: partner.name }));
+  async getPartnerDirectory(): Promise<QueryResult<PartnerRef[]>> {
+    return queryResult(
+      this.data.partners.map((partner) => ({ id: partner.id, name: partner.name })),
+      this.meta(undefined),
+    );
   }
 }
 

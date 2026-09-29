@@ -173,6 +173,8 @@ const HEALTH_FIELDS = [
   'sessionId',
   'route',
   'providerId',
+  'requestedProviderId',
+  'providerTransitionStatus',
   'generatedAt',
   'uptimeMs',
   'checks',

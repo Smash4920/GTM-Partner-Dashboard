@@ -147,11 +147,14 @@ const COVERED_METHODS = new Set(
 interface SetupOptions {
   data?: Partial<DashboardData>;
   notifications?: DashboardNotification[];
+  /** Simulate total provider failure: no book, just the failure text. */
+  unavailable?: boolean;
 }
 
 function setup(options: SetupOptions = {}) {
   const user = userEvent.setup();
   const onSendNotification = vi.fn();
+  const onRetry = vi.fn();
   const data = makeDashboardData({
     partners: PARTNERS,
     registrations: REGISTRATIONS,
@@ -161,7 +164,9 @@ function setup(options: SetupOptions = {}) {
 
   render(
     <DataConnectionsView
-      data={data}
+      data={options.unavailable ? null : data}
+      loadError={options.unavailable ? 'listPartners failed in transit (simulated)' : null}
+      onRetry={onRetry}
       addedUserIds={new Set<string>()}
       notifications={options.notifications ?? []}
       onAddTeamUser={vi.fn()}
@@ -171,7 +176,7 @@ function setup(options: SetupOptions = {}) {
     />,
   );
 
-  return { user, onSendNotification };
+  return { user, onSendNotification, onRetry };
 }
 
 /** Scopes assertions to one KPI tile by its label. */
@@ -208,6 +213,37 @@ function queueRow(accountName: string): HTMLElement {
 }
 
 describe('DataConnectionsView', () => {
+  it('keeps the catalog up through total provider failure and names what is unavailable', async () => {
+    // VAL-DATA-006 / VAL-RES-008 route-level half: the connection catalog is
+    // static, so it never depends on the provider. The roster, composer, and
+    // alert queue do, and under total failure each one names itself and
+    // offers the retry that re-runs the load.
+    const { user, onRetry } = setup({ unavailable: true });
+
+    // The catalog: KPIs from CONNECTION_NODES and the wire map render.
+    expect(tile('Connections required').getByText(String(REQUIRED_NODES))).toBeInTheDocument();
+    expect(
+      tile('Provider methods wired').getByText(
+        `${COVERED_METHODS}/${CONNECTION_METHOD_COVERAGE.length}`,
+      ),
+    ).toBeInTheDocument();
+    expect(connectionMap().getByRole('button', { name: /^CRM/ })).toBeInTheDocument();
+
+    // The data-derived KPIs degrade to a dash instead of a plausible zero.
+    expect(tile('Receiving notifications').getByText('—')).toBeInTheDocument();
+    expect(tile('SLA alerts due').getByText('—')).toBeInTheDocument();
+
+    // Each business section names itself and its failure; none of them
+    // renders pretend-empty content.
+    expect(screen.getByText('The notification composer unavailable:')).toBeInTheDocument();
+    expect(screen.getByText('The team roster unavailable:')).toBeInTheDocument();
+    expect(screen.getByText('The SLA alert queue unavailable:')).toBeInTheDocument();
+    expect(screen.getAllByText('listPartners failed in transit (simulated)')).toHaveLength(3);
+
+    await user.click(screen.getByRole('button', { name: 'Retry The team roster' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
   it('derives the KPI tiles from the catalog and the live alert split', () => {
     setup();
 

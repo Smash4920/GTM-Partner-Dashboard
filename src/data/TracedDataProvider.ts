@@ -12,6 +12,7 @@ import type {
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from './DataProvider';
+import type { QueryResult } from './queryMetadata';
 import type {
   ActivityMeeting,
   DealRegistration,
@@ -68,43 +69,49 @@ export class TracedDataProvider implements DataProvider {
     return this.request('listTeamUsers', (trace) => this.inner.listTeamUsers(trace));
   }
 
-  getForecastSummary(scope: ForecastScope): Promise<ForecastSummary> {
+  getForecastSummary(scope: ForecastScope): Promise<QueryResult<ForecastSummary>> {
     return this.request('getForecastSummary', (trace) =>
       this.inner.getForecastSummary(scope, trace),
     );
   }
 
-  getWeightedForecast(scope: ForecastScope): Promise<WeightedForecastSummary> {
+  getWeightedForecast(scope: ForecastScope): Promise<QueryResult<WeightedForecastSummary>> {
     return this.request('getWeightedForecast', (trace) =>
       this.inner.getWeightedForecast(scope, trace),
     );
   }
 
-  getForecastQuality(scope: ForecastScope, sampleSize: number): Promise<ForecastQualitySummary> {
+  getForecastQuality(
+    scope: ForecastScope,
+    sampleSize: number,
+  ): Promise<QueryResult<ForecastQualitySummary>> {
     return this.request('getForecastQuality', (trace) =>
       this.inner.getForecastQuality(scope, sampleSize, trace),
     );
   }
 
-  getManagerForecastGroups(scope: ForecastScope): Promise<ManagerForecastGroup[]> {
+  getManagerForecastGroups(scope: ForecastScope): Promise<QueryResult<ManagerForecastGroup[]>> {
     return this.request('getManagerForecastGroups', (trace) =>
       this.inner.getManagerForecastGroups(scope, trace),
     );
   }
 
-  getWeeklyForecastSeries(scope: ForecastScope): Promise<WeeklySeriesRow[]> {
+  getWeeklyForecastSeries(scope: ForecastScope): Promise<QueryResult<WeeklySeriesRow[]>> {
     return this.request('getWeeklyForecastSeries', (trace) =>
       this.inner.getWeeklyForecastSeries(scope, trace),
     );
   }
 
-  listQuarterOpportunities(scope: ForecastScope, page: PageRequest): Promise<Page<Opportunity>> {
+  listQuarterOpportunities(
+    scope: ForecastScope,
+    page: PageRequest,
+  ): Promise<QueryResult<Page<Opportunity>>> {
     return this.request('listQuarterOpportunities', (trace) =>
       this.inner.listQuarterOpportunities(scope, page, trace),
     );
   }
 
-  getPartnerDirectory(): Promise<PartnerRef[]> {
+  getPartnerDirectory(): Promise<QueryResult<PartnerRef[]>> {
     return this.request('getPartnerDirectory', (trace) => this.inner.getPartnerDirectory(trace));
   }
 }

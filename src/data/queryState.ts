@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DataProvider } from './DataProvider';
+import type { QueryMeta, QueryResult } from './queryMetadata';
 
 /**
  * The independent state of one logical query — one widget's worth of data.
@@ -26,6 +27,14 @@ import type { DataProvider } from './DataProvider';
  */
 export interface QueryState<T> {
   data: T | null;
+  /**
+   * The envelope metadata of the answer currently on screen — committed
+   * provider id, as-of, lineage, completeness, warnings. Null until the first
+   * answer lands. While `refreshing`, this is the *previous* answer's
+   * metadata, which is exactly what makes stale data honest: the as-of it
+   * exposes is the as-of of what is actually rendering.
+   */
+  meta: QueryMeta | null;
   loading: boolean;
   refreshing: boolean;
   error: string | null;
@@ -55,6 +64,7 @@ export function editMapKey(map: Record<string, string | number>): string {
 interface QueryEntry<T> {
   provider: DataProvider;
   data: T | null;
+  meta: QueryMeta | null;
   error: string | null;
 }
 
@@ -72,7 +82,8 @@ interface QueryEntry<T> {
 export function useScopedQuery<T>(args: {
   provider: DataProvider;
   queryKey: string;
-  run: () => Promise<T>;
+  /** One scoped provider call; the answer arrives in its metadata envelope. */
+  run: () => Promise<QueryResult<T>>;
   /** Fallback message when the rejection carries none. */
   errorFallback: string;
 }): QueryState<T> {
@@ -93,9 +104,9 @@ export function useScopedQuery<T>(args: {
     const controller = new AbortController();
     setInFlight(true);
     runRef.current().then(
-      (data) => {
+      (result) => {
         if (controller.signal.aborted || request !== latest.current) return;
-        setEntry({ provider, data, error: null });
+        setEntry({ provider, data: result.data, meta: result.meta, error: null });
         setInFlight(false);
       },
       (error: unknown) => {
@@ -106,6 +117,7 @@ export function useScopedQuery<T>(args: {
         setEntry((prev) => ({
           provider,
           data: prev !== null && prev.provider === provider ? prev.data : null,
+          meta: prev !== null && prev.provider === provider ? prev.meta : null,
           error: messageOf(error, fallbackRef.current),
         }));
         setInFlight(false);
@@ -123,6 +135,7 @@ export function useScopedQuery<T>(args: {
   const error = current?.error ?? null;
   return {
     data,
+    meta: current?.meta ?? null,
     loading: inFlight && data === null,
     refreshing: inFlight && data !== null,
     error,
