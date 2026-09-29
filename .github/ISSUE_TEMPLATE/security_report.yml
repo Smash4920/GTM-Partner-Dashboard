@@ -1,0 +1,56 @@
+name: Security report
+description: Coordinate a suspected security problem without exposing details.
+title: '[security]: '
+labels: [type:security, priority:high, needs-triage]
+assignees: [Smash4920]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not post exploit details publicly.** Public issues are visible to
+        anyone. Report suspected vulnerabilities privately at
+        https://github.com/Smash4920/GTM-Partner-Dashboard/security/advisories/new
+        and keep proof-of-concepts, triggering URLs, tokens, and raw error
+        output out of this form.
+
+        This form is for a non-sensitive tracking issue after a private report
+        is accepted, and for hardening ideas that carry no exploitable detail.
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Dependency or supply-chain concern
+        - Secret or credential exposure
+        - Partner data boundary (Sell To, conflicting registrations, cross-partner data)
+        - Injection surface in rendered content
+        - DAST or secret-scan finding triage
+        - Security hardening idea
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Non-sensitive summary
+      description: One or two sentences, plain language. No reproduction steps, no credentials.
+      placeholder: A dependency in the build chain appears to have a compromised release.
+    validations:
+      required: true
+  - type: dropdown
+    id: private-report
+    attributes:
+      label: Private vulnerability report status
+      options:
+        - Filed privately at the advisory link above
+        - Will file privately before adding any detail here
+        - Not applicable -- hardening idea, not a vulnerability
+    validations:
+      required: true
+  - type: textarea
+    id: coordination
+    attributes:
+      label: Coordination notes
+      description: Which view, component, or workflow this concerns, and any timeline pressure. Keep it non-sensitive.
+    validations:
+      required: false

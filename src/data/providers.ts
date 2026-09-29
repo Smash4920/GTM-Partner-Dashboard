@@ -1,5 +1,6 @@
 import type { DataProvider } from './DataProvider';
 import { TracedDataProvider } from './TracedDataProvider';
+import { instrumentProvider } from '../lib/telemetry/instrumentProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { ScaleDataProvider } from './mock/ScaleDataProvider';
 import { SimulatedRemoteProvider } from './mock/SimulatedRemoteProvider';
@@ -49,12 +50,26 @@ export function providerOption(id: ProviderId): ProviderOption {
 }
 
 export function createProvider(id: ProviderId): DataProvider {
+  let base: DataProvider;
   switch (id) {
     case 'remote':
-      return new TracedDataProvider(new SimulatedRemoteProvider(new MockDataProvider()));
+      base = new SimulatedRemoteProvider(new MockDataProvider());
+      break;
     case 'scaled':
-      return new TracedDataProvider(new ScaleDataProvider());
+      base = new ScaleDataProvider();
+      break;
     case 'local':
-      return new TracedDataProvider(new MockDataProvider());
+      base = new MockDataProvider();
+      break;
   }
+  // Every provider the header can select crosses the seam through both
+  // wrappers. TracedDataProvider creates the W3C trace context the underlying
+  // provider receives — correlating the call in the log, and, for a real HTTP
+  // provider, in its request headers — and instrumentProvider measures the
+  // whole seam: one telemetry span, one counter, and one duration per call,
+  // with failures captured under their span's trace context. The outer
+  // wrapper is identity-safe — it delegates through a Proxy and adds nothing
+  // to the contract — and the telemetry master flag can switch the
+  // measurement off at runtime without unwiring the trace context.
+  return instrumentProvider(new TracedDataProvider(base), id);
 }

@@ -1,0 +1,70 @@
+name: Bug report
+description: Something in the dashboard behaves incorrectly.
+title: '[bug]: '
+labels: [type:bug, needs-triage]
+assignees: [Smash4920]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports are triaged with the taxonomy in `.github/labels.yml`: one
+        priority, one type, at least one area. Mock data is deterministic, so
+        the exact view and steps usually reproduce an issue anywhere.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What is broken?
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the Forecasting view
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: view
+    attributes:
+      label: Affected view
+      options:
+        - Home
+        - Forecasting
+        - Partner View
+        - Partner Performance
+        - Deal Registration Ops
+        - Activity Tracking
+        - Data Connections
+        - Production Requirements
+        - Whole dashboard / navigation
+        - Not view-specific (build, CI, or tooling)
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser and OS, window width if layout is involved, and anything else needed to reproduce.
+    validations:
+      required: false
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Screenshots, console errors, or the failing metric values. Redact anything partner-sensitive.
+    validations:
+      required: false
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Before submitting
+      options:
+        - label: The behavior is not already documented as intended in the README.
+          required: true
+        - label: >-
+            This is not a security problem. Suspected vulnerabilities use
+            private reporting (see docs/security.md).
+          required: true

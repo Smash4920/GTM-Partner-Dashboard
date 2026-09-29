@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Installed-size budget for each direct production dependency. scripts/check-dependency-weight.mjs measures each package under node_modules on disk, so a dependency that balloons the install (or a heavy package added for one helper) is visible before it reaches the bundle.",
+  "totalLimitBytes": 33554432,
+  "budgets": [
+    {
+      "name": "recharts",
+      "limitBytes": 12582912,
+      "reason": "Charting stack with its d3 dependencies vendored. Already the largest install; a further jump needs a charting-budget conversation."
+    },
+    {
+      "name": "react-dom",
+      "limitBytes": 6291456,
+      "reason": "React renderer. Raises with a React major and should be reviewed with the upgrade."
+    },
+    {
+      "name": "@fontsource/geist-mono",
+      "limitBytes": 4194304,
+      "reason": "Bundled Geist Mono weights and subsets. Prefer trimming subsets over widening the budget."
+    },
+    {
+      "name": "@fontsource/geist-sans",
+      "limitBytes": 1572864,
+      "reason": "Bundled Geist Sans weights and subsets."
+    },
+    {
+      "name": "react",
+      "limitBytes": 1048576,
+      "reason": "React runtime."
+    }
+  ]
+}

@@ -30,17 +30,23 @@ jobs:
       - run: npm run lint
       - run: npm run dead-code
       - run: npm run lint:duplicates
+      - name: Check generated documentation
+        run: npm run docs:check
       # Coverage, not a bare test run: the thresholds in vite.config.ts are
       # what keep the view layer from drifting back toward 0%. The CI variant
       # also emits JUnit timings for the report and retained artifact below.
       - name: Run unit tests with coverage and timings
         run: npm run test:coverage:ci
+      - name: Summarize unit test timings
+        run: npm run test:performance
       - name: Upload unit test timings
         if: ${{ always() && hashFiles('test-results/vitest-junit.xml') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: unit-test-results-${{ github.run_id }}-${{ github.run_attempt }}
-          path: test-results/vitest-junit.xml
+          path: |
+            test-results/vitest-junit.xml
+            build-metrics/test-performance.json
           retention-days: 90
       - name: Publish unit test results
         if: >-
@@ -67,13 +73,15 @@ jobs:
           TYPESCRIPT_CACHE_HIT: ${{ steps.typescript-cache.outputs.cache-hit }}
         run: npm run bundle:check
       - name: Upload build and bundle analysis
-        if: ${{ always() && hashFiles('build-metrics/build.json') != '' }}
+        if: ${{ always() && (hashFiles('build-metrics/build.json') != '' || hashFiles('build-metrics/bundle-budgets.json') != '') }}
         uses: actions/upload-artifact@v4
         with:
           name: build-analysis-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             build-metrics/build.json
             build-metrics/bundle-report.html
+            build-metrics/bundle-budgets.json
+            build-metrics/dependency-weights.json
           retention-days: 90
 
   e2e:

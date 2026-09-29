@@ -1,8 +1,20 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { extname, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const INTENTIONALLY_ABSENT_PATHS = new Set(['.factory', 'dist', 'node_modules']);
+const UNSCANNED_DIRECTORIES = new Set([
+  '.factory',
+  '.git',
+  '.vite',
+  'build-metrics',
+  'coverage',
+  'dist',
+  'droid-wiki',
+  'node_modules',
+  'playwright-report',
+  'test-results',
+]);
 const REPOSITORY_FILE_EXTENSIONS = new Set([
   '.cjs',
   '.css',
@@ -34,8 +46,15 @@ function shellCommands(markdown) {
   return commands;
 }
 
-function repositoryPaths(markdown) {
+/**
+ * A documented token is a repository path when it contains a slash or carries
+ * a source-file extension. Bare filenames are resolved by basename elsewhere
+ * in the repository, so `useForecastQueries.ts` may be named without repeating
+ * its `src/data/` prefix.
+ */
+function referencedPaths(markdown) {
   const paths = new Set();
+  const basenames = new Set();
   const inlineCodePattern = /(?<!`)`([^`\n]+)`(?!`)/g;
 
   for (const match of markdown.matchAll(inlineCodePattern)) {
@@ -51,20 +70,46 @@ function repositoryPaths(markdown) {
 
     const normalized = value.replace(/\/$/, '');
     const firstSegment = normalized.split('/')[0];
+    const hasKnownExtension = REPOSITORY_FILE_EXTENSIONS.has(extname(normalized));
     const isRepositoryPath =
       normalized.includes('/') ||
-      REPOSITORY_FILE_EXTENSIONS.has(extname(normalized)) ||
+      hasKnownExtension ||
       firstSegment === '.github' ||
       firstSegment === 'docs' ||
+      firstSegment === 'config' ||
       firstSegment === 'scripts' ||
       firstSegment === 'src';
 
-    if (isRepositoryPath && !INTENTIONALLY_ABSENT_PATHS.has(normalized)) {
+    if (!isRepositoryPath || INTENTIONALLY_ABSENT_PATHS.has(normalized)) {
+      continue;
+    }
+
+    if (normalized.includes('/')) {
       paths.add(normalized);
+    } else if (hasKnownExtension) {
+      basenames.add(normalized);
     }
   }
 
-  return [...paths];
+  return { paths: [...paths], basenames: [...basenames] };
+}
+
+function repositoryBasenames(repositoryRoot) {
+  const basenames = new Set();
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!UNSCANNED_DIRECTORIES.has(entry.name)) {
+          visit(join(directory, entry.name));
+        }
+      } else if (entry.isFile()) {
+        basenames.add(entry.name);
+      }
+    }
+  };
+
+  visit(repositoryRoot);
+  return basenames;
 }
 
 export function validateAgentsMarkdown({ markdown, packageJson, repositoryRoot }) {
@@ -94,9 +139,18 @@ export function validateAgentsMarkdown({ markdown, packageJson, repositoryRoot }
     }
   }
 
-  for (const path of repositoryPaths(markdown)) {
+  const { paths, basenames } = referencedPaths(markdown);
+  const availableBasenames = repositoryBasenames(repositoryRoot);
+
+  for (const path of paths) {
     if (!existsSync(resolve(repositoryRoot, path))) {
       violations.push(`Documented repository path does not exist: \`${path}\`.`);
+    }
+  }
+
+  for (const basename of basenames) {
+    if (!availableBasenames.has(basename)) {
+      violations.push(`Documented repository file does not exist anywhere: \`${basename}\`.`);
     }
   }
 

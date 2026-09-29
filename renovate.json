@@ -1,0 +1,32 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["npm"],
+  "minimumReleaseAge": "7 days",
+  "timezone": "America/New_York",
+  "schedule": ["after 6am and before 10am on monday"],
+  "dependencyDashboard": true,
+  "reviewers": ["Smash4920"],
+  "labels": ["dependencies", "type:maintenance"],
+  "packageRules": [
+    {
+      "description": "Stability policy: new majors must age for two weeks before Renovate proposes them, so early adopters and the coverage and e2e suites surface breakage first.",
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "14 days"
+    },
+    {
+      "description": "Group minor and patch dev tooling updates into one review.",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "dev tooling (minor and patch)",
+      "groupSlug": "dev-tooling"
+    },
+    {
+      "description": "Group minor and patch production dependency updates into one review so the bundle diff stays reviewable.",
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "production dependencies (minor and patch)",
+      "groupSlug": "production-dependencies"
+    }
+  ]
+}

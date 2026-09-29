@@ -1,0 +1,13 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security disclosure (private)
+    url: https://github.com/Smash4920/GTM-Partner-Dashboard/security/advisories/new
+    about: >-
+      Report suspected vulnerabilities privately via GitHub Security
+      Advisories. Do not open a public issue for anything security sensitive.
+  - name: Product behavior and the data contract
+    url: https://github.com/Smash4920/GTM-Partner-Dashboard/blob/main/README.md
+    about: Check documented behavior before filing; much of the dashboard is contract, not taste.
+  - name: Data-layer migration plan
+    url: https://github.com/Smash4920/GTM-Partner-Dashboard/blob/main/docs/migration-plan.md
+    about: How views move from the provider book to scoped queries.

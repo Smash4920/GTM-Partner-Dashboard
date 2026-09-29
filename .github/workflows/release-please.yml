@@ -1,5 +1,9 @@
 name: Release Please
 
+# Turns conventional commits on main into a release pull request with a
+# generated CHANGELOG and a version bump. Merging that pull request tags the
+# commit and publishes the GitHub Release. Keep the config and manifest under
+# config/ so release automation lives with the other checked-in configuration.
 on:
   push:
     branches: [main]
@@ -19,5 +23,5 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         with:
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
+          config-file: config/release-please-config.json
+          manifest-file: config/release-please-manifest.json

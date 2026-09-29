@@ -1,0 +1,133 @@
+# Security and governance checks.
+#
+# ci.yml owns correctness (lint, unit, coverage, e2e, build). This workflow
+# owns the security and governance controls documented in docs/security.md:
+#
+#   secret-scan       gitleaks over the full commit history
+#   dependency-audit  npm audit gate, high severity and above
+#   dast               OWASP ZAP baseline scan against the production build
+#                     served locally by `vite preview`
+#   label-taxonomy     strict sync of .github/labels.yml to GitHub
+#
+# Actions are pinned to major tags; Dependabot's github-actions group
+# proposes upgrades weekly, and the Renovate stability policy in
+# renovate.json gives npm releases an age gate before they are proposed.
+
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # 06:30 UTC Mondays: re-run on the default branch even when nothing
+    # changed, so registry advisories and new detection rules still surface.
+    - cron: '30 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      # pull-requests: write lets gitleaks comment findings on PRs
+      # (GITLEAKS_ENABLE_COMMENTS defaults to true); actions: write lets it
+      # upload the SARIF report when it detects a secret.
+      contents: read
+      pull-requests: write
+      actions: write
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v7
+        with:
+          # Secret scanning must see every commit, not the shallow default.
+          fetch-depth: 0
+      - name: Scan history for leaked secrets
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Free for personal accounts and only required for organization
+          # repositories (https://gitleaks.io); see docs/security.md.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  dependency-audit:
+    name: Dependency audit (npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Fails the job on high or critical advisories anywhere in the tree.
+      # The lockfile is the input, so no build is needed.
+      - name: Audit dependency tree
+        run: npm audit --audit-level=high
+
+  dast:
+    name: DAST (OWASP ZAP baseline)
+    runs-on: ubuntu-latest
+    permissions:
+      # The ZAP action always attaches its report as a run artifact
+      # (artifact_name: zap_scan); the artifact API needs actions: write.
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the production bundle
+        run: npm run build
+        env:
+          # CI has neither VERCEL nor a Pages base path, so serve the app at
+          # the server root -- exactly what the ZAP target below expects.
+          BASE_PATH: /
+      - name: Serve the production build
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 --strictPort &
+          for _ in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:4173/ >/dev/null; then
+              echo 'Preview server is serving the build.'
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'Preview server did not answer within 60 seconds.' >&2
+          exit 1
+      - name: ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.15.0
+        with:
+          target: 'http://127.0.0.1:4173/'
+          # -d prints alert details to the job log; -I keeps WARN-level alerts
+          # from failing the run (they are in the zap_scan artifact). FAIL
+          # level findings exit nonzero and fail_action: true turns that into
+          # a red check.
+          cmd_options: '-d -I'
+          fail_action: true
+          # Reports stay in the run artifact; no auto-filed tracking issue.
+          allow_issue_writing: false
+
+  label-taxonomy:
+    name: Sync label taxonomy
+    runs-on: ubuntu-latest
+    # Label sync rewrites repository state, so it runs only from the default
+    # branch, never from a pull request or a dispatch off a feature branch.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Sync .github/labels.yml to GitHub
+        uses: crazy-max/ghaction-github-labeler@v6
+        with:
+          # Strict sync: this file is the single source of truth, so labels
+          # that exist on GitHub but not here are deleted.
+          skip-delete: false

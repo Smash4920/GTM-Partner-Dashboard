@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { logger } from '../lib/logging';
+import { telemetry } from '../lib/telemetry/telemetry';
 
 const log = logger.child({ component: 'ErrorBoundary' });
 
@@ -56,6 +57,16 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
 
   override componentDidCatch(error: Error, info: ErrorInfo) {
     log.error('Render crashed', { error, componentStack: info.componentStack });
+    // Render crashes are the most expensive errors this app can produce — a
+    // whole view or the whole page is gone — so they are captured as critical,
+    // with the component stack and the boundary's reset key as context, the
+    // active route and release attached by the telemetry layer, and the
+    // breadcrumbs that led up to the crash riding along.
+    telemetry.captureError(error, {
+      severity: 'critical',
+      category: 'render',
+      context: { componentStack: info.componentStack, resetKey: this.props.resetKey ?? null },
+    });
   }
 
   override render() {

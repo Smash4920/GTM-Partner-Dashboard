@@ -431,14 +431,35 @@ when the flag service is unavailable. Feature flags must never replace
 authorization or data-access controls. See
 [`docs/migration-plan.md`](docs/migration-plan.md#feature-flag-methodology-and-maintainer-control-plane).
 
-`npm ci` installs a Husky pre-commit hook. Every commit checks file-size limits,
-runs the linter, and runs the Vitest suite, preventing oversized files and
-known quality failures from entering the repository. Generated package-manager
-lockfiles are exempt from the 1,200-line limit, but all files remain subject to
-the 1 MiB limit.
-`npm ci` installs a Husky pre-commit hook. Every commit checks technical-debt
-markers, runs the linter, and runs the Vitest suite, preventing untracked debt,
-known lint violations, and unit test failures from entering the repository.
+### Runtime observability
+
+The client includes opt-in, privacy-safe telemetry. With no telemetry
+variables configured, records remain in-process and no network request is made.
+Production builds may set these Vite variables:
+
+- `VITE_TELEMETRY_ENDPOINT` — collector URL for batched logs, metrics, events,
+  traces, errors, alerts, and health envelopes.
+- `VITE_ALERT_ENDPOINT` — optional alert webhook for degraded health and
+  repeated errors.
+- `VITE_TELEMETRY_DASHBOARD_URL` — operator dashboard link stamped on batches
+  and used by the deployment runbook.
+- `VITE_RELEASE` — git SHA or release tag; Vercel's commit SHA is the fallback.
+- `VITE_GA_MEASUREMENT_ID` — optional GA4 measurement ID for product events.
+- `VITE_FLAG_TELEMETRY_ENABLED` and `VITE_FLAG_ANALYTICS_ENABLED` — explicit
+  build-time feature switches.
+
+The app exposes a live readiness artifact at `window.GTM_HEALTH`. Run
+`await window.GTM_HEALTH.refresh()` in the deployed page to check the shell,
+network, flags, telemetry delivery, recent errors, and the real data-provider
+seam. Production source maps are emitted so an error collector can resolve
+minified stack frames back to the stamped release.
+
+`npm ci` installs a Husky pre-commit hook. Every commit checks AGENTS.md
+freshness, file-size limits, and technical-debt markers, then runs the linter,
+the dead-code and duplicate-code scans, and the Vitest suite, preventing stale
+documentation, oversized files, untracked debt, and known quality failures from
+entering the repository. Generated package-manager lockfiles are exempt from
+the 1,200-line limit, but all files remain subject to the 1 MiB limit.
 
 The linter also enforces the source dependency direction configured in
 [`eslint.config.js`](eslint.config.js): the app shell may compose views, views

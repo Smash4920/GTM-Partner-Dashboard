@@ -60,6 +60,9 @@ export default defineConfig({
     },
   },
   build: {
+    // Production source maps let the configured error collector resolve
+    // minified stack frames back to the exact release and source location.
+    sourcemap: true,
     rollupOptions: {
       output: {
         // Recharts and its d3/victory deps form ~2/3 of the bundle. Split them

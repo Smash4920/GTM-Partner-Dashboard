@@ -1,25 +1,61 @@
 # Dependencies
-node_modules
+node_modules/
 
 # Build output
-dist
-build-metrics
+dist/
+build-metrics/
+build/
+target/
+.gradle/
+*.class
+
+# Vitest 4 / Vite local dependency and transform cache
+.vite/
+
+# Environment files. Real secrets must never enter the tree: gitleaks
+# (.github/workflows/security.yml) scans the whole history, and this keeps
+# day-to-day slips out of `git add` range. The tracked template and
+# per-environment examples stay committable.
+.env
+.env.*
+!.env.example
+!.env.*.example
 
 # Browser test artifacts
-playwright-report
-test-results
+playwright-report/
+test-results/
 
 # TypeScript
 *.tsbuildinfo
 
 # Logs
 *.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Editor / OS
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.eslintcache
+*.swp
+*.swo
 
 # Test coverage report
 coverage/
+
+# Private keys and certificates. Secret scanning is the belt; this is the
+# suspenders that keeps accidental key drops out of commits.
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
 
 # Factory droid session state. Grows into the gigabytes, so it must never be
 # committed -- a single `git add -A` would otherwise balloon the history.
