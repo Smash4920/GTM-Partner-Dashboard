@@ -14,8 +14,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -41,7 +41,7 @@ jobs:
         run: npm run test:performance
       - name: Upload unit test timings
         if: ${{ always() && hashFiles('test-results/vitest-junit.xml') != '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unit-test-results-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -54,14 +54,14 @@ jobs:
           hashFiles('test-results/vitest-junit.xml') != '' &&
           (github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: dorny/test-reporter@v2
+        uses: dorny/test-reporter@v3
         with:
           name: Unit test results
           path: test-results/vitest-junit.xml
           reporter: java-junit
       - name: Restore TypeScript build cache
         id: typescript-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules/.tmp
           key: typescript-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.ts', 'src/**/*.tsx', 'vite.config.ts', 'tsconfig*.json') }}
@@ -74,7 +74,7 @@ jobs:
         run: npm run bundle:check
       - name: Upload build and bundle analysis
         if: ${{ always() && (hashFiles('build-metrics/build.json') != '' || hashFiles('build-metrics/bundle-budgets.json') != '') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-analysis-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -87,8 +87,8 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
