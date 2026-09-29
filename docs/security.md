@@ -21,7 +21,8 @@ and they will carry over as the data layer moves to production volume.
 | Dependency updates      | `.github/dependabot.yml`, `renovate.json` | Actions + devcontainers by Dependabot, npm by Renovate |
 | Minimum release age     | `renovate.json`, `.github/dependabot.yml` | 7 days general, 14 days for npm majors                 |
 | Dependency audit        | `security.yml` job `dependency-audit`     | `npm audit`, fails on high or above                    |
-| Dynamic scanning (DAST) | `security.yml` job `dast`                 | OWASP ZAP baseline vs `vite preview`                   |
+| Dynamic scanning (DAST) | `security.yml` job `dast`                 | OWASP ZAP baseline vs `vite preview`, reviewed rules   |
+| Workflow policy         | `scripts/check-workflows.mjs`             | `npm run workflows:check`, locally and in CI           |
 | Issue intake            | `.github/ISSUE_TEMPLATE/*`                | Structured forms, no blank issues                      |
 | Label taxonomy          | `.github/labels.yml`                      | priority / type / area; strict sync job                |
 | Pull-request discipline | `.github/pull_request_template.md`        | Description, contract, testing, risk, rollback         |
@@ -31,8 +32,9 @@ and they will carry over as the data layer moves to production volume.
 ### Secret scanning
 
 `secret-scan` runs [gitleaks](https://github.com/gitleaks/gitleaks) via
-`gitleaks/gitleaks-action@v3` over the complete commit history
-(`fetch-depth: 0`) on every pull request, every push to `main`, and weekly.
+`gitleaks/gitleaks-action` (pinned to a reviewed commit SHA for v3) over the
+complete commit history (`fetch-depth: 0`) on every pull request, every push
+to `main`, and weekly.
 On a detected secret the job fails, posts a comment on the pull request, and
 uploads a SARIF report as a run artifact. If a secret is ever detected, treat
 it as exposed regardless of when it leaked: rotate the credential first, then
@@ -110,15 +112,54 @@ OWASP ZAP baseline scan against `http://127.0.0.1:4173/`. The scan is
 passive: it spiders the static app, inspects responses, and flags issues
 such as missing security headers, cookie flags, and information leaks.
 
-Severity handling: **FAIL**-level findings fail the job (`fail_action:
-true`). **WARN**-level findings do not fail it (`-I`), but they are printed
-in the job log and captured in the `zap_scan` artifact with every run.
-WARNs are expected today because `vite preview` serves no security headers;
-the production hosts (Vercel, GitHub Pages) own those headers. The
-intentional ratchet: reduce WARNs by adding a `rules_file_name` policy file
-for accepted findings, and remove `-I` once the expected set reaches zero,
-so any new warning blocks the merge. `allow_issue_writing: false` keeps the
-report out of the issue tracker; the artifact and the job log carry it.
+Severity handling: the scan fails on any **new WARN or FAIL** finding
+(`fail_action: true`, and the blanket `-I` WARN suppression is removed).
+The only accepted findings are the reviewed, rule-specific entries in
+`.zap/rules.tsv`: each line names one exact ZAP rule ID, the threshold
+override, and the rationale a reviewer accepted. `npm run workflows:check`
+rejects the `-I` flag, a missing rules file, and entries without rationale.
+Today's accepted set is four header-hardening alerts raised against
+`vite preview`: the preview is a local scan target, not a production host,
+and response headers are owned by the production hosts (Vercel, GitHub
+Pages). A new WARN means the artifact changed: reproduce locally with
+`npm run preview`, fix it, or add a justified rule entry in the same pull
+request. `allow_issue_writing: false` keeps the report out of the issue
+tracker; the artifact and the job log carry it.
+
+### Workflow hardening
+
+`npm run workflows:check` (`scripts/check-workflows.mjs`) parses every
+workflow in `.github/workflows/` and enforces the repository's workflow
+security policy locally and in CI:
+
+- **Immutable actions.** Every external `uses:` reference is pinned to a
+  reviewed full 40-character commit SHA, with the reviewed tag recorded in
+  a trailing comment. Dependabot still proposes action upgrades weekly;
+  merging one is the review point for the new revision.
+- **Least privilege.** Every workflow declares top-level `contents: read`
+  (or `{}`). Write and `id-token` scopes exist only on jobs allowlisted in
+  the checker, each with a recorded rationale; a stale allowlist entry or
+  an unlisted write scope fails the check.
+- **Trusted triggers.** `pull_request_target` and `workflow_run` are
+  forbidden. State-changing jobs run only in trusted contexts: the Pages
+  deployment and release publication are guarded to `refs/heads/main`,
+  label sync never runs on a pull request, the error-to-insight sync is
+  schedule/dispatch only, and the comment- and content-triggered assistant
+  job requires an OWNER, MEMBER, or COLLABORATOR author before it starts.
+  Fork pull requests receive a read-only `GITHUB_TOKEN` and no secrets,
+  which keeps the gitleaks and ZAP write scopes inert for untrusted code.
+- **Finite timeouts.** Every job declares `timeout-minutes` at or below
+  its reviewed budget in the checker, and unbounded wait loops are
+  rejected (the DAST preview startup loop is bounded at 60 seconds).
+- **Blocking scans.** gitleaks scans the full commit history and
+  `npm audit --audit-level=high` gates the dependency tree. Both run on
+  pull requests, pushes to `main`, the weekly schedule, and manual
+  dispatch, and neither may use `continue-on-error`.
+
+Remote GitHub settings -- branch protection, the workflow token's default
+permissions, the allowed-actions policy -- cannot be expressed in a
+repository file. They are listed below and remain unverified by the local
+check.
 
 ### Issue intake and the label taxonomy
 
@@ -183,10 +224,10 @@ one-time setup step:
    it only if the repository moves to an organization. Personal accounts
    need no license.
 7. **Actions permissions.** Settings -> Actions -> General: leave the
-   workflow token at the least privileges the workflows declare
-   (`security.yml` requests per-job scopes explicitly) and restrict which
-   actions can run to those from verified creators if the organization
-   offers that control.
+   workflow token at the least privileges the workflows declare (every
+   workflow now declares `contents: read` at the top and per-job write
+   scopes explicitly) and restrict which actions can run to those from
+   verified creators if the organization offers that control.
 
 ## When something fires
 
@@ -197,8 +238,13 @@ one-time setup step:
   package, and if no fixed release exists, pin a known-good version and
   note the exception in the PR.
 - **DAST fails:** reproduce locally with `npm run preview`, confirm the
-  finding, fix it or add a justified entry to a ZAP rules file (wire it via
-  `rules_file_name`), and keep the ratchet moving.
+  finding, fix it or add a justified rule-specific entry to
+  `.zap/rules.tsv`, and keep the ratchet moving.
+- **Workflow policy fails:** read the violation from
+  `npm run workflows:check`. Either restore the control (action pin,
+  permission scope, trigger guard, timeout, ZAP rule) or change the
+  reviewed allowlist, budget, or guard in `scripts/check-workflows.mjs`
+  with its rationale in the same pull request.
 
 ## Keeping this page true
 

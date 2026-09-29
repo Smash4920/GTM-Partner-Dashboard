@@ -6,16 +6,26 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Least privilege: read-only by default. The single write scope (checks, for
+# the test report) is declared on the verify job and allowlisted in
+# scripts/check-workflows.mjs. External actions are pinned to reviewed commit
+# SHAs; the trailing comment records the reviewed tag for Dependabot.
 permissions:
   contents: read
-  checks: write
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # dorny/test-reporter publishes the JUnit report as a check run. The
+      # step below is skipped for cross-repository pull requests, and fork
+      # pull requests receive a read-only token.
+      checks: write
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: npm
@@ -42,7 +52,7 @@ jobs:
         run: npm run test:performance
       - name: Upload unit test timings
         if: ${{ always() && hashFiles('test-results/vitest-junit.xml') != '' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unit-test-results-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -55,14 +65,14 @@ jobs:
           hashFiles('test-results/vitest-junit.xml') != '' &&
           (github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: dorny/test-reporter@v3
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
         with:
           name: Unit test results
           path: test-results/vitest-junit.xml
           reporter: java-junit
       - name: Restore TypeScript build cache
         id: typescript-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: node_modules/.tmp
           key: typescript-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.ts', 'src/**/*.tsx', 'vite.config.ts', 'tsconfig*.json') }}
@@ -73,9 +83,11 @@ jobs:
           BUILD_BUDGET_MS: 60000
           TYPESCRIPT_CACHE_HIT: ${{ steps.typescript-cache.outputs.cache-hit }}
         run: npm run bundle:check
+      - name: Enforce workflow security policy
+        run: npm run workflows:check
       - name: Upload build and bundle analysis
         if: ${{ always() && (hashFiles('build-metrics/build.json') != '' || hashFiles('build-metrics/bundle-budgets.json') != '') }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: build-analysis-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -87,9 +99,10 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: npm

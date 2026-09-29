@@ -35,3 +35,4 @@ Every script declared in `package.json`. The CI column marks scripts run by
 | `test:performance`       | `node --test scripts/check-test-performance.test.mjs && node scripts/check-test-performance.mjs`                                                      | yes |
 | `test:sentry-sync`       | `node --test scripts/sync-sentry-issues.test.mjs`                                                                                                     | yes |
 | `test:watch`             | `vitest`                                                                                                                                              | no  |
+| `workflows:check`        | `node --test scripts/check-workflows.test.mjs && node scripts/check-workflows.mjs`                                                                    | yes |

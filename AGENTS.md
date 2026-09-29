@@ -34,6 +34,7 @@ Run commands from the repository root.
 npm run dev       # start the Vite development server
 npm run agents:check # validate this file's commands and repository paths
 npm run check:file-limits # reject oversized files before review
+npm run workflows:check # enforce the GitHub workflow security policy
 npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
 npm run dead-code # find unused files, exports, and dependencies with Knip
@@ -71,8 +72,9 @@ npm run lint
 npm run dead-code
 npm run lint:duplicates
 npm run test:coverage
-npm run test:e2e
 npm run bundle:check
+npm run workflows:check
+npm run test:e2e
 ```
 
 The coverage thresholds are a ratchet: raise them as coverage lands, never

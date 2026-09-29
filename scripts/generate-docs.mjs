@@ -83,10 +83,11 @@ function skillSummaries(skillDirectory) {
 const DIRECTORY_PURPOSES = {
   '.github': 'CI, release automation, and repository templates.',
   '.skills': 'Agent skills available for repository tasks.',
+  '.zap': 'Reviewed OWASP ZAP baseline rules for the DAST workflow scan.',
   config: 'Checked-in budgets and release automation configuration.',
   docs: 'Product documentation and operational runbooks.',
   public: 'Static assets copied into the build unchanged.',
-  scripts: 'Dependency-free Node checks run locally and in CI.',
+  scripts: 'Node policy checks and tooling run locally and in CI.',
   src: 'Application source: shell, views, components, data, and helpers.',
   tests: 'Playwright end-to-end browser tests.',
 };

@@ -9,9 +9,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Read-only by default. Release publication is state-changing, so the job
+# carries the write scopes (allowlisted in scripts/check-workflows.mjs) and
+# is guarded to the default branch: a manual dispatch from any other ref is
+# skipped.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: release-please
@@ -19,9 +22,14 @@ concurrency:
 
 jobs:
   release-please:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: googleapis/release-please-action@v5
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         with:
           config-file: config/release-please-config.json
           manifest-file: config/release-please-manifest.json

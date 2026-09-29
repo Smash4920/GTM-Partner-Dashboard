@@ -21,6 +21,7 @@
     "test:dependency-weight": "node --test scripts/check-dependency-weight.test.mjs",
     "dead-code": "knip",
     "check:file-limits": "node --test scripts/check-file-limits.test.mjs && node scripts/check-file-limits.mjs",
+    "workflows:check": "node --test scripts/check-workflows.test.mjs && node scripts/check-workflows.mjs",
     "debt:check": "node scripts/check-technical-debt.mjs",
     "lint": "eslint .",
     "lint:duplicates": "jscpd src",
@@ -71,7 +72,8 @@
     "typescript": "~5.6.3",
     "typescript-eslint": "^8.70.1",
     "vite": "^7.3.6",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "yaml": "^2.9.1"
   },
   "allowScripts": {
     "esbuild@0.28.2": true
