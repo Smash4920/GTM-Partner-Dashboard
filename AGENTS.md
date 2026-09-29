@@ -42,6 +42,7 @@ npm run lint      # lint TypeScript/TSX and enforce module boundaries
 npm run lint:duplicates # detect source duplication with jscpd
 npm test          # run the Vitest suite once
 npm run test:debt # test the technical-debt policy scanner
+npm run test:sentry-sync # test Sentry-to-GitHub issue synchronization
 npm run test:coverage # run Vitest with coverage, enforcing the thresholds in vite.config.ts
 npm run test:coverage:ci # also write per-test JUnit timings for CI reporting
 npm run test:e2e  # run the Playwright browser suite
@@ -64,6 +65,7 @@ npm run agents:check
 npm run check:file-limits
 npm run format:check
 npm run test:debt
+npm run test:sentry-sync
 npm run debt:check
 npm run lint
 npm run dead-code

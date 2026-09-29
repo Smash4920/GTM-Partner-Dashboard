@@ -454,6 +454,33 @@ network, flags, telemetry delivery, recent errors, and the real data-provider
 seam. Production source maps are emitted so an error collector can resolve
 minified stack frames back to the stamped release.
 
+#### Error to insight pipeline
+
+The scheduled [`Error to Insight`](.github/workflows/error-to-insight.yml)
+workflow converts unresolved Sentry errors into actionable GitHub issues every
+hour. Each issue links to the Sentry event group, records frequency and affected
+users, and includes a triage checklist. A hidden Sentry issue ID makes the sync
+idempotent. If an error regresses after its GitHub issue was closed, the
+workflow reopens the same issue instead of creating a duplicate. A per-run cap
+prevents an initial backlog from flooding the issue tracker.
+
+Configure the repository before enabling the schedule:
+
+1. Send the telemetry collector's `error` envelopes to a Sentry project. Keep
+   the release, environment, fingerprint, breadcrumbs, route, provider, and
+   trace context fields so each GitHub issue leads to useful diagnostic data.
+2. Add repository variables `SENTRY_ORG` and `SENTRY_PROJECT` with that
+   project's organization and project slugs.
+3. Add `SENTRY_AUTH_TOKEN` as a repository secret. Use a dedicated,
+   read-only Sentry token with project and organization read access.
+4. Run the workflow manually with `dry_run` enabled. Review the proposed issue
+   count, then run it without `dry_run`.
+
+The workflow's `GITHUB_TOKEN` receives only `contents: read` and `issues: write`.
+It never exposes the Sentry token to application code. Change
+`SENTRY_ISSUE_QUERY` or `SENTRY_MAX_NEW_ISSUES` in the workflow to tune
+severity, environments, or rollout volume.
+
 `npm ci` installs a Husky pre-commit hook. Every commit checks AGENTS.md
 freshness, file-size limits, and technical-debt markers, then runs the linter,
 the dead-code and duplicate-code scans, and the Vitest suite, preventing stale

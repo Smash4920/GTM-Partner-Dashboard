@@ -25,6 +25,7 @@ dependencies, and tool caches are excluded.
 - `.github/workflows/deploy-pages.yml`
 - `.github/workflows/droid-review.yml`
 - `.github/workflows/droid.yml`
+- `.github/workflows/error-to-insight.yml`
 - `.github/workflows/release-please.yml`
 - `.github/workflows/security.yml`
 

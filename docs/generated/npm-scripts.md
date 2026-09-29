@@ -33,4 +33,5 @@ Every script declared in `package.json`. The CI column marks scripts run by
 | `test:e2e`               | `playwright test`                                                                                                                                     | yes |
 | `test:list`              | `vitest list`                                                                                                                                         | no  |
 | `test:performance`       | `node --test scripts/check-test-performance.test.mjs && node scripts/check-test-performance.mjs`                                                      | yes |
+| `test:sentry-sync`       | `node --test scripts/sync-sentry-issues.test.mjs`                                                                                                     | yes |
 | `test:watch`             | `vitest`                                                                                                                                              | no  |

@@ -13,6 +13,7 @@
     "postbuild": "node scripts/check-bundle-budgets.mjs",
     "bundle:check": "npm run build && npm run test:bundle-budgets && npm run test:dependency-weight && node scripts/check-dependency-weight.mjs && size-limit",
     "test:build-metrics": "node --test scripts/build-with-metrics.test.mjs",
+    "test:sentry-sync": "node --test scripts/sync-sentry-issues.test.mjs",
     "docs:generate": "node scripts/generate-docs.mjs",
     "docs:check": "node --test scripts/generate-docs.test.mjs && node scripts/generate-docs.mjs --check",
     "test:performance": "node --test scripts/check-test-performance.test.mjs && node scripts/check-test-performance.mjs",
