@@ -394,11 +394,41 @@ VITE_LOG_LEVEL=debug npm run dev
 
 ### Feature flags
 
-Feature flags are defined in
-[`src/lib/featureFlags.ts`](src/lib/featureFlags.ts). Each definition has an
-owner, description, safe default, explicit environment override, and optional
-percentage rollout. The Production Requirements workspace is the first
-flagged feature and is removed from navigation when disabled.
+Feature flags live in two governed registries: product flags in
+[`src/lib/featureFlags.ts`](src/lib/featureFlags.ts) and operational telemetry
+flags in [`src/lib/telemetry/flags.ts`](src/lib/telemetry/flags.ts). Every flag
+in both registries carries the full lifecycle defined in
+[`src/lib/flagGovernance.ts`](src/lib/flagGovernance.ts): owner, purpose,
+environment scope, safe default, rollout trigger, rollback trigger, review
+date, expiry, and removal condition. A deterministic policy check
+(`npm test -- src/lib/featureFlags.test.ts src/lib/telemetry/flags.test.ts`)
+fails on missing metadata, missing ownership, or an expired flag.
+
+All flag inputs are local and non-authoritative: build-time environment
+variables inlined by Vite, plus session-only in-memory overrides. There is no
+remote flag service and no privileged control UI, and the app makes no
+flag-service request. A flag can hide a feature route, but it never grants a
+role, changes which rows a partner or manager can see, or otherwise alters
+access. That separation is enforced architecturally — flag modules cannot
+import access-scope or provider logic — and pinned by an
+authorization-invariance test that verifies identical scope and row IDs in
+every evaluator state.
+
+Evaluation is fail-safe and deterministic:
+
+1. A fresh, valid configured value is used and recorded as last known good.
+2. On a timeout, an unavailable source, or a malformed value, the recorded
+   value is used only while it is younger than its configured maximum age
+   (`FLAG_CACHE_MAX_AGE_MS`, five minutes).
+3. Cold start, an absent cache, or a stale cache falls back to the registry's
+   safe default, so an outage can never turn a feature on or hold an outdated
+   value past its bound. The cache is in-memory only, so a reload is always a
+   cold start.
+4. A later valid value replaces the cache, so recovery is immediate.
+
+The full matrix — cold start, timeout, unavailable, malformed, bounded cache,
+stale cache, and recovery — is pinned by injected-clock tests in
+[`src/lib/featureFlags.test.ts`](src/lib/featureFlags.test.ts).
 
 Copy [`.env.example`](.env.example) to `.env.local` for local configuration,
 or set the variables in the deployment environment:
@@ -412,8 +442,9 @@ VITE_FEATURE_PRODUCTION_REQUIREMENTS_ROLLOUT=25 npm run build
 ```
 
 Explicit `true` or `false` overrides take precedence over percentage rollout.
-Accepted aliases are `1`/`0` and `on`/`off`. Invalid values fall back to the
-flag's safe default instead of making an accidental rollout decision.
+Accepted aliases are `1`/`0` and `on`/`off`. Invalid values are treated as
+malformed and fall back through the fail-safe policy above instead of making
+an accidental rollout decision.
 
 Percentage assignment hashes the flag key with an opaque browser identifier.
 The identifier is stored under `gtm.feature-flags.subject.v1`; it contains no
@@ -421,14 +452,14 @@ user or partner data. If browser storage is unavailable, assignment remains
 stable for the current page. Vite inlines flag configuration at build time, so
 changing a deployment flag requires a rebuild.
 
-This build-time implementation is the safe starting point, not the final
-maintainer experience. The Production Requirements roadmap calls for a
-documented flag lifecycle and an authenticated control plane where approved
-nontechnical maintainers can change flags without editing code or redeploying.
-That control plane must include separate environment settings, role-based
-access, approvals, audit history, emergency kill switches, and safe behavior
-when the flag service is unavailable. Feature flags must never replace
-authorization or data-access controls. See
+This local, build-time implementation is the safe starting point, not the
+final maintainer experience. The Production Requirements roadmap still calls
+for an authenticated control plane where approved nontechnical maintainers can
+change flags without editing code or redeploying — that capability is
+Production: Prod Only. Such a control plane must include separate environment
+settings, role-based access, approvals, audit history, emergency kill
+switches, and safe behavior when the flag service is unavailable. Feature
+flags must never replace authorization or data-access controls. See
 [`docs/migration-plan.md`](docs/migration-plan.md#feature-flag-methodology-and-maintainer-control-plane).
 
 ### Runtime observability

@@ -1,53 +1,84 @@
+import type { FlagLifecycle } from '../flagGovernance';
 import type { TelemetryEnv } from './config';
 
 /**
- * Explicit feature flags for the dashboard.
+ * Explicit operational flags for the dashboard's telemetry pipeline.
  *
- * A flag is a named boolean with a documented default, and every flag in
- * `FLAG_DEFINITIONS` gates real behavior in the app — none exists to be
- * decorative. Resolution order is: runtime override, then the build-time
- * environment (`VITE_FLAG_<NAME>`), then the default. Overrides live in memory
+ * These are the operational counterpart to the product flag registry in
+ * `src/lib/featureFlags.ts`; both registries carry the same lifecycle
+ * contract from `src/lib/flagGovernance.ts` (owner, purpose, environment
+ * scope, safe default, rollout/rollback triggers, review date, expiry, and
+ * removal condition), and the same deterministic policy audit rejects missing
+ * metadata or an expired flag here.
+ *
+ * Resolution order is: runtime override, then the build-time environment
+ * (`VITE_FLAG_<NAME>`), then the safe default. Overrides live in memory
  * for the session only; nothing is persisted to browser storage, so a reload
  * is always a clean slate and no flag state survives on a shared machine.
+ * Every input is local and non-authoritative: a flag suppresses telemetry
+ * execution paths but never grants a role, rows, or access.
  *
  * The set is deliberately small: a flag is a live experiment or an operational
  * switch with an owner, not a settings page.
  */
 
-export const FLAG_KEYS = [
-  'telemetry.enabled',
-  'telemetry.logShipping',
-  'analytics.enabled',
-] as const;
-
-export type FlagKey = (typeof FLAG_KEYS)[number];
-
 export interface FlagDefinition {
-  readonly key: FlagKey;
-  readonly description: string;
-  readonly defaultValue: boolean;
+  readonly lifecycle: FlagLifecycle;
 }
 
-export const FLAG_DEFINITIONS: Record<FlagKey, FlagDefinition> = {
+/** Shared environment scope; lifecycle strings stay terse — the bundle ships them. */
+const ALL_ENVIRONMENTS = ['development', 'preview', 'production'] as const;
+
+export const FLAG_DEFINITIONS = {
+  // Master switch for spans, metrics, error capture, and envelope shipping.
+  // When off, provider calls delegate straight through and nothing is recorded.
   'telemetry.enabled': {
-    key: 'telemetry.enabled',
-    description:
-      'Master switch for telemetry: spans, metrics, error capture, and envelope shipping. When off, provider calls delegate straight through and nothing is recorded.',
-    defaultValue: true,
+    lifecycle: {
+      owner: 'GTM platform',
+      purpose: 'Master switch for telemetry capture.',
+      environments: ALL_ENVIRONMENTS,
+      safeDefault: true,
+      rolloutTrigger: 'Keep on while envelopes stay allowlisted.',
+      rollbackTrigger: 'Off if a payload carries unlisted fields.',
+      reviewDate: '2026-12-29',
+      expiresAt: '2027-03-29',
+      removalCondition: 'Remove when the switch moves server-side.',
+    },
   },
+  // Off by default: logs are chatty, and shipping them is a deliberate choice.
   'telemetry.logShipping': {
-    key: 'telemetry.logShipping',
-    description:
-      'Ship structured log records at or above the configured level to the telemetry collector, redacted. Off by default: logs are chatty, and shipping them is a deliberate choice.',
-    defaultValue: false,
+    lifecycle: {
+      owner: 'GTM platform',
+      purpose: 'Ship structured logs at the configured level.',
+      environments: ALL_ENVIRONMENTS,
+      safeDefault: false,
+      rolloutTrigger: 'Enable after volume and redaction review.',
+      rollbackTrigger: 'Off on redaction gaps or cost spikes.',
+      reviewDate: '2026-12-29',
+      expiresAt: '2027-03-29',
+      removalCondition: 'Remove when configured at the collector.',
+    },
   },
+  // Route views, provider swaps, and manager edits; counts and identifiers
+  // only, never user prose.
   'analytics.enabled': {
-    key: 'analytics.enabled',
-    description:
-      'Emit product analytics events (route views, provider swaps, manager edits) as telemetry envelopes. Carries counts and identifiers only, never user prose.',
-    defaultValue: true,
+    lifecycle: {
+      owner: 'GTM platform',
+      purpose: 'Emit allowlisted product analytics events.',
+      environments: ALL_ENVIRONMENTS,
+      safeDefault: true,
+      rolloutTrigger: 'Keep on while events stay allowlisted.',
+      rollbackTrigger: 'Off on a privacy finding or new event field.',
+      reviewDate: '2026-12-29',
+      expiresAt: '2027-03-29',
+      removalCondition: 'Remove when analytics moves server-side.',
+    },
   },
-};
+} satisfies Record<string, FlagDefinition>;
+
+export type FlagKey = keyof typeof FLAG_DEFINITIONS;
+
+export const FLAG_KEYS = Object.keys(FLAG_DEFINITIONS) as FlagKey[];
 
 type FlagSource = 'default' | 'env' | 'override';
 
@@ -100,7 +131,7 @@ export function resolveFlag(key: FlagKey, env: TelemetryEnv = import.meta.env): 
       : parseFlagValue(envValue);
   if (parsed !== null) return { key, enabled: parsed, source: 'env' };
 
-  return { key, enabled: FLAG_DEFINITIONS[key].defaultValue, source: 'default' };
+  return { key, enabled: FLAG_DEFINITIONS[key].lifecycle.safeDefault, source: 'default' };
 }
 
 /** Every flag and how it resolved, for the health artifact and support conversations. */

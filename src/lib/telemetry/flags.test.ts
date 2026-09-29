@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { auditFlagLifecycle, FLAG_GOVERNANCE_AS_OF } from '../flagGovernance';
 import {
   clearFlagOverrides,
   FLAG_DEFINITIONS,
@@ -26,12 +27,38 @@ afterEach(() => {
 });
 
 describe('the flag registry', () => {
-  it('declares every flag with a key, a default, and a plain-language purpose', () => {
+  it('declares every operational flag with complete lifecycle metadata', () => {
     expect(FLAG_KEYS).toEqual(['telemetry.enabled', 'telemetry.logShipping', 'analytics.enabled']);
-    for (const key of FLAG_KEYS) {
-      expect(FLAG_DEFINITIONS[key].key).toBe(key);
-      expect(FLAG_DEFINITIONS[key].description.length).toBeGreaterThan(20);
-    }
+
+    const violations = auditFlagLifecycle(
+      FLAG_KEYS.map((key) => ({ key, lifecycle: FLAG_DEFINITIONS[key].lifecycle })),
+      new Date(FLAG_GOVERNANCE_AS_OF),
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  it('fails deterministically on missing ownership and expired operational flags', () => {
+    const asOf = new Date(FLAG_GOVERNANCE_AS_OF);
+    const lifecycle = FLAG_DEFINITIONS['telemetry.enabled'].lifecycle;
+
+    expect(
+      auditFlagLifecycle(
+        [{ key: 'telemetry.enabled', lifecycle: { ...lifecycle, owner: '' } }],
+        asOf,
+      ),
+    ).toEqual([expect.objectContaining({ flagKey: 'telemetry.enabled', field: 'owner' })]);
+    expect(
+      auditFlagLifecycle(
+        [
+          {
+            key: 'analytics.enabled',
+            lifecycle: { ...lifecycle, reviewDate: '2025-06-01', expiresAt: '2026-01-01' },
+          },
+        ],
+        asOf,
+      ),
+    ).toEqual([expect.objectContaining({ flagKey: 'analytics.enabled', field: 'expiresAt' })]);
   });
 
   it('derives each flag environment key from its name', () => {

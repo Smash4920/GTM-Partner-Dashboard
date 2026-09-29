@@ -61,6 +61,13 @@ export default tseslint.config(
           category: 'test',
           pattern: ['**/*.{test,spec}.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
         },
+        {
+          // Feature-flag registry, governance, and evaluation. These modules
+          // sit inside the domain element but carry a stricter contract,
+          // enforced by the flag-module policy below.
+          category: 'flag-module',
+          pattern: ['src/lib/featureFlags.ts', 'src/lib/flagGovernance.ts'],
+        },
       ],
       'boundaries/elements-single-match': true,
       'import/resolver': {
@@ -124,6 +131,26 @@ export default tseslint.config(
             allowDependencies('data', ['data', 'provider', 'domain']),
             allowDependencies('provider', ['provider', 'data', 'domain']),
             allowDependencies('domain', ['domain', 'data']),
+            {
+              // Flag modules may never import access-scope, provider, or
+              // authorization logic: a flag can hide a feature but must not be
+              // able to grant a role or a row, even by accident. This deny
+              // policy must stay AFTER the element allow policies above —
+              // policies evaluate last-match-wins, so a later generic allow
+              // must not reopen this boundary.
+              from: { file: { categories: 'flag-module' } },
+              disallow: {
+                to: {
+                  element: {
+                    types: {
+                      anyOf: ['app', 'view', 'component', 'data', 'provider', 'test-support'],
+                    },
+                  },
+                },
+              },
+              message:
+                'Feature-flag modules cannot import access-scope, provider, or application logic. Flags never grant roles or rows.',
+            },
             {
               from: { file: { categories: 'test' } },
               allow: {

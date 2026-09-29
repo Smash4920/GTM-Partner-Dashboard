@@ -182,12 +182,12 @@ describe('ProductionRequirementsView', () => {
     render(<ProductionRequirementsView />);
 
     expect(
-      itemRow(/Define a feature-flag methodology/).getByText(demoLabel('wip')),
+      itemRow(/Define a feature-flag methodology/).getByText(demoLabel('complete')),
     ).toBeInTheDocument();
-    expect(
-      itemRow(/authorization and data-access enforcement independent/).getByText(
-        demoLabel('pending'),
-      ),
-    ).toBeInTheDocument();
+
+    const failSafeRow = itemRow(/authorization and data-access enforcement independent/);
+    expect(failSafeRow.getByText(demoLabel('complete'))).toBeInTheDocument();
+    expect(failSafeRow.getByText(/non-authoritative/)).toBeInTheDocument();
+    expect(failSafeRow.getByText(/never alter demo access scope/)).toBeInTheDocument();
   });
 });

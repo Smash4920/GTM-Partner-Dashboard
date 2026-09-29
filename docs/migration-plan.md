@@ -173,11 +173,21 @@ internal demo mode; that is the same requirement seen from the UI side.
 
 ### Feature-flag methodology and maintainer control plane
 
-The current typed registry provides safe defaults, explicit build-time
-overrides, deterministic percentage cohorts, and a first real gate. It reduces
-release risk now, but changing a flag still requires someone to edit deployment
-configuration and rebuild the app. That is not an appropriate long-term
-workflow for a nontechnical maintainer.
+The registries now carry the full flag lifecycle — owner, purpose,
+environment scope, safe default, rollout and rollback triggers, review date,
+expiry, and removal condition — for both product flags
+(`src/lib/featureFlags.ts`) and operational telemetry flags
+(`src/lib/telemetry/flags.ts`), with a deterministic policy check
+(`src/lib/flagGovernance.ts`) that fails on missing metadata, missing
+ownership, or an expired flag. Evaluation is fail-safe and tested with an
+injected clock: a fresh valid value wins, a failing source serves a bounded
+last-known-good cache, and cold start or a stale cache falls back to the
+registry safe default. Flags are local and non-authoritative — they never
+grant a role or a row, and flag modules cannot import access-scope logic.
+
+What remains production-only is the maintainer experience: changing a flag
+still requires someone to edit deployment configuration and rebuild the app.
+That is not an appropriate long-term workflow for a nontechnical maintainer.
 
 Before production rollout, select or build an authenticated control plane that
 provides a straightforward web interface and:
@@ -194,11 +204,13 @@ provides a straightforward web interface and:
 - caches the last known configuration and falls back to the declared safe
   default when the service is unavailable.
 
-The accompanying methodology must define naming, ownership, safe defaults,
-targeting rules, staged rollout and rollback, review cadence, expiration, and
-code removal. A flag is temporary release machinery, not permanent
-configuration. Authorization and partner-data boundaries remain server-enforced
-even when a related feature is hidden; a flag must never grant access.
+The checked-in registry already defines naming, ownership, safe defaults,
+environment scope, rollout and rollback triggers, review cadence, expiration,
+and removal conditions; the control plane must surface and enforce the same
+lifecycle for nontechnical maintainers, plus the targeting rules. A flag is
+temporary release machinery, not permanent configuration. Authorization and
+partner-data boundaries remain server-enforced even when a related feature is
+hidden; a flag must never grant access.
 
 ### A real write path
 

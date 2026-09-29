@@ -230,9 +230,9 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
     items: [
       {
         text: 'Define a feature-flag methodology covering naming, ownership, safe defaults, environment scope, targeting, rollout and rollback, observability, review, expiration, and removal.',
-        demo: 'wip',
+        demo: 'complete',
         demoScope:
-          'The typed registry, safe defaults, environment override, and stable percentage rollout have landed.',
+          'Every flag carries owner, purpose, environment scope, safe default, rollout/rollback triggers, review, expiry, and removal metadata; policy checks fail on gaps or expiry.',
         production: {
           status: 'prod-only',
           blocker:
@@ -250,7 +250,9 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
       },
       {
         text: 'Keep authorization and data-access enforcement independent from feature flags, and define cached fail-safe behavior when the control plane is unavailable.',
-        demo: 'pending',
+        demo: 'complete',
+        demoScope:
+          'Fresh value, then bounded last-known-good cache, then the safe default. Flags are local and non-authoritative: they never alter demo access scope, roles, or returned rows.',
       },
     ],
   },
