@@ -107,6 +107,7 @@ describe('createTelemetry context', () => {
   });
 
   it('carries route and provider on every batch it ships', async () => {
+    setFlagOverride('analytics.enabled', true);
     const { client, batches } = harness();
 
     client.setRoute('forecasting');
@@ -150,13 +151,22 @@ describe('product analytics events', () => {
         { ...CONFIG, analyticsMeasurementId: 'G-TEST1234' },
       );
 
-      client.track('provider_selected', { providerId: 'local' });
+      // Every analytics-emitting path is driven, not only track(): setRoute
+      // and setProviderId enqueue the registered route_view and
+      // provider_selected events and must obey the same two-switch gate.
+      client.setRoute('home');
+      client.setProviderId('local');
+      client.track('notification_sent', { kind: 'registration-approved' });
       await client.flush();
 
       expect(document.head.querySelector('script[src*="googletagmanager"]') !== null).toBe(
         expectScript,
       );
-      expect(envelopes().some((envelope) => envelope.type === 'event')).toBe(expectEvent);
+      expect(
+        envelopes()
+          .filter((envelope) => envelope.type === 'event')
+          .map((envelope) => envelope.data.event),
+      ).toEqual(expectEvent ? ['route_view', 'provider_selected', 'notification_sent'] : []);
 
       // Reset window state before the next combination installs fresh.
       client.dispose();
@@ -233,6 +243,7 @@ describe('error capture and alerting', () => {
   });
 
   it('reports a failing collector as its own alert condition, without raw failure prose', async () => {
+    setFlagOverride('analytics.enabled', true);
     const fetchImpl = (async () => {
       throw new Error('connection refused');
     }) as unknown as typeof fetch;
@@ -495,6 +506,7 @@ describe('master telemetry switch (VAL-SEC-001)', () => {
 
   it('re-enabling later only affects what happens after the switch', async () => {
     setFlagOverride('telemetry.enabled', false);
+    setFlagOverride('analytics.enabled', true);
     const { client, envelopes, fetchCalls } = harness();
 
     client.setRoute('home');

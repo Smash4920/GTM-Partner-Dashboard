@@ -269,6 +269,34 @@ describe('job timeouts (VAL-SEC-011)', () => {
     });
     assert.ok(violations.some((line) => /unbounded loop/.test(line)));
   });
+
+  it('rejects unbounded loops on the shell no-op builtin `:`', () => {
+    // `while :` is the idiomatic bash spin loop; a word-boundary anchor after
+    // the condition would miss it because `:` is not a word character.
+    for (const run of [
+      'while :; do curl localhost; done',
+      'until :; do curl localhost; done',
+      'while : ; do sleep 1; done',
+    ]) {
+      const violations = checkOne({ job: { steps: [{ run }] } });
+      assert.ok(
+        violations.some((line) => /unbounded loop/.test(line)),
+        run,
+      );
+    }
+  });
+
+  it('tolerates bounded loops and words that merely start with the condition', () => {
+    const violations = checkOne({
+      job: {
+        steps: [
+          { run: 'for _ in $(seq 1 60); do curl localhost && exit 0; sleep 1; done; exit 1' },
+          { run: 'while truly -eq 1; do echo bounded-by-tool; done' },
+        ],
+      },
+    });
+    assert.deepEqual(violations, []);
+  });
 });
 
 describe('trusted trigger guards (VAL-SEC-010)', () => {

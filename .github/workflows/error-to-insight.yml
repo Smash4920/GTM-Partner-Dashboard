@@ -12,7 +12,7 @@ on:
         type: boolean
 
 # Read-only by default; the issue write scope lives on the job, which runs
-# only on the weekly schedule or manual dispatch (both trusted contexts).
+# only on the hourly schedule or manual dispatch (both trusted contexts).
 permissions:
   contents: read
 

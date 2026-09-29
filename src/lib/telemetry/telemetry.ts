@@ -76,9 +76,15 @@ export interface TelemetryOptions {
 export interface TelemetryFacade {
   /** Where this session is, and what it is running: stamped on every envelope. */
   contextSnapshot(): TelemetryContextSnapshot;
-  /** Records the active route; also emits a route_view analytics event. */
+  /**
+   * Records the active route; also emits a route_view analytics event, which
+   * like track() requires both the master switch and analytics.enabled.
+   */
   setRoute(route: string): void;
-  /** Records the active provider; also emits a provider_selected event. */
+  /**
+   * Records the active provider; also emits a provider_selected event, which
+   * like track() requires both the master switch and analytics.enabled.
+   */
   setProviderId(providerId: string): void;
   addBreadcrumb(message: string, data?: Record<string, unknown>): void;
   /** Contextual error capture: envelope, metric, fingerprint insight, alert. */
@@ -291,6 +297,9 @@ export function createTelemetry(options: TelemetryOptions = {}): TelemetryFacade
       route = nextRoute;
       if (!isFlagEnabled('telemetry.enabled')) return;
       errorTracker.addBreadcrumb('Route changed', { route: nextRoute });
+      // route_view is a registered analytics event: like track(), it leaves
+      // only when the analytics opt-in is on as well as the master switch.
+      if (!isFlagEnabled('analytics.enabled')) return;
       transport.enqueue({
         type: 'event',
         traceparent: sessionTraceparent,
@@ -302,6 +311,9 @@ export function createTelemetry(options: TelemetryOptions = {}): TelemetryFacade
       providerId = nextProviderId;
       if (!isFlagEnabled('telemetry.enabled')) return;
       errorTracker.addBreadcrumb('Provider selected', { providerId: nextProviderId });
+      // provider_selected is a registered analytics event: same two-switch
+      // gate as track().
+      if (!isFlagEnabled('analytics.enabled')) return;
       transport.enqueue({
         type: 'event',
         traceparent: sessionTraceparent,

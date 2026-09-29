@@ -147,7 +147,8 @@ export const RUNTIME_PATTERNS = [
 
 /**
  * Repository-relative layout that would mean a server runtime was added.
- * Matched against every tracked-style path the collector finds.
+ * Matched against every collected path: src/ sources, workflows, shell
+ * files, and the root-level probe from collectLayoutPaths.
  */
 export const FORBIDDEN_LAYOUT = [
   { id: 'server-entry', pattern: /^server\.(?:cjs|mjs|js|ts)$/, reason: 'a server entrypoint' },
@@ -218,8 +219,8 @@ export function checkClientBoundary({ dependencies, sources, workflows, shellFil
   // stale and would silently license the next addition.
   const sourcesByPath = new Map(sources.map((source) => [source.path, source.text]));
   for (const [allowlistPath, ids] of [
-    ...Object.entries(ALLOWED_EGRESS).map(([path, ids]) => [path, ids, EGRESS_PATTERNS]),
-    ...Object.entries(ALLOWED_STORAGE).map(([path, ids]) => [path, ids, STORAGE_PATTERNS]),
+    ...Object.entries(ALLOWED_EGRESS),
+    ...Object.entries(ALLOWED_STORAGE),
   ]) {
     const text = sourcesByPath.get(allowlistPath);
     if (text === undefined) {
@@ -297,14 +298,55 @@ function collectWorkflows(repositoryRoot) {
 
 function collectShellFiles(repositoryRoot) {
   const files = [];
-  const publicDirectory = resolve(repositoryRoot, 'public');
-  if (existsSync(publicDirectory)) {
-    for (const entry of readdirSync(publicDirectory, { withFileTypes: true })) {
-      if (entry.isFile()) files.push(join('public', entry.name));
+  const visit = (directory, prefix) => {
+    if (!existsSync(directory)) return;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        visit(join(directory, entry.name), `${prefix}${entry.name}/`);
+      } else if (entry.isFile()) {
+        files.push(`${prefix}${entry.name}`);
+      }
     }
-  }
+  };
+  visit(resolve(repositoryRoot, 'public'), 'public/');
   return ['index.html', ...files].filter((path) => /\.(?:html|svg)$/.test(path));
 }
+
+/**
+ * Root-level probes for the FORBIDDEN_LAYOUT rules. The source, workflow,
+ * and shell collectors only visit src/, .github/workflows/, and public/, so
+ * without this walk a root-level `server.ts`, `api/` directory, or hosted
+ * functions directory would never reach a layout rule. Only the root itself
+ * and the directories the rules name are walked; `^src/...` layout rules are
+ * already exercised by collectSources.
+ */
+const LAYOUT_PROBE_DIRECTORIES = new Set(['api', 'pages', 'netlify', 'supabase', 'firebase']);
+
+export function collectLayoutPaths(repositoryRoot) {
+  const paths = [];
+  const visit = (directory, prefix) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = `${prefix}${entry.name}`;
+      if (entry.isDirectory()) {
+        paths.push(`${path}/`);
+        visit(join(directory, entry.name), `${path}/`);
+      } else if (entry.isFile()) {
+        paths.push(path);
+      }
+    }
+  };
+  for (const entry of readdirSync(repositoryRoot, { withFileTypes: true })) {
+    if (entry.isFile()) {
+      paths.push(entry.name);
+    } else if (entry.isDirectory() && LAYOUT_PROBE_DIRECTORIES.has(entry.name)) {
+      paths.push(`${entry.name}/`);
+      visit(join(repositoryRoot, entry.name), `${entry.name}/`);
+    }
+  }
+  return paths.sort();
+}
+
+export { collectShellFiles };
 
 function run() {
   const repositoryRoot = process.cwd();
@@ -321,12 +363,14 @@ function run() {
     existsSync(resolve(repositoryRoot, path)),
   );
 
+  const layoutPaths = collectLayoutPaths(repositoryRoot);
+
   const violations = checkClientBoundary({
     dependencies,
     sources: sourcePaths.map((path) => ({ path, text: read(path) })),
     workflows: workflowPaths.map((path) => ({ path, text: read(path) })),
     shellFiles: shellPaths.map((path) => ({ path, text: read(path) })),
-    paths: [...sourcePaths, ...workflowPaths, ...shellPaths],
+    paths: [...sourcePaths, ...workflowPaths, ...shellPaths, ...layoutPaths],
   });
 
   if (violations.length === 0) {

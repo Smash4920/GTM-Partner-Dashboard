@@ -232,8 +232,8 @@ export default function DataConnectionsView({
                 Send a notification
               </p>
               <p className="mt-1 text-xs text-granite">
-                One person, their authorized channels. Pick a teammate in the notification node, or
-                a registration from the alert queue below.
+                One person, the channels they receive on. Pick a teammate in the notification node,
+                or a registration from the alert queue below.
               </p>
               <div className="mt-4">
                 <NotificationComposer

@@ -62,11 +62,16 @@ export default tseslint.config(
           pattern: ['**/*.{test,spec}.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
         },
         {
-          // Feature-flag registry, governance, and evaluation. These modules
-          // sit inside the domain element but carry a stricter contract,
-          // enforced by the flag-module policy below.
+          // Feature-flag registry, governance, and evaluation — including the
+          // operational telemetry registry. These modules sit inside the
+          // domain element but carry a stricter contract, enforced by the
+          // flag-module policy below.
           category: 'flag-module',
-          pattern: ['src/lib/featureFlags.ts', 'src/lib/flagGovernance.ts'],
+          pattern: [
+            'src/lib/featureFlags.ts',
+            'src/lib/flagGovernance.ts',
+            'src/lib/telemetry/flags.ts',
+          ],
         },
       ],
       'boundaries/elements-single-match': true,

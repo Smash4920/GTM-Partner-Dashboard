@@ -71,10 +71,22 @@ const REQUIRED_TEXT_FIELDS: readonly {
   { field: 'removalCondition', problem: 'missing removal condition' },
 ];
 
+/**
+ * ISO 8601 calendar date, or UTC date-time. Date-only and `Z`-suffixed forms
+ * only: an offset-less time would parse in the local timezone, which is
+ * non-deterministic across machines, and `Date.parse` alone accepts non-ISO
+ * prose ('December 31, 2026') and rolls impossible days ('2026-02-30') into
+ * the next month — both must fail the 'not an ISO 8601 date' check.
+ */
+const ISO_8601_DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z)?$/;
+
 function parseIsoDate(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
+  if (value === undefined || !ISO_8601_DATE.test(value)) return undefined;
   const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? undefined : parsed;
+  if (Number.isNaN(parsed)) return undefined;
+  // Reject impossible calendar days that Date.parse silently rolls over.
+  if (new Date(parsed).toISOString().slice(0, 10) !== value.slice(0, 10)) return undefined;
+  return parsed;
 }
 
 /**

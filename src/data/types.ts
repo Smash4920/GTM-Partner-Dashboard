@@ -329,8 +329,10 @@ export interface RoadmapItem {
   /** State of the client-only demo portion. Never a production claim. */
   demo: RoadmapDemoStatus;
   /**
-   * What is usable in the demo today, stated when the demo portion is partial so
-   * a `Demo: WIP` row is unambiguous about the landed half.
+   * What is usable in the demo today. Stated on a `Demo: WIP` row so the
+   * landed half is unambiguous, and on a `Demo: Pending` row when the reader
+   * needs the simulation caveat (for example, that the partner picker is an
+   * untrusted presentation selector, not authorization).
    */
   demoScope?: string;
   /** Present when a production continuation is intentionally paused. */

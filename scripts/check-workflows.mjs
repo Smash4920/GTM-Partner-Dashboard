@@ -46,9 +46,12 @@ const SHA_REFERENCE = /^[0-9a-f]{40}$/;
 const FORBIDDEN_TRIGGERS = ['pull_request_target', 'workflow_run'];
 const TRUSTED_ONLY_TRIGGERS = new Set(['schedule', 'workflow_dispatch']);
 const ZAP_THRESHOLDS = new Set(['IGNORE', 'WARN', 'FAIL', 'INFO', 'OFF']);
+// `\b` after the condition would never fire for `:`, the shell no-op builtin,
+// because a non-word character followed by `;` or whitespace has no word
+// boundary — so `while :; do` must be matched with a lookahead instead.
 const UNBOUNDED_LOOP_PATTERNS = [
-  /\bwhile\s+(true|:)\b/,
-  /\buntil\s+(true|:)\b/,
+  /\bwhile\s+(?:true|:)(?=\s|;|$)/,
+  /\buntil\s+(?:true|:)(?=\s|;|$)/,
   /\bfor\s*\(\(\s*;\s*;\s*\)\)/,
 ];
 
@@ -132,7 +135,7 @@ export const ALLOWED_JOB_WRITES = [
     job: 'sync-sentry-errors',
     permission: 'issues',
     reason:
-      'The sync creates GitHub issues from unresolved Sentry errors; triggers are limited to the weekly schedule and manual dispatch.',
+      'The sync creates GitHub issues from unresolved Sentry errors; triggers are limited to the hourly schedule and manual dispatch.',
   },
   {
     workflow: 'release-please.yml',

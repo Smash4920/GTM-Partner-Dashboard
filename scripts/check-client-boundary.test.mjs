@@ -1,7 +1,31 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { ALLOWED_EGRESS, ALLOWED_STORAGE, checkClientBoundary } from './check-client-boundary.mjs';
+import {
+  ALLOWED_EGRESS,
+  ALLOWED_STORAGE,
+  checkClientBoundary,
+  collectLayoutPaths,
+  collectShellFiles,
+} from './check-client-boundary.mjs';
+
+/** A throwaway repository root for the filesystem collectors. */
+function withTempRoot(structure, run) {
+  const root = mkdtempSync(join(tmpdir(), 'client-boundary-'));
+  try {
+    for (const [path, text] of Object.entries(structure)) {
+      const absolute = join(root, path);
+      mkdirSync(join(absolute, '..'), { recursive: true });
+      writeFileSync(absolute, text);
+    }
+    return run(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
 
 /**
  * Every allowed-module inventory entry must keep matching the real source, so
@@ -228,6 +252,63 @@ describe('checkClientBoundary workflow, shell, and layout rules', () => {
     assert.deepEqual(
       violations.map((violation) => violation.id),
       ['server-entry', 'api-directory', 'src-server', 'functions-directory'],
+    );
+  });
+
+  it('collects root-level layout paths so the root rules can fire in a live run', () => {
+    // The src/workflow/shell collectors never visit the repository root, so
+    // without this probe server.ts or api/ would pass unnoticed.
+    withTempRoot(
+      {
+        'package.json': '{}',
+        'server.ts': 'app.listen(8080);',
+        'api/partners.ts': 'export {};',
+        'pages/api/checkout.ts': 'export {};',
+        'netlify/functions/sync.ts': 'export {};',
+        'docs/notes.md': '# not probed',
+      },
+      (root) => {
+        const paths = collectLayoutPaths(root);
+        assert.ok(paths.includes('server.ts'));
+        assert.ok(paths.includes('api/'));
+        assert.ok(paths.includes('api/partners.ts'));
+        assert.ok(paths.includes('pages/api/'));
+        assert.ok(paths.includes('pages/api/checkout.ts'));
+        assert.ok(paths.includes('netlify/functions/'));
+        // Unrelated directories stay out of the probe.
+        assert.ok(!paths.some((path) => path.startsWith('docs/')));
+
+        // Directory and contained-file paths each match their rule, so assert
+        // on the set of violated rule ids rather than the raw list.
+        const violations = scan({ paths });
+        assert.deepEqual([...new Set(violations.map((violation) => violation.id))].sort(), [
+          'api-directory',
+          'functions-directory',
+          'pages-api',
+          'server-entry',
+        ]);
+      },
+    );
+  });
+
+  it('collects shell files from public/ subdirectories, not just the top level', () => {
+    withTempRoot(
+      {
+        'index.html': '<html></html>',
+        'public/favicon.svg': '<svg></svg>',
+        'public/assets/logo.svg': '<svg></svg>',
+        'public/assets/nested/deep.svg': '<svg></svg>',
+        'public/assets/readme.txt': 'not a shell asset',
+      },
+      (root) => {
+        // Sort: readdirSync order is filesystem-dependent.
+        assert.deepEqual(collectShellFiles(root).sort(), [
+          'index.html',
+          'public/assets/logo.svg',
+          'public/assets/nested/deep.svg',
+          'public/favicon.svg',
+        ]);
+      },
     );
   });
 });

@@ -72,6 +72,22 @@ describe('product flag registry lifecycle policy', () => {
     ]);
   });
 
+  it('rejects dates Date.parse accepts but ISO 8601 does not', () => {
+    // Prose and slash forms parse fine in V8 but are not ISO 8601; an
+    // impossible day rolls over silently. All must fail the date check.
+    for (const bad of ['December 31, 2026', '2026/12/31', '2026-02-30']) {
+      expect(auditDraft({ ...validLifecycle(), expiresAt: bad })).toEqual([
+        expect.objectContaining({ field: 'expiresAt' }),
+      ]);
+    }
+    // Offset-less times parse in the local timezone, so they are rejected as
+    // non-deterministic; the UTC form is the accepted timestamp.
+    expect(auditDraft({ ...validLifecycle(), reviewDate: '2026-12-31T00:00:00' })).toEqual([
+      expect.objectContaining({ field: 'reviewDate' }),
+    ]);
+    expect(auditDraft({ ...validLifecycle(), reviewDate: '2026-12-31T00:00:00.000Z' })).toEqual([]);
+  });
+
   it('rejects an expired flag at the governance date', () => {
     const violations = auditDraft({
       ...validLifecycle(),
