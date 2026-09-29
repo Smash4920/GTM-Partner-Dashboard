@@ -15,9 +15,6 @@ function tracker(
   const alerts: AlertInput[] = [];
   const metrics = new MetricsRegistry();
   const defaults = {
-    release: '9f2c1ab',
-    environment: 'production',
-    userAgent: 'jsdom/test',
     getContext: () => ({ route: 'forecasting', providerId: 'remote' }),
     metrics,
     onEnvelope: (data: Record<string, unknown>, traceparent?: string) => {
@@ -69,7 +66,7 @@ describe('fingerprintError', () => {
 });
 
 describe('createErrorTracker capture', () => {
-  it('sends one critical envelope with full context, and raises an alert keyed by fingerprint', () => {
+  it('sends one critical envelope with the technical classification only, and alerts by fingerprint', () => {
     const { client, envelopes, alerts } = tracker();
     const failure = new TypeError('Cannot read properties of undefined');
 
@@ -83,22 +80,26 @@ describe('createErrorTracker capture', () => {
     expect(envelopes[0]?.traceparent).toBe(
       '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
     );
-    expect(envelopes[0]?.data).toMatchObject({
+    // The envelope is the exact registered shape (VAL-SEC-004): class,
+    // fingerprint, category, severity, route, provider — and nothing else.
+    // The raw message, stack, breadcrumbs, and user agent never leave.
+    expect(envelopes[0]?.data).toEqual({
       name: 'TypeError',
-      message: 'Cannot read properties of undefined',
       fingerprint: record.fingerprint,
       category: 'render',
       severity: 'critical',
-      release: '9f2c1ab',
       route: 'forecasting',
       providerId: 'remote',
-      userAgent: 'jsdom/test',
     });
+    expect(JSON.stringify(envelopes[0]?.data)).not.toContain('Cannot read properties of undefined');
     expect(alerts[0]).toMatchObject({
       key: `error:${record.fingerprint}`,
       severity: 'critical',
-      title: 'TypeError: Cannot read properties of undefined',
+      title: 'TypeError in render',
     });
+    // The alert text carries no raw error prose either.
+    expect(alerts[0]?.summary).not.toContain('Cannot read properties of undefined');
+    expect(alerts[0]?.summary).toContain(record.fingerprint);
   });
 
   it('normalizes things that were thrown without being Errors', () => {
@@ -106,10 +107,10 @@ describe('createErrorTracker capture', () => {
 
     client.capture('registration queue desynced');
 
-    expect(envelopes[0]?.data).toMatchObject({
-      name: 'Error',
-      message: 'registration queue desynced',
-    });
+    expect(envelopes[0]?.data).toMatchObject({ name: 'Error' });
+    expect(envelopes[0]?.data).not.toHaveProperty('message');
+    // The message survives in the local insight, never in the envelope.
+    expect(client.insights()[0]?.message).toBe('registration queue desynced');
     expect(alerts[0]?.severity).toBe('warning');
   });
 
@@ -118,10 +119,8 @@ describe('createErrorTracker capture', () => {
 
     client.capture({ weird: true });
 
-    expect(envelopes[0]?.data).toMatchObject({
-      name: 'object',
-      message: '[object Object]',
-    });
+    expect(envelopes[0]?.data).toMatchObject({ name: 'object' });
+    expect(envelopes[0]?.data).not.toHaveProperty('message');
   });
 
   it('exposes the breadcrumb ring for inspection, newest last', () => {
@@ -160,18 +159,19 @@ describe('createErrorTracker capture', () => {
     expect(insight?.firstSeenAt).toBeLessThanOrEqual(insight?.lastSeenAt ?? 0);
   });
 
-  it('attaches the breadcrumb trail that led to the capture', () => {
+  it('keeps the breadcrumb trail local: captured for insights, never on the envelope', () => {
     const { client, envelopes } = tracker();
 
     client.addBreadcrumb('Route changed', { route: 'forecasting' });
     client.addBreadcrumb('provider.getForecastSummary failed');
     client.capture(new Error('widget render failed'));
 
-    const trail = envelopes[0]?.data.breadcrumbs as Breadcrumb[];
+    const trail = client.breadcrumbs();
     expect(trail.map((crumb: Breadcrumb) => crumb.message)).toEqual([
       'Route changed',
       'provider.getForecastSummary failed',
     ]);
+    expect(envelopes[0]?.data).not.toHaveProperty('breadcrumbs');
   });
 
   it('keeps only the most recent breadcrumbs', () => {
@@ -182,8 +182,9 @@ describe('createErrorTracker capture', () => {
     client.addBreadcrumb('third');
     client.capture(new Error('boom'));
 
-    const trail = envelopes[0]?.data.breadcrumbs as Breadcrumb[];
+    const trail = client.breadcrumbs();
     expect(trail.map((crumb: Breadcrumb) => crumb.message)).toEqual(['second', 'third']);
+    expect(envelopes[0]?.data).not.toHaveProperty('breadcrumbs');
   });
 
   it('counts errors inside a trailing window and drops the old ones', () => {

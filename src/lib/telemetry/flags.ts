@@ -60,14 +60,15 @@ export const FLAG_DEFINITIONS = {
     },
   },
   // Route views, provider swaps, and manager edits; counts and identifiers
-  // only, never user prose.
+  // only, never user prose. Off by default pending privacy approval, and
+  // emits only while the telemetry master switch is also on.
   'analytics.enabled': {
     lifecycle: {
       owner: 'GTM platform',
       purpose: 'Emit allowlisted product analytics events.',
       environments: ALL_ENVIRONMENTS,
-      safeDefault: true,
-      rolloutTrigger: 'Keep on while events stay allowlisted.',
+      safeDefault: false,
+      rolloutTrigger: 'On only after privacy approval, with telemetry on.',
       rollbackTrigger: 'Off on a privacy finding or new event field.',
       reviewDate: '2026-12-29',
       expiresAt: '2027-03-29',

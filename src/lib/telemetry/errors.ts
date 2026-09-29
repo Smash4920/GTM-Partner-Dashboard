@@ -8,14 +8,17 @@ import type { MetricsRegistry } from './metrics';
  * `capture` is what an error boundary or a failing provider call reports
  * through. A captured error is (1) fingerprinted by name plus normalized
  * stack shape, so the same defect thrown from 30 sessions is one row and not
- * 30; (2) recorded as a metric and as a critical envelope carrying the
- * release, route, provider, breadcrumbs, and the trace context it happened
- * under; and (3) raised to the alert layer under its fingerprint.
+ * 30; (2) recorded as a metric and as a critical envelope carrying only the
+ * technical classification — error class, fingerprint, category, severity,
+ * route, provider — never the raw message, stack, cause, or breadcrumbs,
+ * which are arbitrary prose that must not leave the browser; and (3) raised
+ * to the alert layer under its fingerprint.
  *
  * `insights()` is the other end of that pipeline: per-fingerprint counts,
- * first/last seen, and severity, sorted by how often the defect fired — what
- * an engineer reads to decide what to fix first, and what the health check
- * reads to report a session in trouble.
+ * first/last seen, messages, and severity, sorted by how often the defect
+ * fired. Insights are local-only debugging state — they are read by the
+ * health check and an engineer with the page open, and the transport
+ * allowlist keeps their free-text fields out of anything queued.
  */
 
 export interface Breadcrumb {
@@ -30,8 +33,6 @@ export interface ErrorCaptureOptions {
   category?: string;
   /** Span context the error happened under, if any. */
   traceparent?: string;
-  /** Extra fields for the envelope, scrubbed by the transport. */
-  context?: Record<string, unknown>;
 }
 
 export interface ErrorInsight {
@@ -52,10 +53,6 @@ export interface ErrorRecord {
 }
 
 export interface ErrorTrackerOptions {
-  release: string;
-  environment: string;
-  /** Where the error context came from, when the browser can tell us. */
-  userAgent?: string | null;
   /** Reads current app context so each capture carries where it happened. */
   getContext: () => { route: string | null; providerId: string | null };
   metrics: MetricsRegistry;
@@ -131,9 +128,6 @@ function normalizeError(error: unknown): { name: string; message: string; stack?
 
 export function createErrorTracker(options: ErrorTrackerOptions): ErrorTracker {
   const {
-    release,
-    environment,
-    userAgent,
     getContext,
     metrics,
     onEnvelope,
@@ -205,20 +199,19 @@ export function createErrorTracker(options: ErrorTrackerOptions): ErrorTracker {
         severity,
       });
 
+      // The envelope is a stable classification, not the thrown prose: class
+      // name, fingerprint, category, severity, and where the session was. The
+      // message, stack, and breadcrumbs stay in the local insight/breadcrumb
+      // state; the transport allowlist enforces the same shape at the
+      // boundary, so this object and the allowlist must agree.
       onEnvelope(
         {
           name: normalized.name,
-          message: normalized.message,
-          ...(normalized.stack !== undefined ? { stack: normalized.stack } : {}),
           fingerprint,
           category,
           severity,
-          release,
-          environment,
           route,
           providerId,
-          userAgent: userAgent ?? undefined,
-          breadcrumbs: [...breadcrumbRing],
         },
         captureOptions.traceparent,
       );
@@ -226,8 +219,8 @@ export function createErrorTracker(options: ErrorTrackerOptions): ErrorTracker {
       raiseAlert({
         key: `error:${fingerprint}`,
         severity,
-        title: `${normalized.name}: ${truncate(normalized.message, 120)}`,
-        summary: truncate(normalized.message, 300),
+        title: `${normalized.name} in ${category}`,
+        summary: `Error fingerprint ${fingerprint}; session count ${insight.count}.`,
         detail: {
           fingerprint,
           category,
@@ -283,8 +276,4 @@ function severityRank(severity: AlertSeverity): number {
     default:
       return 1;
   }
-}
-
-function truncate(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 }

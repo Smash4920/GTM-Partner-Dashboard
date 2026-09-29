@@ -71,7 +71,9 @@ describe('flag resolution order', () => {
   it('uses the documented defaults when nothing overrides them', () => {
     expect(isFlagEnabled('telemetry.enabled', envWith())).toBe(true);
     expect(isFlagEnabled('telemetry.logShipping', envWith())).toBe(false);
-    expect(isFlagEnabled('analytics.enabled', envWith())).toBe(true);
+    // Analytics is independently opt-in and defaults off pending privacy
+    // approval (VAL-SEC-002): telemetry being on never turns analytics on.
+    expect(isFlagEnabled('analytics.enabled', envWith())).toBe(false);
   });
 
   it('lets the build environment flip a default', () => {
@@ -140,19 +142,19 @@ describe('invalid configuration', () => {
 
 describe('flagSnapshot', () => {
   it('reports every flag with its resolution source', () => {
-    setFlagOverride('analytics.enabled', false);
+    setFlagOverride('analytics.enabled', true);
 
     const snapshot = flagSnapshot(envWith({ VITE_FLAG_TELEMETRY_LOG_SHIPPING: 'true' }));
 
     expect(snapshot).toEqual([
       { key: 'telemetry.enabled', enabled: true, source: 'default' },
       { key: 'telemetry.logShipping', enabled: true, source: 'env' },
-      { key: 'analytics.enabled', enabled: false, source: 'override' },
+      { key: 'analytics.enabled', enabled: true, source: 'override' },
     ]);
   });
 
   it('clears every override at once', () => {
-    setFlagOverride('analytics.enabled', false);
+    setFlagOverride('analytics.enabled', true);
     setFlagOverride('telemetry.enabled', false);
     clearFlagOverrides();
 

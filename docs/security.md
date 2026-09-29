@@ -13,19 +13,20 @@ and they will carry over as the data layer moves to production volume.
 
 ## Control matrix
 
-| Control                 | Where                                     | Enforced by                                            |
-| ----------------------- | ----------------------------------------- | ------------------------------------------------------ |
-| Secret scanning         | `security.yml` job `secret-scan`          | gitleaks over full history, weekly + per change        |
-| Secret hygiene          | `.gitignore`                              | `.env*` ignored, `.env.example` stays trackable        |
-| Code ownership          | `.github/CODEOWNERS`                      | @Smash4920 owns every path; no gaps                    |
-| Dependency updates      | `.github/dependabot.yml`, `renovate.json` | Actions + devcontainers by Dependabot, npm by Renovate |
-| Minimum release age     | `renovate.json`, `.github/dependabot.yml` | 7 days general, 14 days for npm majors                 |
-| Dependency audit        | `security.yml` job `dependency-audit`     | `npm audit`, fails on high or above                    |
-| Dynamic scanning (DAST) | `security.yml` job `dast`                 | OWASP ZAP baseline vs `vite preview`, reviewed rules   |
-| Workflow policy         | `scripts/check-workflows.mjs`             | `npm run workflows:check`, locally and in CI           |
-| Issue intake            | `.github/ISSUE_TEMPLATE/*`                | Structured forms, no blank issues                      |
-| Label taxonomy          | `.github/labels.yml`                      | priority / type / area; strict sync job                |
-| Pull-request discipline | `.github/pull_request_template.md`        | Description, contract, testing, risk, rollback         |
+| Control                 | Where                                     | Enforced by                                                                |
+| ----------------------- | ----------------------------------------- | -------------------------------------------------------------------------- |
+| Secret scanning         | `security.yml` job `secret-scan`          | gitleaks over full history, weekly + per change                            |
+| Secret hygiene          | `.gitignore`                              | `.env*` ignored, `.env.example` stays trackable                            |
+| Code ownership          | `.github/CODEOWNERS`                      | @Smash4920 owns every path; no gaps                                        |
+| Dependency updates      | `.github/dependabot.yml`, `renovate.json` | Actions + devcontainers by Dependabot, npm by Renovate                     |
+| Minimum release age     | `renovate.json`, `.github/dependabot.yml` | 7 days general, 14 days for npm majors                                     |
+| Dependency audit        | `security.yml` job `dependency-audit`     | `npm audit`, fails on high or above                                        |
+| Dynamic scanning (DAST) | `security.yml` job `dast`                 | OWASP ZAP baseline vs `vite preview`, reviewed rules                       |
+| Workflow policy         | `scripts/check-workflows.mjs`             | `npm run workflows:check`, locally and in CI                               |
+| Telemetry egress        | `src/lib/telemetry/`, `vite.config.ts`    | Allowlists + endpoint policy in code, unit/e2e suites, `bundle:check` scan |
+| Issue intake            | `.github/ISSUE_TEMPLATE/*`                | Structured forms, no blank issues                                          |
+| Label taxonomy          | `.github/labels.yml`                      | priority / type / area; strict sync job                                    |
+| Pull-request discipline | `.github/pull_request_template.md`        | Description, contract, testing, risk, rollback                             |
 
 ## Controls in detail
 
@@ -125,6 +126,40 @@ Pages). A new WARN means the artifact changed: reproduce locally with
 `npm run preview`, fix it, or add a justified rule entry in the same pull
 request. `allow_issue_writing: false` keeps the report out of the issue
 tracker; the artifact and the job log carry it.
+
+### Telemetry egress privacy
+
+The client is the trust boundary for observability data, so egress is
+governed in code and pinned by tests rather than by deployment convention:
+
+- **Master switch.** `telemetry.enabled` is enforced at the single transport
+  boundary (`src/lib/telemetry/transport.ts`): off means zero requests,
+  beacons, analytics script loads, or lifecycle flushes, while in-process
+  health, metrics, and error insights keep working.
+- **Analytics is opt-in twice.** Product analytics additionally requires
+  `analytics.enabled`, which defaults off pending privacy approval; both
+  switches must be on before the analytics script installs or any event
+  leaves.
+- **Registered fields only.** Every envelope type has a checked-in field
+  allowlist (`src/lib/telemetry/allowlist.ts`) enforced before queueing, with
+  redaction (`src/lib/redact.ts`) as a second pass. Names, free-form prose,
+  raw exception messages and stacks, records, secrets, and query-bearing
+  URLs are dropped — error envelopes carry class, fingerprint, category,
+  severity, route, and provider, and nothing else.
+- **Destination policy.** Production telemetry endpoints must be HTTPS URLs
+  on hosts in the checked-in `APPROVED_TELEMETRY_HOSTS` list — intentionally
+  empty today, so production telemetry is local-only until a destination is
+  approved in a reviewed change. Credentials, query strings, and non-default
+  ports are rejected; invalid configuration fails closed with the problem
+  surfaced on the health artifact. Plain HTTP is accepted only for loopback
+  development collectors, and that exception is compiled out of production
+  bundles.
+- **No browser webhooks.** Alert dispatch is in-process (registered handlers,
+  health checks, error insights). The `VITE_ALERT_ENDPOINT` webhook transport
+  was removed; a static policy scan fails the build if it reappears.
+- **No public source maps.** Production builds emit no `.map` files and no
+  `sourceMappingURL` comments, and the same policy scan verifies the
+  artifact.
 
 ### Workflow hardening
 

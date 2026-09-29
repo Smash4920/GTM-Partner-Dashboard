@@ -466,24 +466,36 @@ flags must never replace authorization or data-access controls. See
 
 The client includes opt-in, privacy-safe telemetry. With no telemetry
 variables configured, records remain in-process and no network request is made.
+Egress is governed by two switches: the `telemetry.enabled` master switch
+controls every request, beacon, and script load, and product analytics
+additionally requires `analytics.enabled`, which defaults off pending privacy
+approval. Every envelope passes a registered per-type field allowlist before
+it can be queued, so names, free-form prose, raw exception text, records, and
+secrets cannot leave the browser. Production collector endpoints must be
+HTTPS on a host in the checked-in `APPROVED_TELEMETRY_HOSTS` list (currently
+empty, so production telemetry stays local-only until a host is approved in a
+reviewed change); invalid configuration fails closed to local-only. There is
+no browser webhook delivery: alerts dispatch to in-app handlers only, and
+production builds emit no source maps.
+
 Production builds may set these Vite variables:
 
 - `VITE_TELEMETRY_ENDPOINT` — collector URL for batched logs, metrics, events,
-  traces, errors, alerts, and health envelopes.
-- `VITE_ALERT_ENDPOINT` — optional alert webhook for degraded health and
-  repeated errors.
+  traces, errors, alerts, and health envelopes. Subject to the HTTPS and
+  approved-host policy above.
 - `VITE_TELEMETRY_DASHBOARD_URL` — operator dashboard link stamped on batches
   and used by the deployment runbook.
 - `VITE_RELEASE` — git SHA or release tag; Vercel's commit SHA is the fallback.
 - `VITE_GA_MEASUREMENT_ID` — optional GA4 measurement ID for product events.
+  Inert unless both telemetry and analytics switches are on.
 - `VITE_FLAG_TELEMETRY_ENABLED` and `VITE_FLAG_ANALYTICS_ENABLED` — explicit
   build-time feature switches.
 
 The app exposes a live readiness artifact at `window.GTM_HEALTH`. Run
 `await window.GTM_HEALTH.refresh()` in the deployed page to check the shell,
 network, flags, telemetry delivery, recent errors, and the real data-provider
-seam. Production source maps are emitted so an error collector can resolve
-minified stack frames back to the stamped release.
+seam. Production builds ship no public source maps: a published map would
+expose the full original source to anyone who downloads the bundle.
 
 #### Error to insight pipeline
 
@@ -497,9 +509,11 @@ prevents an initial backlog from flooding the issue tracker.
 
 Configure the repository before enabling the schedule:
 
-1. Send the telemetry collector's `error` envelopes to a Sentry project. Keep
-   the release, environment, fingerprint, breadcrumbs, route, provider, and
-   trace context fields so each GitHub issue leads to useful diagnostic data.
+1. Send the telemetry collector's `error` envelopes to a Sentry project. The
+   envelopes carry the technical classification only — error class,
+   fingerprint, category, severity, route, provider, and trace context — with
+   release and environment stamped at the batch level. Raw messages, stacks,
+   and breadcrumbs never leave the browser.
 2. Add repository variables `SENTRY_ORG` and `SENTRY_PROJECT` with that
    project's organization and project slugs.
 3. Add `SENTRY_AUTH_TOKEN` as a repository secret. Use a dedicated,

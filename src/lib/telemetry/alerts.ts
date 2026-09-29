@@ -8,12 +8,17 @@ import { randomHex } from './config';
  *
  * An alert is raised by key (`error:<fingerprint>`, `telemetry.transport_failed`,
  * `health.degraded`), deduplicated with a per-key cooldown, and then delivered
- * three ways: to every registered in-app handler (what a support surface or
- * test subscribes to), to the configured webhook endpoint when one exists
- * (`VITE_ALERT_ENDPOINT` — the pager side of a static deploy), and to the
- * telemetry collector as a critical envelope. Suppressed repeats are counted,
- * so the next alert that does fire says how long the condition has been going
- * on rather than pretending it just started.
+ * exactly two ways: to every registered in-app handler (what a support
+ * surface or test subscribes to) and, through the facade's `onAlert` hook, to
+ * the telemetry collector as a critical envelope. Suppressed repeats are
+ * counted, so the next alert that does fire says how long the condition has
+ * been going on rather than pretending it just started.
+ *
+ * There is deliberately no direct browser delivery to an external endpoint:
+ * a webhook URL baked into a public static bundle is an unprotected,
+ * unauthenticated destination anyone can read and spam. Operational alerting
+ * leaves through the trusted collector/server path instead, which remains
+ * production-only work.
  */
 
 export type AlertSeverity = 'info' | 'warning' | 'critical';
@@ -43,10 +48,8 @@ export interface AlertDispatcherOptions {
   release: string;
   environment: string;
   sessionId: string;
-  alertEndpoint?: string | null;
   /** Where the dispatcher hands every raised alert: the facade logs and enqueues here. */
   onAlert?: (alert: Alert) => void;
-  fetchImpl?: typeof fetch;
   now?: () => number;
   /** Default cooldown per key. */
   cooldownMs?: number;
@@ -71,7 +74,6 @@ export function createAlertDispatcher(options: AlertDispatcherOptions): AlertDis
     release,
     environment,
     sessionId,
-    alertEndpoint = null,
     onAlert,
     now = Date.now,
     cooldownMs = DEFAULT_COOLDOWN_MS,
@@ -80,29 +82,9 @@ export function createAlertDispatcher(options: AlertDispatcherOptions): AlertDis
   const log: Logger = logger.child({ component: 'AlertDispatcher' });
   const handlers = new Set<AlertHandler>();
   const cooldowns = new Map<string, CooldownState>();
-  const postToWebhook: typeof fetch =
-    options.fetchImpl ??
-    (async (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
 
   const cooldownFor = (severity: AlertSeverity): number =>
     severityCooldowns[severity] ?? cooldownMs;
-
-  function deliverWebhook(alert: Alert): void {
-    if (!alertEndpoint) return;
-    // Fire-and-forget by design: alert delivery must never block the code that
-    // raised the alert, and a webhook that is down gets one warn, not a loop.
-    postToWebhook(alertEndpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      keepalive: true,
-      body: JSON.stringify(redactRecord({ ...alert })),
-    }).catch((error: unknown) => {
-      log.warn('Alert webhook delivery failed', {
-        alertKey: alert.key,
-        reason: error instanceof Error ? error.message : String(error),
-      });
-    });
-  }
 
   return {
     raise(input: AlertInput): Alert | null {
@@ -127,15 +109,13 @@ export function createAlertDispatcher(options: AlertDispatcherOptions): AlertDis
       for (const handler of handlers) {
         try {
           handler(alert);
-        } catch (error) {
-          // A handler that throws must not take the others down with it.
-          log.warn('Alert handler failed', {
-            alertKey: alert.key,
-            reason: error instanceof Error ? error.message : String(error),
-          });
+        } catch {
+          // A handler that throws must not take the others down with it. The
+          // raw error stays off the record on purpose: handler failures are a
+          // code bug, and exception prose never belongs in a log record.
+          log.warn('Alert handler failed', { alertKey: alert.key });
         }
       }
-      deliverWebhook(alert);
       onAlert?.(alert);
       return alert;
     },

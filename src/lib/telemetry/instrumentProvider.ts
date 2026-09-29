@@ -91,7 +91,6 @@ async function instrumentedCall(
       category: 'provider',
       severity: 'warning',
       traceparent: span.traceparent,
-      context: { method, providerId },
     });
     throw error;
   }

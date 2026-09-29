@@ -9,7 +9,6 @@ import type { TelemetryBatch, TelemetryEnvelope } from './transport';
 
 const CONFIG: TelemetryConfig = {
   endpoint: 'https://collector.test/ingest',
-  alertEndpoint: null,
   dashboardUrl: null,
   analyticsMeasurementId: null,
   logShipLevel: 'warn',
@@ -70,6 +69,12 @@ beforeEach(() => {
 afterEach(() => {
   clearFlagOverrides();
   for (const client of clients.splice(0)) client.dispose();
+  // Undo any analytics script install so one test's gtag cannot leak into
+  // the next test's window.
+  document.head.querySelectorAll('script[data-test-ga]').forEach((script) => script.remove());
+  document.head.querySelectorAll('script[src*="googletagmanager"]').forEach((s) => s.remove());
+  delete window.gtag;
+  delete window.dataLayer;
 });
 
 describe('createTelemetry context', () => {
@@ -114,6 +119,7 @@ describe('createTelemetry context', () => {
 
 describe('product analytics events', () => {
   it('emits route views and provider swaps as event envelopes', async () => {
+    setFlagOverride('analytics.enabled', true);
     const { client, envelopes } = harness();
 
     client.setRoute('forecasting');
@@ -128,14 +134,51 @@ describe('product analytics events', () => {
     ]);
   });
 
-  it('suppresses tracked events while the analytics flag is off', async () => {
-    const { client, envelopes } = harness();
-    setFlagOverride('analytics.enabled', false);
+  it('ships analytics only when both the master switch and analytics are on (VAL-SEC-002)', async () => {
+    const cases = [
+      { master: false, analytics: false, expectScript: false, expectEvent: false },
+      { master: false, analytics: true, expectScript: false, expectEvent: false },
+      { master: true, analytics: false, expectScript: false, expectEvent: false },
+      { master: true, analytics: true, expectScript: true, expectEvent: true },
+    ];
 
-    client.track('partner_added', { partnerId: 'prospect-1' });
+    for (const { master, analytics, expectScript, expectEvent } of cases) {
+      setFlagOverride('telemetry.enabled', master);
+      setFlagOverride('analytics.enabled', analytics);
+      const { client, envelopes } = harness(
+        {},
+        { ...CONFIG, analyticsMeasurementId: 'G-TEST1234' },
+      );
+
+      client.track('provider_selected', { providerId: 'local' });
+      await client.flush();
+
+      expect(document.head.querySelector('script[src*="googletagmanager"]') !== null).toBe(
+        expectScript,
+      );
+      expect(envelopes().some((envelope) => envelope.type === 'event')).toBe(expectEvent);
+
+      // Reset window state before the next combination installs fresh.
+      client.dispose();
+      clients.splice(clients.indexOf(client), 1);
+      document.head.querySelectorAll('script[src*="googletagmanager"]').forEach((s) => s.remove());
+      delete window.gtag;
+      delete window.dataLayer;
+    }
+  });
+
+  it('drops properties that are not registered for the event', async () => {
+    setFlagOverride('analytics.enabled', true);
+    const { client, envelopes } = harness();
+
+    client.track('notification_sent', {
+      kind: 'registration-approved',
+      body: 'Dana Example wrote: call Dana about the renewal',
+    });
     await client.flush();
 
-    expect(envelopes()).toEqual([]);
+    const event = envelopes().find((envelope) => envelope.type === 'event');
+    expect(event?.data.properties).toEqual({ kind: 'registration-approved' });
   });
 });
 
@@ -148,15 +191,22 @@ describe('error capture and alerting', () => {
     await client.flush();
 
     expect(envelopes().map((envelope) => envelope.type)).toEqual(['error', 'alert']);
-    expect(envelopes()[0]?.data).toMatchObject({
+    // The error envelope is the exact technical shape (VAL-SEC-004): class,
+    // fingerprint, category, severity — the raw message 'CRM is down'
+    // appears nowhere it could leave the browser.
+    expect(envelopes()[0]?.data).toEqual({
       name: 'Error',
-      message: 'CRM is down',
+      fingerprint: expect.any(String),
       category: 'provider',
+      severity: 'warning',
     });
+    expect(JSON.stringify(envelopes())).not.toContain('CRM is down');
     expect(envelopes()[1]?.data).toMatchObject({
       key: expect.stringMatching(/^error:/),
       severity: 'warning',
     });
+    expect(envelopes()[1]?.data).not.toHaveProperty('title');
+    expect(envelopes()[1]?.data).not.toHaveProperty('summary');
   });
 
   it('raises one alert per capture, deduped by fingerprint cooldown', async () => {
@@ -175,26 +225,32 @@ describe('error capture and alerting', () => {
     expect(client.transportStatus().queued).toBe(0);
     expect(client.errorInsights()).toHaveLength(1);
     expect(client.recentErrorCount(60_000)).toBe(2);
-    // The breadcrumb the caller left rides along on the error envelope.
+    // The breadcrumb the caller left stays local: it feeds error insights
+    // in-process but is not a registered envelope field.
     const errorEnvelope = envelopes().find((envelope) => envelope.type === 'error');
-    expect(errorEnvelope?.data.breadcrumbs).toEqual([
-      { at: expect.any(Number), message: 'Route changed', data: { route: 'data-connections' } },
-    ]);
+    expect(errorEnvelope?.data).not.toHaveProperty('breadcrumbs');
+    expect(errorEnvelope?.data).not.toHaveProperty('message');
   });
 
-  it('reports a failing collector as its own alert condition', async () => {
+  it('reports a failing collector as its own alert condition, without raw failure prose', async () => {
     const fetchImpl = (async () => {
       throw new Error('connection refused');
     }) as unknown as typeof fetch;
     const client = createTelemetry({ config: CONFIG, fetchImpl });
     clients.push(client);
-    const alerts: string[] = [];
-    client.registerAlertHandler((alert) => alerts.push(alert.key));
+    const alerts: Array<{ key: string; summary: string }> = [];
+    client.registerAlertHandler((alert) => alerts.push({ key: alert.key, summary: alert.summary }));
 
-    client.track('route_view', { route: 'home' });
+    client.setRoute('home');
     await client.flush();
 
-    expect(alerts).toContain('telemetry.transport_failed');
+    expect(alerts.map((alert) => alert.key)).toContain('telemetry.transport_failed');
+    // The failure alert classifies, it does not quote: the raw exception
+    // prose stays on the transport status (local) and the log, never in an
+    // alert or an envelope.
+    expect(alerts.find((alert) => alert.key === 'telemetry.transport_failed')?.summary).toBe(
+      'Collector unreachable: network-level failure.',
+    );
     expect(client.transportStatus()).toMatchObject({
       enabled: true,
       failedBatches: 1,
@@ -226,7 +282,7 @@ describe('traces and metrics', () => {
     const { client, envelopes } = harness();
 
     const span = client.startSpan('provider.listPartners', { providerId: 'local' });
-    span.setAttribute('attempt', 2);
+    span.setAttribute('operation', 'refresh');
     // Ending without a status means success, the same convention every span
     // library uses.
     span.end();
@@ -236,7 +292,8 @@ describe('traces and metrics', () => {
     expect(traceEnvelope?.data).toMatchObject({
       name: 'provider.listPartners',
       status: 'ok',
-      attributes: { providerId: 'local', attempt: 2 },
+      // Only registered attribute keys ship: an arbitrary key would be dropped.
+      attributes: { providerId: 'local', operation: 'refresh' },
       parentSpanId: parseTraceparent(client.contextSnapshot().traceparent)?.parentSpanId,
     });
     expect(traceEnvelope?.traceparent).toContain(
@@ -330,7 +387,7 @@ describe('health reporting', () => {
 });
 
 describe('log shipping', () => {
-  it('ships warn-and-above records, redacted, when the log shipping flag is on', async () => {
+  it('ships only the registered record fields when the log shipping flag is on', async () => {
     const { client, envelopes } = harness();
     setFlagOverride('telemetry.logShipping', true);
     const local: unknown[] = [];
@@ -341,13 +398,15 @@ describe('log shipping', () => {
     await client.flush();
 
     const logEnvelope = envelopes().find((envelope) => envelope.type === 'log');
-    expect(logEnvelope?.data).toMatchObject({
+    // `email` is not a registered log field: it is dropped before the record
+    // reaches the queue, not merely masked on the wire.
+    expect(logEnvelope?.data).toEqual({
+      time: expect.any(String),
       level: 'warn',
       msg: 'Invite failed',
-      email: '[redacted]',
     });
-    // The console sink still sees the original record: redaction is for the
-    // boundary, and a developer debugging locally needs the real value.
+    // The console sink still sees the original record: the boundary is for
+    // egress, and a developer debugging locally needs the real value.
     expect(local[0]).toMatchObject({ email: 'dana@corp.example' });
   });
 
@@ -375,10 +434,11 @@ describe('log shipping', () => {
 
 describe('no-endpoint mode', () => {
   it('records in-process only: every envelope is dropped, and status says why', async () => {
-    const { client, fetchCalls } = harness({}, { ...CONFIG, endpoint: null, alertEndpoint: null });
+    const { client, fetchCalls } = harness({}, { ...CONFIG, endpoint: null });
     const alerts: string[] = [];
     client.registerAlertHandler((alert) => alerts.push(alert.key));
 
+    setFlagOverride('analytics.enabled', true);
     client.setRoute('home');
     client.track('route_view', { route: 'home' });
     client.captureError(new Error('still captured in-process'));
@@ -395,5 +455,121 @@ describe('no-endpoint mode', () => {
     });
     expect(client.errorInsights()).toHaveLength(1);
     expect(alerts).toHaveLength(1);
+  });
+});
+
+describe('master telemetry switch (VAL-SEC-001)', () => {
+  it('off means zero network effects from every facade path, with local state intact', async () => {
+    setFlagOverride('telemetry.enabled', false);
+    setFlagOverride('analytics.enabled', true);
+    setFlagOverride('telemetry.logShipping', true);
+    const { client, fetchCalls } = harness({}, { ...CONFIG, analyticsMeasurementId: 'G-TEST1234' });
+    const alerts: string[] = [];
+    client.registerAlertHandler((alert) => alerts.push(alert.key));
+
+    client.setRoute('home');
+    client.setProviderId('local');
+    client.track('route_view', { route: 'home' });
+    client.captureError(new TypeError('still captured locally'), { category: 'render' });
+    client.reportHealth(healthyArtifact);
+    const span = client.startSpan('provider.listPartners', { providerId: 'local' });
+    span.end();
+    createLogger({ sink: () => {} }).error('ships nowhere', { email: 'dana@corp.example' });
+    await client.flush();
+
+    // Zero requests — and no analytics script install, because the master
+    // switch was off before the client was created.
+    expect(fetchCalls()).toBe(0);
+    expect(document.head.querySelector('script[src*="googletagmanager"]')).toBeNull();
+    expect(window.gtag).toBeUndefined();
+
+    // Everything the facade was asked to record was counted as dropped by
+    // the egress boundary, not sent.
+    expect(client.transportStatus().dropped).toBeGreaterThan(0);
+
+    // Local in-process behavior is untouched by the switch.
+    expect(client.errorInsights()).toHaveLength(1);
+    expect(client.recentErrorCount(60_000)).toBe(1);
+    expect(alerts).toEqual([`error:${client.errorInsights()[0]?.fingerprint}`]);
+  });
+
+  it('re-enabling later only affects what happens after the switch', async () => {
+    setFlagOverride('telemetry.enabled', false);
+    const { client, envelopes, fetchCalls } = harness();
+
+    client.setRoute('home');
+    await client.flush();
+    expect(fetchCalls()).toBe(0);
+
+    setFlagOverride('telemetry.enabled', true);
+    client.setRoute('forecasting');
+    await client.flush();
+
+    expect(envelopes().map((envelope) => envelope.data.event)).toEqual(['route_view']);
+    expect(envelopes()[0]?.data.properties).toEqual({ route: 'forecasting' });
+  });
+});
+
+describe('nothing sensitive leaves the browser (VAL-SEC-004)', () => {
+  // Representative adversarial values: a personal name, an email address, a
+  // domain record name, a live-shaped secret, user prose, raw error prose,
+  // and a query-bearing URL. Each is offered to a different telemetry path.
+  const SENTINELS = [
+    'Dana Example',
+    'dana@corp.example',
+    'Acme Rocket Partners',
+    'sk-live-777',
+    'call Dana about the renewal',
+    '?token=secret',
+  ];
+
+  it('no sentinel survives into any shipped batch from any facade path', async () => {
+    setFlagOverride('analytics.enabled', true);
+    setFlagOverride('telemetry.logShipping', true);
+    const { client, batches, envelopes } = harness();
+    const log = createLogger({ sink: () => {} });
+
+    client.setRoute('home');
+    client.track('notification_sent', {
+      kind: 'registration-approved',
+      body: 'Dana Example wrote: call Dana about the renewal',
+    });
+    client.captureError(new TypeError('Acme Rocket Partners sync failed for dana@corp.example'), {
+      category: 'provider',
+    });
+    client.raiseAlert({
+      key: 'sla.registration.lapsed',
+      severity: 'critical',
+      title: 'Dana Example breached the SLA',
+      summary: 'call Dana about the renewal',
+      detail: { reason: 'sk-live-777', endpoint: 'https://collector.test/ingest?token=secret' },
+    });
+    client.reportHealth({
+      ...healthyArtifact,
+      status: 'degraded',
+      checks: [
+        { name: 'dataSeam', status: 'unavailable', detail: 'Acme Rocket Partners timed out' },
+      ],
+    });
+    log.error('Sync failed', {
+      error: new Error('dana@corp.example'),
+      email: 'dana@corp.example',
+      note: 'call Dana about the renewal',
+    });
+    await client.flush();
+
+    // The test is only meaningful if every path actually shipped. Error
+    // capture increments the error.captured counter, so the flush also
+    // drains a metric envelope.
+    const shippedTypes = new Set(envelopes().map((envelope) => envelope.type));
+    expect(shippedTypes).toEqual(new Set(['event', 'error', 'alert', 'health', 'log', 'metric']));
+
+    const wire = JSON.stringify(batches());
+    for (const sentinel of SENTINELS) {
+      expect(wire).not.toContain(sentinel);
+    }
+    // Not even redacted echoes of the address or the secret may appear.
+    expect(wire).not.toContain('corp.example');
+    expect(wire).not.toContain('sk-');
   });
 });

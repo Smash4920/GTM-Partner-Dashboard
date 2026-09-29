@@ -1,5 +1,6 @@
 import { addGlobalSink, LEVEL_WEIGHT, logger } from '../logging';
 import type { HealthArtifact } from '../health';
+import { allowlistEventProperties, type AnalyticsEventName } from './allowlist';
 import { readTelemetryConfig, createSessionId, randomHex, type TelemetryConfig } from './config';
 import { isFlagEnabled } from './flags';
 import {
@@ -32,32 +33,23 @@ import {
  * carries one. The context is a random per-page-load session id, the active
  * route and provider, the release, and the build mode — enough to correlate
  * signals, none of it a person. Product events carry identifiers and counts,
- * never user prose, matching the logging rules. Anything that does reach the
- * transport is redacted field-by-field (src/lib/redact.ts), so a slipped-in
- * email or token is masked before it can leave the browser.
+ * never user prose, matching the logging rules. The transport enforces the
+ * per-envelope field allowlists (src/lib/telemetry/allowlist.ts) before
+ * anything is queued and redacts field-by-field (src/lib/redact.ts) as a
+ * second pass, so names, prose, records, secrets, and raw error text can
+ * never leave the browser.
  *
  * Local behavior is unchanged by default: with no `VITE_TELEMETRY_ENDPOINT`
  * there is no network traffic at all, and every in-process consumer (health
- * checks, error insights, alert handlers, metric snapshots) still works.
+ * checks, error insights, alert handlers, metric snapshots) still works. The
+ * `telemetry.enabled` master switch is enforced at the transport boundary —
+ * off means zero requests, beacons, script loads, or lifecycle flushes — and
+ * product analytics additionally requires `analytics.enabled`, which
+ * defaults off pending privacy approval.
  */
 
 const SERVICE_NAME = 'gtm-partner-dashboard';
 const GA_SEND_PAGE_VIEW_OPTION = 'send_page_view';
-
-/**
- * Product analytics events, as a closed union: an event name exists because
- * the product decided to measure it, and a typo is a compile error rather
- * than a silently unmeasured funnel.
- */
-type AnalyticsEventName =
-  | 'route_view'
-  | 'provider_selected'
-  | 'forecast_revenue_edited'
-  | 'forecast_call_changed'
-  | 'meeting_classifications_committed'
-  | 'partner_added'
-  | 'team_user_invited'
-  | 'notification_sent';
 
 interface TelemetryContextSnapshot {
   release: string;
@@ -98,7 +90,11 @@ export interface TelemetryFacade {
    * trace envelope carrying the `traceparent` a server would receive.
    */
   startSpan(name: string, attributes?: SpanAttributes): Span;
-  /** Emits a product analytics event, gated by the analytics.enabled flag. */
+  /**
+   * Emits a product analytics event. Requires both the telemetry master
+   * switch and the analytics.enabled opt-in (off by default); properties are
+   * filtered to the event's registered allowlist before they leave.
+   */
   track(event: AnalyticsEventName, properties?: Record<string, unknown>): void;
   /** Ships a health artifact, and alerts on anything short of 'ok'. */
   reportHealth(artifact: HealthArtifact): void;
@@ -112,10 +108,6 @@ export interface TelemetryFacade {
   flush(): Promise<void>;
   /** Detaches from the process; for tests and teardown, not the running app. */
   dispose(): void;
-}
-
-function truncateSummary(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 }
 
 function installGa4(measurementId: string): void {
@@ -141,7 +133,17 @@ export function createTelemetry(options: TelemetryOptions = {}): TelemetryFacade
   const sessionId = createSessionId();
   const log = logger.child({ component: 'Telemetry' });
 
-  if (config.analyticsMeasurementId) installGa4(config.analyticsMeasurementId);
+  // The analytics script installs only when the session starts with both
+  // switches on. The check runs once here rather than per event: a runtime
+  // override must never be able to pull a third-party script into a session
+  // that began with analytics off (fail closed, VAL-SEC-001/002).
+  if (
+    config.analyticsMeasurementId &&
+    isFlagEnabled('telemetry.enabled') &&
+    isFlagEnabled('analytics.enabled')
+  ) {
+    installGa4(config.analyticsMeasurementId);
+  }
 
   let route: string | null = null;
   let providerId: string | null = null;
@@ -179,6 +181,10 @@ export function createTelemetry(options: TelemetryOptions = {}): TelemetryFacade
   const transport = createTransport({
     endpoint: config.endpoint,
     sampleRate: config.sampleRate,
+    // The master switch, enforced at the single egress boundary: off means
+    // nothing queues, schedules, flushes, or sends — whatever the rest of
+    // the facade was asked to record.
+    isEgressAllowed: () => isFlagEnabled('telemetry.enabled'),
     getMeta: () => ({
       service: SERVICE_NAME,
       release: config.release,
@@ -209,13 +215,19 @@ export function createTelemetry(options: TelemetryOptions = {}): TelemetryFacade
         });
       }
     },
-    onDeliveryFailure: (reason) => {
+    onDeliveryFailure: (failure) => {
       alertDispatcher.raise({
         key: 'telemetry.transport_failed',
         severity: 'warning',
         title: 'Telemetry delivery is failing',
-        summary: truncateSummary(`Collector batches are failing: ${reason}`, 200),
-        detail: { reason, endpoint: config.endpoint },
+        summary:
+          failure.kind === 'http'
+            ? `Collector responded with HTTP ${failure.status}.`
+            : 'Collector unreachable: network-level failure.',
+        detail:
+          failure.kind === 'http'
+            ? { failureKind: 'http', status: failure.status }
+            : { failureKind: 'network' },
       });
     },
   });
@@ -224,8 +236,6 @@ export function createTelemetry(options: TelemetryOptions = {}): TelemetryFacade
     release: config.release,
     environment: config.environment,
     sessionId,
-    alertEndpoint: config.alertEndpoint,
-    fetchImpl: options.fetchImpl,
     now,
     onAlert: (alert) => {
       log.warn('Alert raised', {
@@ -242,9 +252,6 @@ export function createTelemetry(options: TelemetryOptions = {}): TelemetryFacade
   });
 
   const errorTracker = createErrorTracker({
-    release: config.release,
-    environment: config.environment,
-    userAgent: typeof navigator === 'undefined' ? null : navigator.userAgent,
     getContext: () => ({ route, providerId }),
     metrics,
     onEnvelope: (data, traceparent) => {
@@ -342,14 +349,19 @@ export function createTelemetry(options: TelemetryOptions = {}): TelemetryFacade
     },
 
     track(event: AnalyticsEventName, properties?: Record<string, unknown>) {
-      if (!isFlagEnabled('analytics.enabled')) return;
+      // Analytics is independently opt-in: both the master switch and the
+      // analytics switch must be on, and only the event's registered
+      // properties leave — here for the analytics bridge, and again at the
+      // transport boundary for the envelope.
+      if (!isFlagEnabled('telemetry.enabled') || !isFlagEnabled('analytics.enabled')) return;
+      const safeProperties = allowlistEventProperties(event, properties ?? {}) ?? {};
       if (config.analyticsMeasurementId && typeof window !== 'undefined' && window.gtag) {
-        window.gtag('event', event, properties ?? {});
+        window.gtag('event', event, safeProperties);
       }
       transport.enqueue({
         type: 'event',
         traceparent: sessionTraceparent,
-        data: { event, properties: properties ?? {} },
+        data: { event, properties: safeProperties },
       });
     },
 

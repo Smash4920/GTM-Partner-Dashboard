@@ -184,7 +184,6 @@ describe('instrumentProvider against the real facade', () => {
     const real = createTelemetry({
       config: {
         endpoint: 'https://collector.test/ingest',
-        alertEndpoint: null,
         dashboardUrl: null,
         analyticsMeasurementId: null,
         logShipLevel: 'warn',

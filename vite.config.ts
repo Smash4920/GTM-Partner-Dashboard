@@ -60,9 +60,12 @@ export default defineConfig({
     },
   },
   build: {
-    // Production source maps let the configured error collector resolve
-    // minified stack frames back to the exact release and source location.
-    sourcemap: true,
+    // No public source maps in production: a published .map hands anyone the
+    // full original source and pairs with stack traces to expose internals.
+    // This app ships nothing to an error collector, so maps would exist only
+    // as an information leak. The bundle policy scan (check-telemetry-policy)
+    // fails the build if a .map file or sourceMappingURL ever reappears.
+    sourcemap: false,
     rollupOptions: {
       output: {
         // Recharts and its d3/victory deps form ~2/3 of the bundle. Split them
