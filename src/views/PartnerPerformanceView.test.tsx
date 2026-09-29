@@ -307,12 +307,15 @@ describe('PartnerPerformanceView', () => {
       screen.getByRole('heading', { name: 'Pipeline opportunities · FY' }),
     ).toBeInTheDocument();
 
-    // Q4 has a deal but no target row, so attainment reads 0%, not a ratio.
+    // Q4 has a deal but no target row, so attainment reads 0% and coverage
+    // reports the missing target honestly rather than as "Target met".
     await user.click(screen.getByRole('button', { name: 'Q4' }));
 
     expect(screen.getByText('Won (FY27 Q4)')).toBeInTheDocument();
     expect(screen.getByText('0% of Q4 target')).toBeInTheDocument();
-    expect(screen.getByText('Target met')).toBeInTheDocument();
+    expect(screen.getByText('No target')).toBeInTheDocument();
+    expect(screen.getByText('No sourced target set')).toBeInTheDocument();
+    expect(screen.queryByText('Target met')).not.toBeInTheDocument();
 
     // Q1 closed before the snapshot with nothing in it at all.
     await user.click(screen.getByRole('button', { name: 'Q1' }));
@@ -326,22 +329,25 @@ describe('PartnerPerformanceView', () => {
   describe('attainment guards', () => {
     // Regression shape: the app has shipped an unguarded division that reached
     // Intl.NumberFormat as Infinity and printed "∞% of goal" to a partner.
-    it('reads a missing target row as no goal', () => {
+    it('reads a missing target row as no target, never as target met', () => {
       renderView(makeDashboardData({ targets: [] }));
 
       expect(screen.getByText('0% of Q3 target')).toBeInTheDocument();
-      expect(screen.getByText('Target met')).toBeInTheDocument();
-      expect(screen.getByText('Sourced target achieved')).toBeInTheDocument();
+      expect(screen.getByText('No target')).toBeInTheDocument();
+      expect(screen.getByText('No sourced target set')).toBeInTheDocument();
+      expect(screen.queryByText('Target met')).not.toBeInTheDocument();
       // With no win a year earlier there is no prior period to measure against.
       expect(screen.queryByText(/vs prior period/)).not.toBeInTheDocument();
       expect(screen.queryByText(/∞/)).not.toBeInTheDocument();
       expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
     });
 
-    it('reads a zero-value target as no goal', () => {
+    it('reads a zero-value target as no target', () => {
       renderView(makeDashboardData({ targets: [makeTarget({ revenueTarget: 0 })] }));
 
       expect(screen.getByText('0% of Q3 target')).toBeInTheDocument();
+      expect(screen.getByText('No target')).toBeInTheDocument();
+      expect(screen.queryByText('Target met')).not.toBeInTheDocument();
       expect(screen.queryByText(/∞/)).not.toBeInTheDocument();
       expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
     });
@@ -415,8 +421,8 @@ describe('PartnerPerformanceView', () => {
 
     expect(screen.getByText('Scope · whole org · 0 partners')).toBeInTheDocument();
     expect(screen.getByText('0% of Q3 target')).toBeInTheDocument();
-    expect(screen.getByText('Target met')).toBeInTheDocument();
-    expect(screen.getByText('Sourced target achieved')).toBeInTheDocument();
+    expect(screen.getByText('No target')).toBeInTheDocument();
+    expect(screen.getByText('No sourced target set')).toBeInTheDocument();
     expect(screen.getByText('No Q3 opportunities for this scope.')).toBeInTheDocument();
     expect(screen.getByText('Nothing here — the queue is clear.')).toBeInTheDocument();
     expect(

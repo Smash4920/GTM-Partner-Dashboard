@@ -194,9 +194,11 @@ export default function ForecastingView({
           label="Pipeline coverage to goal"
           value={formatCoverage(summary.coverage)}
           sub={
-            summary.remainingQuota > 0
+            summary.coverage.kind === 'coverage'
               ? `${formatUsdCompact(summary.remainingQuota)} goal remaining`
-              : 'Goal achieved'
+              : summary.coverage.kind === 'target-met'
+                ? 'Goal achieved'
+                : 'No goal set'
           }
         />
         <KpiTile

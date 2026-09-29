@@ -23,6 +23,28 @@ describe('fiscalQuarterOfDate', () => {
     // January belongs to the previous fiscal year's Q4.
     expect(fiscalQuarterOfDate('2026-01-15T00:00:00Z')).toBe('FY26-Q4');
   });
+
+  it('turns the fiscal year over on February 1, not January 1', () => {
+    expect(fiscalQuarterOfDate('2026-01-31T23:59:59Z')).toBe('FY26-Q4');
+    expect(fiscalQuarterOfDate('2026-02-01T00:00:00Z')).toBe('FY27-Q1');
+    const q1 = quarterWindow('FY27-Q1');
+    expect(q1.start.toISOString()).toBe('2026-02-01T00:00:00.000Z');
+    expect(q1.end.toISOString()).toBe('2026-05-01T00:00:00.000Z');
+    // And the fiscal year wraps the calendar one: Q4 ends the next February.
+    const q4 = quarterWindow('FY27-Q4');
+    expect(q4.start.toISOString()).toBe('2026-11-01T00:00:00.000Z');
+    expect(q4.end.toISOString()).toBe('2027-02-01T00:00:00.000Z');
+  });
+
+  it('reads the same instant identically however the writer’s timezone spells it', () => {
+    // 2026-07-31T19:00:00-07:00 is 2026-08-01T02:00:00Z — FY27-Q3 either way.
+    expect(fiscalQuarterOfDate('2026-07-31T19:00:00-07:00')).toBe('FY27-Q3');
+    expect(fiscalQuarterOfDate('2026-08-01T02:00:00+00:00')).toBe('FY27-Q3');
+    // Business-day counts see UTC calendar days, not local ones.
+    expect(businessDaysBetween('2026-09-14T09:00:00+02:00', '2026-09-18T17:00:00-04:00')).toBe(
+      businessDaysBetween('2026-09-14T07:00:00Z', '2026-09-18T21:00:00Z'),
+    );
+  });
 });
 
 describe('quarterWindow', () => {

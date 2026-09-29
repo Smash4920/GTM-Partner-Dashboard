@@ -33,7 +33,7 @@ import {
   avgOpenDealSize,
   closedWonForPhase,
   closedWonPriorYearForPhase,
-  coverageRatio,
+  coverageState,
   duplicateRegistrationGroups,
   exclusivityLapsed,
   filterByPhase,
@@ -185,7 +185,7 @@ export default function PartnerPerformanceView({
   const wonDelta = priorWon > 0 ? won / priorWon - 1 : null;
   const target = targetForPhase(scopedTargets, phase);
   const attainment = target > 0 ? won / target : 0;
-  const coverage = coverageRatio(phaseOpps, scopedTargets, phase);
+  const coverage = coverageState(phaseOpps, scopedTargets, phase);
   const remaining = remainingQuota(phaseOpps, scopedTargets, phase);
   const phaseLabel = FISCAL_PHASE_META[phase].label;
   const outcomeScope = phase === 'fy' ? `${FISCAL_YEAR} to date` : `${FISCAL_YEAR} ${phaseLabel}`;
@@ -271,30 +271,32 @@ export default function PartnerPerformanceView({
   const conversionRows: MetricBarRow[] = [
     {
       label: 'Submitted → Approved',
-      value: scopedTimes.submittedToApproved ?? 0,
-      displayValue: fmtDays(scopedTimes.submittedToApproved),
-      secondary: 'vs 5-business-day SLA',
+      value: scopedTimes.submittedToApprovedBusinessDays ?? 0,
+      displayValue: fmtDays(scopedTimes.submittedToApprovedBusinessDays),
+      // The approval hop is measured in the SLA's own unit, so the bar reads
+      // directly against the response SLA.
+      secondary: `avg business days · ${REGISTRATION_SLA_BUSINESS_DAYS}-business-day SLA`,
       color: '#7e7b78',
     },
     {
       label: 'Approved → Opportunity',
-      value: scopedTimes.approvedToOpportunity ?? 0,
-      displayValue: fmtDays(scopedTimes.approvedToOpportunity),
-      secondary: 'converted registrations',
+      value: scopedTimes.approvedToOpportunityCalendarDays ?? 0,
+      displayValue: fmtDays(scopedTimes.approvedToOpportunityCalendarDays),
+      secondary: 'avg elapsed calendar days · converted registrations',
       color: '#9a9693',
     },
     {
       label: 'Opportunity → Win',
-      value: scopedTimes.opportunityToWin ?? 0,
-      displayValue: fmtDays(scopedTimes.opportunityToWin),
-      secondary: 'converted & won',
+      value: scopedTimes.opportunityToWinCalendarDays ?? 0,
+      displayValue: fmtDays(scopedTimes.opportunityToWinCalendarDays),
+      secondary: 'avg elapsed calendar days · converted & won',
       color: '#a0ca92',
     },
     {
       label: 'Submitted → Win',
-      value: scopedTimes.submittedToWin ?? 0,
-      displayValue: fmtDays(scopedTimes.submittedToWin),
-      secondary: 'converted & won',
+      value: scopedTimes.submittedToWinCalendarDays ?? 0,
+      displayValue: fmtDays(scopedTimes.submittedToWinCalendarDays),
+      secondary: 'avg elapsed calendar days · converted & won',
       color: '#b8b3b0',
     },
   ];
@@ -429,9 +431,11 @@ export default function PartnerPerformanceView({
           label="Pipeline coverage"
           value={formatCoverage(coverage)}
           sub={
-            remaining > 0
+            coverage.kind === 'coverage'
               ? `${formatUsdCompact(remaining)} sourced target remaining`
-              : 'Sourced target achieved'
+              : coverage.kind === 'target-met'
+                ? 'Sourced target achieved'
+                : 'No sourced target set'
           }
         />
         <KpiTile

@@ -1,4 +1,5 @@
 import type { SessionEdits } from './sessionEdits';
+import type { CoverageState } from '../lib/metrics';
 import type { TraceContext } from '../lib/tracing';
 import type {
   ActivityMeeting,
@@ -117,8 +118,14 @@ export interface ForecastSummary {
   openCount: number;
   closedWon: number;
   target: number;
-  /** Null when the target is already met; coverage of a zero gap is not a ratio. */
-  coverage: number | null;
+  /**
+   * Pipeline coverage of the remaining target, as a three-way state:
+   * `no-target` when the scope carries no committed target, `target-met` once
+   * closed-won has reached it, otherwise the numeric ratio. A missing target
+   * is never "target met", and coverage of a zero remaining gap is never a
+   * ratio.
+   */
+  coverage: CoverageState;
   remainingQuota: number;
   avgOpenDealSize: number;
   attainment: number;

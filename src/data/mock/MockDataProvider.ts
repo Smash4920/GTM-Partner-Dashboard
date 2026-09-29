@@ -12,13 +12,13 @@ import type {
   WeightedForecastSummary,
 } from '../DataProvider';
 import { applySessionEdits, NO_SESSION_EDITS } from '../sessionEdits';
-import type { Opportunity, ProviderBook } from '../types';
+import type { Opportunity, ProviderBook, Target } from '../types';
 import { SNAPSHOT_DATE } from '../constants';
 import {
   avgOpenDealSize,
   categoryStageMismatches,
   closedWonForPhase,
-  coverageRatio,
+  coverageState,
   daysLeftInQuarter,
   filterByPhase,
   openOpportunities,
@@ -47,9 +47,14 @@ import { generateDashboardData } from './generate';
  */
 export class MockDataProvider implements DataProvider {
   protected readonly data: ProviderBook;
+  /** Partner → owning partner manager, built once for scoping filters. */
+  private readonly managerByPartner: Map<string, string>;
 
   constructor(data: ProviderBook = generateDashboardData()) {
     this.data = data;
+    this.managerByPartner = new Map(
+      data.partners.map((partner) => [partner.id, partner.partnerManagerId]),
+    );
   }
 
   // ---- the shape being retired --------------------------------------------
@@ -101,22 +106,33 @@ export class MockDataProvider implements DataProvider {
     const phase = phaseForQuarter(scope.quarter);
     let inQuarter = filterByPhase(edited, phase);
     if (scope.partnerManagerId) {
-      const managerByPartner = new Map(
-        this.data.partners.map((partner) => [partner.id, partner.partnerManagerId]),
-      );
       inQuarter = inQuarter.filter(
-        (opp) => managerByPartner.get(opp.partnerId) === scope.partnerManagerId,
+        (opp) => this.managerByPartner.get(opp.partnerId) === scope.partnerManagerId,
       );
     }
     return { inQuarter, edited };
   }
 
+  /**
+   * The scope's target rows. A manager's quota, attainment, and coverage are
+   * measured against the targets committed to *their* partners only — folding
+   * the whole org's targets into a manager's summary would read a manager who
+   * hit their number as a fraction of everyone else's.
+   */
+  private scopedTargets(scope: ForecastScope): Target[] {
+    if (!scope.partnerManagerId) return this.data.targets;
+    return this.data.targets.filter(
+      (item) => this.managerByPartner.get(item.partnerId) === scope.partnerManagerId,
+    );
+  }
+
   async getForecastSummary(scope: ForecastScope): Promise<ForecastSummary> {
     const { inQuarter } = this.scopedBook(scope);
     const phase = phaseForQuarter(scope.quarter);
+    const targets = this.scopedTargets(scope);
     const open = openPipeline(inQuarter);
     const closedWon = closedWonForPhase(inQuarter, phase);
-    const target = targetsForPhase(this.data.targets, phase).reduce(
+    const target = targetsForPhase(targets, phase).reduce(
       (sum, item) => sum + item.revenueTarget,
       0,
     );
@@ -125,8 +141,8 @@ export class MockDataProvider implements DataProvider {
       openCount: open.count,
       closedWon,
       target,
-      coverage: coverageRatio(inQuarter, this.data.targets, phase),
-      remainingQuota: remainingQuota(inQuarter, this.data.targets, phase),
+      coverage: coverageState(inQuarter, targets, phase),
+      remainingQuota: remainingQuota(inQuarter, targets, phase),
       avgOpenDealSize: avgOpenDealSize(inQuarter),
       attainment: target > 0 ? closedWon / target : 0,
       daysLeftInQuarter: daysLeftInQuarter(scope.quarter),
@@ -174,14 +190,11 @@ export class MockDataProvider implements DataProvider {
   async getManagerForecastGroups(scope: ForecastScope): Promise<ManagerForecastGroup[]> {
     const { inQuarter } = this.scopedBook(scope);
     const phase = phaseForQuarter(scope.quarter);
-    const managerByPartner = new Map(
-      this.data.partners.map((partner) => [partner.id, partner.partnerManagerId]),
-    );
 
     // One pass to bucket, rather than a filter of the whole book per manager.
     const byManager = new Map<string, Opportunity[]>();
     for (const opp of inQuarter) {
-      const managerId = managerByPartner.get(opp.partnerId);
+      const managerId = this.managerByPartner.get(opp.partnerId);
       if (managerId === undefined) continue;
       const bucket = byManager.get(managerId);
       if (bucket) bucket.push(opp);

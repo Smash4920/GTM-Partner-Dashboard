@@ -49,7 +49,7 @@ export default function SlaAlertPanel({
           Rule · deal registrations
         </p>
         <p className="mt-2 max-w-3xl text-sm text-stone">
-          Warn the owner {REGISTRATION_SLA_WARNING_BUSINESS_DAYS} business day (24 hours) before the{' '}
+          Warn the owner {REGISTRATION_SLA_WARNING_BUSINESS_DAYS} business day before the{' '}
           {REGISTRATION_SLA_BUSINESS_DAYS}-business-day response SLA lapses, then again once it has.
           The owner is the partner&apos;s aligned partner manager; the deal desk catches anything
           unaligned, so a registration never goes unowned.
@@ -57,7 +57,7 @@ export default function SlaAlertPanel({
         <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] uppercase tracking-[0.06em]">
           <span className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-signal" />
-            <span className="text-signal">{approaching.length} at 24 hours</span>
+            <span className="text-signal">{approaching.length} due next business day</span>
           </span>
           <span className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-graphite" />
@@ -69,7 +69,7 @@ export default function SlaAlertPanel({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-          Alert queue · 24-hour warnings first, then most overdue
+          Alert queue · due-soon warnings first, then most overdue
         </p>
         <button
           type="button"
@@ -130,7 +130,11 @@ export default function SlaAlertPanel({
                 </td>
                 <td className="py-2.5 pr-3 text-right font-mono text-xs tabular-nums">
                   {alert.state === 'approaching' ? (
-                    <span className="text-signal">24h to SLA</span>
+                    <span className="text-signal">
+                      {alert.businessDaysRemaining === 1
+                        ? '1 business day to SLA'
+                        : `${alert.businessDaysRemaining} business days to SLA`}
+                    </span>
                   ) : (
                     <span className="text-signal">
                       {alert.businessDaysWaiting - REGISTRATION_SLA_BUSINESS_DAYS}d past

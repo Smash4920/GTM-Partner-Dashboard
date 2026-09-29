@@ -179,8 +179,9 @@ const OVERLAP_SOURCES = [9, 23, 38, 52, 67, 81, 96, 110, 125, 139, 154, 168];
 
 /**
  * How many still-pending registrations are re-dated into the SLA warning
- * window, one per partner, so the 24-hours-out alert rule has owners to reach.
- * Applied as a post-pass with no PRNG consumed (see seedSlaWarningWindow).
+ * window, one per partner, so the one-business-day-out alert rule has owners
+ * to reach. Applied as a post-pass with no PRNG consumed (see
+ * seedSlaWarningWindow).
  */
 const SLA_WARNING_ROWS = 3;
 
@@ -472,7 +473,7 @@ function generateRegistrations(partners: Partner[]): DealRegistration[] {
 }
 
 /**
- * Seed the 24-hours-out SLA warning.
+ * Seed the one-business-day-out SLA warning.
  *
  * The warning window is one business day wide, so which submissions sit in it
  * depends on the snapshot's weekday: a natural distribution can easily contain
@@ -788,10 +789,20 @@ function generateSnapshots(opportunities: Opportunity[]): PipelineSnapshot[] {
 
 function generateTargets(partners: Partner[]): Target[] {
   const targets: Target[] = [];
+  // The most recently onboarded partner has not committed a target for the
+  // upcoming quarter yet — future-quarter targets are agreed during planning,
+  // and their book is still ramping. This keeps the "no target" coverage
+  // state real demo data rather than a fixture trick. The skip is derived
+  // from the seeded join dates, so it is deterministic and consumes no PRNG.
+  const upcomingQuarter = FISCAL_QUARTERS[FISCAL_QUARTERS.length - 1];
+  const newest = partners.reduce((latest, partner) =>
+    new Date(partner.joinedAt).getTime() > new Date(latest.joinedAt).getTime() ? partner : latest,
+  );
   for (const partner of partners) {
     for (const quarter of FISCAL_QUARTERS) {
       const jitter = 0.85 + rand() * 0.3; // plus or minus 15%
       const base = TIER_TARGET_BASE[partner.tier] * jitter;
+      if (partner.id === newest.id && quarter === upcomingQuarter) continue;
       targets.push({
         partnerId: partner.id,
         quarter,

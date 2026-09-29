@@ -7,11 +7,7 @@ import {
   CONNECTION_METHOD_COVERAGE,
   CONNECTION_NODES,
 } from '../data/connections';
-import {
-  REGISTRATION_SLA_BUSINESS_DAYS,
-  REGISTRATION_SLA_WARNING_BUSINESS_DAYS,
-  SNAPSHOT_DATE,
-} from '../data/constants';
+import { REGISTRATION_SLA_BUSINESS_DAYS, SNAPSHOT_DATE } from '../data/constants';
 import type {
   DashboardData,
   DashboardNotification,
@@ -241,7 +237,7 @@ describe('DataConnectionsView', () => {
     expect(tile('SLA alerts due').getByText('3')).toBeInTheDocument();
     expect(
       tile('SLA alerts due').getByText(
-        `1 at ${REGISTRATION_SLA_WARNING_BUSINESS_DAYS * 24}h · 2 past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`,
+        `1 due next business day · 2 past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`,
       ),
     ).toBeInTheDocument();
   });
@@ -249,12 +245,12 @@ describe('DataConnectionsView', () => {
   it('lists the alert queue and surfaces the alert whose owner is missing', () => {
     setup();
 
-    expect(screen.getByText('1 at 24 hours')).toBeInTheDocument();
+    expect(screen.getByText('1 due next business day')).toBeInTheDocument();
     expect(screen.getByText('2 past the SLA')).toBeInTheDocument();
     expect(screen.getByText('2 with a resolvable owner')).toBeInTheDocument();
 
     // The 4-business-day-old registration still has a working day left.
-    expect(within(queueRow('Acme Freight')).getByText('24h to SLA')).toBeInTheDocument();
+    expect(within(queueRow('Acme Freight')).getByText('1 business day to SLA')).toBeInTheDocument();
     // Two business days past a 5-day SLA.
     expect(within(queueRow('Contoso Retail')).getByText('2d past')).toBeInTheDocument();
 
@@ -441,7 +437,7 @@ describe('DataConnectionsView', () => {
     expect(tile('SLA alerts due').getByText('0')).toBeInTheDocument();
     expect(
       tile('SLA alerts due').getByText(
-        `0 at ${REGISTRATION_SLA_WARNING_BUSINESS_DAYS * 24}h · 0 past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`,
+        `0 due next business day · 0 past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`,
       ),
     ).toBeInTheDocument();
     expect(screen.getByText('Nothing near the SLA — the queue is clear.')).toBeInTheDocument();

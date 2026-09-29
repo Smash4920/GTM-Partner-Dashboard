@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CURRENT_FISCAL_QUARTER, SNAPSHOT_DATE } from '../constants';
 import {
   categoryStageMismatches,
-  coverageRatio,
+  coverageState,
   daysLeftInQuarter,
   openOpportunities,
   openPipeline,
@@ -15,6 +15,7 @@ import {
 import { MockDataProvider } from './MockDataProvider';
 import { generateDashboardData } from './generate';
 import { NO_SESSION_EDITS } from '../sessionEdits';
+import { makeOpportunity, makePartner, makeProviderBook, makeTarget } from '../../test/fixtures';
 import type { Opportunity } from '../types';
 
 /**
@@ -53,7 +54,7 @@ describe('MockDataProvider scoped contract', () => {
     expect(summary.openCount).toBe(open.count);
     expect(summary.target).toBe(target);
     expect(summary.attainment).toBeCloseTo(target > 0 ? closedWon / target : 0, 10);
-    expect(summary.coverage).toBe(coverageRatio(inQuarter, book.targets, phase));
+    expect(summary.coverage).toEqual(coverageState(inQuarter, book.targets, phase));
     expect(summary.remainingQuota).toBe(remainingQuota(inQuarter, book.targets, phase));
     expect(summary.daysLeftInQuarter).toBe(daysLeftInQuarter(quarter));
     expect(summary.avgOpenDealSize).toBeGreaterThan(0);
@@ -175,6 +176,142 @@ describe('MockDataProvider scoped contract', () => {
     expect(directory).toEqual(
       book.partners.map((partner) => ({ id: partner.id, name: partner.name })),
     );
+  });
+});
+
+describe('manager-scoped targets (VAL-DATA-001)', () => {
+  /**
+   * Two disjoint managers, one partner each, with arithmetic small enough to
+   * verify by hand. pm-1 owns partner-1 (40k won, 120k open, 100k target);
+   * pm-2 owns partner-2 (150k won, 90k open, 300k target). All Q3.
+   */
+  const scopedBook = makeProviderBook({
+    partnerManagers: [
+      { id: 'pm-1', name: 'J. Alvarez' },
+      { id: 'pm-2', name: 'R. Diaz' },
+    ],
+    partners: [
+      makePartner({ id: 'partner-1', partnerManagerId: 'pm-1' }),
+      makePartner({ id: 'partner-2', partnerManagerId: 'pm-2' }),
+    ],
+    opportunities: [
+      makeOpportunity({
+        id: 'opp-w1',
+        partnerId: 'partner-1',
+        outcome: 'won',
+        forecastedRevenue: 40_000,
+        createdAt: '2026-08-01T00:00:00Z',
+        expectedCloseDate: '2026-08-10T00:00:00Z',
+        closedAt: '2026-08-10T00:00:00Z',
+      }),
+      makeOpportunity({
+        id: 'opp-o1',
+        partnerId: 'partner-1',
+        forecastedRevenue: 120_000,
+        createdAt: '2026-08-03T00:00:00Z',
+        expectedCloseDate: '2026-10-15T00:00:00Z',
+      }),
+      makeOpportunity({
+        id: 'opp-w2',
+        partnerId: 'partner-2',
+        outcome: 'won',
+        forecastedRevenue: 150_000,
+        createdAt: '2026-08-02T00:00:00Z',
+        expectedCloseDate: '2026-08-12T00:00:00Z',
+        closedAt: '2026-08-12T00:00:00Z',
+      }),
+      makeOpportunity({
+        id: 'opp-o2',
+        partnerId: 'partner-2',
+        forecastedRevenue: 90_000,
+        createdAt: '2026-08-04T00:00:00Z',
+        expectedCloseDate: '2026-09-30T00:00:00Z',
+      }),
+    ],
+    targets: [
+      makeTarget({ partnerId: 'partner-1', quarter, revenueTarget: 100_000 }),
+      makeTarget({ partnerId: 'partner-2', quarter, revenueTarget: 300_000 }),
+    ],
+  });
+  const scopedProvider = new MockDataProvider(scopedBook);
+
+  it('measures the whole org against every target row', async () => {
+    // The fixture's ownership map, stated so the expected sums below say
+    // which partner IDs each manager's target rows belong to.
+    expect(scopedBook.partners.map((partner) => [partner.id, partner.partnerManagerId])).toEqual([
+      ['partner-1', 'pm-1'],
+      ['partner-2', 'pm-2'],
+    ]);
+
+    const org = await scopedProvider.getForecastSummary({ quarter });
+    expect(org.target).toBe(400_000); // partner-1 100k + partner-2 300k
+    expect(org.closedWon).toBe(190_000);
+    expect(org.remainingQuota).toBe(210_000);
+    expect(org.attainment).toBeCloseTo(0.475, 10);
+    expect(org.coverage).toEqual({ kind: 'coverage', value: 1 }); // 210k open / 210k gap
+  });
+
+  it('measures each manager only against their own partners’ targets', async () => {
+    const pm1 = await scopedProvider.getForecastSummary({ quarter, partnerManagerId: 'pm-1' });
+    expect(pm1.target).toBe(100_000); // partner-1 only; partner-2's 300k stays out
+    expect(pm1.closedWon).toBe(40_000);
+    expect(pm1.remainingQuota).toBe(60_000);
+    expect(pm1.attainment).toBeCloseTo(0.4, 10);
+    expect(pm1.coverage).toEqual({ kind: 'coverage', value: 2 }); // 120k open / 60k gap
+
+    const pm2 = await scopedProvider.getForecastSummary({ quarter, partnerManagerId: 'pm-2' });
+    expect(pm2.target).toBe(300_000); // partner-2 only
+    expect(pm2.closedWon).toBe(150_000);
+    expect(pm2.remainingQuota).toBe(150_000);
+    expect(pm2.attainment).toBeCloseTo(0.5, 10);
+    expect(pm2.coverage).toEqual({ kind: 'coverage', value: 0.6 }); // 90k open / 150k gap
+  });
+
+  it('lets in-scope target changes move a manager and ignores out-of-scope ones', async () => {
+    const changed = new MockDataProvider({
+      ...scopedBook,
+      targets: scopedBook.targets.map((item) =>
+        item.partnerId === 'partner-2' ? { ...item, revenueTarget: 600_000 } : item,
+      ),
+    });
+
+    const before = await scopedProvider.getForecastSummary({ quarter, partnerManagerId: 'pm-1' });
+    // partner-2's target doubled, but pm-1's summary cannot tell.
+    expect(await changed.getForecastSummary({ quarter, partnerManagerId: 'pm-1' })).toEqual(before);
+
+    const pm2 = await changed.getForecastSummary({ quarter, partnerManagerId: 'pm-2' });
+    expect(pm2.target).toBe(600_000);
+    expect(pm2.remainingQuota).toBe(450_000);
+    expect(pm2.attainment).toBeCloseTo(0.25, 10);
+    expect(pm2.coverage).toEqual({ kind: 'coverage', value: 0.2 }); // 90k open / 450k gap
+  });
+
+  it('distinguishes no-target from target-met for a manager scope', async () => {
+    const noTarget = new MockDataProvider({
+      ...scopedBook,
+      targets: scopedBook.targets.filter((item) => item.partnerId !== 'partner-1'),
+    });
+    const pm1 = await noTarget.getForecastSummary({ quarter, partnerManagerId: 'pm-1' });
+    expect(pm1.target).toBe(0);
+    expect(pm1.remainingQuota).toBe(0);
+    expect(pm1.attainment).toBe(0);
+    expect(pm1.coverage).toEqual({ kind: 'no-target' });
+    // The org still sees partner-2's target — the state is scoped, not global.
+    const org = await noTarget.getForecastSummary({ quarter });
+    expect(org.target).toBe(300_000);
+
+    const met = new MockDataProvider({
+      ...scopedBook,
+      targets: scopedBook.targets.map((item) =>
+        item.partnerId === 'partner-1' ? { ...item, revenueTarget: 30_000 } : item,
+      ),
+    });
+    const pm1Met = await met.getForecastSummary({ quarter, partnerManagerId: 'pm-1' });
+    expect(pm1Met.target).toBe(30_000);
+    expect(pm1Met.closedWon).toBe(40_000);
+    expect(pm1Met.remainingQuota).toBe(0);
+    // 120k of open pipeline over a zero gap is target-met, not a ratio.
+    expect(pm1Met.coverage).toEqual({ kind: 'target-met' });
   });
 });
 

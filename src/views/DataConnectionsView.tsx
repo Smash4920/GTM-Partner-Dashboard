@@ -13,10 +13,7 @@ import {
   type ConnectionEdge,
   type ConnectionNode,
 } from '../data/connections';
-import {
-  REGISTRATION_SLA_BUSINESS_DAYS,
-  REGISTRATION_SLA_WARNING_BUSINESS_DAYS,
-} from '../data/constants';
+import { REGISTRATION_SLA_BUSINESS_DAYS } from '../data/constants';
 import type {
   DashboardData,
   DashboardNotification,
@@ -194,7 +191,7 @@ export default function DataConnectionsView({
         <KpiTile
           label="SLA alerts due"
           value={`${alerts.length}`}
-          sub={`${approaching} at ${REGISTRATION_SLA_WARNING_BUSINESS_DAYS * 24}h · ${
+          sub={`${approaching} due next business day · ${
             alerts.length - approaching
           } past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`}
         />
@@ -284,8 +281,9 @@ export default function DataConnectionsView({
 }
 
 /**
- * Opens the composer on the alert the rule exists for: the 24-hours-out warning
- * if one is waiting on an owner, else the most urgent alert, else an empty form.
+ * Opens the composer on the alert the rule exists for: the one-business-day-out
+ * warning if one is waiting on an owner, else the most urgent alert, else an
+ * empty form.
  */
 function composerForAlert(alerts: ReturnType<typeof registrationSlaAlerts>): ComposerState {
   const alert =

@@ -21,11 +21,12 @@ import {
   STAGE_META,
 } from '../data/constants';
 import type { DashboardData, FiscalPhase, Opportunity } from '../data/types';
+import type { CoverageState } from '../lib/metrics';
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 import {
   approvedNotConverted,
   closedWonForPhase,
-  coverageRatio,
+  coverageState,
   filterByPhase,
   formatCoverage,
   openPipeline,
@@ -82,7 +83,7 @@ function PartnerKpis({
   sliceLabel: string;
   pipelineValue: number;
   pipelineCount: number;
-  coverage: number | null;
+  coverage: CoverageState;
   phase: FiscalPhase;
   won: number;
   attainment: number;
@@ -98,7 +99,9 @@ function PartnerKpis({
         sub={
           slice === 'all'
             ? `${pipelineCount} open · ${
-                coverage === null ? 'target met' : `${formatCoverage(coverage)} coverage`
+                coverage.kind === 'coverage'
+                  ? `${formatCoverage(coverage)} coverage`
+                  : formatCoverage(coverage).toLowerCase()
               }`
             : `${pipelineCount} open ${sliceLabel} opp${pipelineCount === 1 ? '' : 's'}`
         }
@@ -228,7 +231,7 @@ export default function PartnerView({ data }: { data: DashboardData }) {
   const phaseTargets = targetsForPhase(partnerTargets, phase);
   const target = phase === 'fy' ? ytdTarget(partnerTargets) : ytdTarget(phaseTargets);
   const attainment = target > 0 ? wonYtd / target : 0;
-  const coverage = coverageRatio(partnerOpps, partnerTargets, phase);
+  const coverage = coverageState(partnerOpps, partnerTargets, phase);
   // The chart buckets by fiscal quarter itself, so it gets the partner's
   // motion-scoped book *before* phase filtering — phase-filtered input would
   // draw $0 for every quarter outside the selected phase.
@@ -283,30 +286,32 @@ export default function PartnerView({ data }: { data: DashboardData }) {
   const timelineRows: MetricBarRow[] = [
     {
       label: 'Submitted → Approved',
-      value: partnerTimes.submittedToApproved ?? 0,
-      displayValue: fmtDays(partnerTimes.submittedToApproved),
-      secondary: '5-business-day SLA',
+      value: partnerTimes.submittedToApprovedBusinessDays ?? 0,
+      displayValue: fmtDays(partnerTimes.submittedToApprovedBusinessDays),
+      // The approval hop is measured in the SLA's own unit, so the bar reads
+      // directly against the response SLA.
+      secondary: 'avg business days · 5-business-day SLA',
       color: '#7e7b78',
     },
     {
       label: 'Approved → Opportunity',
-      value: partnerTimes.approvedToOpportunity ?? 0,
-      displayValue: fmtDays(partnerTimes.approvedToOpportunity),
-      secondary: 'converted registrations',
+      value: partnerTimes.approvedToOpportunityCalendarDays ?? 0,
+      displayValue: fmtDays(partnerTimes.approvedToOpportunityCalendarDays),
+      secondary: 'avg elapsed calendar days · converted registrations',
       color: '#9a9693',
     },
     {
       label: 'Opportunity → Win',
-      value: partnerTimes.opportunityToWin ?? 0,
-      displayValue: fmtDays(partnerTimes.opportunityToWin),
-      secondary: 'converted & won',
+      value: partnerTimes.opportunityToWinCalendarDays ?? 0,
+      displayValue: fmtDays(partnerTimes.opportunityToWinCalendarDays),
+      secondary: 'avg elapsed calendar days · converted & won',
       color: '#a0ca92',
     },
     {
       label: 'Submitted → Win',
-      value: partnerTimes.submittedToWin ?? 0,
-      displayValue: fmtDays(partnerTimes.submittedToWin),
-      secondary: 'converted & won',
+      value: partnerTimes.submittedToWinCalendarDays ?? 0,
+      displayValue: fmtDays(partnerTimes.submittedToWinCalendarDays),
+      secondary: 'avg elapsed calendar days · converted & won',
       color: '#b8b3b0',
     },
   ];

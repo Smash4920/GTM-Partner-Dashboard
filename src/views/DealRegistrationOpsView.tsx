@@ -53,30 +53,32 @@ export default function DealRegistrationOpsView({ data }: DealRegistrationOpsVie
   const timeRows: MetricBarRow[] = [
     {
       label: 'Submitted → Approved',
-      value: times.submittedToApproved ?? 0,
-      displayValue: fmtDays(times.submittedToApproved),
-      secondary: 'vs 5 business-day SLA',
+      value: times.submittedToApprovedBusinessDays ?? 0,
+      displayValue: fmtDays(times.submittedToApprovedBusinessDays),
+      // The approval hop is measured in the SLA's own unit, so the bar reads
+      // directly against the response SLA.
+      secondary: 'avg business days · vs 5-business-day SLA',
       color: '#7e7b78',
     },
     {
       label: 'Approved → Opportunity',
-      value: times.approvedToOpportunity ?? 0,
-      displayValue: fmtDays(times.approvedToOpportunity),
-      secondary: 'converted registrations',
+      value: times.approvedToOpportunityCalendarDays ?? 0,
+      displayValue: fmtDays(times.approvedToOpportunityCalendarDays),
+      secondary: 'avg elapsed calendar days · converted registrations',
       color: '#9a9693',
     },
     {
       label: 'Opportunity → Win',
-      value: times.opportunityToWin ?? 0,
-      displayValue: fmtDays(times.opportunityToWin),
-      secondary: 'converted & won',
+      value: times.opportunityToWinCalendarDays ?? 0,
+      displayValue: fmtDays(times.opportunityToWinCalendarDays),
+      secondary: 'avg elapsed calendar days · converted & won',
       color: '#a0ca92',
     },
     {
       label: 'Submitted → Win',
-      value: times.submittedToWin ?? 0,
-      displayValue: fmtDays(times.submittedToWin),
-      secondary: 'converted & won',
+      value: times.submittedToWinCalendarDays ?? 0,
+      displayValue: fmtDays(times.submittedToWinCalendarDays),
+      secondary: 'avg elapsed calendar days · converted & won',
       color: '#b8b3b0',
     },
   ];
@@ -99,23 +101,23 @@ export default function DealRegistrationOpsView({ data }: DealRegistrationOpsVie
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <KpiTile
           label="Submitted → approved"
-          value={fmtDays(times.submittedToApproved)}
-          sub={`avg days · ${REGISTRATION_SLA_BUSINESS_DAYS}-business-day SLA`}
+          value={fmtDays(times.submittedToApprovedBusinessDays)}
+          sub={`avg business days · ${REGISTRATION_SLA_BUSINESS_DAYS}-business-day SLA`}
         />
         <KpiTile
           label="Approved → opportunity"
-          value={fmtDays(times.approvedToOpportunity)}
-          sub="avg days · converted regs"
+          value={fmtDays(times.approvedToOpportunityCalendarDays)}
+          sub="avg elapsed calendar days · converted regs"
         />
         <KpiTile
           label="Opportunity → win"
-          value={fmtDays(times.opportunityToWin)}
-          sub="avg days · converted & won"
+          value={fmtDays(times.opportunityToWinCalendarDays)}
+          sub="avg elapsed calendar days · converted & won"
         />
         <KpiTile
           label="Submitted → win"
-          value={fmtDays(times.submittedToWin)}
-          sub="avg days · converted & won"
+          value={fmtDays(times.submittedToWinCalendarDays)}
+          sub="avg elapsed calendar days · converted & won"
         />
         <KpiTile
           label="Pending past SLA"
@@ -135,8 +137,10 @@ export default function DealRegistrationOpsView({ data }: DealRegistrationOpsVie
       >
         <MetricBars rows={timeRows} />
         <p className="mt-4 text-xs text-granite">
-          Each hop averages only the registrations that reached it. The 5-business-day SLA is the
-          approval step's target; the 60-day exclusivity window is the partner's introduction
+          Each hop averages only the registrations that reached it. The approval hop is measured in
+          business days — the response SLA's own unit; every other hop is elapsed calendar days. The{' '}
+          {REGISTRATION_SLA_BUSINESS_DAYS}-business-day SLA is the approval step's target; the{' '}
+          {REGISTRATION_EXCLUSIVITY_DAYS}-day exclusivity window is the partner's introduction
           deadline after approval.
         </p>
       </Card>

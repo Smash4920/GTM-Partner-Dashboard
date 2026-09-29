@@ -33,7 +33,7 @@ import {
   avgOpenDealSize,
   closedWonForPhase,
   closedWonPriorYearForPhase,
-  coverageRatio,
+  coverageState,
   filterByPhase,
   filterByType,
   filterRegistrationsByPhase,
@@ -136,7 +136,7 @@ export default function HomeView({
   const wonDelta = priorWon > 0 ? won / priorWon - 1 : null;
   const target = targetForPhase(data.targets, phase);
   const attainment = target > 0 ? won / target : 0;
-  const coverage = coverageRatio(opps, data.targets, phase);
+  const coverage = coverageState(opps, data.targets, phase);
   const remaining = remainingQuota(opps, data.targets, phase);
   const phaseLabel = FISCAL_PHASE_META[phase].label;
   const outcomeScope = phase === 'fy' ? `${FISCAL_YEAR} to date` : `${FISCAL_YEAR} ${phaseLabel}`;
@@ -273,9 +273,11 @@ export default function HomeView({
           label="Partner sourced pipeline coverage"
           value={formatCoverage(coverage)}
           sub={
-            remaining > 0
+            coverage.kind === 'coverage'
               ? `${formatUsdCompact(remaining)} sourced target remaining`
-              : 'Sourced target achieved'
+              : coverage.kind === 'target-met'
+                ? 'Sourced target achieved'
+                : 'No sourced target set'
           }
         />
         <KpiTile

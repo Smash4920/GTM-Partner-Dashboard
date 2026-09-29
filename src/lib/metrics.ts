@@ -439,25 +439,39 @@ export function remainingQuota(
 }
 
 /**
- * Open pipeline scheduled anywhere in the phase, over the quota still to be
- * closed for that phase. The numerator spans the phase's full horizon — not
- * just through the snapshot — because pipeline scheduled for the rest of the
- * quarter/year is exactly what covers the remaining target. Null when the
- * target is already met, since coverage of a zero gap is not a meaningful
- * ratio.
+ * Target coverage as a three-way state, because a bare ratio cannot tell
+ * "nothing was committed" apart from "the goal is already met" — both divide
+ * by a zero gap, and neither is a coverage figure:
+ *
+ * - `no-target`: the phase carries no target rows (or only zero-value ones)
+ *   for the scope. There is nothing to cover, so there is no coverage.
+ * - `target-met`: closed-won has reached the target and the remaining gap is
+ *   zero. Coverage of a zero gap is not a meaningful ratio.
+ * - `coverage`: open in-phase pipeline over the quota still to close. The
+ *   numerator spans the phase's full horizon — not just through the snapshot —
+ *   because pipeline scheduled for the rest of the quarter/year is exactly
+ *   what covers the remaining target.
  */
-export function coverageRatio(
+export type CoverageState =
+  { kind: 'no-target' } | { kind: 'target-met' } | { kind: 'coverage'; value: number };
+
+export function coverageState(
   opps: Opportunity[],
   targets: Target[],
   phase: FiscalPhase = 'fy',
-): number | null {
-  const remaining = remainingQuota(opps, targets, phase);
-  if (remaining <= 0) return null;
-  return openPipeline(filterByPhase(opps, phase)).value / remaining;
+): CoverageState {
+  const phaseTargets = targetsForPhase(targets, phase);
+  const target = phaseTargets.reduce((sum, item) => sum + item.revenueTarget, 0);
+  if (target <= 0) return { kind: 'no-target' };
+  const remaining = Math.max(target - closedWonForPhase(opps, phase), 0);
+  if (remaining <= 0) return { kind: 'target-met' };
+  return { kind: 'coverage', value: openPipeline(filterByPhase(opps, phase)).value / remaining };
 }
 
-export function formatCoverage(coverage: number | null): string {
-  return coverage === null ? 'Target met' : `${coverage.toFixed(1)}x`;
+export function formatCoverage(state: CoverageState): string {
+  if (state.kind === 'no-target') return 'No target';
+  if (state.kind === 'target-met') return 'Target met';
+  return `${state.value.toFixed(1)}x`;
 }
 
 export interface LeaderboardRow {
@@ -927,17 +941,18 @@ export interface RegistrationSlaAlert {
 /**
  * Pending registrations that need their owner's attention now: those already
  * past REGISTRATION_SLA_BUSINESS_DAYS, and those within
- * REGISTRATION_SLA_WARNING_BUSINESS_DAYS of it — one business day, or 24
- * hours out from the SLA, which is the heads-up the partner team asked for.
+ * REGISTRATION_SLA_WARNING_BUSINESS_DAYS of it — one business day before the
+ * deadline, which is the heads-up the partner team asked for. Business days
+ * are not hours: when the deadline is a Monday, the warning fires on Friday.
  *
  * Ownership is resolved the way the data model routes it: the submitting
  * partner's aligned partner manager, and the deal desk for anything with no
  * active manager (the queue is theirs either way). An alert with no owner is
  * still returned — it is a roster gap, not something to hide.
  *
- * The 24-hours-out warnings lead the queue: they are the ones with a working
- * day left in them, so acting on one prevents the lapse rather than reporting
- * it. Past-SLA registrations follow, most overdue first.
+ * The one-business-day-out warnings lead the queue: they are the ones with a
+ * working day left in them, so acting on one prevents the lapse rather than
+ * reporting it. Past-SLA registrations follow, most overdue first.
  */
 export function registrationSlaAlerts(
   registrations: DealRegistration[],
@@ -992,20 +1007,29 @@ export function registrationSlaAlerts(
 }
 
 export interface RegistrationConversionTimes {
-  /** Avg days from submission to approval (approved registrations only). */
-  submittedToApproved: number | null;
-  /** Avg days from approval to opportunity creation (converted registrations only). */
-  approvedToOpportunity: number | null;
-  /** Avg days from opportunity creation to closed-won (converted + won only). */
-  opportunityToWin: number | null;
-  /** Avg days from submission to closed-won (converted + won only). */
-  submittedToWin: number | null;
+  /**
+   * Avg business days from submission to approval (approved registrations
+   * only). This is the hop the response SLA clocks, so it is measured in the
+   * SLA's own unit — a calendar-day average read against a 5-business-day SLA
+   * compares two different clocks.
+   */
+  submittedToApprovedBusinessDays: number | null;
+  /** Avg elapsed calendar days from approval to opportunity creation (converted registrations only). */
+  approvedToOpportunityCalendarDays: number | null;
+  /** Avg elapsed calendar days from opportunity creation to closed-won (converted + won only). */
+  opportunityToWinCalendarDays: number | null;
+  /** Avg elapsed calendar days from submission to closed-won (converted + won only). */
+  submittedToWinCalendarDays: number | null;
 }
 
 /**
  * Average conversion times across a registration book, chained as
  * submitted → approved → opportunity created → win. Every hop is averaged
  * only over the registrations that reached it; null when nothing has.
+ *
+ * Units are part of the contract and part of the field names: the approval
+ * hop is business days, so it can be read directly against the response SLA,
+ * and every other hop is elapsed calendar days.
  */
 export function registrationConversionTimes(
   registrations: DealRegistration[],
@@ -1021,7 +1045,7 @@ export function registrationConversionTimes(
     (reg) => reg.status === 'approved' && reg.decisionAt !== undefined,
   );
   const submittedToApproved = approved.map((reg) =>
-    calendarDaysBetween(reg.submittedAt, reg.decisionAt!),
+    businessDaysBetween(reg.submittedAt, reg.decisionAt!),
   );
   const converted = approved.filter(
     (reg) => reg.convertedTo !== undefined && oppById.has(reg.convertedTo),
@@ -1044,10 +1068,10 @@ export function registrationConversionTimes(
   });
 
   return {
-    submittedToApproved: average(submittedToApproved),
-    approvedToOpportunity: average(approvedToOpportunity),
-    opportunityToWin: average(opportunityToWin),
-    submittedToWin: average(submittedToWin),
+    submittedToApprovedBusinessDays: average(submittedToApproved),
+    approvedToOpportunityCalendarDays: average(approvedToOpportunity),
+    opportunityToWinCalendarDays: average(opportunityToWin),
+    submittedToWinCalendarDays: average(submittedToWin),
   };
 }
 

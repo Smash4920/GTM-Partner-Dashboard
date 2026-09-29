@@ -62,11 +62,25 @@ describe('generateDashboardData', () => {
     }
   });
 
-  it('covers every partner with a target in every FY27 quarter', () => {
-    expect(data.targets).toHaveLength(25 * FISCAL_QUARTERS.length);
+  it('covers every partner with a target in every FY27 quarter but one', () => {
+    // The most recently onboarded partner has not committed a target for the
+    // upcoming quarter (see generateTargets), so the "no target" coverage
+    // state exists in the demo data rather than only in fixtures.
+    const upcomingQuarter = FISCAL_QUARTERS[FISCAL_QUARTERS.length - 1];
+    const newest = data.partners.reduce((latest, partner) =>
+      new Date(partner.joinedAt).getTime() > new Date(latest.joinedAt).getTime() ? partner : latest,
+    );
+    expect(data.targets).toHaveLength(25 * FISCAL_QUARTERS.length - 1);
     for (const quarter of FISCAL_QUARTERS) {
-      expect(data.targets.filter((target) => target.quarter === quarter)).toHaveLength(25);
+      expect(data.targets.filter((target) => target.quarter === quarter)).toHaveLength(
+        quarter === upcomingQuarter ? 24 : 25,
+      );
     }
+    expect(
+      data.targets.some(
+        (target) => target.partnerId === newest.id && target.quarter === upcomingQuarter,
+      ),
+    ).toBe(false);
   });
 
   it('never closes an opportunity after the snapshot, and never dates an open one', () => {
@@ -348,7 +362,7 @@ describe('generateDashboardData', () => {
     expect(data.teamUsers.some((user) => user.status === 'invited')).toBe(true);
   });
 
-  it('seeds pending registrations in the 24-hours-out SLA warning window', () => {
+  it('seeds pending registrations in the one-business-day-out SLA warning window', () => {
     const alerts = registrationSlaAlerts(data.registrations, data.partners, data.teamUsers);
     const approaching = alerts.filter((alert) => alert.state === 'approaching');
     // One per seeded partner, so the warning reaches several owners at once.
@@ -406,7 +420,7 @@ describe('MockDataProvider', () => {
     expect(partners).toHaveLength(25);
     expect(registrations).toHaveLength(180);
     expect(opportunities.length).toBeGreaterThan(200);
-    expect(targets).toHaveLength(100);
+    expect(targets).toHaveLength(99);
     expect(activities.length).toBeGreaterThan(100);
     expect(certifications).toHaveLength(25);
     expect(teamUsers).toHaveLength(8);

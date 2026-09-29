@@ -120,9 +120,10 @@ export const REGISTRATION_EXCLUSIVITY_DAYS = 60; // approved lead keeps exclusiv
 
 /**
  * How far ahead of the response SLA the owner is warned: one business day, so
- * a registration pending 24 hours out from the deadline notifies its owner
- * while there is still a working day to act. The deadline itself is the
- * snapshot day the submission reaches REGISTRATION_SLA_BUSINESS_DAYS.
+ * a registration one working day from the deadline notifies its owner while
+ * there is still time to act. Business days are not hours: when the deadline
+ * is a Monday, the warning fires on Friday. The deadline itself is the day
+ * the submission reaches REGISTRATION_SLA_BUSINESS_DAYS business days.
  */
 export const REGISTRATION_SLA_WARNING_BUSINESS_DAYS = 1;
 

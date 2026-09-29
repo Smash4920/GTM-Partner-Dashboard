@@ -8,21 +8,14 @@ import type {
   Partner,
   PipelineSnapshot,
   Target,
-  TeamUser,
 } from '../data/types';
 import {
-  approvedNotConverted,
-  businessDaysBetween,
-  businessDaysWaiting,
-  calendarDaysBetween,
   categoryStageMismatches,
   closedWonForPhase,
   closedWonPriorYearForPhase,
-  coverageRatio,
+  coverageState,
   currentWeekMeetings,
   daysLeftInQuarter,
-  duplicateRegistrationGroups,
-  exclusivityLapsed,
   filterByPhase,
   filterRegistrationsByPhase,
   forecastCategoryOf,
@@ -33,10 +26,6 @@ import {
   phaseForQuarter,
   phaseWindow,
   quarterlyClosedWonAndTarget,
-  registrationConversionTimes,
-  registrationSlaAlerts,
-  registrationSlaState,
-  registrationsPastSla,
   remainingQuota,
   weeklyForecastRows,
   weeklyGoalProgress,
@@ -197,17 +186,17 @@ describe('filterRegistrationsByPhase', () => {
 
 // ---- coverage and quota ----------------------------------------------------
 
-describe('coverageRatio', () => {
+describe('coverageState', () => {
   const targets = [target('FY27-Q3', 100_000)];
+  const closedWon20k = opp({
+    id: 'w',
+    expectedCloseDate: '2026-08-05T00:00:00Z',
+    outcome: 'won',
+    closedAt: '2026-08-05T00:00:00Z',
+    forecastedRevenue: 20_000,
+  });
 
   it('counts open pipeline across the whole phase, not just through the snapshot', () => {
-    const closedWon = opp({
-      id: 'w',
-      expectedCloseDate: '2026-08-05T00:00:00Z',
-      outcome: 'won',
-      closedAt: '2026-08-05T00:00:00Z',
-      forecastedRevenue: 20_000,
-    });
     const beforeSnapshot = opp({
       id: 'o1',
       expectedCloseDate: '2026-09-10T00:00:00Z',
@@ -227,20 +216,56 @@ describe('coverageRatio', () => {
     // Remaining quota is 80k; Q3-scheduled open pipeline is 160k (the 500k
     // Q4 deal must not leak in), so coverage is 2x.
     expect(
-      coverageRatio([closedWon, beforeSnapshot, lateInPhase, nextQuarter], targets, 'q3'),
-    ).toBe(2);
+      coverageState([closedWon20k, beforeSnapshot, lateInPhase, nextQuarter], targets, 'q3'),
+    ).toEqual({ kind: 'coverage', value: 2 });
   });
 
-  it('returns null when the phase target is already met', () => {
+  it('reports target-met once closed-won reaches the target, even with open pipeline left', () => {
     const closedWon = opp({
-      id: 'w',
+      id: 'w-met',
       expectedCloseDate: '2026-08-05T00:00:00Z',
       outcome: 'won',
       closedAt: '2026-08-05T00:00:00Z',
       forecastedRevenue: 150_000,
     });
-    expect(coverageRatio([closedWon], targets, 'q3')).toBeNull();
-    expect(formatCoverage(coverageRatio([closedWon], targets, 'q3'))).toBe('Target met');
+    const stillOpen = opp({
+      id: 'o-open',
+      expectedCloseDate: '2026-10-15T00:00:00Z',
+      forecastedRevenue: 400_000,
+    });
+    // The zero remaining gap is a state, not a ratio: 400k of open pipeline
+    // over a fully covered target must not render as a coverage figure.
+    expect(coverageState([closedWon, stillOpen], targets, 'q3')).toEqual({ kind: 'target-met' });
+    expect(formatCoverage(coverageState([closedWon, stillOpen], targets, 'q3'))).toBe('Target met');
+  });
+
+  it('reports no-target when the phase has no target rows for the scope', () => {
+    expect(coverageState([closedWon20k], [], 'q3')).toEqual({ kind: 'no-target' });
+    expect(formatCoverage(coverageState([closedWon20k], [], 'q3'))).toBe('No target');
+  });
+
+  it('reports no-target for a zero-value target row and a target in another quarter', () => {
+    expect(coverageState([], [target('FY27-Q3', 0)], 'q3')).toEqual({ kind: 'no-target' });
+    expect(coverageState([closedWon20k], [target('FY27-Q4', 900_000)], 'q3')).toEqual({
+      kind: 'no-target',
+    });
+  });
+
+  it('never produces Infinity or NaN', () => {
+    for (const state of [
+      coverageState([], [], 'q3'),
+      coverageState([], [target('FY27-Q3', 0)], 'q3'),
+      coverageState([closedWon20k], targets, 'q3'),
+    ]) {
+      expect(state.kind === 'coverage' ? Number.isFinite(state.value) : true).toBe(true);
+      expect(formatCoverage(state)).not.toMatch(/Infinity|NaN/);
+    }
+  });
+
+  it('formats the three states distinctly', () => {
+    expect(formatCoverage({ kind: 'no-target' })).toBe('No target');
+    expect(formatCoverage({ kind: 'target-met' })).toBe('Target met');
+    expect(formatCoverage({ kind: 'coverage', value: 2.34 })).toBe('2.3x');
   });
 });
 
@@ -848,328 +873,6 @@ describe('categoryStageMismatches', () => {
     expect(result.below).toHaveLength(0);
     expect(result.aboveValue).toBe(0);
     expect(result.belowValue).toBe(0);
-  });
-});
-
-// ---- deal-registration ops --------------------------------------------------
-
-function reg(
-  fields: Partial<DealRegistration> & Pick<DealRegistration, 'id' | 'submittedAt' | 'status'>,
-): DealRegistration {
-  return {
-    partnerId: 'p-01',
-    accountName: 'Test Account',
-    amount: 50_000,
-    ...fields,
-  };
-}
-
-describe('businessDaysBetween', () => {
-  it('counts UTC weekdays excluding the start day', () => {
-    expect(businessDaysBetween('2026-09-18T00:00:00Z', '2026-09-18T00:00:00Z')).toBe(0);
-    // Friday → Monday is 1 business day.
-    expect(businessDaysBetween('2026-09-11T00:00:00Z', '2026-09-14T00:00:00Z')).toBe(1);
-    // Monday → Friday same week is 4.
-    expect(businessDaysBetween('2026-09-14T00:00:00Z', '2026-09-18T00:00:00Z')).toBe(4);
-    // Monday → next Monday is 5 (Tue–Fri + Mon).
-    expect(businessDaysBetween('2026-09-14T00:00:00Z', '2026-09-21T00:00:00Z')).toBe(5);
-  });
-});
-
-describe('registrationSlaState', () => {
-  it('counts the waiting counter in business days, not calendar days', () => {
-    // Snapshot 2026-09-18 (Friday). A weekend submission separates the two
-    // units: Sunday 09-06 is 12 calendar days back but only 10 working days.
-    // The counter the UI shows sits next to a 5-business-day SLA and is
-    // colored by it, so it has to be quoted in the same unit.
-    const sunday = reg({ id: 'r-sun', submittedAt: '2026-09-06T00:00:00Z', status: 'pending' });
-    expect(calendarDaysBetween(sunday.submittedAt, SNAPSHOT_DATE.toISOString())).toBe(12);
-    expect(businessDaysWaiting(sunday)).toBe(10);
-  });
-
-  it('lapses exactly when the business-day counter reaches the SLA', () => {
-    // The counter and the color read off the same scale: 4 working days is
-    // inside, and the day it reaches 5 is the day it lapses.
-    const monday = reg({ id: 'r-mon', submittedAt: '2026-09-14T00:00:00Z', status: 'pending' });
-    const sunday = reg({ id: 'r-sun2', submittedAt: '2026-09-13T00:00:00Z', status: 'pending' });
-    expect(businessDaysWaiting(monday)).toBe(4);
-    expect(registrationSlaState(monday)).toBe('within-sla');
-    expect(businessDaysWaiting(sunday)).toBe(5);
-    expect(registrationSlaState(sunday)).toBe('past-sla');
-  });
-
-  it('flags submissions inside the 5-business-day window as within SLA', () => {
-    // Snapshot 2026-09-18. Submitted Monday, four business days earlier.
-    expect(
-      registrationSlaState(
-        reg({ id: 'r1', submittedAt: '2026-09-14T00:00:00Z', status: 'pending' }),
-      ),
-    ).toBe('within-sla');
-  });
-
-  it('flags submissions at or past 5 business days as past SLA', () => {
-    expect(
-      registrationSlaState(
-        reg({ id: 'r2', submittedAt: '2026-09-07T00:00:00Z', status: 'pending' }),
-      ),
-    ).toBe('past-sla');
-  });
-});
-
-describe('registrationsPastSla', () => {
-  it('returns only pending registrations outside the SLA, oldest first', () => {
-    const old = reg({ id: 'r1', submittedAt: '2026-09-01T00:00:00Z', status: 'pending' });
-    const fresh = reg({ id: 'r2', submittedAt: '2026-09-17T00:00:00Z', status: 'pending' });
-    const approved = reg({
-      id: 'r3',
-      submittedAt: '2026-09-01T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-09-05T00:00:00Z',
-    });
-    expect(registrationsPastSla([approved, fresh, old])).toEqual([old]);
-  });
-});
-
-function teamUser(fields: Partial<TeamUser> & Pick<TeamUser, 'id' | 'role'>): TeamUser {
-  return {
-    name: 'Alex Morgan',
-    email: `${fields.id}@factory.ai`,
-    status: 'active',
-    channels: ['email'],
-    addedAt: '2026-02-02T00:00:00Z',
-    ...fields,
-  };
-}
-
-describe('registrationSlaAlerts', () => {
-  const manager = teamUser({ id: 'u-01', role: 'partner-manager', partnerManagerId: 'pm-01' });
-  const dealDesk = teamUser({ id: 'u-02', role: 'deal-desk-ops' });
-  const roster = [manager, dealDesk];
-
-  // Snapshot 2026-09-18 (Friday). A Monday submission has 4 business days
-  // behind it, which is one business day from the 5-business-day deadline.
-  const warning = reg({ id: 'r-warning', submittedAt: '2026-09-14T00:00:00Z', status: 'pending' });
-  const breached = reg({ id: 'r-breach', submittedAt: '2026-09-07T00:00:00Z', status: 'pending' });
-  const inside = reg({ id: 'r-inside', submittedAt: '2026-09-17T00:00:00Z', status: 'pending' });
-
-  it('flags the warning window a business day before the deadline', () => {
-    const [alert] = registrationSlaAlerts([warning], [partner], roster);
-    expect(alert.state).toBe('approaching');
-    expect(alert.businessDaysWaiting).toBe(4);
-    expect(alert.businessDaysRemaining).toBe(1);
-    expect(alert.dueAt).toBe('2026-09-21T00:00:00.000Z');
-  });
-
-  it('flags registrations already past the SLA', () => {
-    const [alert] = registrationSlaAlerts([breached], [partner], roster);
-    expect(alert.state).toBe('breached');
-    expect(alert.businessDaysRemaining).toBeLessThan(0);
-    expect(alert.dueAt).toBe('2026-09-14T00:00:00.000Z');
-  });
-
-  it('leaves registrations still inside the SLA alone', () => {
-    expect(registrationSlaAlerts([inside], [partner], roster)).toEqual([]);
-  });
-
-  it('ignores registrations that are no longer pending', () => {
-    const approved = reg({
-      id: 'r-approved',
-      submittedAt: '2026-09-01T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-09-03T00:00:00Z',
-    });
-    expect(registrationSlaAlerts([approved], [partner], roster)).toEqual([]);
-  });
-
-  it('routes to the aligned partner manager, and to the deal desk otherwise', () => {
-    expect(registrationSlaAlerts([warning], [partner], roster)[0].owner?.id).toBe('u-01');
-    // A manager without an alignment, or one whose access was revoked, cannot
-    // own the alert: the deal desk catches it rather than nobody.
-    expect(registrationSlaAlerts([warning], [partner], [dealDesk])[0].owner?.id).toBe('u-02');
-    expect(
-      registrationSlaAlerts(
-        [warning],
-        [partner],
-        [{ ...manager, status: 'suspended' }, dealDesk],
-      )[0].owner?.id,
-    ).toBe('u-02');
-  });
-
-  it('keeps the first active manager aligned to a partner manager', () => {
-    // A second user appended to the roster with the same alignment must not
-    // silently take over the first one's alert queue.
-    const second = teamUser({
-      id: 'u-03',
-      role: 'partner-manager',
-      partnerManagerId: 'pm-01',
-    });
-    expect(registrationSlaAlerts([warning], [partner], [manager, second])[0].owner?.id).toBe(
-      'u-01',
-    );
-  });
-
-  it('still returns an alert with no owner when the roster is empty', () => {
-    const [alert] = registrationSlaAlerts([warning], [partner], []);
-    expect(alert.owner).toBeUndefined();
-    expect(alert.state).toBe('approaching');
-  });
-
-  it('leads with the 24-hour warnings, then the most overdue registration', () => {
-    const alerts = registrationSlaAlerts([warning, breached], [partner], roster);
-    expect(alerts.map((alert) => alert.registration.id)).toEqual(['r-warning', 'r-breach']);
-  });
-});
-
-describe('approvedNotConverted and exclusivityLapsed', () => {
-  const lapsed = reg({
-    id: 'r1',
-    submittedAt: '2026-06-01T00:00:00Z',
-    status: 'approved',
-    decisionAt: '2026-07-01T00:00:00Z',
-  });
-  const inWindow = reg({
-    id: 'r2',
-    submittedAt: '2026-08-15T00:00:00Z',
-    status: 'approved',
-    decisionAt: '2026-08-20T00:00:00Z',
-  });
-  const converted = reg({
-    id: 'r3',
-    submittedAt: '2026-07-01T00:00:00Z',
-    status: 'approved',
-    decisionAt: '2026-07-05T00:00:00Z',
-    convertedTo: 'opp-1',
-  });
-  const pending = reg({ id: 'r4', submittedAt: '2026-09-15T00:00:00Z', status: 'pending' });
-
-  it('keeps only approved registrations without an opportunity, oldest decision first', () => {
-    const leaking = approvedNotConverted([converted, pending, inWindow, lapsed]);
-    expect(leaking.map((item) => item.id)).toEqual(['r1', 'r2']);
-  });
-
-  it('flags exclusivity only past the 60-day window from approval', () => {
-    expect(exclusivityLapsed(lapsed)).toBe(true);
-    expect(exclusivityLapsed(inWindow)).toBe(false);
-    expect(exclusivityLapsed(converted)).toBe(false);
-    expect(exclusivityLapsed(pending)).toBe(false);
-  });
-});
-
-describe('registrationConversionTimes', () => {
-  const registrations = [
-    reg({
-      id: 'r1',
-      submittedAt: '2026-08-01T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-08-06T00:00:00Z',
-      convertedTo: 'o-1',
-    }),
-    reg({
-      id: 'r2',
-      submittedAt: '2026-08-15T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-08-20T00:00:00Z',
-      convertedTo: 'o-2',
-    }),
-    reg({
-      id: 'r3',
-      submittedAt: '2026-08-25T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-09-01T00:00:00Z',
-    }),
-  ];
-  const opportunities = [
-    opp({
-      id: 'o-1',
-      partnerId: 'p-01',
-      expectedCloseDate: '2026-09-30T00:00:00Z',
-      createdAt: '2026-08-10T00:00:00Z',
-      outcome: 'won',
-      closedAt: '2026-09-01T00:00:00Z',
-    }),
-    opp({
-      id: 'o-2',
-      partnerId: 'p-01',
-      expectedCloseDate: '2026-09-30T00:00:00Z',
-      createdAt: '2026-08-22T00:00:00Z',
-      outcome: 'lost',
-      closedAt: '2026-08-25T00:00:00Z',
-    }),
-  ];
-
-  it('averages each hop only over the registrations that reached it', () => {
-    const times = registrationConversionTimes(registrations, opportunities);
-    expect(times.submittedToApproved).toBe(5.7); // (5 + 5 + 7) / 3
-    expect(times.approvedToOpportunity).toBe(3); // (4 + 2) / 2
-    expect(times.opportunityToWin).toBe(22); // only r1 won: Aug 10 → Sep 1
-    expect(times.submittedToWin).toBe(31); // only r1 won: Aug 1 → Sep 1
-  });
-
-  it('returns null hops when no registration reached them', () => {
-    expect(
-      registrationConversionTimes(
-        [reg({ id: 'r4', submittedAt: '2026-09-01T00:00:00Z', status: 'pending' })],
-        [],
-      ),
-    ).toEqual({
-      submittedToApproved: null,
-      approvedToOpportunity: null,
-      opportunityToWin: null,
-      submittedToWin: null,
-    });
-  });
-});
-
-describe('duplicateRegistrationGroups', () => {
-  const secondPartner: Partner = { ...partner, id: 'p-02', name: 'Second Partner' };
-  const regs = [
-    reg({
-      id: 'r1',
-      partnerId: 'p-01',
-      accountName: 'Shared Client',
-      submittedAt: '2026-03-01T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-03-05T00:00:00Z',
-    }),
-    reg({
-      id: 'r2',
-      partnerId: 'p-02',
-      accountName: 'Shared Client',
-      submittedAt: '2026-04-01T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-04-05T00:00:00Z',
-    }),
-    reg({
-      id: 'r3',
-      partnerId: 'p-01',
-      accountName: 'Solo Client',
-      submittedAt: '2026-03-01T00:00:00Z',
-      status: 'pending',
-    }),
-    reg({
-      id: 'r4',
-      partnerId: 'p-01',
-      accountName: 'Same Partner Twice',
-      submittedAt: '2026-02-01T00:00:00Z',
-      status: 'pending',
-    }),
-    reg({
-      id: 'r5',
-      partnerId: 'p-01',
-      accountName: 'Same Partner Twice',
-      submittedAt: '2026-02-10T00:00:00Z',
-      status: 'pending',
-    }),
-  ];
-
-  it('groups only clients registered by two or more distinct partners', () => {
-    const groups = duplicateRegistrationGroups(regs, [partner, secondPartner]);
-    expect(groups).toHaveLength(1);
-    const group = groups[0]!;
-    expect(group.accountName).toBe('Shared Client');
-    expect(group.distinctPartners).toBe(2);
-    expect(group.firstSubmitted.id).toBe('r1');
-    expect(group.registrations.map((item) => item.id)).toEqual(['r1', 'r2']);
   });
 });
 

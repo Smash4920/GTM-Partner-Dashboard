@@ -604,7 +604,7 @@ of the book. **Forecasting is built on this today.**
 
 | Method                       | Returns                                                     |
 | ---------------------------- | ----------------------------------------------------------- |
-| `getForecastSummary()`       | `ForecastSummary` (9 numbers)                               |
+| `getForecastSummary()`       | `ForecastSummary` (8 numbers + coverage state)              |
 | `getWeightedForecast()`      | `WeightedForecastSummary`                                   |
 | `getForecastQuality()`       | `ForecastQualitySummary` (counts, exposure, bounded sample) |
 | `getManagerForecastGroups()` | `ManagerForecastGroup[]` (one row per manager)              |

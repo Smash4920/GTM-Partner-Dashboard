@@ -199,6 +199,59 @@ describe('ForecastingView', () => {
     ).toBeInTheDocument();
   });
 
+  describe('coverage states (VAL-DATA-002)', () => {
+    /** The coverage KPI tile, found by label so the other tiles cannot leak in. */
+    function coverageTile(): HTMLElement {
+      const label = screen.getByText('Pipeline coverage to goal');
+      const tile = label.closest('div');
+      if (!tile) throw new Error('coverage tile not found');
+      return tile;
+    }
+
+    it('shows a finite coverage ratio while the goal is open', async () => {
+      renderView();
+
+      // 3.1M open against a 1M combined target, nothing closed yet.
+      expect(await screen.findByText('28 open Q3 opps')).toBeInTheDocument();
+      const tile = coverageTile();
+      expect(within(tile).getByText('3.1x')).toBeInTheDocument();
+      expect(within(tile).getByText('$1M goal remaining')).toBeInTheDocument();
+    });
+
+    it('shows No target when the quarter carries no target rows', async () => {
+      const book = { ...makeBook(), targets: [] };
+      renderView({ provider: new MockDataProvider(book) });
+
+      expect(await screen.findByText('28 open Q3 opps')).toBeInTheDocument();
+      const tile = coverageTile();
+      expect(within(tile).getByText('No target')).toBeInTheDocument();
+      expect(within(tile).getByText('No goal set')).toBeInTheDocument();
+      expect(within(tile).queryByText('Target met')).not.toBeInTheDocument();
+      expect(within(tile).queryByText(/∞|NaN/)).not.toBeInTheDocument();
+    });
+
+    it('shows Target met once closed-won reaches the goal, not a ratio over a zero gap', async () => {
+      const book = makeBook();
+      book.opportunities.push(
+        makeOpportunity({
+          id: 'opp-won-big',
+          partnerId: 'partner-1',
+          outcome: 'won',
+          forecastedRevenue: 1_200_000,
+          createdAt: '2026-08-01T00:00:00.000Z',
+          expectedCloseDate: '2026-09-01T00:00:00.000Z',
+          closedAt: '2026-09-01T00:00:00.000Z',
+        }),
+      );
+      renderView({ provider: new MockDataProvider(book) });
+
+      expect(await screen.findByText('Goal achieved')).toBeInTheDocument();
+      const tile = coverageTile();
+      expect(within(tile).getByText('Target met')).toBeInTheDocument();
+      expect(within(tile).queryByText(/goal remaining/)).not.toBeInTheDocument();
+    });
+  });
+
   it('reports a failed load and retries it', async () => {
     const user = userEvent.setup();
     const provider = new MockDataProvider(makeBook());
