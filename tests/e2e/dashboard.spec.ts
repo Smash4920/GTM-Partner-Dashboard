@@ -57,9 +57,20 @@ test('editing an open forecast updates live pipeline and weighted metrics', asyn
   await expect(weightedValue).not.toHaveText(weightedAfterRevenue ?? '');
 });
 
-test('an authorized roster addition can receive and log a notification', async ({ page }) => {
+test('VAL-GOV-003: roster controls state their simulation boundary', async ({ page }) => {
   await openView(page, 'Data Connections');
   await expect(page.getByRole('heading', { name: 'Data Connections' })).toBeVisible();
+
+  // The roster panel names itself a current-session simulation and never
+  // claims to provision, authorize, revoke, or restore sign-in or data access.
+  await expect(
+    page.getByText(/Current-session notification-routing simulation only/),
+  ).toBeVisible();
+  await expect(page.getByText(/Refresh resets the roster/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /authorize/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /revoke/i })).toHaveCount(0);
+  await expect(page.getByText(/awaiting authorization/i)).toHaveCount(0);
+  await expect(page.getByText(/access revoked/i)).toHaveCount(0);
 
   const name = 'Integration Test User';
   const email = 'integration.user@example.com';
@@ -68,23 +79,53 @@ test('an authorized roster addition can receive and log a notification', async (
 
   await page.getByRole('button', { name: 'Add user' }).click();
   const form = page.getByRole('dialog', { name: 'Add internal user' });
+  await expect(form.getByText('Add to the notification roster · routing starts off')).toBeVisible();
   await form.getByLabel('Name').fill(name);
   await form.getByLabel('Work email').fill(email);
   await form.getByRole('button', { name: 'Add to roster' }).click();
 
+  // An addition lands with routing off and cannot be messaged yet.
   const userRow = page.getByRole('row').filter({ hasText: email });
-  await expect(userRow).toContainText('Awaiting authorization');
+  await expect(userRow).toContainText('Routing not set up');
   await expect(recipient).not.toContainText(name);
 
-  await userRow.getByRole('button', { name: 'Authorize' }).click();
-  await expect(userRow).toContainText('Authorized');
+  // Turning notifications on is a routing change, not an access grant.
+  await userRow.getByRole('button', { name: 'Turn on notifications' }).click();
+  await expect(userRow).toContainText('Notifications on');
   await expect(recipient).toContainText(name);
 
+  // Sends are recorded as simulated/local-only, never delivered.
   await recipient.selectOption({ label: `${name} · Partner Manager` });
   await page.getByRole('button', { name: `Send to ${name}` }).click();
 
-  await expect(page.getByText(/^Delivered /)).toBeVisible();
+  await expect(page.getByText(/^Simulated \/ local only · /)).toBeVisible();
+  await expect(page.getByText(/^Delivered /)).toHaveCount(0);
   await expect(page.getByText('Sent this session · 1', { exact: true })).toBeVisible();
+});
+
+test('VAL-GOV-004: connection map marks only in-process behavior active', async ({ page }) => {
+  await openView(page, 'Data Connections');
+  await expect(page.getByRole('heading', { name: 'Data Connections' })).toBeVisible();
+
+  await expect(
+    page.getByText(/Only in-process mock\/provider behavior runs in this demo/),
+  ).toBeVisible();
+
+  // Identity is unconnected and the roster is labeled a simulation.
+  await page.getByRole('button', { name: /^Identity provider \(SSO\)/ }).click();
+  await expect(page.getByText('What is missing')).toBeVisible();
+  await expect(
+    page.getByText(/never provision, authorize, revoke, or restore sign-in or data access/),
+  ).toBeVisible();
+
+  // Notification delivery is unconnected; demo sends are local records.
+  await page.getByRole('button', { name: /^Notification service/ }).click();
+  await expect(
+    page.getByText(/simulated, local-only session records and are never delivered/),
+  ).toBeVisible();
+
+  // Every provider method retains a truthful box or wire on the map.
+  await expect(page.getByText('every DataProvider method has a wire')).toBeVisible();
 });
 
 test('every simulated partner portal excludes internal Sell To opportunities', async ({ page }) => {

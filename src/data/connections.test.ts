@@ -38,6 +38,44 @@ describe('connection catalog', () => {
     }
   });
 
+  it('marks only in-process mock/provider behavior active (VAL-GOV-004)', () => {
+    // Live means "flowing in this demo", which only the in-process canonical
+    // model and the dashboard platform can truthfully claim.
+    expect(
+      CONNECTION_NODES.filter((node) => node.status === 'live').map((node) => node.id),
+    ).toEqual(['canonical', 'api']);
+
+    // Identity, server row enforcement, source freshness/ingestion, the
+    // warehouse, durable writes, and external delivery are never live.
+    const neverLive = ['idp', 'notifications', 'writeback', 'ingest', 'warehouse', 'salesforce'];
+    for (const id of neverLive) {
+      const node = CONNECTION_NODES.find((candidate) => candidate.id === id);
+      expect(node?.status).not.toBe('live');
+    }
+
+    // Blocked nodes name the missing production dependency instead of
+    // overstating authorization, freshness, or delivery.
+    for (const id of ['idp', 'notifications']) {
+      const node = CONNECTION_NODES.find((candidate) => candidate.id === id);
+      expect(node?.blocker).toMatch(/^Not connected:/);
+    }
+    const notifications = CONNECTION_NODES.find((node) => node.id === 'notifications');
+    expect(notifications?.blocker).toMatch(/simulated, local-only session records/);
+    expect(notifications?.blocker).toMatch(/never delivered/);
+    const idp = CONNECTION_NODES.find((node) => node.id === 'idp');
+    expect(idp?.blocker).toMatch(/current-session notification-routing simulation/);
+    expect(idp?.blocker).toMatch(/never provision, authorize, revoke, or restore/);
+
+    // The live legend cannot read as production connectivity.
+    expect(CONNECTION_STATUS_META.live.description).toMatch(/in-process mock\/provider behavior/);
+    expect(CONNECTION_STATUS_META.live.description).toMatch(/no external system is connected/i);
+
+    // No node or wire copy claims row-level authorization happens client-side.
+    for (const node of CONNECTION_NODES) {
+      expect(node.summary).not.toMatch(/row-authorized/i);
+    }
+  });
+
   it('covers every DataProvider method with a wire or a box', () => {
     // The contract in DataProvider.ts is the seam; if a method is added there
     // and not here, the map is quietly incomplete.

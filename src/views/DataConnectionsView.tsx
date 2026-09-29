@@ -146,7 +146,7 @@ export default function DataConnectionsView({
   );
   const required = CONNECTION_NODES.filter((node) => node.status === 'required').length;
   const live = CONNECTION_NODES.filter((node) => node.status === 'live').length;
-  const authorized = data.teamUsers.filter((user) => user.status === 'active').length;
+  const routingOn = data.teamUsers.filter((user) => user.status === 'active').length;
   const approaching = alerts.filter((alert) => alert.state === 'approaching').length;
 
   return (
@@ -158,10 +158,13 @@ export default function DataConnectionsView({
         <h1 className="mt-2 text-3xl tracking-tight text-bone">Data Connections</h1>
         <p className="mt-1 max-w-3xl text-sm text-granite">
           Every system the dashboard has to be wired to, what each one supplies, and what is still
-          missing — the plumbing behind the read-only DataProvider seam. The partner team&apos;s
-          access lives inside the same map, because the identity provider that authorizes them is
-          one of those connections, and so is the notification service that tells a registration
-          owner their response SLA is about to lapse.
+          missing — the plumbing behind the read-only DataProvider seam. Only in-process
+          mock/provider behavior runs in this demo; identity, server row enforcement, source
+          freshness, the warehouse, durable writes, and external delivery are unconnected. The
+          partner team&apos;s notification roster lives inside the same map, because the identity
+          provider that would authorize them in production (unconnected here) is one of those
+          connections, and so is the notification service that would tell a registration owner their
+          response SLA is about to lapse.
         </p>
       </div>
 
@@ -184,9 +187,9 @@ export default function DataConnectionsView({
           } required to go live`}
         />
         <KpiTile
-          label="Team authorized"
-          value={`${authorized}/${data.teamUsers.length}`}
-          sub="internal partner-team users with access"
+          label="Receiving notifications"
+          value={`${routingOn}/${data.teamUsers.length}`}
+          sub="roster entries routed simulated notifications this session"
         />
         <KpiTile
           label="SLA alerts due"
@@ -251,8 +254,8 @@ export default function DataConnectionsView({
       </Card>
 
       <Card
-        title="Partner team access"
-        subtitle="Who is on the internal roster, which manager they are aligned to, and whether they are authorized to sign in and be notified."
+        title="Partner team notification routing"
+        subtitle="Who is on the internal roster, which manager they are aligned to, and whether this session routes simulated notifications to them. These controls do not grant sign-in or data access."
       >
         <TeamAccessPanel
           users={data.teamUsers}

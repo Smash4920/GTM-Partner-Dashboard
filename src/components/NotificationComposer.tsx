@@ -28,7 +28,7 @@ interface NotificationComposerProps {
   state: ComposerState;
   onChange: (next: ComposerState) => void;
   onSend: () => void;
-  /** The most recent send this session, shown as a delivery confirmation. */
+  /** The most recent send this session, shown as a simulated/local-only record. */
   lastSent?: DashboardNotification;
   /** Builds the copy for a template/registration pair. */
   describe: (
@@ -75,7 +75,8 @@ function RegistrationStatus({
 /**
  * Send a notification to one named person, from inside the connection map:
  * picking a teammate in the notification node lands here, and the SLA queue
- * pre-fills it. The user's own authorized channels decide how it goes out.
+ * pre-fills it. The recipient's own notification channels decide how it would
+ * go out. Sends are simulated and local to this session; nothing is delivered.
  */
 export default function NotificationComposer({
   users,
@@ -88,7 +89,8 @@ export default function NotificationComposer({
   lastSent,
   describe,
 }: NotificationComposerProps) {
-  // Only an authorized user can be notified; a suspended or invited one cannot.
+  // Only a teammate with notifications on can be messaged; a paused or
+  // not-yet-routing one cannot.
   const notifiableUsers = users.filter((user) => user.status === 'active');
   const user = notifiableUsers.find((candidate) => candidate.id === state.userId) ?? null;
   const template = NOTIFICATION_TEMPLATES.find((item) => item.id === state.template)!;
@@ -209,12 +211,13 @@ export default function NotificationComposer({
             ))
           ) : (
             <span className="text-[10px] text-granite">
-              Pick a teammate to see the channels they are authorized on.
+              Pick a teammate to see the channels they receive on.
             </span>
           )}
         </div>
         <p className="mt-1 text-[10px] text-granite">
-          Only authorized channels are used; email always is. Delivery is simulated in the demo.
+          Only the channels the recipient receives on are used; email always is. Sends are simulated
+          and local to this session — nothing is delivered.
         </p>
       </div>
 
@@ -232,12 +235,12 @@ export default function NotificationComposer({
           <span className="text-xs text-granite">
             {users.length === 0
               ? 'Add someone to the roster first.'
-              : 'Only an authorized user can be notified.'}
+              : 'Only a teammate with notifications on can be messaged.'}
           </span>
         )}
         {lastSent && (
           <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-metric">
-            Delivered {formatTime(lastSent.sentAt)} · {lastSent.channels.join(' + ')}
+            Simulated / local only · {formatTime(lastSent.sentAt)} · {lastSent.channels.join(' + ')}
           </span>
         )}
       </div>

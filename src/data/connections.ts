@@ -74,7 +74,8 @@ export const CONNECTION_STATUS_META: Record<
 > = {
   live: {
     label: 'Live',
-    description: 'Flowing in this demo; mock data reaches the views through this seam today.',
+    description:
+      'Active in this demo as in-process mock/provider behavior only; no external system is connected.',
     color: '#a0ca92',
     dotClass: 'bg-metric',
     textClass: 'text-metric',
@@ -258,11 +259,11 @@ export const CONNECTION_NODES: ConnectionNode[] = [
     tier: 'platform',
     status: 'live',
     summary:
-      'One validated partner / opportunity / registration / target / activity / certification model with lineage and freshness.',
-    supplies: ['The single book every view renders', 'Source lineage and as-of dates'],
+      'One validated partner / opportunity / registration / target / activity / certification model, served in-process by the mock provider.',
+    supplies: ['The single book every view renders', 'A deterministic snapshot (as-of) date'],
     methods: ['MockDataProvider — this demo'],
     source: 'Normalized tables behind the DataProvider interface',
-    cadence: 'Rewritten per sync; snapshot-dated for the demo',
+    cadence: 'In-process and snapshot-dated; no sync runs in the demo',
     blocker:
       'Live only over mock data. A real deployment swaps the provider for the synced store without touching a view — see DataProvider.ts.',
     owner: 'architecture',
@@ -277,10 +278,10 @@ export const CONNECTION_NODES: ConnectionNode[] = [
     tier: 'platform',
     status: 'live',
     summary:
-      'Aggregated, paginated, row-authorized reads, plus every session edit layered on top of the provider book. The four forecast rollups are computed here in production, over the canonical model, so the browser receives kilobytes.',
+      'Aggregated, paginated reads computed in-process, plus every session edit layered on top of the provider book. Row authorization is not a client concern: in production a scoped API would enforce it, so the browser receives kilobytes.',
     supplies: [
       'Screens, exports, and scheduled reporting',
-      'Pre-aggregated forecast figures, cached per scope',
+      'Pre-aggregated forecast figures per scope',
     ],
     methods: [
       'getForecastSummary()',
@@ -310,7 +311,7 @@ export const CONNECTION_NODES: ConnectionNode[] = [
     auth: 'OIDC for sessions, SCIM token for provisioning',
     cadence: 'SCIM in real time, just-in-time on first sign-in',
     blocker:
-      'Access is a local demo roster today. SSO, roles, and row-level authorization are the first architecture item for a reason: nothing else can be exposed safely without them.',
+      'Not connected: the roster below is a current-session notification-routing simulation — roster changes never provision, authorize, revoke, or restore sign-in or data access. SSO, roles, and row-level authorization are the first architecture item for a reason: nothing else can be exposed safely without them.',
     owner: 'architecture',
     x: 656,
     y: 40,
@@ -323,14 +324,14 @@ export const CONNECTION_NODES: ConnectionNode[] = [
     tier: 'destination',
     status: 'required',
     summary:
-      'Delivers SLA alerts and ad-hoc notes to one named owner over the channels they are authorized on.',
+      'Delivers SLA alerts and ad-hoc notes to one named owner over the channels they are configured for.',
     supplies: ['Deal-registration SLA warnings and breaches', 'Hand-sent notes about a record'],
     methods: ['sendNotification()'],
     source: 'Slack app for direct messages, transactional email provider',
     auth: 'Bot token with chat:write; email through the transactional provider',
     cadence: 'Event-driven, evaluated when the alert rule fires',
     blocker:
-      'Constrained on both sides: it needs identity to know who owns a registration, the registration sync to know what is late, and a scheduler to evaluate the rule each business day.',
+      'Not connected: demo sends are simulated, local-only session records and are never delivered. A real service needs identity to know who owns a registration, the registration sync to know what is late, and a scheduler to evaluate the rule each business day.',
     owner: 'architecture',
     x: 656,
     y: 164,

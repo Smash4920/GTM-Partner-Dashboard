@@ -25,7 +25,7 @@ import type { TeamUser } from '../data/types';
 interface WireDiagramProps {
   selectedNodeId: string | null;
   onSelectNode: (nodeId: string) => void;
-  /** Internal users authorized to receive notifications. */
+  /** Roster entries this session would route simulated notifications to. */
   users: TeamUser[];
   selectedUserId: string | null;
   onSelectUser: (userId: string) => void;

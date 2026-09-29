@@ -198,7 +198,8 @@ const TEAM_USERS: readonly (readonly [
   ['Riley Patel', 'partner-manager', 'active'],
   ['Nadia Okonkwo', 'partnership-lead', 'active'],
   ['Priya Raman', 'deal-desk-ops', 'active'],
-  // Added but not yet authorized: the flow the Access panel exists to complete.
+  // Added with notification routing not set up yet: the flow the roster panel
+  // exists to complete.
   ['Sam Whitaker', 'analyst', 'invited'],
 ];
 
@@ -904,7 +905,7 @@ function generateTeamUsers(partnerManagers: PartnerManager[]): TeamUser[] {
             : [...NOTIFICATION_CHANNELS],
       addedAt: iso(addedAt),
       addedBy: 'Nadia Okonkwo',
-      // Only a user who has been authorized carries the grant timestamp.
+      // Only a user with notification routing on carries the routing timestamp.
       authorizedAt: status === 'active' ? iso(new Date(addedAt.getTime() + DAY)) : undefined,
     };
   });

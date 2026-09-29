@@ -7,20 +7,20 @@ import { TEAM_ROLE_META } from '../data/constants';
 import type { PartnerManager, TeamUser } from '../data/types';
 
 /**
- * Partner-team access: the roster summary, the add-user form's validation
- * branches, and the single row action each access state offers.
+ * Partner-team notification roster: the roster summary, the add-user form's
+ * validation branches, and the single row action each routing state offers.
  *
- * The panel's whole point is that being on the roster and being authorized are
- * two different states — an add lands awaiting authorization — so most of these
- * tests assert on the exact argument handed to a callback rather than on
- * appearance. Manager names are deliberately unrelated to the fixture user
- * names: a row's accessible name is its full text, so a collision would make
- * row queries ambiguous.
+ * The panel's whole point is that being on the roster and receiving simulated
+ * notifications are two different states — an add lands with routing off — so
+ * most of these tests assert on the exact argument handed to a callback rather
+ * than on appearance. Manager names are deliberately unrelated to the fixture
+ * user names: a row's accessible name is its full text, so a collision would
+ * make row queries ambiguous.
  */
 
-/** User, Role, Aligned manager, Channels, Added, Access, Action. */
+/** User, Role, Aligned manager, Channels, Added, Notifications, Action. */
 const ALIGNED_MANAGER_COLUMN = 2;
-const ACCESS_COLUMN = 5;
+const NOTIFICATIONS_COLUMN = 5;
 
 const MANAGERS: PartnerManager[] = [
   { id: 'pm-1', name: 'A. Director' },
@@ -56,7 +56,27 @@ function dialog() {
 }
 
 describe('TeamAccessPanel roster', () => {
-  it('counts authorized and awaiting users separately from the roster size', () => {
+  it('labels every control a session-only notification-routing simulation (VAL-GOV-003)', () => {
+    renderPanel();
+
+    expect(
+      screen.getByText(/Current-session notification-routing simulation only/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Refresh resets the roster/)).toBeInTheDocument();
+
+    // No control or result may claim to provision, authorize, revoke, or
+    // restore sign-in or data access.
+    expect(screen.queryByRole('button', { name: /authorize/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /revoke/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/awaiting authorization/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/access revoked/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^authorized$/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/authorized to sign in|grant(s|ed)? (sign-in|access)|can sign in/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('counts routing-on and not-yet-routing users separately from the roster size', () => {
     renderPanel({
       users: [
         makeTeamUser({ id: 'user-1', status: 'active' }),
@@ -66,10 +86,10 @@ describe('TeamAccessPanel roster', () => {
       ],
     });
 
-    // A suspended user is neither authorized nor waiting, which is why the two
-    // numbers do not simply add up to the roster size.
+    // A paused user is neither receiving notifications nor waiting for routing
+    // setup, which is why the two numbers do not simply add up to the roster size.
     expect(
-      screen.getByText('4 on the roster · 1 authorized · 2 awaiting authorization'),
+      screen.getByText(/4 on the roster · 1 receiving notifications · 2 not yet\s+routing/),
     ).toBeInTheDocument();
   });
 
@@ -86,6 +106,11 @@ describe('TeamAccessPanel roster', () => {
     expect(screen.getByRole('button', { name: 'Close' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.queryByRole('button', { name: 'Add user' })).not.toBeInTheDocument();
     expect(dialog()).toBeInTheDocument();
+    // The form names the simulation boundary: a new entry does not receive
+    // notifications until routing is turned on, and nothing is authorized.
+    expect(
+      within(dialog()).getByText('Add to the notification roster · routing starts off'),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Close' }));
 
@@ -123,8 +148,10 @@ describe('TeamAccessPanel roster', () => {
     expect(within(cells[3]).getByText('In-app')).toBeInTheDocument();
     expect(within(cells[3]).queryByText('Slack')).not.toBeInTheDocument();
     expect(cells[4]).toHaveTextContent('Feb 2, 2026');
-    expect(cells[ACCESS_COLUMN]).toHaveTextContent('Authorized');
-    expect(within(cells[ACCESS_COLUMN]).getByText('authorized Feb 3, 2026')).toBeInTheDocument();
+    expect(cells[NOTIFICATIONS_COLUMN]).toHaveTextContent('Notifications on');
+    expect(
+      within(cells[NOTIFICATIONS_COLUMN]).getByText('routing since Feb 3, 2026'),
+    ).toBeInTheDocument();
   });
 
   it('shows an em dash for a role that is not aligned to one manager', () => {
@@ -145,7 +172,9 @@ describe('TeamAccessPanel roster', () => {
     // The id is set but the role ignores it: alignment is a property of the
     // role, and an analyst owns no registrations.
     expect(cells[ALIGNED_MANAGER_COLUMN]).toHaveTextContent('—');
-    expect(within(cells[ACCESS_COLUMN]).queryByText(/^authorized /)).not.toBeInTheDocument();
+    expect(
+      within(cells[NOTIFICATIONS_COLUMN]).queryByText(/^routing since /),
+    ).not.toBeInTheDocument();
   });
 
   it('shows an em dash when the aligned manager is not on the roster', () => {
@@ -177,43 +206,43 @@ describe('TeamAccessPanel roster', () => {
 });
 
 describe('TeamAccessPanel row actions', () => {
-  it('offers Revoke access to an authorized user', async () => {
+  it('offers Pause notifications to a user with routing on', async () => {
     const user = userEvent.setup();
     const { onSetStatus, onRemove } = renderPanel({
       users: [makeTeamUser({ id: 'user-1', status: 'active' })],
     });
 
-    expect(screen.queryByRole('button', { name: 'Authorize' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Restore' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Turn on notifications' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resume notifications' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Revoke access' }));
+    await user.click(screen.getByRole('button', { name: 'Pause notifications' }));
 
     expect(onSetStatus).toHaveBeenCalledWith('user-1', 'suspended');
     expect(onRemove).not.toHaveBeenCalled();
   });
 
-  it('offers Authorize to an invited user', async () => {
+  it('offers Turn on notifications to a user whose routing is not set up', async () => {
     const user = userEvent.setup();
     const { onSetStatus } = renderPanel({
       users: [makeTeamUser({ id: 'user-1', status: 'invited' })],
     });
 
-    expect(screen.queryByRole('button', { name: 'Revoke access' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pause notifications' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Authorize' }));
+    await user.click(screen.getByRole('button', { name: 'Turn on notifications' }));
 
     expect(onSetStatus).toHaveBeenCalledWith('user-1', 'active');
   });
 
-  it('offers Restore to a suspended user', async () => {
+  it('offers Resume notifications to a paused user', async () => {
     const user = userEvent.setup();
     const { onSetStatus } = renderPanel({
       users: [makeTeamUser({ id: 'user-1', status: 'suspended' })],
     });
 
-    expect(screen.queryByRole('button', { name: 'Revoke access' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pause notifications' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Restore' }));
+    await user.click(screen.getByRole('button', { name: 'Resume notifications' }));
 
     expect(onSetStatus).toHaveBeenCalledWith('user-1', 'active');
   });

@@ -121,7 +121,7 @@ export function makeNotification(
     body: 'Acme Freight has been pending since Monday.',
     channels: ['email'],
     sentAt: '2026-09-18T12:00:00.000Z',
-    status: 'delivered',
+    status: 'simulated-local',
     ...overrides,
   };
 }

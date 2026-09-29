@@ -174,14 +174,16 @@ export interface PartnerCertification {
 export type TeamRole = 'partnership-lead' | 'partner-manager' | 'deal-desk-ops' | 'analyst';
 
 /**
- * Access state for an internal user:
- * - invited:   added to the roster, no access until someone authorizes it
- * - active:    authorized to sign in and receive notifications
- * - suspended: access revoked, the roster entry (and its audit trail) kept
+ * Notification-routing state for an internal roster entry, for this session
+ * only. None of these states grants, revokes, or restores sign-in or data
+ * access — production identity (Prod Only) owns that:
+ * - invited:   on the roster, notification routing not set up yet
+ * - active:    this session would route simulated notifications to them
+ * - suspended: notifications paused, the roster entry kept
  */
 export type TeamUserStatus = 'active' | 'invited' | 'suspended';
 
-/** Where a notification can be delivered. Email is the always-on channel. */
+/** Where a simulated notification would go. Email is the always-on channel. */
 export type NotificationChannel = 'email' | 'slack' | 'in-app';
 
 /**
@@ -207,16 +209,16 @@ export interface TeamUser {
    */
   partnerManagerId?: string;
   status: TeamUserStatus;
-  /** Channels this user is authorized to receive notifications on. */
+  /** Channels this user would receive simulated notifications on this session. */
   channels: NotificationChannel[];
   addedAt: string; // ISO 8601
-  /** Set when access was granted; the audit entry a real IdP would keep. */
+  /** Set when notification routing was switched on; never an access grant. */
   authorizedAt?: string;
   /** Who added the user to the roster. */
   addedBy?: string;
 }
 
-/** What the access form collects; the roster record is built from it. */
+/** What the roster form collects; the session-only record is built from it. */
 export interface NewTeamUserInput {
   name: string;
   email: string;
@@ -234,10 +236,18 @@ export type NotificationKind =
   /** Free-form note sent by hand from the notification panel. */
   | 'manual';
 
-/** Mock delivery states; a real sender would add retries and failures. */
-type NotificationStatus = 'queued' | 'delivered' | 'failed';
+/**
+ * Session send states. The demo records sends locally only, so the only state
+ * it can truthfully report is `simulated-local` — a record on this screen, in
+ * memory, for this session. A real sender (Prod Only) would add delivery,
+ * retry, and failure states; the demo never claims one.
+ */
+type NotificationStatus = 'simulated-local';
 
-/** One notification sent to one internal user, recorded for the session. */
+/**
+ * One simulated notification to one internal user, recorded locally for the
+ * session. Nothing is delivered; refresh clears the record.
+ */
 export interface DashboardNotification {
   id: string;
   userId: string;

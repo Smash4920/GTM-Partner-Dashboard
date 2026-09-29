@@ -170,6 +170,9 @@ export default function SlaAlertPanel({
         <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
           Sent this session · {notifications.length}
         </p>
+        <p className="mt-1 text-[10px] text-granite">
+          Simulated / local only — recorded for this session, never delivered. Refresh clears them.
+        </p>
         {notifications.length === 0 ? (
           <p className="mt-2 text-sm text-granite">
             Nothing sent yet. Pick a teammate in the notification node above, or send an alert.

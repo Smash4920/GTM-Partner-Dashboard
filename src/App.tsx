@@ -80,10 +80,11 @@ export default function App({ flagClient = featureFlags }: AppProps) {
   const [prospects, setProspects] = useState<Partner[]>([]);
   const prospectSeq = useRef(0);
 
-  // Partner-team access and notifications. Roster patches are overrides keyed
-  // by user id, additions are separate, and sent notifications are their own
-  // log — the same shape as the other session edits, and the same gap a live
-  // provider has to close by persisting them (see Data Connections).
+  // Partner-team notification roster and simulated notifications. Roster
+  // patches are overrides keyed by user id, additions are separate, and sent
+  // notifications are their own session log — the same shape as the other
+  // session edits, and the same gap a live provider has to close by persisting
+  // them (see Data Connections).
   const [teamUserOverrides, setTeamUserOverrides] = useState<Record<string, Partial<TeamUser>>>({});
   const [addedTeamUsers, setAddedTeamUsers] = useState<TeamUser[]>([]);
   const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
@@ -226,8 +227,10 @@ export default function App({ flagClient = featureFlags }: AppProps) {
     return id;
   };
 
-  // Adding puts a name on the roster awaiting authorization; authorizing is a
-  // second step, which is how a real identity provider separates the two.
+  // Adding puts a name on the session roster with notification routing off;
+  // turning routing on is a second step. Both are local simulations — neither
+  // provisions or authorizes sign-in or data access, which a real identity
+  // provider (Prod Only) would own.
   const addTeamUser = (input: NewTeamUserInput) => {
     teamUserSeq.current += 1;
     log.debug('Team user invited', {
@@ -278,7 +281,8 @@ export default function App({ flagClient = featureFlags }: AppProps) {
 
   // Sends are timestamped off the session clock, not the snapshot: the data is
   // mocked at a fixed date, but an action taken now happened now. The record
-  // is delivered immediately because the demo has no service behind it.
+  // is simulated and local to this session — the demo has no sender behind it,
+  // so nothing is ever delivered.
   const sendNotification = (draft: NotificationDraft) => {
     notificationSeq.current += 1;
     const id = `notification-${notificationSeq.current}`;
@@ -298,7 +302,7 @@ export default function App({ flagClient = featureFlags }: AppProps) {
         body: draft.body,
         channels: draft.channels,
         sentAt: new Date().toISOString(),
-        status: 'delivered',
+        status: 'simulated-local',
         registrationId: draft.registrationId,
       },
       ...prev,

@@ -18,14 +18,16 @@ import { formatDate } from '../lib/format';
 import { CheckIcon, PlusIcon, XIcon } from './icons';
 
 /**
- * Partner-team access: who is on the internal roster, whether they are
- * authorized, and which manager they are aligned to.
+ * Partner-team notification roster: who is on the internal roster, which manager
+ * they are aligned to, and whether this session routes simulated notifications
+ * to them.
  *
- * Adding and authorizing are deliberately two steps. Adding puts a name on the
- * roster awaiting authorization; authorizing grants access. That split is what
- * a real identity provider enforces, and it is the difference between "we know
- * who should have access" and "they can sign in" — the gap the architecture
- * roadmap's first item closes.
+ * Everything here is a current-session simulation. Adding a name, turning
+ * notifications on, pausing them, resuming them, or removing an entry only
+ * changes who this demo would route a simulated notification to. None of it
+ * provisions, authorizes, revokes, or restores sign-in or data access — a real
+ * identity provider (Prod Only, see the Data Connections map) owns that, which
+ * is the gap the architecture roadmap's first item closes.
  */
 
 interface TeamAccessPanelProps {
@@ -51,14 +53,20 @@ export default function TeamAccessPanel({
   const [formOpen, setFormOpen] = useState(false);
   const managerName = (id?: string) =>
     partnerManagers.find((manager) => manager.id === id)?.name ?? '—';
-  const active = users.filter((user) => user.status === 'active').length;
-  const awaiting = users.filter((user) => user.status === 'invited').length;
+  const routing = users.filter((user) => user.status === 'active').length;
+  const notSetUp = users.filter((user) => user.status === 'invited').length;
 
   return (
     <div className="space-y-4">
+      <p className="rounded border border-ash/60 bg-carbon/40 p-3 text-[11px] leading-snug text-granite">
+        Current-session notification-routing simulation only. These controls decide who this demo
+        would route a simulated notification to; they do not provision, authorize, revoke, or
+        restore sign-in or data access. Refresh resets the roster.
+      </p>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-granite">
-          {users.length} on the roster · {active} authorized · {awaiting} awaiting authorization
+          {users.length} on the roster · {routing} receiving notifications · {notSetUp} not yet
+          routing
         </p>
         <button
           type="button"
@@ -92,7 +100,7 @@ export default function TeamAccessPanel({
               <Th className="pr-3 text-left">Aligned manager</Th>
               <Th className="pr-3 text-left">Channels</Th>
               <Th className="pr-3 text-left">Added</Th>
-              <Th className="pr-3 text-left">Access</Th>
+              <Th className="pr-3 text-left">Notifications</Th>
               <Th className="text-right">Action</Th>
             </tr>
           </thead>
@@ -145,7 +153,7 @@ export default function TeamAccessPanel({
                     </span>
                     {user.authorizedAt && (
                       <p className="mt-0.5 font-mono text-[9px] text-granite">
-                        authorized {formatDate(user.authorizedAt)}
+                        routing since {formatDate(user.authorizedAt)}
                       </p>
                     )}
                   </td>
@@ -153,18 +161,18 @@ export default function TeamAccessPanel({
                     <span className="flex flex-wrap items-center justify-end gap-1.5">
                       {user.status === 'active' && (
                         <RowAction onClick={() => onSetStatus(user.id, 'suspended')}>
-                          Revoke access
+                          Pause notifications
                         </RowAction>
                       )}
                       {user.status === 'invited' && (
                         <RowAction onClick={() => onSetStatus(user.id, 'active')}>
                           <CheckIcon className="h-3 w-3" />
-                          Authorize
+                          Turn on notifications
                         </RowAction>
                       )}
                       {user.status === 'suspended' && (
                         <RowAction onClick={() => onSetStatus(user.id, 'active')}>
-                          Restore
+                          Resume notifications
                         </RowAction>
                       )}
                       {addedUserIds.has(user.id) && (
@@ -256,7 +264,7 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
       aria-label="Add internal user"
     >
       <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-        Add to the partner team · access awaits authorization
+        Add to the notification roster · routing starts off
       </p>
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Name">

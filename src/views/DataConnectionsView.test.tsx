@@ -230,8 +230,13 @@ describe('DataConnectionsView', () => {
     expect(
       tile('Flows planned').getByText(`${REQUIRED_EDGES} required to go live`),
     ).toBeInTheDocument();
-    // Two of the four roster entries are authorized; the suspended pair is not.
-    expect(tile('Team authorized').getByText('2/4')).toBeInTheDocument();
+    // Two of the four roster entries receive notifications; the paused pair does not.
+    expect(tile('Receiving notifications').getByText('2/4')).toBeInTheDocument();
+    expect(
+      tile('Receiving notifications').getByText(
+        'roster entries routed simulated notifications this session',
+      ),
+    ).toBeInTheDocument();
 
     expect(tile('SLA alerts due').getByText('3')).toBeInTheDocument();
     expect(
@@ -324,6 +329,38 @@ describe('DataConnectionsView', () => {
     expect(screen.getByText('Product roadmap')).toBeInTheDocument();
   });
 
+  it('renders identity and notification nodes unconnected with truthful blockers (VAL-GOV-004)', async () => {
+    const { user } = setup();
+
+    // The intro names the demo boundary up front.
+    expect(
+      screen.getByText(/Only in-process\s+mock\/provider behavior runs in this demo/),
+    ).toBeInTheDocument();
+
+    await user.click(nodeButton('Identity provider (SSO)'));
+    expect(screen.getByText('What is missing')).toBeInTheDocument();
+    expect(screen.getByText(/current-session notification-routing simulation/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/never provision, authorize, revoke, or restore sign-in or data access/),
+    ).toBeInTheDocument();
+
+    await user.click(nodeButton('Notification service'));
+    expect(
+      screen.getByText(/simulated, local-only session records and are never delivered/),
+    ).toBeInTheDocument();
+
+    // The only live boxes are the in-process ones, and they own the limit.
+    await user.click(nodeButton('Dashboard API & UI'));
+    expect(screen.getByText('Limit of the demo')).toBeInTheDocument();
+    // The summary renders on the node card and again in the detail panel.
+    expect(screen.getAllByText(/Row authorization is not a client concern/).length).toBeGreaterThan(
+      0,
+    );
+
+    await user.click(nodeButton('Canonical data model'));
+    expect(screen.getByText('Limit of the demo')).toBeInTheDocument();
+  });
+
   it('opens the composer on the most urgent approaching alert that has an owner', () => {
     setup();
 
@@ -414,7 +451,7 @@ describe('DataConnectionsView', () => {
     expect(screen.getByLabelText('Subject')).toHaveValue('');
     expect(screen.getByLabelText('Message')).toHaveValue('');
     expect(
-      screen.getByText('Pick a teammate to see the channels they are authorized on.'),
+      screen.getByText('Pick a teammate to see the channels they receive on.'),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send to a teammate' })).toBeDisabled();
   });
@@ -422,7 +459,7 @@ describe('DataConnectionsView', () => {
   it('says the roster is empty when there is nobody to notify', () => {
     setup({ data: { registrations: [], teamUsers: [] } });
 
-    expect(tile('Team authorized').getByText('0/0')).toBeInTheDocument();
+    expect(tile('Receiving notifications').getByText('0/0')).toBeInTheDocument();
     expect(screen.getByText('Add someone to the roster first.')).toBeInTheDocument();
     expect(connectionMap().getByText('No roster yet.')).toBeInTheDocument();
   });
@@ -450,14 +487,16 @@ describe('DataConnectionsView', () => {
     );
   });
 
-  it('will not notify a suspended teammate', async () => {
+  it('will not notify a paused teammate', async () => {
     const { user } = setup();
 
     await user.click(chip('T.'));
     expect(chip('T.')).toHaveAttribute('aria-pressed', 'true');
 
-    // A suspended user is not a notifiable option: no channels, nobody to send to.
-    expect(screen.getByText('Only an authorized user can be notified.')).toBeInTheDocument();
+    // A paused user is not a notifiable option: no channels, nobody to send to.
+    expect(
+      screen.getByText('Only a teammate with notifications on can be messaged.'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send to a teammate' })).toBeDisabled();
   });
 
@@ -655,13 +694,18 @@ describe('DataConnectionsView', () => {
       ],
     });
 
-    expect(screen.getByText('Delivered 12:00 · email + slack')).toBeInTheDocument();
+    // The last send is labeled simulated/local-only, never delivered.
+    expect(screen.getByText('Simulated / local only · 12:00 · email + slack')).toBeInTheDocument();
+    expect(screen.queryByText(/^Delivered /)).not.toBeInTheDocument();
 
     const sentCard = screen
       .getByRole('heading', { name: 'Deal-registration SLA alerts' })
       .closest('section');
     if (!sentCard) throw new Error('no SLA alert card');
     expect(within(sentCard).getByText('Sent this session · 1')).toBeInTheDocument();
+    expect(
+      within(sentCard).getByText(/Simulated \/ local only — recorded for this session/),
+    ).toBeInTheDocument();
 
     // The session log is the only list in the card; the queue above it is a table.
     const log = within(sentCard).getByRole('list');

@@ -268,13 +268,19 @@ export const TEAM_ROLE_META: Record<
 
 export const TEAM_ROLES: TeamRole[] = Object.keys(TEAM_ROLE_META) as TeamRole[];
 
+/**
+ * The roster status labels describe notification routing for this session only.
+ * They deliberately avoid "authorized"/"access" language: adding, enabling,
+ * pausing, or resuming a roster entry never provisions or authorizes sign-in or
+ * data access — a real identity provider (Prod Only) owns that.
+ */
 export const TEAM_USER_STATUS_META: Record<
   TeamUserStatus,
   { label: string; dotClass: string; textClass: string }
 > = {
-  active: { label: 'Authorized', dotClass: 'bg-metric', textClass: 'text-metric' },
-  invited: { label: 'Awaiting authorization', dotClass: 'bg-signal', textClass: 'text-signal' },
-  suspended: { label: 'Access revoked', dotClass: 'bg-graphite', textClass: 'text-granite' },
+  active: { label: 'Notifications on', dotClass: 'bg-metric', textClass: 'text-metric' },
+  invited: { label: 'Routing not set up', dotClass: 'bg-signal', textClass: 'text-signal' },
+  suspended: { label: 'Notifications paused', dotClass: 'bg-graphite', textClass: 'text-granite' },
 };
 
 export const NOTIFICATION_CHANNEL_META: Record<
