@@ -22,8 +22,8 @@ const STACK_ORDER: ForecastCategory[] = [...FORECAST_CATEGORIES].reverse();
 interface ChartRow extends WeeklyForecastRow {
   /** Short axis label for the week, e.g. 'Aug 3'. */
   label: string;
-  /** The quarter's revenue goal, drawn as the dashed line. */
-  goal: number;
+  /** The quarter's revenue goal, drawn as the dashed line when it is known. */
+  goal: number | undefined;
   /** Change vs the previous started week; null when there is none. */
   wowTotal: number | null;
   wowWeighted: number | null;
@@ -121,10 +121,14 @@ function WeekTooltip({ active, payload }: { active?: boolean; payload?: TooltipE
       <p style={{ marginTop: 2, color: '#8a8380', fontSize: 11 }}>
         <WowDelta delta={row.wowWeighted} />
       </p>
-      <p style={{ marginTop: 6, borderTop: '1px solid #3d3a39', paddingTop: 6, color: '#8a8380' }}>
-        Revenue goal
-        <span style={valueStyle}>{formatUsdCompact(row.goal)}</span>
-      </p>
+      {row.goal !== undefined && (
+        <p
+          style={{ marginTop: 6, borderTop: '1px solid #3d3a39', paddingTop: 6, color: '#8a8380' }}
+        >
+          Revenue goal
+          <span style={valueStyle}>{formatUsdCompact(row.goal)}</span>
+        </p>
+      )}
       <p style={{ marginTop: 4, fontSize: 11, color: '#8a8380' }}>
         {row.recordedAt
           ? `Snapshot recorded ${formatDayShort(row.recordedAt)}`
@@ -162,13 +166,17 @@ function StackSwatch({ faded }: { faded: boolean }) {
  * Closed weeks come from recorded snapshots and the in-progress week from the
  * live book, a distinction the tooltip states outright: it decides whether a
  * week-over-week move is history or an edit made minutes ago.
+ *
+ * The goal line is optional: the weekly series and the summary are separate
+ * queries, and a failed summary must not take the chart down with it — the
+ * bars still render, only the dashed line and its legend entry sit out.
  */
 export default function WeeklyForecastChart({
   rows,
   goal,
 }: {
   rows: WeeklyForecastRow[];
-  goal: number;
+  goal?: number;
 }) {
   const data = useMemo<ChartRow[]>(() => {
     let prevTotal: number | null = null;
@@ -236,14 +244,16 @@ export default function WeeklyForecastChart({
                 isAnimationActive={false}
               />
             ))}
-            <Line
-              dataKey="goal"
-              stroke={TARGET_COLOR}
-              strokeDasharray="4 4"
-              strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={false}
-            />
+            {goal !== undefined && (
+              <Line
+                dataKey="goal"
+                stroke={TARGET_COLOR}
+                strokeDasharray="4 4"
+                strokeWidth={1.5}
+                dot={false}
+                isAnimationActive={false}
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -257,13 +267,15 @@ export default function WeeklyForecastChart({
             <StackSwatch faded />
             Weighted forecast
           </span>
-          <span className="flex items-center gap-2">
-            <span
-              className="h-0 w-5 border-t-2 border-dashed"
-              style={{ borderColor: TARGET_COLOR }}
-            />
-            Revenue goal
-          </span>
+          {goal !== undefined && (
+            <span className="flex items-center gap-2">
+              <span
+                className="h-0 w-5 border-t-2 border-dashed"
+                style={{ borderColor: TARGET_COLOR }}
+              />
+              Revenue goal
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-[10px] text-granite">
           {FORECAST_CATEGORIES.map((category) => (

@@ -51,29 +51,45 @@ export function providerOption(id: ProviderId): ProviderOption {
 
 /**
  * Demo and browser-test plumbing: `?remoteFailFirst=2` puts the simulated
- * remote on a deterministic failure plan — its first two calls fail and
- * everything after succeeds — so the provider-switch failure and retry path
- * can be exercised in a browser without depending on the seeded draw. Unset
- * in normal use, and meaningless for the local and scaled providers, which
- * never fail.
+ * remote on a deterministic positional failure plan — its first two calls
+ * fail and everything after succeeds — so the provider-switch failure and
+ * retry path can be exercised in a browser without depending on the seeded
+ * draw. `?remoteFailMethods=getForecastSummary:2,getManagerBook:1` instead
+ * fails the first N calls of each named method, which survives the readiness
+ * probe: only the named widgets fail, so per-widget failure and focused retry
+ * can be exercised past a committed provider. Unset in normal use, and
+ * meaningless for the local and scaled providers, which never fail.
  */
-function scriptedRemoteFailures(): number | undefined {
+function scriptedRemoteFailures():
+  | { failFirstCalls: number }
+  | { failMethods: Partial<Record<keyof DataProvider, number>> }
+  | undefined {
   if (typeof window === 'undefined') return undefined;
-  const raw = new URLSearchParams(window.location.search).get('remoteFailFirst');
+  const params = new URLSearchParams(window.location.search);
+  const named = params.get('remoteFailMethods');
+  if (named !== null) {
+    const failMethods: Partial<Record<keyof DataProvider, number>> = {};
+    for (const pair of named.split(',')) {
+      const [method, raw] = pair.split(':');
+      const count = Number.parseInt(raw ?? '', 10);
+      if (method !== undefined && Number.isFinite(count) && count > 0) {
+        failMethods[method as keyof DataProvider] = count;
+      }
+    }
+    return { failMethods };
+  }
+  const raw = params.get('remoteFailFirst');
   if (raw === null) return undefined;
   const count = Number.parseInt(raw, 10);
-  return Number.isFinite(count) && count > 0 ? count : undefined;
+  return Number.isFinite(count) && count > 0 ? { failFirstCalls: count } : undefined;
 }
 
 export function createProvider(id: ProviderId): DataProvider {
   let base: DataProvider;
   switch (id) {
     case 'remote': {
-      const failFirstCalls = scriptedRemoteFailures();
-      base = new SimulatedRemoteProvider(
-        new MockDataProvider(),
-        failFirstCalls === undefined ? {} : { failFirstCalls },
-      );
+      const plan = scriptedRemoteFailures();
+      base = new SimulatedRemoteProvider(new MockDataProvider(), plan ?? {});
       break;
     }
     case 'scaled':

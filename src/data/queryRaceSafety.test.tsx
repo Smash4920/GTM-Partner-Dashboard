@@ -6,7 +6,7 @@ import { MockDataProvider } from './mock/MockDataProvider';
 import { NO_SESSION_EDITS } from './sessionEdits';
 import type { ForecastScope } from './DataProvider';
 import { useDashboardData } from './useDashboardData';
-import { useForecastAggregates, useManagerBook, usePartnerNames } from './useForecastQueries';
+import { useForecastSummary, useManagerBook, usePartnerNames } from './useForecastQueries';
 import { makeOpportunity, makePartner, makeProviderBook } from '../test/fixtures';
 
 /**
@@ -136,17 +136,17 @@ describe('VAL-RES-002 query race safety', () => {
     });
   });
 
-  describe('useForecastAggregates', () => {
+  describe('useForecastSummary', () => {
     it("shows no prior-provider aggregates while the new provider's first answer is in flight", async () => {
       const first = taggedAggregatesProvider(111);
       const secondGate = deferred<unknown>();
       const second = taggedAggregatesProvider(222, () => secondGate.promise);
 
       const { result, rerender } = renderHook(
-        ({ provider }: { provider: DataProvider }) => useForecastAggregates(provider, baseScope),
+        ({ provider }: { provider: DataProvider }) => useForecastSummary(provider, baseScope),
         { initialProps: { provider: first } },
       );
-      await waitFor(() => expect(result.current.data?.summary.openPipelineValue).toBe(111));
+      await waitFor(() => expect(result.current.data?.openPipelineValue).toBe(111));
 
       rerender({ provider: second });
       // The old provider's figures must not render under the new provider,
@@ -157,7 +157,7 @@ describe('VAL-RES-002 query race safety', () => {
       await act(async () => {
         secondGate.resolve(undefined);
       });
-      await waitFor(() => expect(result.current.data?.summary.openPipelineValue).toBe(222));
+      await waitFor(() => expect(result.current.data?.openPipelineValue).toBe(222));
     });
 
     it('drops an in-flight refresh from the previous provider when it resolves late', async () => {
@@ -176,10 +176,10 @@ describe('VAL-RES-002 query race safety', () => {
 
       const { result, rerender } = renderHook(
         ({ provider, scope }: { provider: DataProvider; scope: ForecastScope }) =>
-          useForecastAggregates(provider, scope),
+          useForecastSummary(provider, scope),
         { initialProps: { provider: first, scope: baseScope } },
       );
-      await waitFor(() => expect(result.current.data?.summary.openPipelineValue).toBe(101));
+      await waitFor(() => expect(result.current.data?.openPipelineValue).toBe(101));
 
       // An edit starts a refresh on the first provider…
       rerender({
@@ -192,13 +192,13 @@ describe('VAL-RES-002 query race safety', () => {
         provider: second,
         scope: { quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 5 } } },
       });
-      await waitFor(() => expect(result.current.data?.summary.openPipelineValue).toBe(999));
+      await waitFor(() => expect(result.current.data?.openPipelineValue).toBe(999));
 
       // The abandoned refresh lands late and changes nothing.
       await act(async () => {
         refreshGate.resolve(undefined);
       });
-      expect(result.current.data?.summary.openPipelineValue).toBe(999);
+      expect(result.current.data?.openPipelineValue).toBe(999);
     });
   });
 
@@ -219,17 +219,17 @@ describe('VAL-RES-002 query race safety', () => {
         ({ provider }: { provider: DataProvider }) => usePartnerNames(provider),
         { initialProps: { provider: first } },
       );
-      await waitFor(() => expect(result.current['partner-1']).toBe('FIRST partner'));
+      await waitFor(() => expect(result.current.names['partner-1']).toBe('FIRST partner'));
 
       rerender({ provider: second });
       // A name from another provider's directory is a cross-source label:
       // the table degrades to raw ids until the new directory arrives.
-      expect(result.current['partner-1']).toBeUndefined();
+      expect(result.current.names['partner-1']).toBeUndefined();
 
       await act(async () => {
         secondGate.resolve();
       });
-      await waitFor(() => expect(result.current['partner-1']).toBe('SECOND partner'));
+      await waitFor(() => expect(result.current.names['partner-1']).toBe('SECOND partner'));
     });
   });
 
@@ -347,7 +347,7 @@ describe('VAL-RES-002 query race safety', () => {
       await act(async () => {
         gate.resolve();
       });
-      expect(result.current['partner-1']).toBeUndefined();
+      expect(result.current.names['partner-1']).toBeUndefined();
       expect(errors).not.toHaveBeenCalled();
       errors.mockRestore();
     });

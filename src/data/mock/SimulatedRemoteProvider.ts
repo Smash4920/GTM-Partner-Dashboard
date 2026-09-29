@@ -32,18 +32,47 @@ export interface RemoteOptions {
   /** Seeds the jitter and the failure draws, so a demo run is repeatable. */
   seed?: number;
   /**
-   * A deterministic failure plan: exactly the first N calls on this instance
+   * A positional failure plan: exactly the first N calls on this instance
    * fail, everything after succeeds. While a plan is set, the seeded failure
-   * draw is off and the latency holds at the base value — a demo or a browser
-   * test that needs a named call to fail (the provider-switch readiness
-   * probe, say) gets exactly that failure, independent of how the calls
-   * around it are ordered.
+   * draw is off and the latency holds at the base value.
+   *
+   * Positional plans count every call, so what they do to a *named* call
+   * depends on how the calls around it are ordered. They exist for flows
+   * whose very first call is the one under test (the provider-switch
+   * readiness probe behind `?remoteFailFirst=`); anything else should use
+   * `failMethods`, which is order-independent.
    */
   failFirstCalls?: number;
+  /**
+   * A named failure plan: for each listed method, exactly its next N calls on
+   * this instance fail, then it succeeds. Calls to other methods neither
+   * consume nor shift the plan, so a test can fail "the summary query"
+   * without caring what else the page happens to fetch, and replaying the
+   * plan on a fresh instance reproduces the same outcomes regardless of
+   * unrelated call order.
+   */
+  failMethods?: Partial<Record<keyof DataProvider, number>>;
 }
 
 const DEFAULT_LATENCY_MS = 250;
 const DEFAULT_FAILURE_RATE = 0.15;
+const DEFAULT_SEED = 20260918;
+
+/**
+ * FNV-1a: folds a method name into the seed so each public method draws from
+ * its own deterministic stream. A shared stream would make one method's
+ * failure pattern depend on how many unrelated calls happened to interleave;
+ * per-method streams make the pattern a function of the seed and the method's
+ * own call history alone.
+ */
+function methodSeed(seed: number, method: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < method.length; index += 1) {
+    hash ^= method.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (seed ^ hash) >>> 0;
+}
 
 /**
  * Any provider, behind a simulated network.
@@ -59,17 +88,29 @@ const DEFAULT_FAILURE_RATE = 0.15;
  * retry is ever pressed, and no view is ever asked to render while a figure it
  * has not received yet is missing.
  *
+ * Failure semantics are logical, not partial: one public invocation is one
+ * logical load, which incurs exactly one delay and exactly one
+ * success/failure decision, made *before* any delegation. A failed call never
+ * touches the inner provider, so it cannot half-succeed, and a succeeded call
+ * runs the inner method exactly once.
+ *
  * Deterministic on purpose. A random failure rate that cannot be reproduced is
- * a flaky demo; the same seed means the same calls fail on the same run.
+ * a flaky demo; the same seed means the same calls fail on the same run, and
+ * named failure plans replay identically however the calls around them are
+ * ordered.
  */
 export class SimulatedRemoteProvider implements DataProvider {
   private readonly inner: DataProvider;
   private readonly latencyMs: number;
   private readonly failureRate: number;
   private readonly failFirstCalls: number | undefined;
-  private readonly random: () => number;
-  /** Public invocations so far; the failure plan counts them. */
+  /** Remaining planned failures per method; decremented as they are spent. */
+  private readonly failMethods: Map<string, number> | undefined;
+  private readonly seed: number;
+  /** Public invocations so far; the positional plan counts them. */
   private calls = 0;
+  /** One deterministic stream per public method. */
+  private readonly streams = new Map<string, () => number>();
 
   constructor(inner: DataProvider = new MockDataProvider(), options: RemoteOptions = {}) {
     this.inner = inner;
@@ -79,26 +120,62 @@ export class SimulatedRemoteProvider implements DataProvider {
       options.failFirstCalls !== undefined
         ? Math.max(0, Math.floor(options.failFirstCalls))
         : undefined;
-    this.random = mulberry32(options.seed ?? 20260918);
+    this.failMethods =
+      options.failMethods !== undefined
+        ? new Map(
+            Object.entries(options.failMethods).map(([method, count]) => [
+              method,
+              Math.max(0, Math.floor(count ?? 0)),
+            ]),
+          )
+        : undefined;
+    this.seed = options.seed ?? DEFAULT_SEED;
   }
 
-  /** The wire: a wait, then either the answer or a failure. */
-  private async roundTrip<T>(method: string, run: () => Promise<T>): Promise<T> {
+  private streamFor(method: string): () => number {
+    let stream = this.streams.get(method);
+    if (stream === undefined) {
+      stream = mulberry32(methodSeed(this.seed, method));
+      this.streams.set(method, stream);
+    }
+    return stream;
+  }
+
+  /**
+   * The plan's say on this call, or undefined when no plan is set. While a
+   * plan exists it owns every failure decision outright — no draw, no jitter —
+   * so a scripted run replays identically no matter what else was called.
+   */
+  private plannedFailure(method: string): boolean | undefined {
+    if (this.failFirstCalls === undefined && this.failMethods === undefined) return undefined;
     this.calls += 1;
-    if (this.failFirstCalls !== undefined) {
-      // The plan owns the failure decision outright: no draw, no jitter, so a
-      // scripted run replays identically no matter what else was called.
+    if (this.failFirstCalls !== undefined && this.calls <= this.failFirstCalls) return true;
+    const remaining = this.failMethods?.get(method);
+    if (remaining !== undefined && remaining > 0) {
+      this.failMethods?.set(method, remaining - 1);
+      return true;
+    }
+    return false;
+  }
+
+  /** The wire: one wait, one decision, then either the answer or a failure. */
+  private async roundTrip<T>(method: keyof DataProvider, run: () => Promise<T>): Promise<T> {
+    const planned = this.plannedFailure(method);
+    if (planned !== undefined) {
       await new Promise((resolve) => setTimeout(resolve, this.latencyMs));
-      if (this.calls <= this.failFirstCalls) {
+      if (planned) {
         throw new Error(`${method} failed in transit (simulated)`);
       }
       return run();
     }
     // Jitter, because a fixed delay hides the difference between a fast page
-    // and a slow one.
-    const wait = Math.round(this.latencyMs * (0.6 + this.random() * 0.8));
+    // and a slow one. Both draws come from this method's own stream, so the
+    // outcome depends on the seed and this method's call history — never on
+    // how unrelated calls happened to interleave.
+    const random = this.streamFor(method);
+    const wait = Math.round(this.latencyMs * (0.6 + random() * 0.8));
     await new Promise((resolve) => setTimeout(resolve, wait));
-    if (this.random() < this.failureRate) {
+    if (random() < this.failureRate) {
       throw new Error(`${method} failed in transit (simulated)`);
     }
     return run();

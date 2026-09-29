@@ -4,147 +4,233 @@ import { CURRENT_FISCAL_QUARTER } from './constants';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { NO_SESSION_EDITS } from './sessionEdits';
 import type { ForecastScope } from './DataProvider';
-import { useForecastAggregates, useManagerBook, usePartnerNames } from './useForecastQueries';
+import {
+  useForecastQuality,
+  useForecastSummary,
+  useManagerBook,
+  useManagerGroups,
+  usePartnerNames,
+  useWeeklySeries,
+  useWeightedForecast,
+} from './useForecastQueries';
 import { makeOpportunity, makeProviderBook } from '../test/fixtures';
 
 const quarter = CURRENT_FISCAL_QUARTER;
 const baseScope: ForecastScope = { quarter, edits: NO_SESSION_EDITS };
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
+/**
+ * The widget set the Forecasting view renders, composed exactly the way the
+ * view composes it, so the tests observe the same independence the page has.
+ */
+function useForecastWidgets(provider: InstanceType<typeof MockDataProvider>, scope: ForecastScope) {
+  return {
+    summary: useForecastSummary(provider, scope),
+    weighted: useWeightedForecast(provider, scope),
+    quality: useForecastQuality(provider, scope),
+    groups: useManagerGroups(provider, scope),
+    weeks: useWeeklySeries(provider, scope),
+    directory: usePartnerNames(provider),
+  };
 }
 
-describe('useForecastAggregates', () => {
-  it('loads five aggregates and leaves the loading state behind', async () => {
+function renderWidgets(provider: InstanceType<typeof MockDataProvider>) {
+  return renderHook(({ scope }: { scope: ForecastScope }) => useForecastWidgets(provider, scope), {
+    initialProps: { scope: baseScope },
+  });
+}
+
+async function waitForAllWidgets(
+  widgets: () => ReturnType<typeof useForecastWidgets>,
+): Promise<void> {
+  await waitFor(() => {
+    expect(widgets().summary.data).not.toBeNull();
+    expect(widgets().weighted.data).not.toBeNull();
+    expect(widgets().quality.data).not.toBeNull();
+    expect(widgets().groups.data).not.toBeNull();
+    expect(widgets().weeks.data).not.toBeNull();
+  });
+  await waitFor(() => expect(widgets().directory.names['partner-1']).toBeDefined());
+}
+
+describe('forecast widgets (VAL-RES-005)', () => {
+  it('loads every widget to a settled state', async () => {
     const provider = new MockDataProvider(makeProviderBook());
-    const { result } = renderHook(() => useForecastAggregates(provider, baseScope));
+    const { result } = renderWidgets(provider);
 
-    expect(result.current).toMatchObject({ data: null, loading: true, refreshing: true });
+    expect(result.current.summary.loading).toBe(true);
 
-    await waitFor(() => expect(result.current.data).not.toBeNull());
-    expect(result.current.loading).toBe(false);
-    expect(result.current.refreshing).toBe(false);
-    expect(result.current.error).toBeNull();
-    expect(result.current.data?.groups).toHaveLength(1);
+    await waitForAllWidgets(() => result.current);
+    expect(result.current.summary).toMatchObject({
+      loading: false,
+      refreshing: false,
+      error: null,
+    });
+    expect(result.current.groups.data).toHaveLength(1);
+    expect(result.current.directory.names['partner-1']).toBe('Northwind Systems');
   });
 
   it('does not refetch when the caller rebuilds an equal scope object', async () => {
     const provider = new MockDataProvider(makeProviderBook());
     const spy = vi.spyOn(provider, 'getForecastSummary');
-    const { result, rerender } = renderHook(
-      (scope: ForecastScope) => useForecastAggregates(provider, scope),
-      { initialProps: baseScope },
-    );
-    await waitFor(() => expect(result.current.data).not.toBeNull());
+    const { result, rerender } = renderWidgets(provider);
+    await waitForAllWidgets(() => result.current);
     const calls = spy.mock.calls.length;
 
     // The hazard this guards: a scope rebuilt every render is a new object
-    // every render, and an effect keyed on it refetches forever — render,
-    // fetch, setState, render. The hook depends on the values instead.
-    rerender({ quarter, edits: { ...NO_SESSION_EDITS } });
-    rerender({ quarter, edits: { ...NO_SESSION_EDITS } });
+    // every render, and an effect keyed on it refetches forever. The hooks
+    // key on the values instead.
+    rerender({ scope: { quarter, edits: { ...NO_SESSION_EDITS } } });
+    rerender({ scope: { quarter, edits: { ...NO_SESSION_EDITS } } });
     expect(spy.mock.calls.length).toBe(calls);
-
-    // A real edit does refetch, which is where the new figures come from.
-    rerender({ quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 5 } } });
-    await waitFor(() => expect(spy.mock.calls.length).toBe(calls + 1));
   });
 
-  it('keeps the figures on screen while a refresh is in flight', async () => {
+  it('fails one widget without disturbing its siblings, and retry repeats only that query', async () => {
     const provider = new MockDataProvider(makeProviderBook());
-    const gate = deferred<void>();
-    const real = provider.getForecastSummary.bind(provider);
-    vi.spyOn(provider, 'getForecastSummary').mockImplementation(async (scope) => {
-      await gate.promise;
-      return real(scope);
-    });
-
-    const { result, rerender } = renderHook(
-      (scope: ForecastScope) => useForecastAggregates(provider, scope),
-      { initialProps: baseScope },
-    );
-    await act(async () => {
-      gate.resolve();
-    });
-    await waitFor(() => expect(result.current.data).not.toBeNull());
-
-    rerender({ quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 5 } } });
-    await waitFor(() => expect(result.current.refreshing).toBe(true));
-    // Stale beats blank: an edit must not flash the page it just changed.
-    expect(result.current.data).not.toBeNull();
-    expect(result.current.loading).toBe(false);
-  });
-
-  it('drops an answer that arrives after a newer request', async () => {
-    const provider = new MockDataProvider(makeProviderBook());
-    const real = provider.getForecastSummary.bind(provider);
-    const gates = new Map<number, () => void>();
-    vi.spyOn(provider, 'getForecastSummary').mockImplementation(async (scope) => {
-      const amount = scope.edits?.revenueOverrides['opp-1'] ?? 0;
-      const gate = deferred<void>();
-      gates.set(amount, () => gate.resolve());
-      await gate.promise;
-      return { ...(await real({ quarter })), openPipelineValue: amount };
-    });
-
-    const { result, rerender } = renderHook(
-      (scope: ForecastScope) => useForecastAggregates(provider, scope),
-      { initialProps: baseScope },
-    );
-
-    rerender({ quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 111 } } });
-    rerender({ quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 999 } } });
-    await waitFor(() => expect(gates.has(999)).toBe(true));
-
-    // The newest request lands first, then the stale one arrives late.
-    await act(async () => {
-      gates.get(999)!();
-    });
-    await waitFor(() => expect(result.current.data?.summary.openPipelineValue).toBe(999));
-    await act(async () => {
-      gates.get(111)!();
-    });
-    expect(result.current.data?.summary.openPipelineValue).toBe(999);
-  });
-
-  it('reports a failure, keeps no half-built page, and recovers on retry', async () => {
-    const provider = new MockDataProvider(makeProviderBook());
-    const spy = vi
+    const weightedSpy = vi
       .spyOn(provider, 'getWeightedForecast')
       .mockRejectedValueOnce(new Error('getWeightedForecast failed in transit (simulated)'));
+    const summarySpy = vi.spyOn(provider, 'getForecastSummary');
+    const groupsSpy = vi.spyOn(provider, 'getManagerForecastGroups');
 
-    const { result } = renderHook(() => useForecastAggregates(provider, baseScope));
-    await waitFor(() => expect(result.current.error).not.toBeNull());
-    expect(result.current.error).toBe('getWeightedForecast failed in transit (simulated)');
-    expect(result.current.data).toBeNull();
-    expect(result.current.loading).toBe(false);
-    expect(spy).toHaveBeenCalledTimes(1);
+    const { result } = renderWidgets(provider);
 
-    act(() => result.current.retry());
-    await waitFor(() => expect(result.current.data).not.toBeNull());
-    expect(result.current.error).toBeNull();
+    await waitFor(() => expect(result.current.weighted.error).not.toBeNull());
+    await waitFor(() => expect(result.current.summary.data).not.toBeNull());
+    await waitFor(() => expect(result.current.groups.data).not.toBeNull());
+
+    // The failed widget is unavailable; the siblings settled successfully.
+    expect(result.current.weighted).toMatchObject({
+      data: null,
+      loading: false,
+      error: 'getWeightedForecast failed in transit (simulated)',
+    });
+    expect(result.current.summary.error).toBeNull();
+    expect(result.current.groups.error).toBeNull();
+
+    act(() => result.current.weighted.retry());
+    await waitFor(() => expect(result.current.weighted.data).not.toBeNull());
+    // Focused retry: the failed query ran again, and nothing else did.
+    expect(weightedSpy).toHaveBeenCalledTimes(2);
+    expect(summarySpy).toHaveBeenCalledTimes(1);
+    expect(groupsSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed partner directory degrades to opaque ids and recovers on retry', async () => {
+    const provider = new MockDataProvider(makeProviderBook());
+    const directorySpy = vi
+      .spyOn(provider, 'getPartnerDirectory')
+      .mockRejectedValueOnce(new Error('getPartnerDirectory failed in transit (simulated)'));
+
+    const { result } = renderWidgets(provider);
+    await waitFor(() => expect(result.current.directory.error).not.toBeNull());
+    // Ids remain a legible fallback; the aggregates are untouched.
+    expect(result.current.directory.names).toEqual({});
+    await waitFor(() => expect(result.current.summary.data).not.toBeNull());
+    expect(result.current.summary.error).toBeNull();
+
+    act(() => result.current.directory.retry());
+    await waitFor(() =>
+      expect(result.current.directory.names['partner-1']).toBe('Northwind Systems'),
+    );
+    expect(directorySpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('a manager book failure is independent of the aggregates', async () => {
+    const provider = new MockDataProvider(makeProviderBook());
+    vi.spyOn(provider, 'listQuarterOpportunities').mockRejectedValueOnce(
+      new Error('listQuarterOpportunities failed in transit (simulated)'),
+    );
+    const { result } = renderHook(() => ({
+      widgets: useForecastWidgets(provider, baseScope),
+      book: useManagerBook(provider, baseScope, 'pm-1'),
+    }));
+
+    await waitFor(() => expect(result.current.book.error).not.toBeNull());
+    expect(result.current.book.rows).toEqual([]);
+    await waitForAllWidgets(() => result.current.widgets);
+
+    act(() => result.current.book.retry());
+    await waitFor(() => expect(result.current.book.rows.length).toBeGreaterThan(0));
+    expect(result.current.book.error).toBeNull();
   });
 });
 
-describe('usePartnerNames', () => {
-  it('maps ids to names', async () => {
+describe('edit invalidation (VAL-RES-007)', () => {
+  it('a note or next-step edit refetches nothing', async () => {
     const provider = new MockDataProvider(makeProviderBook());
-    const { result } = renderHook(() => usePartnerNames(provider));
-    await waitFor(() => expect(result.current['partner-1']).toBe('Northwind Systems'));
+    const summarySpy = vi.spyOn(provider, 'getForecastSummary');
+    const weightedSpy = vi.spyOn(provider, 'getWeightedForecast');
+    const qualitySpy = vi.spyOn(provider, 'getForecastQuality');
+    const groupsSpy = vi.spyOn(provider, 'getManagerForecastGroups');
+    const weeksSpy = vi.spyOn(provider, 'getWeeklyForecastSeries');
+    const directorySpy = vi.spyOn(provider, 'getPartnerDirectory');
+
+    const { result, rerender } = renderWidgets(provider);
+    await waitForAllWidgets(() => result.current);
+
+    rerender({
+      scope: { quarter, edits: { ...NO_SESSION_EDITS, notes: { 'opp-1': 'Called the CFO' } } },
+    });
+    rerender({
+      scope: {
+        quarter,
+        edits: {
+          ...NO_SESSION_EDITS,
+          notes: { 'opp-1': 'Called the CFO' },
+          nextSteps: { 'opp-1': 'Send the MSA' },
+        },
+      },
+    });
+    // Let any (unexpected) effect settle before counting.
+    await act(async () => {});
+    expect(summarySpy).toHaveBeenCalledTimes(1);
+    expect(weightedSpy).toHaveBeenCalledTimes(1);
+    expect(qualitySpy).toHaveBeenCalledTimes(1);
+    expect(groupsSpy).toHaveBeenCalledTimes(1);
+    expect(weeksSpy).toHaveBeenCalledTimes(1);
+    expect(directorySpy).toHaveBeenCalledTimes(1);
   });
 
-  it('degrades to raw ids rather than failing the table', async () => {
+  it('a revenue edit refetches every aggregate but not the directory', async () => {
     const provider = new MockDataProvider(makeProviderBook());
-    vi.spyOn(provider, 'getPartnerDirectory').mockRejectedValue(new Error('nope'));
-    const { result } = renderHook(() => usePartnerNames(provider));
-    await waitFor(() => expect(provider.getPartnerDirectory).toHaveBeenCalled());
-    expect(result.current).toEqual({});
+    const summarySpy = vi.spyOn(provider, 'getForecastSummary');
+    const qualitySpy = vi.spyOn(provider, 'getForecastQuality');
+    const groupsSpy = vi.spyOn(provider, 'getManagerForecastGroups');
+    const weeksSpy = vi.spyOn(provider, 'getWeeklyForecastSeries');
+    const directorySpy = vi.spyOn(provider, 'getPartnerDirectory');
+
+    const { result, rerender } = renderWidgets(provider);
+    await waitForAllWidgets(() => result.current);
+
+    rerender({
+      scope: { quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 5 } } },
+    });
+    await waitFor(() => expect(summarySpy).toHaveBeenCalledTimes(2));
+    expect(qualitySpy).toHaveBeenCalledTimes(2);
+    expect(groupsSpy).toHaveBeenCalledTimes(2);
+    expect(weeksSpy).toHaveBeenCalledTimes(2);
+    expect(directorySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a forecast-call edit refetches the weighted forecast, quality, and series — not the summary or groups', async () => {
+    const provider = new MockDataProvider(makeProviderBook());
+    const summarySpy = vi.spyOn(provider, 'getForecastSummary');
+    const weightedSpy = vi.spyOn(provider, 'getWeightedForecast');
+    const qualitySpy = vi.spyOn(provider, 'getForecastQuality');
+    const groupsSpy = vi.spyOn(provider, 'getManagerForecastGroups');
+    const weeksSpy = vi.spyOn(provider, 'getWeeklyForecastSeries');
+
+    const { result, rerender } = renderWidgets(provider);
+    await waitForAllWidgets(() => result.current);
+
+    rerender({
+      scope: { quarter, edits: { ...NO_SESSION_EDITS, forecastCalls: { 'opp-1': 'commit' } } },
+    });
+    await waitFor(() => expect(weightedSpy).toHaveBeenCalledTimes(2));
+    expect(qualitySpy).toHaveBeenCalledTimes(2);
+    expect(weeksSpy).toHaveBeenCalledTimes(2);
+    expect(summarySpy).toHaveBeenCalledTimes(1);
+    expect(groupsSpy).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -188,7 +274,26 @@ describe('useManagerBook', () => {
     expect(new Set(result.current.rows.map((row) => row.id)).size).toBe(5);
   });
 
-  it('refetches from the first page when an edit lands', async () => {
+  it('a revenue edit refreshes the loaded window in place instead of resetting pages', async () => {
+    const provider = new MockDataProvider(book);
+    const spy = vi.spyOn(provider, 'listQuarterOpportunities');
+    const { result, rerender } = renderHook(
+      (scope: ForecastScope) => useManagerBook(provider, scope, 'pm-1', 2),
+      { initialProps: baseScope },
+    );
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.rows).toHaveLength(4));
+
+    rerender({ quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 9 } } });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
+    // One window-sized request; the loaded pages stay on screen throughout.
+    expect(spy.mock.calls[2]?.[1]).toEqual({ limit: 4 });
+    expect(result.current.rows).toHaveLength(4);
+    expect(result.current.hasMore).toBe(true);
+  });
+
+  it('a note edit does not refetch the book; the row renders the overlay', async () => {
     const provider = new MockDataProvider(book);
     const spy = vi.spyOn(provider, 'listQuarterOpportunities');
     const { result, rerender } = renderHook(
@@ -197,12 +302,10 @@ describe('useManagerBook', () => {
     );
     await waitFor(() => expect(result.current.rows).toHaveLength(2));
 
-    rerender({ quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 9 } } });
-    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
-    // Back to the first page: a stale page under a fresh book would read as
-    // rows that no longer exist.
-    await waitFor(() => expect(result.current.rows).toHaveLength(2));
-    expect(result.current.hasMore).toBe(true);
+    rerender({ quarter, edits: { ...NO_SESSION_EDITS, notes: { 'opp-1': 'Called the CFO' } } });
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(result.current.rows).toHaveLength(2);
   });
 
   it('reports a failed page and retries it', async () => {

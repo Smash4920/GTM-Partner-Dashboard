@@ -144,15 +144,23 @@ describe('ForecastingView', () => {
     expect(screen.getAllByText('Contoso Partners').length).toBeGreaterThan(0);
   });
 
-  it('filters to one manager and opens their group', async () => {
+  it('filters to one manager and opens their group without refetching hidden books', async () => {
     const user = userEvent.setup();
-    renderView();
+    const { provider } = renderView();
+    const bookSpy = vi.spyOn(provider, 'listQuarterOpportunities');
 
     await screen.findByText('Showing 25 of 27');
     await user.selectOptions(screen.getByLabelText('Partner manager'), 'pm-2');
 
     expect(await screen.findByText('Showing 1 of 1')).toBeInTheDocument();
-    expect(screen.queryByText('Showing 25 of 27')).not.toBeInTheDocument();
+    // The filtered-out book stays mounted but hidden: the filter is a
+    // presentation choice and must not discard loaded pages.
+    expect(screen.getByText('Showing 25 of 27')).not.toBeVisible();
+    const calls = bookSpy.mock.calls.length;
+
+    await user.selectOptions(screen.getByLabelText('Partner manager'), 'all');
+    expect(screen.getByText('Showing 25 of 27')).toBeVisible();
+    expect(bookSpy.mock.calls.length).toBe(calls);
   });
 
   it('shows the session override in the row while the aggregates catch up', async () => {
@@ -252,23 +260,121 @@ describe('ForecastingView', () => {
     });
   });
 
-  it('reports a failed load and retries it', async () => {
+  it('fails one widget without taking the page down, and retries only that query', async () => {
     const user = userEvent.setup();
     const provider = new MockDataProvider(makeBook());
-    const spy = vi
+    const summarySpy = vi
       .spyOn(provider, 'getForecastSummary')
       .mockRejectedValueOnce(new Error('getForecastSummary failed in transit (simulated)'));
+    const weightedSpy = vi.spyOn(provider, 'getWeightedForecast');
 
     renderView({ provider });
 
-    expect(await screen.findByText('The forecast did not load')).toBeInTheDocument();
+    // The summary widget names its own failure; every sibling still renders.
+    expect(await screen.findByText('Forecast summary unavailable:')).toBeInTheDocument();
     expect(
       screen.getByText('getForecastSummary failed in transit (simulated)'),
     ).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect((await screen.findAllByText('Weighted forecast')).length).toBeGreaterThan(1);
+    expect(screen.getByText('Week-over-week pipeline')).toBeInTheDocument();
     expect(await screen.findByText('Showing 25 of 27')).toBeInTheDocument();
-    expect(spy).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole('button', { name: 'Retry forecast summary' }));
+    expect(await screen.findByText('28 open Q3 opps')).toBeInTheDocument();
+    // The retry repeated the failed query only.
+    expect(summarySpy).toHaveBeenCalledTimes(2);
+    expect(weightedSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed weighted forecast leaves the rest of the page up and retries alone', async () => {
+    const user = userEvent.setup();
+    const provider = new MockDataProvider(makeBook());
+    const weightedSpy = vi
+      .spyOn(provider, 'getWeightedForecast')
+      .mockRejectedValueOnce(new Error('getWeightedForecast failed in transit (simulated)'));
+    const summarySpy = vi.spyOn(provider, 'getForecastSummary');
+
+    renderView({ provider });
+
+    expect(await screen.findByText('Weighted forecast unavailable:')).toBeInTheDocument();
+    // Siblings: the summary tiles, the chart, and the table all render.
+    expect(await screen.findByText('28 open Q3 opps')).toBeInTheDocument();
+    expect(screen.getByText('Week-over-week pipeline')).toBeInTheDocument();
+    expect(await screen.findByText('Showing 25 of 27')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry weighted forecast' }));
+    expect(await screen.findByText('open Q3 pipeline × category probability')).toBeInTheDocument();
+    expect(weightedSpy).toHaveBeenCalledTimes(2);
+    expect(summarySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed manager-groups query leaves the aggregates up and retries alone', async () => {
+    const user = userEvent.setup();
+    const provider = new MockDataProvider(makeBook());
+    const groupsSpy = vi
+      .spyOn(provider, 'getManagerForecastGroups')
+      .mockRejectedValueOnce(new Error('getManagerForecastGroups failed in transit (simulated)'));
+    const summarySpy = vi.spyOn(provider, 'getForecastSummary');
+
+    renderView({ provider });
+
+    expect(await screen.findByText('Manager groups unavailable:')).toBeInTheDocument();
+    expect(await screen.findByText('28 open Q3 opps')).toBeInTheDocument();
+    expect(screen.getByText('Week-over-week pipeline')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry manager groups' }));
+    expect(await screen.findByText('Showing 25 of 27')).toBeInTheDocument();
+    expect(groupsSpy).toHaveBeenCalledTimes(2);
+    expect(summarySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed partner directory falls back to opaque ids and recovers on retry', async () => {
+    const user = userEvent.setup();
+    const provider = new MockDataProvider(makeBook());
+    const directorySpy = vi
+      .spyOn(provider, 'getPartnerDirectory')
+      .mockRejectedValueOnce(new Error('getPartnerDirectory failed in transit (simulated)'));
+
+    renderView({ provider });
+
+    expect(await screen.findByText(/Partner names unavailable/)).toBeInTheDocument();
+    // Rows render with the raw partner id rather than failing.
+    const row = (await screen.findByText('Acme 0')).closest('tr');
+    expect(row).not.toBeNull();
+    expect(within(row!).getByText('partner-1')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry partner directory' }));
+    expect(await within(row!).findByText('Northwind Systems')).toBeInTheDocument();
+    expect(directorySpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('one manager’s failed book leaves the other managers alone', async () => {
+    const user = userEvent.setup();
+    const provider = new MockDataProvider(makeBook());
+    const real = provider.listQuarterOpportunities.bind(provider);
+    let failPm2 = true;
+    const bookSpy = vi
+      .spyOn(provider, 'listQuarterOpportunities')
+      .mockImplementation((scope, page) =>
+        failPm2 && scope.partnerManagerId === 'pm-2'
+          ? Promise.reject(new Error('listQuarterOpportunities failed in transit (simulated)'))
+          : real(scope, page),
+      );
+
+    renderView({ provider });
+    await screen.findByText('Showing 25 of 27');
+
+    await user.click(screen.getByRole('button', { name: /R\. Diaz/ }));
+    expect(await screen.findByText('This book did not load:')).toBeInTheDocument();
+    // The first manager's book is untouched.
+    expect(screen.getByText('Showing 25 of 27')).toBeInTheDocument();
+
+    failPm2 = false;
+    await user.click(screen.getByRole('button', { name: 'Retry this manager’s book' }));
+    expect(await screen.findByText('Showing 1 of 1')).toBeInTheDocument();
+    // The failed manager retried alone: pm-1's book was never refetched.
+    const pm1Calls = bookSpy.mock.calls.filter(([scope]) => scope.partnerManagerId === 'pm-1');
+    expect(pm1Calls).toHaveLength(1);
   });
 
   it('keeps the figures on screen when a refresh fails', async () => {
@@ -278,7 +384,7 @@ describe('ForecastingView', () => {
     vi.spyOn(provider, 'getForecastSummary').mockRejectedValueOnce(new Error('flaky wire'));
     commitEdit({ ...EMPTY_EDITS, revenueOverrides: { 'opp-a0': 1 } });
 
-    expect(await screen.findByText('Latest refresh failed:')).toBeInTheDocument();
+    expect(await screen.findByText('Latest forecast summary refresh failed:')).toBeInTheDocument();
     expect(screen.getByText('flaky wire')).toBeInTheDocument();
     // Stale beats blank: the tiles are still there to be read, and the row
     // being edited still shows the manager's figure.
