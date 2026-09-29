@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.2.0](https://github.com/Smash4920/GTM-Partner-Dashboard/compare/v0.1.0...v0.2.0) (2026-09-29)
+
+
+### Features
+
+* add distributed request tracing ([5a365f0](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/5a365f0bfe6f4f8fddb59b3be863fca9acdd18f3))
+* Add droid-review.yml workflow ([c48331d](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/c48331d6ca98d8f845277a2b48e033800c209d2d))
+* Add droid.yml workflow ([54c6ef6](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/54c6ef6c762ced5e84a50f532c33c005da2c647e))
+* Add Factory GitHub workflows ([2a33932](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/2a33932ed9448683ab7f9f085ee01be703be680d))
+* add feature flag infrastructure ([74f3bf3](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/74f3bf3e889e1ae5393f5bc725cb91a462d4532b))
+* add manager activity and partner opportunity views ([033099f](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/033099f43b4ec99f7e72fc03ee13977a233b02f6))
+* add partner manager and activity views ([8fe82ba](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/8fe82ba3a72ba1b89ef94e36a799fa058aa1f656))
+* add partner view and acv certification metrics ([dab02f6](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/dab02f64bb7cd03394bdb84c3e7f19632cecf0eb))
+* add partner view and certification metrics ([c8080a1](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/c8080a1f807cfba9b91ff082dbf8fe39dc05247a))
+* add services delivery to the utility roadmap, fix heading casing ([80cb1c4](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/80cb1c49500bba10c2132de24ed36784f16e503e))
+* add sidebar GTM dashboard views ([d53cf95](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/d53cf9578a5c974465a27baceae8a5f6990416c7))
+* add slice toggles and fix funnel unit mixing ([35ff45b](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/35ff45b61c3194f94ba79740c568d7404f30b66f))
+* add structured logging ([b318d73](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/b318d73d52ed1dcee7d945f9f8f9bc1a5b56c9d0))
+* add structured logging ([2b33e19](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/2b33e1973bcb37c7b000e23cf9c3f5827b6b9e2c))
+* add weighted forecasting and deal registration operations ([d08aa8f](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/d08aa8f3c857e346fc37382af43d1d9ee53f16ec))
+* chart the pipeline week over week, against recorded history ([4ea18b0](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/4ea18b0441c26b16cf9d0480b754d391eb9b26aa))
+* collect production web vitals ([b0498f8](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/b0498f85ea48f333333ef929053f689fb5b6aa69))
+* data connection map, partner-team roster, and deal-reg SLA alerts ([64a669c](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/64a669cd2059549826493bda17fc689ea7ce30c9))
+* forecast category is a manager judgment, not a stage echo ([1ace342](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/1ace34271cc4f407be9806964128620625cf3dc2))
+* make forecast category a manager judgment, not a stage echo ([d5936d6](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/d5936d6c73e50bfe72425b0908ad37ce25e4c6e8))
+* map the data connections, roster the partner team, and alert on reg SLA ([e6dde47](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/e6dde476e1336192227f2eecd005c4e15b77bdc0))
+* partner revenue pipeline dashboard mockup ([90cab73](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/90cab739b382079228310eeb0dbd6000c2337f81))
+* polish dashboard prototype ([67b9e70](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/67b9e709634797096f1ea06e6a90fd4fd7542247))
+* polish dashboard prototype ([f874ab3](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/f874ab367471bbc53870ee4955ccc2a074b3745b))
+* put the forecast category behind a pencil, like every other edit ([a242a0c](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/a242a0c3d56c4967b2f81bc669399642d134f177))
+* reshape the data contract, and move Forecasting onto it ([86aa60d](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/86aa60d627a059e3216a9d96cc710c4435b6d0de))
+* restructure dashboard into sidebar views ([e49967a](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/e49967af2d9b388eb5917c3c4704e7af4cf1a205))
+* stamp every production requirement with its status ([aa30daa](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/aa30daaec4c066b76a2c08b0398e07ee2e861f55))
+* stamp every production requirement with its status ([1f69e7a](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/1f69e7a554d05e9df561120472e5568f83268f25))
+
+
+### Bug Fixes
+
+* correct fiscal phase scoping, prior-year deltas, and close dates ([6671968](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/6671968903b847ed510873614d69077bc7353d37))
+* correct fiscal phase scoping, prior-year deltas, and close dates ([80d3fc4](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/80d3fc41271eb8925bcb5c2c7d4d3fae98fde9bc))
+* format release changelog ([bce357c](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/bce357c23785d73aff874d084974f06ce4c46556))
+* pin compact currency so it does not depend on the ICU build ([bba6a4a](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/bba6a4aff98dd02a94606b3fb6fe4ec62b04d001))
+* quote the registration SLA counter in business days, not calendar days ([f3766c4](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/f3766c412cb09a948e3e994274208f135990d371))
+* regenerate merged dependency lockfile ([2607e6f](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/2607e6f4ab7eb91ecad626ecfb82f43684a091bb))
+
 ## [0.2.0](https://github.com/Smash4920/GTM-Partner-Dashboard/compare/v0.1.0...v0.2.0) (2026-09-28)
 
 ### Features

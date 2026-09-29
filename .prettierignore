@@ -7,3 +7,7 @@ playwright-report
 test-results
 .factory
 droid-wiki
+# release-please owns CHANGELOG.md and writes its own Markdown style
+# (asterisk bullets, an extra blank line after the version heading). Prettier
+# normalizes those differently, so release pull requests failed format:check.
+CHANGELOG.md
