@@ -11,6 +11,12 @@ authentication layer, and no required local environment file. The controls
 below are sized for that: they protect the repository and the build chain,
 and they will carry over as the data layer moves to production volume.
 
+Roadmap claims follow the same honesty rule: every Production Requirements
+row carries a Demo status (Complete, WIP, or Pending) that reports only
+verified client behavior, and a separate Production: Prod Only status
+wherever a production dependency is intentionally paused. Demo completion
+never completes a production dependency.
+
 ## Control matrix
 
 | Control                 | Where                                     | Enforced by                                                                |
@@ -137,7 +143,7 @@ governed in code and pinned by tests rather than by deployment convention:
   beacons, analytics script loads, or lifecycle flushes, while in-process
   health, metrics, and error insights keep working.
 - **Analytics is opt-in twice.** Product analytics additionally requires
-  `analytics.enabled`, which defaults off pending privacy approval; both
+  `analytics.enabled`, which is off by default pending privacy approval; both
   switches must be on before the analytics script installs or any event
   leaves.
 - **Registered fields only.** Every envelope type has a checked-in field
@@ -160,6 +166,41 @@ governed in code and pinned by tests rather than by deployment convention:
 - **No public source maps.** Production builds emit no `.map` files and no
   `sourceMappingURL` comments, and the same policy scan verifies the
   artifact.
+
+### Client trust boundary
+
+The browser is untrusted, so every in-browser rule below is presentation, not
+enforcement:
+
+- **Partner filtering is not authorization.** Partner View renders only the
+  selected partner's Sell With and Allocate opportunities and registrations,
+  but the picker that chooses that partner is an untrusted demo presentation
+  selector: any visitor can select any partner. Serving external partners
+  requires trusted sign-in and server-enforced row access first, so the
+  roadmap keeps the picker-removal item at Demo: Pending with the enforcement
+  work marked Prod Only.
+- **Roster, notifications, and workflow actions are session-only
+  simulations.** Turning notifications on or off for a teammate changes
+  current-session routing state only — nothing provisions, authorizes,
+  revokes, or restores sign-in or data access — and every send is recorded
+  locally with the confirmation "Simulated / local only". Nothing is
+  delivered, persisted, or written back, and a reload resets it all.
+- **Flags are local and non-authoritative.** Product and operational flags
+  hide functionality; they never grant a role, widen a demo access scope, or
+  select another partner. Evaluation is fail-safe: a fresh value wins, a
+  bounded last-known-good cache covers a brief outage, and anything else
+  falls back to the registry safe default. The authenticated control plane
+  remains Prod Only.
+- **Deferred history stays deferred.** The per-manager and per-partner
+  close-date-slippage, stage-aging, and category-confidence trend remains
+  Pending until immutable historical partner-manager ownership and
+  authoritative stage-entry events exist; weekly snapshots, partner-health
+  alerts, and forecast reviews are not substitutes.
+
+The production continuation runs in a fixed order — trusted identity, then
+the warehouse and scoped API with row-level authorization, then source
+ingestion, then persisted writes and audit, then production operations —
+because real data must never arrive before server-side enforcement.
 
 ### Workflow hardening
 

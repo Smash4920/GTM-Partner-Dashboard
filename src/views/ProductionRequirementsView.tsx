@@ -45,11 +45,17 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
         },
       },
       {
-        // Excluded from this mission: the picker still renders unconditionally
-        // today and its client-only limitation is documented rather than
-        // implemented, so it stays a not-yet-built demo change.
+        // Excluded from this mission: the picker itself is unchanged and its
+        // client-only limitation is documented rather than implemented, so
+        // the demo portion stays Pending.
         text: "Remove the partner picker outside an internal demo mode so a partner never receives another partner's data.",
         demo: 'pending',
+        demoScope:
+          'The picker is an untrusted demo presentation selector; client-side filtering is not authorization.',
+        production: {
+          status: 'prod-only',
+          blocker: 'External use requires trusted sign-in and server-enforced row access first.',
+        },
       },
     ],
   },
@@ -276,9 +282,14 @@ const UTILITY_REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
         // Deferred: weekly snapshots record every call as made, but they lack
         // immutable historical partner-manager ownership and authoritative
         // stage-entry events, so the manager/partner trend cannot be built
-        // honestly yet.
+        // honestly yet. No narrower substitute is presented as this item.
         text: 'Turn per-deal judgments into trend: close-date slippage, stage aging, and category-confidence history per manager and partner.',
         demo: 'pending',
+        production: {
+          status: 'prod-only',
+          blocker:
+            'Needs immutable historical partner-manager ownership and authoritative stage-entry events; weekly snapshots, health alerts, and forecast reviews are not substitutes.',
+        },
       },
       {
         text: 'MEDDPICC-or-equivalent qualification structured on every open opportunity.',

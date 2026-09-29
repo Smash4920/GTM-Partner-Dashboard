@@ -1,7 +1,8 @@
 # Production migration plan
 
-How this dashboard gets from a deterministic mock to a system serving real
-partner data at production volume. The _what_ is already enumerated in the
+How this dashboard gets from a deterministic, client-only mock to a system
+serving real partner data at production volume. The _what_ is already
+enumerated in the
 [Production Requirements](../src/views/ProductionRequirementsView.tsx)
 architecture roadmap — in particular "serve aggregated, paginated API responses
 rather than loading the entire ecosystem into the browser". This document is
@@ -9,11 +10,18 @@ the _how_: where the current design breaks, the one contract change everything
 else follows from, and the order the work has to happen in.
 
 Every item on that board — the architecture roadmap, the migration path, and
-the utility backlog — carries a status stamped against the code as it stands
-(Complete, WIP, Pending, or Prod Only for the steps that wait on production
-connections or infrastructure), together with the date the statuses were last
-reviewed. This document is the reasoning underneath those statuses, not a
-duplicate of them.
+the utility backlog — carries a Demo status stamped against verified client
+behavior (Complete, WIP, or Pending) and, wherever a production dependency is
+intentionally paused, a separate Production: Prod Only status naming the exact
+blocker, together with the date the statuses were last reviewed. Demo
+completion never completes a production dependency. This document is the
+reasoning underneath those statuses, not a duplicate of them.
+
+The production continuation runs in a fixed order: trusted identity first,
+then the warehouse and scoped API with row-level authorization, then source
+ingestion, then persisted writes and audit, then production operations. The
+phases below follow that order, and no phase may be pulled ahead of identity
+and server-side row enforcement.
 
 ## Where the current design breaks
 
@@ -168,8 +176,12 @@ see. Precompute the common combinations and cache the rest.
 Partner View currently excludes Sell To and conflicting registrations in the
 browser. Under a partner SSO boundary the partner's token must scope the query
 itself, so their browser never receives another partner's data at all. The
-architecture roadmap already calls for removing the partner picker outside an
-internal demo mode; that is the same requirement seen from the UI side.
+picker that chooses which partner the portal renders is an untrusted demo
+presentation selector, and client-side filtering is not authorization: any
+visitor can select any partner today. Serving external partners requires
+trusted sign-in and server-enforced row access first, which is why the
+architecture roadmap keeps the picker-removal item Pending — the same
+requirement seen from the UI side.
 
 ### Feature-flag methodology and maintainer control plane
 
@@ -221,6 +233,18 @@ happens when Salesforce changes a figure underneath a manager's override? Keep
 it, drop it, or flag it. The choice has to be made and surfaced to the user.
 That record is also what makes forecast accuracy scoreable later — a call can
 only be scored against an outcome if the call as made was kept.
+
+### Deferred: per-manager and per-partner Forecast Quality history
+
+The second forecast-quality utility item — close-date slippage, stage aging,
+and category-confidence history per manager and partner — stays Pending.
+Weekly snapshots record every call as made, but they do not preserve immutable
+historical partner-manager ownership, and they carry no authoritative
+stage-entry events. Applying today's ownership retroactively would rewrite
+history, so an honest trend waits on Phase 2 and Phase 3 data: immutable
+ownership records and stage-transition timestamps in the warehouse. Weekly
+snapshots, partner-health alerts, and forecast-change reviews are inputs to
+that history, not substitutes for it.
 
 ### Incremental ingestion
 

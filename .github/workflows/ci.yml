@@ -43,6 +43,8 @@ jobs:
       - run: npm run lint:duplicates
       - name: Check generated documentation
         run: npm run docs:check
+      - name: Enforce client-only runtime boundary
+        run: npm run client-boundary:check
       # Coverage, not a bare test run: the thresholds in vite.config.ts are
       # what keep the view layer from drifting back toward 0%. The CI variant
       # also emits JUnit timings for the report and retained artifact below.

@@ -3,6 +3,18 @@ import { render, screen } from '@testing-library/react';
 import PartnerView from './PartnerView';
 import { makeCertification, makeDashboardData } from '../test/fixtures';
 
+describe('PartnerView picker limitation (VAL-GOV-008)', () => {
+  it('labels the picker as an untrusted demo selector, not authorization', () => {
+    render(<PartnerView data={makeDashboardData()} />);
+
+    // The picker stays unchanged; the visible copy states its boundary.
+    expect(screen.getByText(/Demo selector/)).toBeInTheDocument();
+    expect(screen.getByText(/client filtering is not authorization/i)).toBeInTheDocument();
+    expect(screen.getByText(/trusted sign-in and server-enforced row access/i)).toBeInTheDocument();
+    expect(screen.queryByText(/scoped by partner SSO/i)).not.toBeInTheDocument();
+  });
+});
+
 describe('PartnerView certification attainment', () => {
   it('shows attainment against a real goal', () => {
     render(

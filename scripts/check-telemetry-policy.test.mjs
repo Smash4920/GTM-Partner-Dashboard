@@ -49,11 +49,12 @@ describe('checkTelemetryPolicy source rules', () => {
     assert.equal(violations[0].id, 'webhook-url');
   });
 
-  it('ignores test files and the checker itself, which name the symbols on purpose', () => {
+  it('ignores test files and the reviewed policy checkers, which name the symbols on purpose', () => {
     const violations = scan({
       sources: [
         { path: 'src/lib/telemetry/config.test.ts', text: 'env.VITE_ALERT_ENDPOINT' },
         { path: 'scripts/check-telemetry-policy.mjs', text: 'VITE_ALERT_ENDPOINT alertEndpoint' },
+        { path: 'scripts/check-docs-consistency.mjs', text: '/VITE_ALERT_ENDPOINT/' },
       ],
     });
     assert.deepEqual(violations, []);

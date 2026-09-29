@@ -24,6 +24,15 @@ import { fileURLToPath } from 'node:url';
  * tests/e2e/telemetry-egress.spec.ts.
  */
 
+/**
+ * Policy scanners that must name the forbidden symbols to detect them. Each
+ * entry is reviewed: a scanner is exempt, product source never is.
+ */
+export const POLICY_CHECKER_FILES = new Set([
+  'scripts/check-telemetry-policy.mjs',
+  'scripts/check-docs-consistency.mjs',
+]);
+
 /** Files scanned for forbidden source symbols, relative to the repository root. */
 const SOURCE_ROOTS = ['src', 'public', 'scripts', 'config', '.github'];
 const SOURCE_FILES = ['.env.example', 'vite.config.ts', 'index.html', 'package.json'];
@@ -104,10 +113,11 @@ export function checkTelemetryPolicy({ sources, dist }) {
   const violations = [];
 
   for (const { path, text } of sources) {
-    // Test files deliberately name the forbidden symbols, and this checker
-    // necessarily spells them out in its own patterns.
+    // Test files deliberately name the forbidden symbols, and the policy
+    // checkers necessarily spell them out in their own patterns. The policy
+    // constrains product source and configuration, not the scanners.
     if (/\.test\.[cm]?[jt]sx?$/.test(path)) continue;
-    if (path === 'scripts/check-telemetry-policy.mjs') continue;
+    if (POLICY_CHECKER_FILES.has(path)) continue;
     for (const { id, pattern, reason } of FORBIDDEN_SOURCE_PATTERNS) {
       if (pattern.test(text)) violations.push({ path, id, reason });
     }

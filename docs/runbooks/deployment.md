@@ -10,6 +10,8 @@ build.
 - The pull request is green in `.github/workflows/ci.yml` (validation and
   Playwright jobs).
 - `npm run bundle:check` passes locally if dependencies changed.
+- `npm run client-boundary:check` passes if dependencies, telemetry modules,
+  or workflows changed (it runs in CI regardless).
 - `npm run docs:check` passes if `package.json`, workflows, budgets, runbooks,
   or skills changed.
 - A Vercel preview URL exists for the pull request.

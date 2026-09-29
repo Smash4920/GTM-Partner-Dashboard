@@ -50,10 +50,32 @@ explain the removal condition.
 
 ### `docs:check`
 
-Generated documentation under `docs/generated/` is stale. Run
-`npm run docs:generate` and commit the result. The pages are derived from
-`package.json`, the workflows, the `config/` budgets, the runbooks, and the
-skills.
+Two failures are possible. Generated documentation under `docs/generated/` is
+stale: run `npm run docs:generate` and commit the result (the pages are derived
+from `package.json`, the workflows, the `config/` budgets, the runbooks, and
+the skills). Or the documentation consistency check
+(`scripts/check-docs-consistency.mjs`) found a claim that disagrees with the
+client-only product: a missing required fact (the Demo/Production status axes,
+the partner-picker limitation, the deferred Forecast Quality prerequisites,
+session-only simulated actions, telemetry defaults) or a prohibited claim
+(roster "authorization" language, calendar-hour SLA phrasing, webhook
+endpoints, secret-shaped environment variables, or any assertion that
+authentication, server enforcement, durable delivery, or a remote flag plane
+exists). Fix the document or the fixture in the same change; do not weaken a
+required claim to make the check pass.
+
+### `client-boundary:check`
+
+`npm run client-boundary:check` (`scripts/check-client-boundary.mjs`) failed:
+a dependency, source file, workflow, or static asset crossed the client-only
+boundary — a server framework, database client, authentication library,
+warehouse SDK, live connector or HTTP client, notification sender, durable
+browser store, realtime channel, a network primitive outside the reviewed
+telemetry modules, browser storage outside the flag-rollout cohort, a Node
+runtime API, a server-shaped path, a CI `services:` container, or an external
+asset in `index.html`/`public/`. Remove the addition, or — for a genuinely
+reviewed exception — update the allowlist in the checker with its rationale in
+the same pull request.
 
 ### `test:coverage:ci`
 

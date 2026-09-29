@@ -130,7 +130,9 @@ test('VAL-GOV-004: connection map marks only in-process behavior active', async 
 
 test('every simulated partner portal excludes internal Sell To opportunities', async ({ page }) => {
   await openView(page, 'Partner View');
-  await expect(page.getByText('In production, scoped by partner SSO')).toBeVisible();
+  await expect(
+    page.getByText('Demo selector — client filtering is not authorization'),
+  ).toBeVisible();
 
   await page
     .getByRole('group', { name: 'Select fiscal phase' })

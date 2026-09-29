@@ -2,8 +2,9 @@ import { PARTNER_TIER_META, PARTNER_TYPE_META } from '../data/constants';
 import type { Partner } from '../data/types';
 
 /**
- * Simulates the partner-scoped login. In production this view sits behind
- * partner SSO and the picker does not exist.
+ * Demo presentation selector standing in for a partner-scoped view. It is not
+ * a security boundary: in production this view sits behind partner SSO with
+ * server-enforced row access, and the picker does not exist.
  */
 export default function PartnerPicker({
   partners,

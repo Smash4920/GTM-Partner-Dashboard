@@ -161,9 +161,10 @@ function PartnerKpis({
 }
 
 /**
- * Partner-facing portal. In production this view is scoped by partner SSO;
- * the picker here simulates that. Only Sell With and Allocate opportunities
- * are visible — Sell To is internal-only.
+ * Partner-facing portal. In production this view would be scoped by partner
+ * SSO; the picker here is an untrusted demo presentation selector, not a
+ * security boundary, and the visible note next to it says so. Only Sell With
+ * and Allocate opportunities are visible — Sell To is internal-only.
  */
 export default function PartnerView({ data }: { data: DashboardData }) {
   const [partnerId, setPartnerId] = useState<string>(() => {
@@ -346,8 +347,9 @@ export default function PartnerView({ data }: { data: DashboardData }) {
             onChange={setSlice}
             ariaLabel="Slice pipeline by revenue motion"
           />
-          <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-            In production, scoped by partner SSO
+          <p className="max-w-xs text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+            Demo selector — client filtering is not authorization; external use requires trusted
+            sign-in and server-enforced row access
           </p>
         </div>
       </div>

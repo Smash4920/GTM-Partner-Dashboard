@@ -165,17 +165,35 @@ describe('ProductionRequirementsView', () => {
     expect(controlPlane.getByText(prodOnlyLabel)).toBeInTheDocument();
   });
 
-  it('keeps the excluded partner picker and deferred Forecast Quality trend Demo: Pending', () => {
+  it('keeps the excluded partner picker Demo: Pending with its limitation documented', () => {
     render(<ProductionRequirementsView />);
 
     const picker = itemRow(/Remove the partner picker outside an internal demo mode/);
     expect(picker.getByText(demoLabel('pending'))).toBeInTheDocument();
-    // The excluded picker is a pure client change; it carries no production axis.
-    expect(picker.queryByText(prodOnlyLabel)).toBeNull();
+    // The picker is unchanged; the row documents that it is an untrusted demo
+    // presentation selector and that client filtering is not authorization.
+    expect(picker.getByText(/untrusted demo presentation selector/)).toBeInTheDocument();
+    expect(picker.getByText(/filtering is not authorization/)).toBeInTheDocument();
+    // Serving external partners is a production dependency: trusted sign-in
+    // plus server-enforced row access, so the row carries the Prod Only axis.
+    expect(picker.getByText(prodOnlyLabel)).toBeInTheDocument();
+    expect(picker.getByText(/trusted sign-in and server-enforced row access/)).toBeInTheDocument();
+  });
+
+  it('keeps the deferred Forecast Quality trend Demo: Pending with its prerequisites named', () => {
+    render(<ProductionRequirementsView />);
 
     const trend = itemRow(/Turn per-deal judgments into trend/);
     expect(trend.getByText(demoLabel('pending'))).toBeInTheDocument();
-    expect(trend.queryByText(prodOnlyLabel)).toBeNull();
+    // The trend waits on immutable historical ownership and authoritative
+    // stage-entry events; snapshots, health alerts, and reviews are not
+    // substitutes, so nothing marks it Complete or WIP.
+    expect(trend.queryByText(demoLabel('complete'))).toBeNull();
+    expect(trend.queryByText(demoLabel('wip'))).toBeNull();
+    expect(trend.getByText(prodOnlyLabel)).toBeInTheDocument();
+    expect(trend.getByText(/immutable historical partner-manager ownership/)).toBeInTheDocument();
+    expect(trend.getByText(/authoritative stage-entry events/)).toBeInTheDocument();
+    expect(trend.getByText(/not substitutes/)).toBeInTheDocument();
   });
 
   it('tracks feature-flag methodology and control-plane safeguards', () => {

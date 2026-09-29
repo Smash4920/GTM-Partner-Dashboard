@@ -34,6 +34,8 @@ Run commands from the repository root.
 npm run dev       # start the Vite development server
 npm run agents:check # validate this file's commands and repository paths
 npm run check:file-limits # reject oversized files before review
+npm run client-boundary:check # reject server, database, auth, warehouse, connector, durable-store, sender, or credential additions
+npm run docs:check # verify generated docs and documentation consistency
 npm run workflows:check # enforce the GitHub workflow security policy
 npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
@@ -71,6 +73,8 @@ npm run debt:check
 npm run lint
 npm run dead-code
 npm run lint:duplicates
+npm run docs:check
+npm run client-boundary:check
 npm run test:coverage
 npm run bundle:check
 npm run workflows:check

@@ -1,7 +1,8 @@
 # GTM Partner Dashboard
 
-Mockup of a partner revenue pipeline dashboard for the GTM team. Seven views over
-one data model, reached through a collapsible left sidebar: **Home** (ecosystem
+A client-only mockup of a partner revenue pipeline dashboard for the GTM team.
+Eight views over one deterministic mock data model, reached through a
+collapsible left sidebar: **Home** (ecosystem
 summary), **Partner Performance** (per-manager / per-partner drill-down),
 **Forecasting** (the VP's in-quarter view with a weighted forecast),
 **Deal Reg Ops** (registration SLAs, conversion time, exclusivity, and
@@ -21,7 +22,7 @@ metric green for positive data.
 
 ## Navigation
 
-A collapsible sidebar on the left carries the four pages; the icon in the upper
+A collapsible sidebar on the left carries the eight pages; the icon in the upper
 left expands and collapses it to an icon rail. The header also carries a
 **provider selector** — local mock, simulated remote, or a 100× book — which is
 the demo of the integration seam described under Data contract below.
@@ -180,12 +181,18 @@ Organized by partner manager and their assigned partners, with dropdowns for
 
 In-app edits (revenue, forecast-category calls, notes, next steps,
 classifications, added prospects, roster changes, sent notifications) live in
-React state for the session; a write-capable provider is the next step.
+session-only React state and are lost on reload by design; the durable write
+path is Phase 5 of the migration plan and stays Production: Prod Only until
+then.
 
 ### Partner View
 
 The partner-facing sharing surface, designed for a future partner SSO boundary.
-The picker simulates which partner is viewing the shared platform today.
+The picker that chooses which partner the page renders is an untrusted demo
+presentation selector: client-side filtering is not authorization, and any
+visitor can select any partner. Serving external partners requires trusted
+sign-in and server-enforced row access first, so the roadmap keeps the
+picker-removal item Pending.
 
 - Sell With and Allocate opportunities only; Sell To remains internal-only
 - Partner-scoped pipeline, closed-won, win rate, awaiting-review registrations,
@@ -201,14 +208,16 @@ The picker simulates which partner is viewing the shared platform today.
 ### Production Requirements
 
 Two tracked backlogs and the order they get built in. Every item on all three
-boards carries a **status** stamped against what the code actually does today —
-**Complete** (landed and working in the demo), **WIP** (partially implemented,
-usually the client-side half), **Pending** (not started, but buildable in demo
-mode without production access), and **Prod Only** (blocked until production
-connections or infrastructure exist — connecting the CRM, identity provider, or
-warehouse happens at go-live, not before) — next to a "statuses last updated"
-date, the day the stamps were last reviewed against the code, so a Complete
-that has gone stale is visibly stale. The **Architecture
+boards carries two statuses stamped against what the code actually does today:
+a Demo status — **Complete** (landed and verified in the client-only demo),
+**WIP** (the usable demo portion works; the rest is in flight), or **Pending**
+(not built in the demo) — and, wherever a production dependency is
+intentionally paused, a separate **Production: Prod Only** status naming the
+exact blocker (connecting the CRM, identity provider, or warehouse happens at
+go-live, not before), so a finished demo never reads as a finished production
+step. A "statuses last updated" date records the day the stamps were last
+reviewed against the code, so a Complete that has gone stale is visibly stale.
+The **Architecture
 roadmap** documents the server-side foundation required before connecting
 protected systems (identity and row-level authorization, source-system
 integration, persistence and audit, security and compliance, reliability, and
@@ -231,6 +240,15 @@ service type for which client, whether Factory revenue is attached or it is a
 long-term adoption play, and what the engagement produced) — separated from the
 architecture work so the two tracks can be prioritized independently.
 
+The production continuation runs in a fixed order — trusted identity first,
+then the warehouse and scoped API with row-level authorization, then source
+ingestion, then persisted writes and audit, then production operations — and no
+phase may be pulled ahead of identity and server-side enforcement. For the same
+reason, the per-manager and per-partner close-date-slippage, stage-aging, and
+category-confidence trend stays Pending: it needs immutable historical
+partner-manager ownership and authoritative stage-entry events, and weekly
+snapshots, partner-health alerts, and forecast reviews are not substitutes.
+
 ### Data Connections
 
 The integration map and the two things that hang off it: who on the partner
@@ -249,29 +267,31 @@ team can be told about the data, and the rule that tells them.
   DataProvider method it fills, so the map and the contract in
   `DataProvider.ts` can be read against each other; a test asserts every method
   there is covered here
-- **Partner team access** — the internal roster the identity provider owns,
-  projected into the dashboard. Adding a person puts them on the roster
-  _awaiting authorization_; authorizing is a second, separate step, which is
-  the split a real IdP enforces between knowing who should have access and
-  granting it. A user is either a Partnership Lead, a Partner Manager (aligned
-  to one partner manager, which is what routes a registration to them), Deal
-  Desk Ops (the whole queue), or an Analyst; each carries the notification
-  channels they are authorized on. Access can be revoked and restored, and a
-  user added this session can be removed
+- **Partner team access** — a session-only roster that simulates how the
+  identity provider's records would project into the dashboard. Nothing here
+  provisions, authorizes, revokes, or restores sign-in or data access, and a
+  refresh resets the roster. A user is either a Partnership Lead, a Partner
+  Manager (aligned to one partner manager, which is what routes a registration
+  to them), Deal Desk Ops (the whole queue), or an Analyst; each carries the
+  notification channels configured for them this session. Notification routing
+  can be turned on, paused, or resumed per user, and a user added this session
+  can be removed
 - **Deal-registration SLA alerts** — the notification rule, the registrations
-  it fires on, and what has been sent this session. Every pending registration
-  is measured against the 5-business-day response SLA at the snapshot; one
-  business day (24 hours) before the deadline the owner is warned, and once it
-  has passed the breach is raised. The owner is the submitting partner's
+  it fires on, and what has been recorded this session. Every pending
+  registration is measured against the 5-business-day response SLA at the
+  snapshot; one business day before the deadline the owner is warned, and once
+  it has passed the breach is raised. The owner is the submitting partner's
   aligned partner manager, with the deal desk catching anything unaligned, so a
-  registration never goes unowned. The 24-hour warnings lead the queue — they
-  are the ones with a working day left in them
-- **Notifications** are sent from inside the map: pick a teammate in the
+  registration never goes unowned. The warnings lead the queue — they are the
+  ones with a business day left in them
+- **Notifications** are composed from inside the map: pick a teammate in the
   notification node and it loads their own most urgent alert, or pick a
-  registration from the alert queue, or write a free-form note. Delivery goes
-  out over the user's authorized channels only, and the send is logged. Sends
-  are timestamped off the session clock, not the fixed snapshot: the demo data
-  is frozen at Sep 18, but an action taken now happened now
+  registration from the alert queue, or write a free-form note. The send is
+  recorded locally for the session over the user's configured channels, and the
+  confirmation reads "Simulated / local only" — nothing is delivered or
+  persisted. Sends are timestamped off the session clock, not the fixed
+  snapshot: the demo data is frozen at Sep 18, but an action taken now happened
+  now
 
 ## Running locally
 
@@ -284,6 +304,7 @@ instead of rolling onto a future release automatically.
 npm ci
 npm run dev             # http://localhost:5173
 npm run check:file-limits # reject files over 1 MiB or 1,200 text lines
+npm run client-boundary:check # reject server, database, auth, warehouse, connector, durable-store, sender, or credential additions
 npm run format          # format source, configuration, and documentation
 npm run format:check    # verify formatting without changing files
 npm run dead-code       # find unused files, exports, and dependencies with Knip
@@ -336,8 +357,12 @@ the workflow summary, and retains the JSON metrics and HTML treemap as a
 
 ### Runtime performance metrics
 
-Production builds can send real-user Web Vitals to any HTTP metrics collector.
-Set `VITE_METRICS_ENDPOINT` at build time to enable collection. The app observes
+Production builds can send real-user Web Vitals to a metrics collector that
+satisfies the telemetry endpoint policy: HTTPS on a host in the checked-in
+`APPROVED_TELEMETRY_HOSTS` list (currently empty, so production stays
+local-only until a host is approved in a reviewed change), with plain HTTP
+accepted only for loopback development. Set
+`VITE_METRICS_ENDPOINT` at build time to enable collection. The app observes
 CLS, FCP, INP, LCP, and TTFB with the maintained
 [`web-vitals`](https://github.com/GoogleChrome/web-vitals) library and delivers
 each measurement with `navigator.sendBeacon`, falling back to a keepalive
@@ -468,8 +493,8 @@ The client includes opt-in, privacy-safe telemetry. With no telemetry
 variables configured, records remain in-process and no network request is made.
 Egress is governed by two switches: the `telemetry.enabled` master switch
 controls every request, beacon, and script load, and product analytics
-additionally requires `analytics.enabled`, which defaults off pending privacy
-approval. Every envelope passes a registered per-type field allowlist before
+additionally requires `analytics.enabled`, which is off by default pending
+privacy approval. Every envelope passes a registered per-type field allowlist before
 it can be queued, so names, free-form prose, raw exception text, records, and
 secrets cannot leave the browser. Production collector endpoints must be
 HTTPS on a host in the checked-in `APPROVED_TELEMETRY_HOSTS` list (currently
@@ -643,9 +668,9 @@ written by a scheduled job.
   and `generateDashboardData()` call
 - Fixed snapshot: 2026-09-18 (`SNAPSHOT_DATE`) so numbers never drift
 - 5 partner managers, each aligned to 5 partners through a Salesforce-style
-  account relationship, each with an authorized Partner Manager user aligned to
-  them; the 8-person roster also carries a partnership lead, a deal-desk ops
-  user, and an analyst still awaiting authorization
+  account relationship, each with a Partner Manager user aligned to them and
+  notification routing on; the 8-person roster also carries a partnership lead,
+  a deal-desk ops user, and an analyst whose routing is not set up yet
 - 25 partners, 180 registrations, 213 opportunities — the FY27 book
   (February 2026 → January 2027) plus a closed prior-year FY26 book that only
   feeds the prior-year delta tiles — and 163 mock calendar meetings: a seeded
@@ -675,9 +700,10 @@ written by a scheduled job.
   older approved registrations are left unconverted so the exclusivity window
   has lapsed and still-current rows
 - A few still-pending registrations are re-dated to one business day before
-  their response SLA — one per partner — so the 24-hours-out notification rule
-  has owners to reach at the snapshot. The warning window is only a day wide,
-  and a natural distribution can contain none of it; the seeded working date is
+  their response SLA — one per partner — so the one-business-day-out
+  notification rule has owners to reach at the snapshot. The warning window is
+  only a business day wide, and a natural distribution can contain none of it;
+  the seeded working date is
   derived from the snapshot, and no PRNG is consumed, so no volume shifts
 - Realized FY27 win rate: 20 of 44 closed deals won (~45%)
 - Volumes and weights are tuned in
@@ -713,7 +739,9 @@ from the environment: `/` when `VERCEL` is set (Vercel serves at a domain
 root), and `/GTM-Partner-Dashboard/` otherwise (Pages serves project sites
 under the repo name). Set `BASE_PATH` to override for any other host.
 
-CI (`ci.yml`) checks file-size limits, formatting, lint, coverage, and the
-production build on every pull request and on every push to `main`.
-CI (`ci.yml`) runs formatting + lint + duplicate-code detection + coverage +
-build on every pull request and on every push to `main`.
+CI (`ci.yml`) checks AGENTS.md freshness, file-size limits, formatting, the
+debt policy, lint and module boundaries, dead code, duplication, documentation
+consistency, the client-only boundary, coverage thresholds, test and build
+performance, bundle and dependency budgets, and the workflow security policy,
+then runs the Playwright suite — on every pull request and on every push to
+`main`.
