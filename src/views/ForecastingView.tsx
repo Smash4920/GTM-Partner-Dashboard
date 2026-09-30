@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import Card from '../components/Card';
 import ForecastTable from '../components/ForecastTable';
 import KpiTile from '../components/KpiTile';
-import { QueryFailure, QueryMetaCaption, renderQueryState } from '../components/QueryState';
+import {
+  QueryFailure,
+  QueryMetaCaption,
+  renderQueryState,
+  useRetryRecovery,
+} from '../components/QueryState';
 import WeeklyForecastChart from '../components/WeeklyForecastChart';
 import { ChevronIcon } from '../components/icons';
 import {
@@ -101,6 +106,9 @@ export default function ForecastingView({
   const managerGroups = useManagerGroups(provider, scope);
   const weeks = useWeeklySeries(provider, scope);
   const directory = usePartnerNames(provider);
+  // The directory's retry gets the same focus recovery as every other
+  // query: a successful retry lands focus on the named region, not the body.
+  const directoryRecovery = useRetryRecovery('partner directory', directory.error !== null);
 
   const groups = managerGroups.data ?? [];
   const visibleGroups = groups.filter(
@@ -375,14 +383,23 @@ export default function ForecastingView({
       >
         {/* The directory is a dimension lookup, not forecast data: a failure
             degrades the partner column to opaque ids, with a retry offered,
-            instead of taking the table down. */}
-        {directory.error !== null && (
-          <QueryFailure
-            text="Partner names unavailable — showing partner ids"
-            retryLabel="partner directory"
-            error={directory.error}
-            onRetry={directory.retry}
-          />
+            instead of taking the table down. Its envelope renders too —
+            provider, as-of, completeness, and every warning — so a partial
+            directory can never pass for a complete one. */}
+        {(directory.meta !== null || directory.error !== null) && (
+          <div ref={directoryRecovery.regionRef} {...directoryRecovery.regionProps}>
+            {directory.meta !== null && (
+              <QueryMetaCaption meta={directory.meta} refreshing={directory.refreshing} />
+            )}
+            {directory.error !== null && (
+              <QueryFailure
+                text="Partner names unavailable — showing partner ids"
+                retryLabel="partner directory"
+                error={directory.error}
+                onRetry={directoryRecovery.armRetry(directory.retry)}
+              />
+            )}
+          </div>
         )}
         {renderQueryState('manager groups', managerGroups, () => (
           <div className="space-y-2">
@@ -483,75 +500,75 @@ function ManagerBook({
   onSetForecastCall,
 }: ManagerBookProps) {
   const book = useManagerBook(provider, scope, managerId);
-
-  if (book.loading) {
-    return (
-      <p className="border-t border-carbon px-4 py-6 font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-        Loading {managerId}…
-      </p>
-    );
-  }
-
-  if (book.rows.length === 0 && book.error !== null) {
-    return (
-      <div className="border-t border-carbon px-4 py-4">
-        <QueryFailure
-          text="This book did not load"
-          retryLabel="this manager’s book"
-          error={book.error}
-          onRetry={book.retry}
-        />
-      </div>
-    );
-  }
+  // The recovery region survives the failure → recovered transition, so a
+  // successful retry lands focus on the named book rather than the body.
+  const recovery = useRetryRecovery(`manager book ${managerId}`, book.error !== null);
+  const onRetry = recovery.armRetry(book.retry);
 
   return (
-    <div className="border-t border-carbon px-4 pb-4 pt-2">
-      <ForecastTable
-        opportunities={book.rows}
-        partnerNames={partnerNames}
-        revenueOverrides={edits.revenueOverrides}
-        notes={edits.notes}
-        nextSteps={edits.nextSteps}
-        onSetRevenue={onSetRevenue}
-        onSetNote={onSetNote}
-        onSetNextStep={onSetNextStep}
-        onSetForecastCall={onSetForecastCall}
-      />
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-          Showing {book.rows.length} of {book.totalCount}
-          {book.refreshing && ' · updating'}
+    <div ref={recovery.regionRef} {...recovery.regionProps}>
+      {book.loading ? (
+        <p className="border-t border-carbon px-4 py-6 font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+          Loading {managerId}…
         </p>
-        <span className="flex flex-wrap items-center gap-3">
-          {/* A failed page or refresh keeps the rows already on screen; retry
-              repeats the failed request, not the whole book. */}
-          {book.error !== null && (
-            <QueryFailure
-              text="The latest page failed"
-              retryLabel="this manager’s book"
-              error={book.error}
-              onRetry={book.retry}
-            />
+      ) : book.rows.length === 0 && book.error !== null ? (
+        <div className="border-t border-carbon px-4 py-4">
+          <QueryFailure
+            text="This book did not load"
+            retryLabel="this manager’s book"
+            error={book.error}
+            onRetry={onRetry}
+          />
+        </div>
+      ) : (
+        <div className="border-t border-carbon px-4 pb-4 pt-2">
+          <ForecastTable
+            opportunities={book.rows}
+            partnerNames={partnerNames}
+            revenueOverrides={edits.revenueOverrides}
+            notes={edits.notes}
+            nextSteps={edits.nextSteps}
+            onSetRevenue={onSetRevenue}
+            onSetNote={onSetNote}
+            onSetNextStep={onSetNextStep}
+            onSetForecastCall={onSetForecastCall}
+          />
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              Showing {book.rows.length} of {book.totalCount}
+              {book.refreshing && ' · updating'}
+            </p>
+            <span className="flex flex-wrap items-center gap-3">
+              {/* A failed page or refresh keeps the rows already on screen;
+                  retry repeats the failed request, not the whole book. */}
+              {book.error !== null && (
+                <QueryFailure
+                  text="The latest page failed"
+                  retryLabel="this manager’s book"
+                  error={book.error}
+                  onRetry={onRetry}
+                />
+              )}
+              {book.hasMore && (
+                <button
+                  type="button"
+                  onClick={book.loadMore}
+                  disabled={book.loadingMore}
+                  className="rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20 disabled:opacity-50"
+                >
+                  {book.loadingMore ? 'Loading…' : 'Load 25 more'}
+                </button>
+              )}
+            </span>
+          </div>
+          {/* The rows' own provenance: which provider answered, as of when,
+              and whether the answer was complete. Kept as its own line so the
+              "Showing N of M" count stays a stable, exact label. */}
+          {book.meta !== null && (
+            <div className="mt-2">
+              <QueryMetaCaption meta={book.meta} refreshing={book.refreshing} />
+            </div>
           )}
-          {book.hasMore && (
-            <button
-              type="button"
-              onClick={book.loadMore}
-              disabled={book.loadingMore}
-              className="rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20 disabled:opacity-50"
-            >
-              {book.loadingMore ? 'Loading…' : 'Load 25 more'}
-            </button>
-          )}
-        </span>
-      </div>
-      {/* The rows' own provenance: which provider answered, as of when, and
-          whether the answer was complete. Kept as its own line so the
-          "Showing N of M" count stays a stable, exact label. */}
-      {book.meta !== null && (
-        <div className="mt-2">
-          <QueryMetaCaption meta={book.meta} refreshing={book.refreshing} />
         </div>
       )}
     </div>

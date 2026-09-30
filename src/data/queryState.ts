@@ -41,13 +41,26 @@ export interface QueryState<T> {
   meta: QueryMeta | null;
   loading: boolean;
   refreshing: boolean;
+  /**
+   * Stable, operation-specific failure copy — never the rejection's own
+   * prose (see `stableFailureCopy`). Null while the last attempt succeeded
+   * or none has finished.
+   */
   error: string | null;
   retry: () => void;
 }
 
-/** The message the UI shows for a rejected query. */
-export function messageOf(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+/**
+ * The message a query surface shows for a rejection. Deliberately *not* the
+ * rejection's own prose: a provider error can carry internal detail, source
+ * text, or user data, and none of that belongs on screen. Every surface
+ * falls back to its stable, operation-specific copy instead. The raw
+ * rejection still reaches the structured log and the allowlisted telemetry
+ * fingerprint at the instrumented seam, where it cannot leak into the
+ * product.
+ */
+export function stableFailureCopy(fallback: string): string {
+  return fallback;
 }
 
 /**
@@ -117,7 +130,7 @@ export function useScopedQuery<T>(args: {
         setEntry({ provider, data: result.data, meta: result.meta, error: null });
         setInFlight(false);
       },
-      (error: unknown) => {
+      () => {
         if (controller.signal.aborted || request !== latest.current) return;
         // Stale beats blank: a failed refresh keeps the same-provider figures
         // already on screen and reports the error alongside them. Only an
@@ -126,7 +139,7 @@ export function useScopedQuery<T>(args: {
           provider,
           data: prev !== null && prev.provider === provider ? prev.data : null,
           meta: prev !== null && prev.provider === provider ? prev.meta : null,
-          error: messageOf(error, fallbackRef.current),
+          error: stableFailureCopy(fallbackRef.current),
         }));
         setInFlight(false);
       },

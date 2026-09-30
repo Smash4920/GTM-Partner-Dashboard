@@ -110,7 +110,7 @@ describe('forecast widgets (VAL-RES-005)', () => {
     const provider = new MockDataProvider(makeProviderBook());
     const weightedSpy = vi
       .spyOn(provider, 'getWeightedForecast')
-      .mockRejectedValueOnce(new Error('getWeightedForecast failed in transit (simulated)'));
+      .mockRejectedValueOnce(new Error('RAW SENTINEL: weighted aggregation blew up internally'));
     const summarySpy = vi.spyOn(provider, 'getForecastSummary');
     const groupsSpy = vi.spyOn(provider, 'getManagerForecastGroups');
 
@@ -120,12 +120,14 @@ describe('forecast widgets (VAL-RES-005)', () => {
     await waitFor(() => expect(result.current.summary.data).not.toBeNull());
     await waitFor(() => expect(result.current.groups.data).not.toBeNull());
 
-    // The failed widget is unavailable; the siblings settled successfully.
+    // The failed widget is unavailable with its stable operation copy —
+    // never the rejection's own prose; the siblings settled successfully.
     expect(result.current.weighted).toMatchObject({
       data: null,
       loading: false,
-      error: 'getWeightedForecast failed in transit (simulated)',
+      error: 'Failed to load the weighted forecast',
     });
+    expect(result.current.weighted.error).not.toContain('RAW SENTINEL');
     expect(result.current.summary.error).toBeNull();
     expect(result.current.groups.error).toBeNull();
 
@@ -141,10 +143,13 @@ describe('forecast widgets (VAL-RES-005)', () => {
     const provider = new MockDataProvider(makeProviderBook());
     const directorySpy = vi
       .spyOn(provider, 'getPartnerDirectory')
-      .mockRejectedValueOnce(new Error('getPartnerDirectory failed in transit (simulated)'));
+      .mockRejectedValueOnce(new Error('RAW SENTINEL: directory store internal detail'));
 
     const { result } = renderWidgets(provider);
     await waitFor(() => expect(result.current.directory.error).not.toBeNull());
+    // Stable copy, no raw prose; the meta stays null while nothing answered.
+    expect(result.current.directory.error).toBe('Failed to load the partner directory');
+    expect(result.current.directory.meta).toBeNull();
     // Ids remain a legible fallback; the aggregates are untouched.
     expect(result.current.directory.names).toEqual({});
     await waitFor(() => expect(result.current.summary.data).not.toBeNull());
@@ -155,6 +160,53 @@ describe('forecast widgets (VAL-RES-005)', () => {
       expect(result.current.directory.names['partner-1']).toBe('Northwind Systems'),
     );
     expect(directorySpy).toHaveBeenCalledTimes(2);
+    // The recovered answer brings its envelope with it.
+    expect(result.current.directory.error).toBeNull();
+    expect(result.current.directory.meta).toMatchObject({
+      providerId: 'local',
+      completeness: 'complete',
+    });
+  });
+
+  it('preserves the directory envelope: provider, as-of, completeness, and warnings survive the name mapping', async () => {
+    // A legal partial directory answer: usable names plus a typed warning.
+    // The mapping to id → name must not drop the metadata that says the
+    // answer is partial.
+    const provider = new MockDataProvider(makeProviderBook());
+    const realDirectory = provider.getPartnerDirectory.bind(provider);
+    vi.spyOn(provider, 'getPartnerDirectory').mockImplementation(async (context) => {
+      const result = await realDirectory(context);
+      return {
+        ...result,
+        meta: {
+          ...result.meta,
+          completeness: 'partial' as const,
+          warnings: [
+            {
+              code: 'unattributed-opportunities' as const,
+              message: '1 partner could not be attributed and is missing from the directory',
+            },
+          ],
+        },
+      };
+    });
+
+    const { result } = renderHook(() => usePartnerNames(provider));
+
+    await waitFor(() => expect(result.current.names['partner-1']).toBe('Northwind Systems'));
+    expect(result.current.meta).toMatchObject({
+      providerId: 'local',
+      completeness: 'partial',
+    });
+    expect(typeof result.current.meta?.asOf).toBe('string');
+    expect(result.current.meta?.lineage.length).toBeGreaterThan(0);
+    expect(result.current.meta?.warnings).toEqual([
+      {
+        code: 'unattributed-opportunities',
+        message: '1 partner could not be attributed and is missing from the directory',
+      },
+    ]);
+    expect(result.current.error).toBeNull();
   });
 
   it('a manager book failure is independent of the aggregates', async () => {
@@ -424,15 +476,17 @@ describe('useManagerBook', () => {
     expect(result.current.rows).toHaveLength(2);
   });
 
-  it('reports a failed page and retries it', async () => {
+  it('reports a failed page with stable copy and retries it', async () => {
     const provider = new MockDataProvider(book);
     vi.spyOn(provider, 'listQuarterOpportunities').mockRejectedValueOnce(
-      new Error('listQuarterOpportunities failed in transit (simulated)'),
+      new Error('RAW SENTINEL: listQuarterOpportunities blew up internally'),
     );
     const { result } = renderHook(() => useManagerBook(provider, baseScope, 'pm-1', 2));
 
     await waitFor(() => expect(result.current.error).not.toBeNull());
-    expect(result.current.error).toBe('listQuarterOpportunities failed in transit (simulated)');
+    // Stable operation-specific copy, never the rejection's own prose.
+    expect(result.current.error).toBe('Failed to load this manager’s book');
+    expect(result.current.error).not.toContain('RAW SENTINEL');
     expect(result.current.rows).toEqual([]);
 
     act(() => result.current.retry());

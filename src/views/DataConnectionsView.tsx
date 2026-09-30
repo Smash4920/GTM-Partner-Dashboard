@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import Card from '../components/Card';
 import KpiTile from '../components/KpiTile';
 import NotificationComposer, { type ComposerState } from '../components/NotificationComposer';
+import { QueryFailure, QueryLoading, useRetryRecovery } from '../components/QueryState';
 import SlaAlertPanel from '../components/SlaAlertPanel';
 import TeamAccessPanel from '../components/TeamAccessPanel';
 import WireDiagram from '../components/WireDiagram';
@@ -36,12 +37,18 @@ import { registrationSlaAlerts } from '../lib/metrics';
 
 interface DataConnectionsViewProps {
   /**
-   * Null under total provider failure. The catalog — the map, the coverage
-   * counts, the detail panel — is static and renders regardless; only the
-   * roster, composer, and alert queue need business data, and those say so
-   * and offer a retry rather than taking the route down with them.
+   * Null until the book first lands, and under total provider failure. The
+   * catalog — the map, the coverage counts, the detail panel — is static
+   * and renders regardless; only the roster, composer, and alert queue need
+   * business data, and those distinguish the two nulls themselves: loading
+   * announces itself and waits, failure names itself and offers the retry.
    */
   data: DashboardData | null;
+  /**
+   * Stable, operation-specific copy when the book load failed; null while
+   * the load is in flight or healthy. Never raw rejection prose — the
+   * loading hook owns that mapping before this view ever sees the string.
+   */
   loadError: string | null;
   onRetry: () => void;
   /** Users added during this session — the only removable roster entries. */
@@ -157,22 +164,11 @@ export default function DataConnectionsView({
   const live = CONNECTION_NODES.filter((node) => node.status === 'live').length;
   const routingOn = data?.teamUsers.filter((user) => user.status === 'active').length ?? null;
   const approaching = alerts.filter((alert) => alert.state === 'approaching').length;
-
-  /** A section that cannot render without the book names itself and offers the retry. */
-  const dataUnavailable = (label: string) => (
-    <p className="flex flex-wrap items-center gap-3 py-2 text-sm text-bone">
-      <span className="text-signal">{label} unavailable:</span>
-      {loadError ?? 'the data provider did not answer'}
-      <button
-        type="button"
-        onClick={onRetry}
-        aria-label={`Retry ${label}`}
-        className="rounded border border-ash px-3 py-1 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20"
-      >
-        Retry
-      </button>
-    </p>
-  );
+  // Three truths for the data-backed tiles and sections: the load is still
+  // answering (loading), it failed (failed), or the book is here. Loading is
+  // not a failure, so only a real failure is called unavailable.
+  const bookState: 'loading' | 'failed' | 'ready' =
+    data !== null ? 'ready' : loadError !== null ? 'failed' : 'loading';
 
   return (
     <div className="space-y-6">
@@ -215,20 +211,24 @@ export default function DataConnectionsView({
           label="Receiving notifications"
           value={data === null ? '—' : `${routingOn}/${data.teamUsers.length}`}
           sub={
-            data === null
-              ? 'roster unavailable — the provider did not answer'
-              : 'roster entries routed simulated notifications this session'
+            bookState === 'ready'
+              ? 'roster entries routed simulated notifications this session'
+              : bookState === 'failed'
+                ? 'roster unavailable — the provider did not answer'
+                : 'roster loading — waiting on the provider'
           }
         />
         <KpiTile
           label="SLA alerts due"
           value={data === null ? '—' : `${alerts.length}`}
           sub={
-            data === null
-              ? 'alert queue unavailable — the provider did not answer'
-              : `${approaching} due next business day · ${
+            bookState === 'ready'
+              ? `${approaching} due next business day · ${
                   alerts.length - approaching
                 } past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`
+              : bookState === 'failed'
+                ? 'alert queue unavailable — the provider did not answer'
+                : 'alert queue loading — waiting on the provider'
           }
         />
       </div>
@@ -269,21 +269,26 @@ export default function DataConnectionsView({
                 or a registration from the alert queue below.
               </p>
               <div className="mt-4">
-                {data === null ? (
-                  dataUnavailable('The notification composer')
-                ) : (
-                  <NotificationComposer
-                    users={data.teamUsers}
-                    partners={data.partners}
-                    registrations={data.registrations}
-                    alerts={alerts}
-                    state={composer}
-                    onChange={setComposer}
-                    onSend={send}
-                    lastSent={notifications[0]}
-                    describe={describe}
-                  />
-                )}
+                <BookDataSection
+                  label="The notification composer"
+                  data={data}
+                  loadError={loadError}
+                  onRetry={onRetry}
+                >
+                  {(book) => (
+                    <NotificationComposer
+                      users={book.teamUsers}
+                      partners={book.partners}
+                      registrations={book.registrations}
+                      alerts={alerts}
+                      state={composer}
+                      onChange={setComposer}
+                      onSend={send}
+                      lastSent={notifications[0]}
+                      describe={describe}
+                    />
+                  )}
+                </BookDataSection>
               </div>
             </div>
           </div>
@@ -294,36 +299,96 @@ export default function DataConnectionsView({
         title="Partner team notification routing"
         subtitle="Who is on the internal roster, which manager they are aligned to, and whether this session routes simulated notifications to them. These controls do not grant sign-in or data access."
       >
-        {data === null ? (
-          dataUnavailable('The team roster')
-        ) : (
-          <TeamAccessPanel
-            users={data.teamUsers}
-            partnerManagers={data.partnerManagers}
-            addedUserIds={addedUserIds}
-            onAdd={onAddTeamUser}
-            onSetStatus={onSetTeamUserStatus}
-            onRemove={onRemoveTeamUser}
-          />
-        )}
+        <BookDataSection
+          label="The team roster"
+          data={data}
+          loadError={loadError}
+          onRetry={onRetry}
+        >
+          {(book) => (
+            <TeamAccessPanel
+              users={book.teamUsers}
+              partnerManagers={book.partnerManagers}
+              addedUserIds={addedUserIds}
+              onAdd={onAddTeamUser}
+              onSetStatus={onSetTeamUserStatus}
+              onRemove={onRemoveTeamUser}
+            />
+          )}
+        </BookDataSection>
       </Card>
 
       <Card
         title="Deal-registration SLA alerts"
         subtitle="The rule the notification service runs, the registrations it fires on at snapshot, and what has been sent this session."
       >
-        {data === null ? (
-          dataUnavailable('The SLA alert queue')
-        ) : (
-          <SlaAlertPanel
-            alerts={alerts}
-            users={data.teamUsers}
-            notifications={notifications}
-            onNotify={(alert) => notifyAlert(alert.registration.id)}
-            onNotifyAll={notifyAllOwners}
-          />
-        )}
+        <BookDataSection
+          label="The SLA alert queue"
+          data={data}
+          loadError={loadError}
+          onRetry={onRetry}
+        >
+          {(book) => (
+            <SlaAlertPanel
+              alerts={alerts}
+              users={book.teamUsers}
+              notifications={notifications}
+              onNotify={(alert) => notifyAlert(alert.registration.id)}
+              onNotifyAll={notifyAllOwners}
+            />
+          )}
+        </BookDataSection>
       </Card>
+    </div>
+  );
+}
+
+/**
+ * One business-data section of the route. The catalog around it is static,
+ * so this wrapper owns the whole truth of a section's dependency on the
+ * book:
+ *
+ * - **loading** (no data yet, no failure): the section announces it is
+ *   loading and waits — it is never mislabeled as failed, and no Retry is
+ *   offered for work that has not failed.
+ * - **failed**: the section names itself, shows the load's stable error
+ *   copy, and offers the retry that re-runs the load.
+ * - **ready**: the section renders its panel.
+ *
+ * The wrapper is also the retry focus target: it survives the failure →
+ * recovered transition, so a successful retry lands focus on the named
+ * region instead of dropping it to the document body.
+ */
+function BookDataSection({
+  label,
+  data,
+  loadError,
+  onRetry,
+  children,
+}: {
+  /** The section's own name, used in its failure copy, retry, and region. */
+  label: string;
+  data: DashboardData | null;
+  loadError: string | null;
+  onRetry: () => void;
+  children: (data: DashboardData) => ReactNode;
+}) {
+  const failed = data === null && loadError !== null;
+  const { regionRef, regionProps, armRetry } = useRetryRecovery(label, failed);
+  return (
+    <div ref={regionRef} {...regionProps}>
+      {data !== null ? (
+        children(data)
+      ) : failed ? (
+        <QueryFailure
+          text={`${label} unavailable`}
+          retryLabel={label}
+          error={loadError}
+          onRetry={armRetry(onRetry)}
+        />
+      ) : (
+        <QueryLoading label={label.replace(/^The /, 'the ')} />
+      )}
     </div>
   );
 }

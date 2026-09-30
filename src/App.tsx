@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import ProviderTransitionNotice from './components/ProviderTransitionNotice';
+import { QueryFailure, useRetryRecovery } from './components/QueryState';
 import Sidebar, { type Route } from './components/Sidebar';
 import { MenuIcon } from './components/icons';
 import { SNAPSHOT_DATE } from './data/constants';
@@ -230,20 +231,26 @@ export default function App({
     };
   }, [provider, transition.requestedId, transition.status]);
 
-  const refreshHealth = useCallback(async () => {
-    const current = healthContextRef.current;
-    return assessHealth({
-      provider: current.provider,
+  const refreshHealth = useCallback(async (): Promise<HealthArtifact | null> => {
+    const started = healthContextRef.current;
+    const artifact = await assessHealth({
+      provider: started.provider,
       transition: {
-        requestedId: current.requestedId,
+        requestedId: started.requestedId,
         status:
-          current.status === 'idle'
+          started.status === 'idle'
             ? 'committed'
-            : current.status === 'probing'
+            : started.status === 'probing'
               ? 'committing'
               : 'failed',
       },
     });
+    // The committed provider moved while the assessment ran: this artifact
+    // speaks for a seam that is no longer committed. Returning null lets the
+    // publisher leave the current artifact alone — the transition's own
+    // publication already carries the newly committed identity, and probing
+    // again is the next refresh's job.
+    return healthContextRef.current.provider === started.provider ? artifact : null;
   }, []);
 
   const lastHealthArtifact = useRef<HealthArtifact | null>(null);
@@ -261,6 +268,10 @@ export default function App({
     healthBooted.current = true;
     publishHealth(shellHealthArtifact());
     void refreshHealth().then((artifact) => {
+      // A null artifact means the committed provider changed mid-assessment;
+      // the transition's own publication stands and nothing is reported for
+      // the abandoned probe.
+      if (artifact === null) return;
       // Only the assessed artifact ships as telemetry; the provisional one
       // would alert on a boot that has not finished judging itself.
       telemetry.reportHealth(artifact);
@@ -611,20 +622,19 @@ function RouteContent({
   const boundaryKey = `${providerId}:${generation}`;
   const isBookRoute =
     route !== 'forecasting' && route !== 'production-requirements' && route !== 'data-connections';
+  // The book routes' recovery region: it survives the failure → recovered
+  // transition, so a successful retry lands focus on the named region rather
+  // than dropping it to the document body.
+  const bookRecovery = useRetryRecovery('dashboard data', error !== null && isBookRoute);
   return (
     <>
-      {error !== null && route !== 'data-connections' && (
+      {/* Forecasting and Production Requirements do not read the book, but
+          its failure is still reported there as a plain banner; the book
+          routes get the failure with its retry inside their recovery region
+          below. The copy is the load's stable failure message either way —
+          never the rejection's own prose. */}
+      {error !== null && !isBookRoute && route !== 'data-connections' && (
         <p className="rounded-card border border-ash p-4 text-sm text-bone">{error}</p>
-      )}
-      {/* The book on screen always belongs to the committed provider: a
-          switch keeps the old book while the candidate is only requested,
-          and the commit drops it for a loading state until the new
-          provider's own data arrives. There is no frame in between. */}
-      {loading && !live && isBookRoute && (
-        <p className="flex items-center gap-2 py-32 font-mono text-xs uppercase tracking-[0.08em] text-granite">
-          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal" />
-          Loading dashboard data
-        </p>
       )}
       {route === 'production-requirements' && (
         <FlaggedContent enabled={productionRequirementsEnabled}>
@@ -660,23 +670,50 @@ function RouteContent({
           />
         </ErrorBoundary>
       )}
-      {live !== null && isBookRoute && (
-        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:${route}`}>
-          {route === 'home' && <HomeView data={live} classifications={classifications} />}
-          {route === 'partners' && (
-            <PartnerPerformanceView data={live} classifications={classifications} />
+      {isBookRoute && (
+        <div ref={bookRecovery.regionRef} {...bookRecovery.regionProps}>
+          {/* The legacy book load is still one logical unit — the scoped-route
+              migration chain owns splitting it — so its failure names the load
+              and retries it as a unit. */}
+          {error !== null && (
+            <div className="rounded-card border border-ash p-4">
+              <QueryFailure
+                text="Dashboard data unavailable"
+                retryLabel="dashboard data"
+                error={error}
+                onRetry={bookRecovery.armRetry(retry)}
+              />
+            </div>
           )}
-          {route === 'registration-ops' && <DealRegistrationOpsView data={live} />}
-          {route === 'activity' && (
-            <ActivityTrackingView
-              data={live}
-              classifications={classifications}
-              onCommitClassifications={onCommitClassifications}
-              onAddPartner={onAddPartner}
-            />
+          {/* The book on screen always belongs to the committed provider: a
+              switch keeps the old book while the candidate is only requested,
+              and the commit drops it for a loading state until the new
+              provider's own data arrives. There is no frame in between. */}
+          {loading && !live && (
+            <p className="flex items-center gap-2 py-32 font-mono text-xs uppercase tracking-[0.08em] text-granite">
+              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal" />
+              Loading dashboard data
+            </p>
           )}
-          {route === 'partner-view' && <PartnerView data={live} />}
-        </ErrorBoundary>
+          {live !== null && (
+            <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:${route}`}>
+              {route === 'home' && <HomeView data={live} classifications={classifications} />}
+              {route === 'partners' && (
+                <PartnerPerformanceView data={live} classifications={classifications} />
+              )}
+              {route === 'registration-ops' && <DealRegistrationOpsView data={live} />}
+              {route === 'activity' && (
+                <ActivityTrackingView
+                  data={live}
+                  classifications={classifications}
+                  onCommitClassifications={onCommitClassifications}
+                  onAddPartner={onAddPartner}
+                />
+              )}
+              {route === 'partner-view' && <PartnerView data={live} />}
+            </ErrorBoundary>
+          )}
+        </div>
       )}
     </>
   );

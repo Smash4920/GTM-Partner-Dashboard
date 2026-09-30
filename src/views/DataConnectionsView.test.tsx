@@ -147,8 +147,10 @@ const COVERED_METHODS = new Set(
 interface SetupOptions {
   data?: Partial<DashboardData>;
   notifications?: DashboardNotification[];
-  /** Simulate total provider failure: no book, just the failure text. */
+  /** Simulate total provider failure: no book, just the stable failure copy. */
   unavailable?: boolean;
+  /** Simulate the initial load: no book yet, and no failure either. */
+  loading?: boolean;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -162,10 +164,10 @@ function setup(options: SetupOptions = {}) {
     ...options.data,
   });
 
-  render(
+  const viewFor = (book: DashboardData | null, loadError: string | null) => (
     <DataConnectionsView
-      data={options.unavailable ? null : data}
-      loadError={options.unavailable ? 'listPartners failed in transit (simulated)' : null}
+      data={book}
+      loadError={loadError}
       onRetry={onRetry}
       addedUserIds={new Set<string>()}
       notifications={options.notifications ?? []}
@@ -173,10 +175,19 @@ function setup(options: SetupOptions = {}) {
       onSetTeamUserStatus={vi.fn()}
       onRemoveTeamUser={vi.fn()}
       onSendNotification={onSendNotification}
-    />,
+    />
   );
+  const utils = render(
+    viewFor(
+      options.unavailable === true || options.loading === true ? null : data,
+      options.unavailable === true ? 'Failed to load dashboard data' : null,
+    ),
+  );
+  // The recovery half of the retry contract: the attempt cleared the error,
+  // then the book landed.
+  const recover = () => utils.rerender(viewFor(data, null));
 
-  return { user, onSendNotification, onRetry };
+  return { user, onSendNotification, onRetry, recover };
 }
 
 /** Scopes assertions to one KPI tile by its label. */
@@ -233,15 +244,58 @@ describe('DataConnectionsView', () => {
     expect(tile('Receiving notifications').getByText('—')).toBeInTheDocument();
     expect(tile('SLA alerts due').getByText('—')).toBeInTheDocument();
 
-    // Each business section names itself and its failure; none of them
-    // renders pretend-empty content.
+    // Each business section names itself and shows the load's stable failure
+    // copy; none of them renders pretend-empty content, and no raw provider
+    // prose appears anywhere on the route.
     expect(screen.getByText('The notification composer unavailable:')).toBeInTheDocument();
     expect(screen.getByText('The team roster unavailable:')).toBeInTheDocument();
     expect(screen.getByText('The SLA alert queue unavailable:')).toBeInTheDocument();
-    expect(screen.getAllByText('listPartners failed in transit (simulated)')).toHaveLength(3);
+    expect(screen.getAllByText('Failed to load dashboard data')).toHaveLength(3);
+    expect(screen.queryByText(/failed in transit/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Retry The team roster' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('distinguishes the initial load from a failure: loading announces itself and offers no retry', () => {
+    // The defect this guards: the route used to render "the provider did not
+    // answer" with a Retry button while the provider was still answering.
+    // Loading is not a failure — it announces itself and waits.
+    setup({ loading: true });
+
+    expect(screen.getByText('Loading the notification composer')).toBeInTheDocument();
+    expect(screen.getByText('Loading the team roster')).toBeInTheDocument();
+    expect(screen.getByText('Loading the SLA alert queue')).toBeInTheDocument();
+    expect(screen.getAllByRole('status')).toHaveLength(3);
+    expect(screen.queryByRole('button', { name: /^Retry / })).toBeNull();
+    expect(screen.queryByText(/unavailable:/)).toBeNull();
+
+    // The tiles say "loading", not "did not answer".
+    expect(tile('Receiving notifications').getByText('—')).toBeInTheDocument();
+    expect(
+      tile('Receiving notifications').getByText(/roster loading — waiting on the provider/),
+    ).toBeInTheDocument();
+    expect(
+      tile('SLA alerts due').getByText(/alert queue loading — waiting on the provider/),
+    ).toBeInTheDocument();
+  });
+
+  it('a successful retry moves focus to the section’s named region, never the document body', async () => {
+    const { user, onRetry, recover } = setup({ unavailable: true });
+
+    const retryButton = screen.getByRole('button', { name: 'Retry The team roster' });
+    await user.click(retryButton);
+    expect(onRetry).toHaveBeenCalledTimes(1);
+
+    // The attempt starts (the error clears) and then the book lands. The
+    // Retry button unmounted with the failure UI; focus must land on the
+    // section's stable, named region — not on document.body.
+    recover();
+
+    const region = screen.getByRole('group', { name: 'The team roster' });
+    expect(within(region).getAllByText('J. Alvarez').length).toBeGreaterThan(0);
+    expect(document.activeElement).toBe(region);
+    expect(document.activeElement).not.toBe(document.body);
   });
 
   it('derives the KPI tiles from the catalog and the live alert split', () => {

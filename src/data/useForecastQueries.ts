@@ -9,6 +9,7 @@ import type {
 } from './DataProvider';
 import { usePaginatedRows } from './paginationState';
 import type { PaginationState } from './paginationState';
+import type { QueryMeta } from './queryMetadata';
 import { editMapKey, useScopedQuery } from './queryState';
 import type { QueryState } from './queryState';
 import { NO_SESSION_EDITS } from './sessionEdits';
@@ -149,7 +150,14 @@ export function useWeeklySeries(
 
 export interface PartnerNamesState {
   names: Record<string, string>;
+  /**
+   * The directory answer's envelope — committed provider, as-of, lineage,
+   * completeness, and warnings — preserved rather than dropped, so a partial
+   * directory can say so where its names are rendered.
+   */
+  meta: QueryMeta | null;
   loading: boolean;
+  refreshing: boolean;
   error: string | null;
   retry: () => void;
 }
@@ -179,7 +187,9 @@ export function usePartnerNames(provider: DataProvider): PartnerNamesState {
   });
   return {
     names: directory.data ?? {},
+    meta: directory.meta,
     loading: directory.loading,
+    refreshing: directory.refreshing,
     error: directory.error,
     retry: directory.retry,
   };

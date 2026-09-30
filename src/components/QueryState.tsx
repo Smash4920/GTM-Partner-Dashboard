@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import type { QueryMeta } from '../data/queryMetadata';
 import type { QueryState } from '../data/queryState';
 import { formatDate } from '../lib/format';
@@ -89,42 +89,108 @@ export function QueryMetaCaption({ meta, refreshing }: { meta: QueryMeta; refres
 }
 
 /**
+ * Focus recovery for a query's retry. The Retry button lives inside the
+ * failure UI, so a successful retry unmounts the very element focus was on
+ * and the browser drops it to the document body — the keyboard user is
+ * teleported away from the widget they just recovered. Arming the region on
+ * the retry click lets it claim that orphaned focus when the failure clears;
+ * focus the user deliberately moved elsewhere is left alone, and so is a
+ * failure that clears without a retry (nothing was focused to rescue).
+ */
+export function useRetryRecovery(name: string, failed: boolean) {
+  const regionRef = useRef<HTMLDivElement | null>(null);
+  const armedRef = useRef(false);
+  useEffect(() => {
+    if (failed || !armedRef.current) return;
+    armedRef.current = false;
+    const region = regionRef.current;
+    if (region === null) return;
+    const active = document.activeElement;
+    // The unmounted Retry leaves focus on the body or on the detached button
+    // itself; only that orphaned focus is claimed.
+    if (
+      active === null ||
+      active === document.body ||
+      !active.isConnected ||
+      region.contains(active)
+    ) {
+      region.focus();
+    }
+  }, [failed]);
+  // Wraps the query's own retry so the click that starts the recovery also
+  // arms the focus claim. The wrapped call still runs exactly once.
+  const armRetry = useCallback(
+    (retry: () => void) => () => {
+      armedRef.current = true;
+      retry();
+    },
+    [],
+  );
+  return {
+    regionRef,
+    regionProps: { role: 'group', 'aria-label': name, tabIndex: -1 } as const,
+    armRetry,
+  };
+}
+
+/**
  * One widget, one query: the region shows its own initial loading, its own
  * unavailable state with a focused retry, or its data — with a refresh
  * failure reported alongside figures that stay on screen (stale beats blank),
  * and the answer's metadata caption above them. A sibling widget's state
  * never enters into any of those branches.
+ *
+ * The wrapping element is deliberate: it is the stable, named focus target a
+ * successful retry lands on (see `useRetryRecovery`), and it never unmounts
+ * between the failed and recovered render.
  */
+function QueryStateRegion<T>({
+  label,
+  state,
+  render,
+}: {
+  label: string;
+  state: QueryState<T>;
+  render: (data: T) => ReactNode;
+}) {
+  const { regionRef, regionProps, armRetry } = useRetryRecovery(label, state.error !== null);
+  return (
+    <div ref={regionRef} {...regionProps}>
+      {state.data === null ? (
+        state.error !== null ? (
+          <QueryFailure
+            text={`${label.charAt(0).toUpperCase()}${label.slice(1)} unavailable`}
+            retryLabel={label}
+            error={state.error}
+            onRetry={armRetry(state.retry)}
+          />
+        ) : (
+          <QueryLoading label={label} />
+        )
+      ) : (
+        <>
+          {state.error !== null && (
+            <QueryFailure
+              text={`Latest ${label} refresh failed`}
+              retryLabel={label}
+              error={state.error}
+              onRetry={armRetry(state.retry)}
+            />
+          )}
+          {state.meta !== null && (
+            <QueryMetaCaption meta={state.meta} refreshing={state.refreshing} />
+          )}
+          {render(state.data)}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function renderQueryState<T>(
   label: string,
   state: QueryState<T>,
   render: (data: T) => ReactNode,
 ): ReactNode {
-  if (state.data === null) {
-    if (state.error !== null) {
-      return (
-        <QueryFailure
-          text={`${label.charAt(0).toUpperCase()}${label.slice(1)} unavailable`}
-          retryLabel={label}
-          error={state.error}
-          onRetry={state.retry}
-        />
-      );
-    }
-    return <QueryLoading label={label} />;
-  }
-  return (
-    <>
-      {state.error !== null && (
-        <QueryFailure
-          text={`Latest ${label} refresh failed`}
-          retryLabel={label}
-          error={state.error}
-          onRetry={state.retry}
-        />
-      )}
-      {state.meta !== null && <QueryMetaCaption meta={state.meta} refreshing={state.refreshing} />}
-      {render(state.data)}
-    </>
-  );
+  return <QueryStateRegion label={label} state={state} render={render} />;
 }

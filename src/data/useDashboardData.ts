@@ -14,6 +14,14 @@ export interface DashboardState {
 const log = logger.child({ component: 'useDashboardData' });
 
 /**
+ * What every book-load failure says on screen: stable, operation-specific
+ * copy. The rejection's own prose never renders — it can carry internal
+ * detail or source text; it goes to the structured log below and the
+ * allowlisted telemetry fingerprint at the seam, nowhere else.
+ */
+const LOAD_FAILURE_COPY = 'Failed to load dashboard data';
+
+/**
  * What the last finished load settled into, tagged with the provider that
  * produced it. The tag is the race guard: a result is only ever exposed while
  * the provider that produced it is still the one being asked, so a provider
@@ -125,10 +133,7 @@ export function useDashboardData(provider: DataProvider): DashboardState {
           return;
         }
         log.error('Failed to load dashboard data', { error: err });
-        setSettled({
-          provider,
-          error: err instanceof Error ? err.message : 'Failed to load dashboard data',
-        });
+        setSettled({ provider, error: LOAD_FAILURE_COPY });
       },
     );
     return () => {

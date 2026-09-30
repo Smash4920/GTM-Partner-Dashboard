@@ -134,9 +134,12 @@ describe('usePaginatedRows', () => {
     const { result } = renderRows(provider);
     await waitFor(() => expect(result.current.rows).toHaveLength(2));
 
-    spy.mockRejectedValueOnce(new Error('page failed in transit (simulated)'));
+    // The sentinel stands in for raw provider prose: the state must carry
+    // the stable load-more copy, never the rejection's own message.
+    spy.mockRejectedValueOnce(new Error('RAW SENTINEL: cursor store offline'));
     act(() => result.current.loadMore());
-    await waitFor(() => expect(result.current.error).toBe('page failed in transit (simulated)'));
+    await waitFor(() => expect(result.current.error).toBe('Failed to load more of this book'));
+    expect(result.current.error).not.toContain('RAW SENTINEL');
     // The loaded pages stay exactly as they were.
     expect(result.current.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2']);
     expect(result.current.loadingMore).toBe(false);
@@ -182,9 +185,11 @@ describe('usePaginatedRows', () => {
     act(() => result.current.loadMore());
     await waitFor(() => expect(result.current.rows).toHaveLength(4));
 
-    spy.mockRejectedValueOnce(new Error('refresh failed in transit (simulated)'));
+    spy.mockRejectedValueOnce(new Error('RAW SENTINEL: snapshot segment unreadable'));
     rerender({ enabled: true, resetKey: 'pm-1', refreshKey: 'rev:opp-1=9' });
-    await waitFor(() => expect(result.current.error).toBe('refresh failed in transit (simulated)'));
+    // Stable operation-specific copy, never the rejection's own prose.
+    await waitFor(() => expect(result.current.error).toBe('Failed to load this book'));
+    expect(result.current.error).not.toContain('RAW SENTINEL');
     expect(result.current.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2', 'opp-3', 'opp-4']);
     expect(result.current.refreshing).toBe(false);
 
@@ -431,10 +436,12 @@ describe('usePaginatedRows rowEdits narrowing', () => {
     const { result, rerender } = renderTracked(provider);
     await waitFor(() => expect(result.current.rows).toHaveLength(2));
 
-    // The refresh fails; the loaded rows stay, and the failure is recorded.
-    spy.mockRejectedValueOnce(new Error('refresh failed in transit (simulated)'));
+    // The refresh fails; the loaded rows stay, and the failure is recorded
+    // as the stable copy, not the rejection's prose.
+    spy.mockRejectedValueOnce(new Error('RAW SENTINEL: index segment missing'));
     rerender({ edits: { 'opp-1': 7 } });
-    await waitFor(() => expect(result.current.error).toBe('refresh failed in transit (simulated)'));
+    await waitFor(() => expect(result.current.error).toBe('Failed to load this book'));
+    expect(result.current.error).not.toContain('RAW SENTINEL');
     expect(result.current.rows).toHaveLength(2);
     expect(spy).toHaveBeenCalledTimes(2);
 

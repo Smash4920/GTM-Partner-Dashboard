@@ -500,14 +500,16 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     expect(window.GTM_HEALTH?.artifact).toBe(refreshed);
     expect(screen.queryByRole('heading', { name: 'Partner Performance Overview' })).toBeNull();
 
-    // The route itself tells the truth too.
-    await screen.findByText('listPartners failed in transit (simulated)');
+    // The route itself tells the truth too — in the load's stable copy, not
+    // the rejection's own prose (the raw detail stays in the health check).
+    await screen.findByText('Failed to load dashboard data');
+    expect(screen.queryByText(/failed in transit/)).not.toBeInTheDocument();
   }, 30_000);
 
   it('keeps Production Requirements and the connection catalog up through total failure', async () => {
     const user = userEvent.setup();
     render(<App providerFactory={() => failingProvider()} />);
-    await screen.findByText('listPartners failed in transit (simulated)');
+    await screen.findByText('Failed to load dashboard data');
 
     await user.click(nav().getByRole('button', { name: 'Production Requirements' }));
     expect(
@@ -525,7 +527,7 @@ describe('App under total provider failure (VAL-RES-008)', () => {
   it('a focused retry recovers only the failed work', async () => {
     const user = userEvent.setup();
     render(<App providerFactory={() => flakyOnceProvider()} />);
-    await screen.findByText('listPartners failed in transit (simulated)');
+    await screen.findByText('Failed to load dashboard data');
 
     // Forecasting renders its widgets as individually unavailable, not as a
     // blank page, while the whole-book load has failed. (The summary itself
@@ -553,5 +555,25 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     );
     const rosterTile = screen.getByText('Receiving notifications').parentElement;
     expect(rosterTile).toHaveTextContent(/\d+\/\d+/);
+    // The successful retry lands focus on the recovered section's named
+    // region; the unmounted Retry button cannot orphan it to the body.
+    expect(document.activeElement).toBe(screen.getByRole('group', { name: 'The team roster' }));
+  }, 30_000);
+
+  it('a successful book-route retry moves focus to the recovered dashboard region', async () => {
+    // Every book route shares one failure surface. When its retry succeeds,
+    // focus lands on the stable "dashboard data" region instead of falling
+    // to document.body with the Retry button that just unmounted.
+    const user = userEvent.setup();
+    render(<App providerFactory={() => flakyOnceProvider()} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Retry dashboard data' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Partner Performance Overview' }),
+    ).toBeInTheDocument();
+
+    const region = screen.getByRole('group', { name: 'dashboard data' });
+    expect(document.activeElement).toBe(region);
+    expect(document.activeElement).not.toBe(document.body);
   }, 30_000);
 });

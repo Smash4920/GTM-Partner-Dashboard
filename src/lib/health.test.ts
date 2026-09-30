@@ -10,6 +10,7 @@ import {
   shellHealthArtifact,
   unavailableDataSeamCheck,
 } from './health';
+import type { HealthArtifact } from './health';
 import { clearFlagOverrides } from './telemetry/flags';
 import { telemetry } from './telemetry/telemetry';
 
@@ -274,6 +275,11 @@ describe('shellHealthArtifact and the unavailable seam (VAL-RES-008)', () => {
   });
 });
 
+/** A publishable artifact carrying only the identity a race test cares about. */
+function artifactFor(providerId: string, status: HealthArtifact['status']): HealthArtifact {
+  return { ...shellHealthArtifact(), providerId, status };
+}
+
 describe('publishHealthArtifact', () => {
   it('publishes the artifact on the page with a live refresh handle', async () => {
     const first = await assessHealth({ provider: new MockDataProvider() });
@@ -288,6 +294,81 @@ describe('publishHealthArtifact', () => {
 
     expect(refreshed?.checks).toHaveLength(6);
     expect(window.GTM_HEALTH?.artifact).toBe(refreshed);
+  });
+
+  it('a refresh settling after a newer provider published cannot overwrite it', async () => {
+    // Provider A's artifact is live and A's refresh is slow. B commits and
+    // re-publishes while A is still in flight. When A's stale answer finally
+    // settles, B's artifact must survive — and the stale caller is handed
+    // the truth that outlived it, not its own answer.
+    const a = artifactFor('local', 'ok');
+    let resolveA!: (artifact: HealthArtifact) => void;
+    const slowA = new Promise<HealthArtifact>((resolve) => {
+      resolveA = resolve;
+    });
+    publishHealthArtifact(a, () => slowA);
+
+    const inFlight = window.GTM_HEALTH!.refresh();
+
+    const b = artifactFor('remote', 'ok');
+    publishHealthArtifact(b, async () => b);
+    expect(window.GTM_HEALTH?.artifact).toBe(b);
+
+    resolveA(artifactFor('local', 'unavailable'));
+    const settled = await inFlight;
+
+    expect(window.GTM_HEALTH?.artifact).toBe(b);
+    expect(settled).toBe(b);
+  });
+
+  it('a refresh whose answer names another provider cannot overwrite the published artifact', async () => {
+    // Even within one generation, an assessment that ran against a seam the
+    // session has since left behind is stale.
+    const a = artifactFor('local', 'ok');
+    publishHealthArtifact(a, async () => artifactFor('remote', 'unavailable'));
+
+    const settled = await window.GTM_HEALTH!.refresh();
+
+    expect(window.GTM_HEALTH?.artifact).toBe(a);
+    expect(settled).toBe(a);
+  });
+
+  it('a superseded refresh loses to the newer refresh', async () => {
+    // Two overlapping refreshes against the same publication: the one that
+    // started first settles last, and its older answer must not clobber the
+    // newer refresh's result.
+    const a = artifactFor('local', 'ok');
+    const older = artifactFor('local', 'degraded');
+    const newer = artifactFor('local', 'ok');
+    let resolveOld!: (artifact: HealthArtifact) => void;
+    const slow = new Promise<HealthArtifact>((resolve) => {
+      resolveOld = resolve;
+    });
+
+    let calls = 0;
+    publishHealthArtifact(a, () => (calls++ === 0 ? slow : Promise.resolve(newer)));
+
+    const first = window.GTM_HEALTH!.refresh();
+    const second = await window.GTM_HEALTH!.refresh();
+    expect(second).toBe(newer);
+
+    resolveOld(older);
+    const firstResult = await first;
+
+    expect(window.GTM_HEALTH?.artifact).toBe(newer);
+    expect(firstResult).toBe(newer);
+  });
+
+  it('a refresh that returns null changes nothing', async () => {
+    // The caller declined to refresh (the committed provider moved while the
+    // assessment ran); the published artifact stays exactly as it was.
+    const a = artifactFor('local', 'ok');
+    publishHealthArtifact(a, async () => null);
+
+    const settled = await window.GTM_HEALTH!.refresh();
+
+    expect(window.GTM_HEALTH?.artifact).toBe(a);
+    expect(settled).toBe(a);
   });
 });
 

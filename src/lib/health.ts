@@ -303,27 +303,70 @@ export async function assessHealth(options: ReadinessOptions): Promise<HealthArt
 }
 
 /**
+ * The publication guard shared by every refresh of the live endpoint.
+ *
+ * A refresh is allowed to replace the published artifact only while it is
+ * still the newest request against the newest publication. Three things make
+ * an in-flight refresh stale:
+ *
+ * - a newer publication (a provider commit re-publishes the artifact with
+ *   the newly committed identity, bumping the generation);
+ * - a newer refresh (the sequence moved while this one was in flight);
+ * - an answer that names a different provider than the artifact on the page
+ *   (the assessment ran against a seam that is no longer the committed one).
+ *
+ * A stale refresh changes nothing and resolves with the artifact that
+ * outlived it, so the newest committed-provider artifact can never be
+ * overwritten by an older or overlapping one.
+ */
+const publication = {
+  generation: 0,
+  refreshSequence: 0,
+  providerId: null as string | null,
+};
+
+/**
  * Publishes the artifact at `window.GTM_HEALTH`. `refresh` re-runs the
  * assessment, so the endpoint stays live rather than pinning startup state;
  * it is also the documented way for an operator or a synthetic monitor to ask
- * the deployed page how it is doing.
+ * the deployed page how it is doing. A refresh that returns null — or that
+ * the publication guard finds stale when it settles — leaves the published
+ * artifact alone.
  */
 export function publishHealthArtifact(
   artifact: HealthArtifact,
-  refresh: () => Promise<HealthArtifact>,
+  refresh: () => Promise<HealthArtifact | null>,
 ): void {
   if (typeof window === 'undefined') return;
-  window.GTM_HEALTH = {
+  publication.generation += 1;
+  const generation = publication.generation;
+  publication.providerId = artifact.providerId;
+  const endpoint: HealthEndpoint = {
     artifact,
     checks: artifact.checks,
     refresh: async () => {
+      const sequence = ++publication.refreshSequence;
       const next = await refresh();
+      const stale =
+        next === null ||
+        sequence !== publication.refreshSequence ||
+        generation !== publication.generation ||
+        (next.providerId !== null &&
+          publication.providerId !== null &&
+          next.providerId !== publication.providerId);
+      if (stale) {
+        // The artifact already published is newer than this result; hand the
+        // caller the truth that outlived the race rather than the stale one.
+        return window.GTM_HEALTH?.artifact ?? artifact;
+      }
+      publication.providerId = next.providerId;
       window.GTM_HEALTH = {
         artifact: next,
         checks: next.checks,
-        refresh: window.GTM_HEALTH?.refresh ?? refresh,
+        refresh: window.GTM_HEALTH?.refresh ?? endpoint.refresh,
       };
       return next;
     },
   };
+  window.GTM_HEALTH = endpoint;
 }

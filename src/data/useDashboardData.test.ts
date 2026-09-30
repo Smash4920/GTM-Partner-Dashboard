@@ -42,17 +42,21 @@ describe('useDashboardData', () => {
   // The whole dashboard currently rides on one Promise.all, so a single
   // failing collection is the difference between a working page and a blank
   // one. Phase 1 of docs/migration-plan.md is what splits this up.
-  it('surfaces a provider failure instead of hanging on the loader', async () => {
+  it('surfaces a provider failure as stable copy instead of hanging on the loader', async () => {
+    // The sentinel stands in for raw provider prose — internal detail,
+    // source text, user data. The state carries the stable operation copy
+    // and never the rejection's own message.
     const provider = stubProvider({
       listOpportunities: async () => {
-        throw new Error('Salesforce query timed out');
+        throw new Error('RAW SENTINEL: Salesforce query timed out at soql/page/7');
       },
     });
     const { result } = renderHook(() => useDashboardData(provider));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(result.current.error).toBe('Salesforce query timed out');
+    expect(result.current.error).toBe('Failed to load dashboard data');
+    expect(result.current.error).not.toContain('RAW SENTINEL');
     expect(result.current.data).toBeNull();
   });
 
@@ -104,9 +108,9 @@ describe('useDashboardData', () => {
     });
     const { result } = renderHook(() => useDashboardData(provider));
 
-    await waitFor(() =>
-      expect(result.current.error).toBe('listOpportunities failed in transit (simulated)'),
-    );
+    await waitFor(() => expect(result.current.error).toBe('Failed to load dashboard data'));
+    // The raw provider prose never reaches the state the views render.
+    expect(result.current.error).not.toContain('failed in transit');
     expect(result.current.data).toBeNull();
     expect(attempts).toBe(1);
 

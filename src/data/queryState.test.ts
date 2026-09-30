@@ -145,10 +145,13 @@ describe('useScopedQuery', () => {
     await waitFor(() => expect(result.current.data).toBe(1));
 
     impl = async () => {
-      throw new Error('flaky wire');
+      throw new Error('RAW SENTINEL: transport stack trace that must not render');
     };
     rerender({ queryKey: 'two' });
-    await waitFor(() => expect(result.current.error).toBe('flaky wire'));
+    // The state carries the stable, operation-specific copy — never the
+    // rejection's own prose.
+    await waitFor(() => expect(result.current.error).toBe('fallback'));
+    expect(result.current.error).not.toContain('RAW SENTINEL');
     // The same-provider answer stays on screen next to the error, still
     // carrying the as-of and lineage of the answer actually showing.
     expect(result.current.data).toBe(1);
@@ -166,13 +169,14 @@ describe('useScopedQuery', () => {
     const stableProvider = provider();
     const run = vi
       .fn<() => Promise<QueryResult<number>>>()
-      .mockRejectedValueOnce(new Error('boom'))
+      .mockRejectedValueOnce(new Error('RAW SENTINEL: internal provider detail'))
       .mockResolvedValue(answered(7));
     const { result } = renderHook(() =>
       useScopedQuery({ provider: stableProvider, queryKey: 'q', run, errorFallback: 'fallback' }),
     );
 
-    await waitFor(() => expect(result.current.error).toBe('boom'));
+    await waitFor(() => expect(result.current.error).toBe('fallback'));
+    expect(result.current.error).not.toContain('RAW SENTINEL');
     expect(result.current).toMatchObject({ data: null, loading: false, refreshing: false });
     expect(run).toHaveBeenCalledTimes(1);
 
@@ -180,6 +184,36 @@ describe('useScopedQuery', () => {
     await waitFor(() => expect(result.current.data).toBe(7));
     expect(result.current.error).toBeNull();
     expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('never exposes rejection prose: the state carries only the stable fallback copy', async () => {
+    // The sentinel stands in for whatever a real provider might put in an
+    // error message — internal detail, source text, user data. None of it
+    // may reach the UI state; the operation's own stable copy does.
+    const sentinel = 'RAW SENTINEL: pg connection to 10.0.0.4:5432 refused';
+    const stableProvider = provider();
+    const run = vi
+      .fn<() => Promise<QueryResult<number>>>()
+      .mockRejectedValueOnce(new Error(sentinel))
+      .mockRejectedValueOnce('RAW SENTINEL: non-Error rejection');
+    const { result } = renderHook(() =>
+      useScopedQuery({
+        provider: stableProvider,
+        queryKey: 'q',
+        run,
+        errorFallback: 'Failed to load the forecast summary',
+      }),
+    );
+
+    await waitFor(() => expect(result.current.error).toBe('Failed to load the forecast summary'));
+    expect(result.current.error).not.toContain('RAW SENTINEL');
+
+    // A non-Error rejection maps to the same stable copy.
+    act(() => result.current.retry());
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    await act(async () => {}); // let the second rejection settle
+    expect(result.current.error).toBe('Failed to load the forecast summary');
+    expect(result.current.error).not.toContain('RAW SENTINEL');
   });
 
   it('drops an answer that arrives after a newer request', async () => {

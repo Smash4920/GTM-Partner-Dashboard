@@ -109,25 +109,24 @@ describe('query states (VAL-DATA-006)', () => {
     ).toBeInTheDocument();
   });
 
-  it('an unavailable answer names the widget and offers a focused retry', async () => {
+  it('an unavailable answer names the widget with stable copy and offers a focused retry', async () => {
     const user = userEvent.setup();
     const retry = vi.fn();
     render(
       <>
         {renderQueryState(
           'weighted forecast',
-          state({ error: 'getWeightedForecast failed in transit (simulated)', retry }),
+          state({ error: 'Failed to load the weighted forecast', retry }),
           renderTotal,
         )}
       </>,
     );
 
     // No data, no caption, no plausible-looking stand-in: the widget says it
-    // is unavailable, says why, and its retry repeats only this query.
+    // is unavailable, says why in its stable operation copy, and its retry
+    // repeats only this query.
     expect(screen.getByText('Weighted forecast unavailable:')).toBeInTheDocument();
-    expect(
-      screen.getByText('getWeightedForecast failed in transit (simulated)'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Failed to load the weighted forecast')).toBeInTheDocument();
     expect(screen.queryByText(/Total:/)).not.toBeInTheDocument();
     expect(screen.queryByText(/As of/)).not.toBeInTheDocument();
 
@@ -143,7 +142,7 @@ describe('query states (VAL-DATA-006)', () => {
           state({
             data: { total: 42 },
             meta: meta(),
-            error: 'flaky wire',
+            error: 'Failed to load the forecast summary',
           }),
           renderTotal,
         )}
@@ -172,12 +171,134 @@ describe('query states (VAL-DATA-006)', () => {
       <QueryFailure
         text="Partner names unavailable — showing partner ids"
         retryLabel="partner directory"
-        error="getPartnerDirectory failed in transit (simulated)"
+        error="Failed to load the partner directory"
         onRetry={() => {}}
       />,
     );
     expect(screen.getByText(/Partner names unavailable/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry partner directory' })).toBeInTheDocument();
+  });
+
+  it('a successful retry moves focus to the widget’s named region, never the document body', async () => {
+    // The Retry button unmounts with the failure UI, so without recovery the
+    // keyboard user's focus would fall to document.body. The region the
+    // widget renders in is the stable, named landing target.
+    const user = userEvent.setup();
+    const retry = vi.fn();
+    const { rerender } = render(
+      <>
+        {renderQueryState(
+          'forecast summary',
+          state({ error: 'Failed to load the forecast summary', retry }),
+          renderTotal,
+        )}
+      </>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Retry forecast summary' }));
+    expect(retry).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <>
+        {renderQueryState(
+          'forecast summary',
+          state({ data: { total: 42 }, meta: meta() }),
+          renderTotal,
+        )}
+      </>,
+    );
+
+    const region = screen.getByRole('group', { name: 'forecast summary' });
+    expect(region).toContainElement(screen.getByText('Total: 42'));
+    expect(document.activeElement).toBe(region);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('a successful retry after a failed refresh lands focus on the same named region', async () => {
+    // The stale-beats-blank failure shape: the figures stayed on screen, the
+    // retry rode alongside them, and the recovery still owns the focus.
+    const user = userEvent.setup();
+    const retry = vi.fn();
+    const failing = state({
+      data: { total: 42 },
+      meta: meta(),
+      error: 'Failed to load the forecast summary',
+      retry,
+    });
+    const { rerender } = render(<>{renderQueryState('forecast summary', failing, renderTotal)}</>);
+
+    await user.click(screen.getByRole('button', { name: 'Retry forecast summary' }));
+    rerender(
+      <>
+        {renderQueryState(
+          'forecast summary',
+          state({ data: { total: 43 }, meta: meta() }),
+          renderTotal,
+        )}
+      </>,
+    );
+
+    expect(screen.getByText('Total: 43')).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('group', { name: 'forecast summary' }));
+  });
+
+  it('leaves focus the user moved elsewhere alone when the recovery lands', async () => {
+    // Arming happens on the retry click, but focus that is verifiably the
+    // user's own — on another control, connected, outside the region — is
+    // never stolen back.
+    const user = userEvent.setup();
+    const retry = vi.fn();
+    const { rerender } = render(
+      <>
+        {renderQueryState(
+          'weekly series',
+          state({ error: 'Failed to load the weekly series', retry }),
+          renderTotal,
+        )}
+        <button type="button">Elsewhere</button>
+      </>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Retry weekly series' }));
+    await user.click(screen.getByRole('button', { name: 'Elsewhere' }));
+    rerender(
+      <>
+        {renderQueryState(
+          'weekly series',
+          state({ data: { total: 1 }, meta: meta() }),
+          renderTotal,
+        )}
+        <button type="button">Elsewhere</button>
+      </>,
+    );
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Elsewhere' }));
+  });
+
+  it('an unretried recovery does not claim focus', () => {
+    // A failure that clears without its retry being clicked — a scope change
+    // that refetches — must not teleport focus from wherever the user is.
+    const { rerender } = render(
+      <>
+        {renderQueryState(
+          'forecast summary',
+          state({ error: 'Failed to load the forecast summary', retry: vi.fn() }),
+          renderTotal,
+        )}
+      </>,
+    );
+
+    rerender(
+      <>
+        {renderQueryState(
+          'forecast summary',
+          state({ data: { total: 42 }, meta: meta() }),
+          renderTotal,
+        )}
+      </>,
+    );
+
+    expect(document.activeElement).toBe(document.body);
   });
 
   it('the metadata caption renders a lineage-independent summary and every warning', () => {

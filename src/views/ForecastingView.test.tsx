@@ -356,27 +356,31 @@ describe('ForecastingView', () => {
   it('fails one widget without taking the page down, and retries only that query', async () => {
     const user = userEvent.setup();
     const provider = new MockDataProvider(makeBook());
+    // The sentinel stands in for raw provider prose: the widget must render
+    // its stable operation copy, never the rejection's own message.
     const summarySpy = vi
       .spyOn(provider, 'getForecastSummary')
-      .mockRejectedValueOnce(new Error('getForecastSummary failed in transit (simulated)'));
+      .mockRejectedValueOnce(new Error('RAW SENTINEL: summary store internal detail'));
     const weightedSpy = vi.spyOn(provider, 'getWeightedForecast');
 
     renderView({ provider });
 
-    // The summary widget names its own failure; every sibling still renders.
+    // The summary widget names its own failure with stable copy; every
+    // sibling still renders.
     expect(await screen.findByText('Forecast summary unavailable:')).toBeInTheDocument();
-    expect(
-      screen.getByText('getForecastSummary failed in transit (simulated)'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Failed to load the forecast summary')).toBeInTheDocument();
+    expect(screen.queryByText(/RAW SENTINEL/)).not.toBeInTheDocument();
     expect((await screen.findAllByText('Weighted forecast')).length).toBeGreaterThan(1);
     expect(screen.getByText('Week-over-week pipeline')).toBeInTheDocument();
     expect(await screen.findByText('Showing 25 of 27')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Retry forecast summary' }));
     expect(await screen.findByText('28 open Q3 opps')).toBeInTheDocument();
-    // The retry repeated the failed query only.
+    // The retry repeated the failed query only — and a successful retry
+    // lands focus on the recovered widget's named region, not the body.
     expect(summarySpy).toHaveBeenCalledTimes(2);
     expect(weightedSpy).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(screen.getByRole('group', { name: 'forecast summary' }));
   });
 
   it('a failed weighted forecast leaves the rest of the page up and retries alone', async () => {
@@ -384,12 +388,14 @@ describe('ForecastingView', () => {
     const provider = new MockDataProvider(makeBook());
     const weightedSpy = vi
       .spyOn(provider, 'getWeightedForecast')
-      .mockRejectedValueOnce(new Error('getWeightedForecast failed in transit (simulated)'));
+      .mockRejectedValueOnce(new Error('RAW SENTINEL: weighted store internal detail'));
     const summarySpy = vi.spyOn(provider, 'getForecastSummary');
 
     renderView({ provider });
 
     expect(await screen.findByText('Weighted forecast unavailable:')).toBeInTheDocument();
+    expect(screen.getByText('Failed to load the weighted forecast')).toBeInTheDocument();
+    expect(screen.queryByText(/RAW SENTINEL/)).not.toBeInTheDocument();
     // Siblings: the summary tiles, the chart, and the table all render.
     expect(await screen.findByText('28 open Q3 opps')).toBeInTheDocument();
     expect(screen.getByText('Week-over-week pipeline')).toBeInTheDocument();
@@ -406,7 +412,7 @@ describe('ForecastingView', () => {
     const provider = new MockDataProvider(makeBook());
     const groupsSpy = vi
       .spyOn(provider, 'getManagerForecastGroups')
-      .mockRejectedValueOnce(new Error('getManagerForecastGroups failed in transit (simulated)'));
+      .mockRejectedValueOnce(new Error('RAW SENTINEL: groups store internal detail'));
     const summarySpy = vi.spyOn(provider, 'getForecastSummary');
 
     renderView({ provider });
@@ -426,11 +432,14 @@ describe('ForecastingView', () => {
     const provider = new MockDataProvider(makeBook());
     const directorySpy = vi
       .spyOn(provider, 'getPartnerDirectory')
-      .mockRejectedValueOnce(new Error('getPartnerDirectory failed in transit (simulated)'));
+      .mockRejectedValueOnce(new Error('RAW SENTINEL: directory store internal detail'));
 
     renderView({ provider });
 
     expect(await screen.findByText(/Partner names unavailable/)).toBeInTheDocument();
+    // Stable copy, never the rejection's prose.
+    expect(screen.getByText('Failed to load the partner directory')).toBeInTheDocument();
+    expect(screen.queryByText(/RAW SENTINEL/)).not.toBeInTheDocument();
     // Rows render with the raw partner id rather than failing.
     const row = (await screen.findByText('Acme 0')).closest('tr');
     expect(row).not.toBeNull();
@@ -439,6 +448,47 @@ describe('ForecastingView', () => {
     await user.click(screen.getByRole('button', { name: 'Retry partner directory' }));
     expect(await within(row!).findByText('Northwind Systems')).toBeInTheDocument();
     expect(directorySpy).toHaveBeenCalledTimes(2);
+    // The recovered answer's envelope renders beside the table it feeds…
+    const region = screen.getByRole('group', { name: 'partner directory' });
+    expect(within(region).getByText(/provider local/)).toHaveTextContent('complete');
+    // …and the successful retry lands focus on that region, not the body.
+    expect(document.activeElement).toBe(region);
+  });
+
+  it('renders a partial partner directory with its completeness and warnings visible', async () => {
+    // A legal partial directory answer: usable names plus a typed warning.
+    // The view must show the envelope — partial answers can never pass for
+    // complete ones.
+    const provider = new MockDataProvider(makeBook());
+    const realDirectory = provider.getPartnerDirectory.bind(provider);
+    vi.spyOn(provider, 'getPartnerDirectory').mockImplementation(async (context) => {
+      const result = await realDirectory(context);
+      return {
+        ...result,
+        meta: {
+          ...result.meta,
+          completeness: 'partial' as const,
+          warnings: [
+            {
+              code: 'unattributed-opportunities' as const,
+              message: '1 partner could not be attributed and is missing from the directory',
+            },
+          ],
+        },
+      };
+    });
+
+    renderView({ provider });
+
+    const region = await screen.findByRole('group', { name: 'partner directory' });
+    expect(await within(region).findByText(/As of/)).toHaveTextContent('partial');
+    expect(
+      within(region).getByText(
+        '1 partner could not be attributed and is missing from the directory',
+      ),
+    ).toBeInTheDocument();
+    // The names themselves still render in the rows the directory feeds.
+    expect(await screen.findByText('Showing 25 of 27')).toBeInTheDocument();
   });
 
   it('one manager’s failed book leaves the other managers alone', async () => {
@@ -450,7 +500,7 @@ describe('ForecastingView', () => {
       .spyOn(provider, 'listQuarterOpportunities')
       .mockImplementation((scope, page) =>
         failPm2 && scope.partnerManagerId === 'pm-2'
-          ? Promise.reject(new Error('listQuarterOpportunities failed in transit (simulated)'))
+          ? Promise.reject(new Error('RAW SENTINEL: book store internal detail'))
           : real(scope, page),
       );
 
@@ -459,6 +509,9 @@ describe('ForecastingView', () => {
 
     await user.click(screen.getByRole('button', { name: /R\. Diaz/ }));
     expect(await screen.findByText('This book did not load:')).toBeInTheDocument();
+    // Stable copy, never the rejection's prose.
+    expect(screen.getByText('Failed to load this manager’s book')).toBeInTheDocument();
+    expect(screen.queryByText(/RAW SENTINEL/)).not.toBeInTheDocument();
     // The first manager's book is untouched.
     expect(screen.getByText('Showing 25 of 27')).toBeInTheDocument();
 
@@ -468,17 +521,24 @@ describe('ForecastingView', () => {
     // The failed manager retried alone: pm-1's book was never refetched.
     const pm1Calls = bookSpy.mock.calls.filter(([scope]) => scope.partnerManagerId === 'pm-1');
     expect(pm1Calls).toHaveLength(1);
+    // The recovered book owns the focus: it landed on its named region, not
+    // the document body.
+    expect(document.activeElement).toBe(screen.getByRole('group', { name: 'manager book pm-2' }));
   });
 
   it('keeps the figures on screen when a refresh fails', async () => {
     const { provider, commitEdit } = renderView();
     await screen.findByText('Showing 25 of 27');
 
-    vi.spyOn(provider, 'getForecastSummary').mockRejectedValueOnce(new Error('flaky wire'));
+    vi.spyOn(provider, 'getForecastSummary').mockRejectedValueOnce(
+      new Error('RAW SENTINEL: summary store internal detail'),
+    );
     commitEdit({ ...EMPTY_EDITS, revenueOverrides: { 'opp-a0': 1 } });
 
     expect(await screen.findByText('Latest forecast summary refresh failed:')).toBeInTheDocument();
-    expect(screen.getByText('flaky wire')).toBeInTheDocument();
+    // Stable copy rides alongside the figures; the rejection's prose does not.
+    expect(screen.getByText('Failed to load the forecast summary')).toBeInTheDocument();
+    expect(screen.queryByText(/RAW SENTINEL/)).not.toBeInTheDocument();
     // Stale beats blank: the tiles are still there to be read, and the row
     // being edited still shows the manager's figure.
     expect(screen.getByText('Average deal size')).toBeInTheDocument();

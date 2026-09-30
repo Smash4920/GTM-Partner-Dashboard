@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DataProvider, Page, PageRequest } from './DataProvider';
 import type { QueryContext } from './queryContext';
 import type { QueryMeta, QueryResult } from './queryMetadata';
-import { messageOf } from './queryState';
+import { stableFailureCopy } from './queryState';
 
 /**
  * The independent state of one cursor-paginated row collection — one
@@ -273,13 +273,13 @@ export function usePaginatedRows<T>(args: {
             hasMore: page.nextCursor !== undefined,
           });
         },
-        (error: unknown) => {
+        () => {
           if (controller.signal.aborted || request !== latest.current) return;
           phase.current = 'idle';
           lastFailure.current = 'initial';
           setEntry({
             ...currentEntry(),
-            error: messageOf(error, fallbacksRef.current.error),
+            error: stableFailureCopy(fallbacksRef.current.error),
           });
         },
       );
@@ -312,7 +312,7 @@ export function usePaginatedRows<T>(args: {
             : previous,
         );
       },
-      (error: unknown) => {
+      () => {
         if (controller.signal.aborted || request !== latest.current) return;
         phase.current = 'idle';
         lastFailure.current = 'refresh';
@@ -323,7 +323,7 @@ export function usePaginatedRows<T>(args: {
             ? {
                 ...previous,
                 refreshing: false,
-                error: messageOf(error, fallbacksRef.current.error),
+                error: stableFailureCopy(fallbacksRef.current.error),
               }
             : previous,
         );
@@ -388,7 +388,7 @@ export function usePaginatedRows<T>(args: {
             : previous,
         );
       },
-      (error: unknown) => {
+      () => {
         if (controller.signal.aborted || request !== latest.current) return;
         phase.current = 'idle';
         lastFailure.current = 'page';
@@ -399,7 +399,7 @@ export function usePaginatedRows<T>(args: {
             ? {
                 ...previous,
                 loadingMore: false,
-                error: messageOf(error, fallbacksRef.current.more),
+                error: stableFailureCopy(fallbacksRef.current.more),
               }
             : previous,
         );
