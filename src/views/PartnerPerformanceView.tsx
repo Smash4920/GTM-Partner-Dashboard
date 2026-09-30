@@ -320,7 +320,7 @@ export default function PartnerPerformanceView({
       label: 'Pending past SLA',
       value: scopedPastSla.length,
       displayValue: `${scopedPastSla.length}`,
-      secondary: `> ${REGISTRATION_SLA_BUSINESS_DAYS} business days awaiting review`,
+      secondary: `${REGISTRATION_SLA_BUSINESS_DAYS}+ business days awaiting review`,
       color: '#ee6018',
     },
     {

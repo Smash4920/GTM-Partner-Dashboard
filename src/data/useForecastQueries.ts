@@ -36,11 +36,15 @@ import type { Opportunity } from './types';
  *   filter toggle, a collapsed group reopening — refetches nothing either,
  *   because the keys are unchanged.
  *
- * The aggregates are always quarter-level even when a manager filter is on
- * screen: the filter narrows which groups and books render, not the
- * forecast. `getWeeklyForecastSeries` is the documented exception to manager
- * scoping altogether — a snapshot row does not record whose book a deal was
- * in, so a manager-filtered chart would draw a cliff that never happened.
+ * The manager filter scopes the summary: target, remaining quota,
+ * attainment, and coverage are only honest against the targets committed to
+ * the selected manager's own partners, so the manager is part of the
+ * summary's query key and provider scope. The weighted forecast, quality,
+ * and groups stay quarter-level — the filter narrows which groups and books
+ * render, not the quarter's forecast. `getWeeklyForecastSeries` is the
+ * documented exception to manager scoping altogether — a snapshot row does
+ * not record whose book a deal was in, so a manager-filtered chart would
+ * draw a cliff that never happened.
  *
  * Race safety comes from the two shared primitives: results are tagged with
  * the provider that produced them and gated at read time, and every request
@@ -58,16 +62,22 @@ function editsOf(scope: ForecastScope) {
   return scope.edits ?? NO_SESSION_EDITS;
 }
 
-/** The quarter's headline numbers: moved by revenue edits only. */
+/** The quarter's headline numbers: moved by revenue edits and the manager scope. */
 export function useForecastSummary(
   provider: DataProvider,
   scope: ForecastScope,
 ): QueryState<ForecastSummary> {
   const edits = editsOf(scope);
+  const managerId = scope.partnerManagerId ?? 'all';
   return useScopedQuery({
     provider,
-    queryKey: `${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}`,
-    run: () => provider.getForecastSummary({ quarter: scope.quarter, edits }),
+    queryKey: `${scope.quarter}|manager:${managerId}|rev:${editMapKey(edits.revenueOverrides)}`,
+    run: () =>
+      provider.getForecastSummary({
+        quarter: scope.quarter,
+        partnerManagerId: scope.partnerManagerId,
+        edits,
+      }),
     errorFallback: 'Failed to load the forecast summary',
   });
 }

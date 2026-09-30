@@ -253,6 +253,17 @@ describe('PartnerPerformanceView', () => {
     expect(within(leaderboardRows[0]).getByText('Northwind Systems')).toBeInTheDocument();
   });
 
+  it('describes the registration SLA breach boundary as inclusive (VAL-DATA-007)', () => {
+    renderView();
+
+    // registrationSlaState lapses at exactly 5 business days, so the leakage
+    // row must say 5+, not "> 5" — at the due-date boundary the count and
+    // its explanation would otherwise disagree.
+    const leakage = cardWith('Registration leakage');
+    expect(within(leakage).getByText('5+ business days awaiting review')).toBeInTheDocument();
+    expect(within(leakage).queryByText(/> 5 business days/)).not.toBeInTheDocument();
+  });
+
   it('re-scopes to one partner and then to one manager', async () => {
     const user = userEvent.setup();
     renderView();

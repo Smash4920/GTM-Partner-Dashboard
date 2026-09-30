@@ -48,7 +48,10 @@ interface ForecastingViewProps extends ForecastEditHandlers {
  * Forecasting: the VP of Partnerships' in-quarter view. Callout tiles sum the
  * quarter's sourced pipeline and probability-weighted forecast, then an
  * editable table lists every in-quarter opportunity, filterable by partner
- * manager.
+ * manager. The manager filter also scopes the summary tiles — target,
+ * remaining quota, attainment, and coverage — to that manager's own partner
+ * set; the weighted forecast, quality, and weekly history stay
+ * quarter-level.
  *
  * This view reads the provider's scoped contract rather than the whole book:
  * five aggregates, the partner directory, and one page of rows per expanded
@@ -80,7 +83,19 @@ export default function ForecastingView({
   const [openedOnce, setOpenedOnce] = useState<Record<string, boolean>>({});
 
   const scope = useMemo<ForecastScope>(() => ({ quarter, edits }), [edits]);
-  const summary = useForecastSummary(provider, scope);
+  // The summary follows the manager filter: a manager's target, remaining
+  // quota, attainment, and coverage are only honest against the targets
+  // committed to their own partners, so the selection is a query input
+  // rather than a client-side re-read of the org answer. 'All partner
+  // managers' restores the organization scope.
+  const summaryScope = useMemo<ForecastScope>(
+    () =>
+      filterManagerId === 'all'
+        ? { quarter, edits }
+        : { quarter, partnerManagerId: filterManagerId, edits },
+    [edits, filterManagerId],
+  );
+  const summary = useForecastSummary(provider, summaryScope);
   const weighted = useWeightedForecast(provider, scope);
   const quality = useForecastQuality(provider, scope);
   const managerGroups = useManagerGroups(provider, scope);
@@ -240,7 +255,11 @@ export default function ForecastingView({
 
       <Card
         title="Week-over-week pipeline"
-        subtitle={`Open ${phaseLabel} pipeline (solid) vs the probability-weighted forecast (faded), stacked by forecast category · dashed line = ${phaseLabel} revenue goal${
+        subtitle={`Open ${phaseLabel} pipeline (solid) vs the probability-weighted forecast (faded), stacked by forecast category${
+          filterManagerId === 'all'
+            ? ` · dashed line = ${phaseLabel} revenue goal`
+            : ' · organization-level history: snapshots do not record manager ownership'
+        }${
           weeks.data !== null
             ? ` · ${startedWeeks} of ${weeks.data.length} weeks in, ${recordedWeeks} from recorded history`
             : ''
@@ -249,8 +268,14 @@ export default function ForecastingView({
         {renderQueryState('weekly series', weeks, (rows) => (
           <>
             {/* The goal line comes from the summary query, which fails and
-                retries on its own; the chart draws without it meanwhile. */}
-            <WeeklyForecastChart rows={rows} goal={summary.data?.target} />
+                retries on its own; the chart draws without it meanwhile.
+                While a manager filter is active the line sits out entirely:
+                the bars are organization-level history, so a manager-scoped
+                goal drawn across them would mix two scopes in one picture. */}
+            <WeeklyForecastChart
+              rows={rows}
+              goal={filterManagerId === 'all' ? summary.data?.target : undefined}
+            />
             <p className="mt-4 text-xs text-granite">
               {recordedWeeks} closed weeks are read from the weekly pipeline snapshot, each one the
               open book as it stood that Friday, so they never move: re-call a deal or correct its

@@ -19,9 +19,11 @@ import { makeOpportunity, makePartner, makeProviderBook, makeTarget } from '../t
  *   loaded book windows refetch; the summary, groups, and directory do not;
  * - note and next-step edits → no query at all: the rows render the session's
  *   value over the provider's, and no aggregate reads either field;
- * - presentation-only changes — a rebuilt-but-equal edits object, the manager
- *   filter, collapsing and reopening a group — issue no query and discard no
- *   loaded pages.
+ * - the manager filter refetches only the summary — the manager is its
+ *   provider scope (VAL-DATA-001) — while groups, books, and the other
+ *   aggregates stay quarter-level and still;
+ * - presentation-only changes — a rebuilt-but-equal edits object, collapsing
+ *   and reopening a group — issue no query and discard no loaded pages.
  */
 
 /** 27 deals for pm-1 (so two pages exist) and one for pm-2. */
@@ -204,24 +206,27 @@ describe('VAL-RES-007 edit invalidation is narrow', () => {
       await screen.findByText('Showing 27 of 27');
       expect(counts()).toEqual(before);
 
-      // The manager filter hides and restores groups without any query, and
-      // the hidden book keeps its loaded pages.
+      // The manager filter hides and restores groups without touching their
+      // books, and the hidden book keeps its loaded pages. The summary alone
+      // refetches: the manager is its query scope, not a presentation.
       await user.selectOptions(screen.getByLabelText('Partner manager'), 'pm-2');
       expect(await screen.findByText('Showing 1 of 1')).toBeInTheDocument();
       // pm-2's first page is a legitimately new question, not a refetch.
-      expect(counts()).toEqual({ ...before, book: before.book + 1 });
+      expect(counts()).toEqual({ ...before, summary: before.summary + 1, book: before.book + 1 });
+      expect(spies.summary.mock.calls.at(-1)?.[0]).toMatchObject({ partnerManagerId: 'pm-2' });
       await user.selectOptions(screen.getByLabelText('Partner manager'), 'all');
       expect(screen.getByText('Showing 27 of 27')).toBeVisible();
-      expect(counts()).toEqual({ ...before, book: before.book + 1 });
+      expect(counts()).toEqual({ ...before, summary: before.summary + 2, book: before.book + 1 });
+      expect(spies.summary.mock.calls.at(-1)?.[0].partnerManagerId).toBeUndefined();
 
-      // Collapsing and reopening a group is presentation-only too: no query,
+      // Collapsing and reopening a group is presentation-only: no query,
       // and the loaded pages are still there.
       const groupToggle = screen.getByRole('button', { name: /J\. Alvarez/ });
       await user.click(groupToggle);
       expect(screen.getByText('Showing 27 of 27')).not.toBeVisible();
       await user.click(groupToggle);
       expect(screen.getByText('Showing 27 of 27')).toBeVisible();
-      expect(counts()).toEqual({ ...before, book: before.book + 1 });
+      expect(counts()).toEqual({ ...before, summary: before.summary + 2, book: before.book + 1 });
     },
   );
 });

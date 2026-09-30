@@ -163,6 +163,99 @@ describe('ForecastingView', () => {
     expect(bookSpy.mock.calls.length).toBe(calls);
   });
 
+  it('scopes the summary to the selected manager’s own targets (VAL-DATA-001)', async () => {
+    const user = userEvent.setup();
+    // Disjoint targets, small enough to verify by hand: pm-1's partner
+    // carries a 100k target with 40k won and 120k open; pm-2's carries 300k
+    // with 150k won and 90k open. The org answer is the sum of both.
+    const provider = new MockDataProvider(
+      makeProviderBook({
+        partnerManagers: [
+          { id: 'pm-1', name: 'J. Alvarez' },
+          { id: 'pm-2', name: 'R. Diaz' },
+        ],
+        partners: [
+          makePartner({ id: 'partner-1', partnerManagerId: 'pm-1' }),
+          makePartner({ id: 'partner-2', partnerManagerId: 'pm-2' }),
+        ],
+        opportunities: [
+          makeOpportunity({
+            id: 'opp-w1',
+            partnerId: 'partner-1',
+            outcome: 'won',
+            forecastedRevenue: 40_000,
+            createdAt: '2026-08-01T00:00:00.000Z',
+            expectedCloseDate: '2026-08-10T00:00:00.000Z',
+            closedAt: '2026-08-10T00:00:00.000Z',
+          }),
+          makeOpportunity({
+            id: 'opp-o1',
+            partnerId: 'partner-1',
+            forecastedRevenue: 120_000,
+            createdAt: '2026-08-03T00:00:00.000Z',
+            expectedCloseDate: '2026-10-15T00:00:00.000Z',
+          }),
+          makeOpportunity({
+            id: 'opp-w2',
+            partnerId: 'partner-2',
+            outcome: 'won',
+            forecastedRevenue: 150_000,
+            createdAt: '2026-08-02T00:00:00.000Z',
+            expectedCloseDate: '2026-08-12T00:00:00.000Z',
+            closedAt: '2026-08-12T00:00:00.000Z',
+          }),
+          makeOpportunity({
+            id: 'opp-o2',
+            partnerId: 'partner-2',
+            forecastedRevenue: 90_000,
+            createdAt: '2026-08-04T00:00:00.000Z',
+            expectedCloseDate: '2026-09-30T00:00:00.000Z',
+          }),
+        ],
+        targets: [
+          makeTarget({ partnerId: 'partner-1', revenueTarget: 100_000 }),
+          makeTarget({ partnerId: 'partner-2', revenueTarget: 300_000 }),
+        ],
+      }),
+    );
+    const summarySpy = vi.spyOn(provider, 'getForecastSummary');
+    renderView({ provider });
+
+    const coverageTile = async () => {
+      const tile = (await screen.findByText('Pipeline coverage to goal')).closest('div');
+      if (!tile) throw new Error('coverage tile not found');
+      return tile;
+    };
+    const closedWonTile = async () => {
+      const tile = (await screen.findByText('Closed-won Q3')).closest('div');
+      if (!tile) throw new Error('closed-won tile not found');
+      return tile;
+    };
+
+    // Organization scope: both partners' target rows count (400k target,
+    // 190k won, 210k open over a 210k gap).
+    expect(await within(await coverageTile()).findByText('1.0x')).toBeInTheDocument();
+    expect(within(await coverageTile()).getByText('$210K goal remaining')).toBeInTheDocument();
+    expect(within(await closedWonTile()).getByText('$190K')).toBeInTheDocument();
+    expect(within(await closedWonTile()).getByText('48% of Q3 goal')).toBeInTheDocument();
+    expect(summarySpy.mock.calls.at(-1)?.[0].partnerManagerId).toBeUndefined();
+
+    // Selecting a manager re-asks the summary for that manager's partner
+    // set: pm-2 alone is 300k target, 150k won, 90k open over a 150k gap.
+    await user.selectOptions(screen.getByLabelText('Partner manager'), 'pm-2');
+    expect(await within(await coverageTile()).findByText('0.6x')).toBeInTheDocument();
+    expect(within(await coverageTile()).getByText('$150K goal remaining')).toBeInTheDocument();
+    expect(within(await closedWonTile()).getByText('$150K')).toBeInTheDocument();
+    expect(within(await closedWonTile()).getByText('50% of Q3 goal')).toBeInTheDocument();
+    expect(summarySpy.mock.calls.at(-1)?.[0]).toMatchObject({ partnerManagerId: 'pm-2' });
+
+    // Switching back to all managers restores the organization scope.
+    await user.selectOptions(screen.getByLabelText('Partner manager'), 'all');
+    expect(await within(await coverageTile()).findByText('1.0x')).toBeInTheDocument();
+    expect(within(await closedWonTile()).getByText('$190K')).toBeInTheDocument();
+    expect(summarySpy.mock.calls.at(-1)?.[0].partnerManagerId).toBeUndefined();
+  });
+
   it('shows the session override in the row while the aggregates catch up', async () => {
     renderView({ edits: { ...EMPTY_EDITS, revenueOverrides: { 'opp-a0': 2_000_000 } } });
 

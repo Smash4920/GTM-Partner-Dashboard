@@ -84,6 +84,28 @@ describe('forecast widgets (VAL-RES-005)', () => {
     expect(spy.mock.calls.length).toBe(calls);
   });
 
+  it('refetches the summary — and only the summary — when the manager scope changes (VAL-DATA-001)', async () => {
+    const provider = new MockDataProvider(makeProviderBook());
+    const summarySpy = vi.spyOn(provider, 'getForecastSummary');
+    const weightedSpy = vi.spyOn(provider, 'getWeightedForecast');
+    const { result, rerender } = renderWidgets(provider);
+    await waitForAllWidgets(() => result.current);
+    const summaryCalls = summarySpy.mock.calls.length;
+    const weightedCalls = weightedSpy.mock.calls.length;
+
+    // The manager is part of the summary's query key: the selection is a
+    // provider input, not a client-side re-read of the org answer. The
+    // quarter-level aggregates do not move.
+    rerender({ scope: { ...baseScope, partnerManagerId: 'pm-1' } });
+    await waitFor(() => expect(summarySpy.mock.calls.length).toBe(summaryCalls + 1));
+    expect(summarySpy.mock.calls.at(-1)?.[0]).toMatchObject({ partnerManagerId: 'pm-1' });
+    expect(weightedSpy.mock.calls.length).toBe(weightedCalls);
+
+    rerender({ scope: baseScope });
+    await waitFor(() => expect(summarySpy.mock.calls.length).toBe(summaryCalls + 2));
+    expect(summarySpy.mock.calls.at(-1)?.[0].partnerManagerId).toBeUndefined();
+  });
+
   it('fails one widget without disturbing its siblings, and retry repeats only that query', async () => {
     const provider = new MockDataProvider(makeProviderBook());
     const weightedSpy = vi

@@ -122,7 +122,7 @@ export default function DealRegistrationOpsView({ data }: DealRegistrationOpsVie
         <KpiTile
           label="Pending past SLA"
           value={`${pastSla.length}`}
-          sub={`> ${REGISTRATION_SLA_BUSINESS_DAYS} business days awaiting review`}
+          sub={`${REGISTRATION_SLA_BUSINESS_DAYS}+ business days awaiting review`}
         />
         <KpiTile
           label="Exclusivity lapsed"

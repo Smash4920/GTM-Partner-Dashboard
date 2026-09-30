@@ -90,7 +90,12 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
 
 - Callout tiles: partner sourced pipeline, closed-won (with % attainment to the
   quarterly goal), pipeline coverage to goal, average deal size, and days left
-  in the quarter
+  in the quarter. The **Partner manager** dropdown scopes these tiles — target,
+  attainment, remaining quota, and coverage are measured against that
+  manager's own partners and their targets. The weighted forecast, the
+  stage-vs-call card, and the week-over-week chart stay organization-level:
+  weekly snapshots do not record whose book a deal was in, so the goal line
+  sits out while a manager is selected
 - **Weighted forecast call-outs**: every open deal carries a forecast category
   — Commit (90%), Best Case (50%), Pipeline (25%), Long Shot (10%) — and each
   category's probability-weighted contribution is summed into a total expected
