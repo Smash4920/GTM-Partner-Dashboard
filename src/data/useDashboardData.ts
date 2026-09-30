@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { logger } from '../lib/logging';
+import { demoScopeKey } from './accessScope';
+import type { DemoAccessScope } from './accessScope';
 import type { DataProvider } from './DataProvider';
 import type { DashboardData } from './types';
 
@@ -30,6 +32,8 @@ const LOAD_FAILURE_COPY = 'Failed to load dashboard data';
  */
 interface SettledLoad {
   provider: DataProvider;
+  /** The demo access scope the load was asked with, for read-time gating. */
+  accessKey: string;
   data?: DashboardData;
   error?: string;
 }
@@ -55,9 +59,15 @@ interface SettledLoad {
  * still cannot get a late answer committed — the write is skipped and the
  * settled record stays tagged to the provider that owns it.
  */
-export function useDashboardData(provider: DataProvider): DashboardState {
+export function useDashboardData(provider: DataProvider, access: DemoAccessScope): DashboardState {
   const [settled, setSettled] = useState<SettledLoad | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // Key on the scope's primitive identity, so a rebuilt-but-equal scope
+  // object cannot restart the load every render; the effect reads the scope
+  // through a ref for the same reason.
+  const accessKey = demoScopeKey(access);
+  const accessRef = useRef(access);
+  accessRef.current = access;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -68,22 +78,23 @@ export function useDashboardData(provider: DataProvider): DashboardState {
     if (attempt > 0) {
       setSettled((previous) =>
         previous !== null && previous.provider === provider && previous.error !== undefined
-          ? { provider }
+          ? { provider, accessKey }
           : previous,
       );
     }
     // One context, one signal: the eight calls are one logical load, so they
     // become obsolete together.
     const context = { signal: controller.signal };
+    const scope = accessRef.current;
     Promise.all([
-      provider.listPartners(context),
-      provider.listRegistrations(context),
-      provider.listOpportunities(context),
-      provider.getTargets(context),
-      provider.listPartnerManagers(context),
-      provider.listActivities(context),
-      provider.listCertifications(context),
-      provider.listTeamUsers(context),
+      provider.listPartners(scope, context),
+      provider.listRegistrations(scope, context),
+      provider.listOpportunities(scope, context),
+      provider.getTargets(scope, context),
+      provider.listPartnerManagers(scope, context),
+      provider.listActivities(scope, context),
+      provider.listCertifications(scope, context),
+      provider.listTeamUsers(scope, context),
     ]).then(
       ([
         partners,
@@ -115,6 +126,7 @@ export function useDashboardData(provider: DataProvider): DashboardState {
         });
         setSettled({
           provider,
+          accessKey,
           data: {
             partnerManagers,
             partners,
@@ -133,13 +145,13 @@ export function useDashboardData(provider: DataProvider): DashboardState {
           return;
         }
         log.error('Failed to load dashboard data', { error: err });
-        setSettled({ provider, error: LOAD_FAILURE_COPY });
+        setSettled({ provider, accessKey, error: LOAD_FAILURE_COPY });
       },
     );
     return () => {
       controller.abort();
     };
-  }, [provider, attempt]);
+  }, [provider, accessKey, attempt]);
 
   const retry = useCallback(() => {
     setAttempt((previous) => previous + 1);
@@ -148,8 +160,12 @@ export function useDashboardData(provider: DataProvider): DashboardState {
   // The frame between "the committed provider changed" and "this effect
   // re-ran" is exactly where old-provider data used to show under the new
   // label. Gating at read time, rather than resetting in the effect, closes
-  // that frame: a result belongs to its provider or to no one.
-  const current = settled !== null && settled.provider === provider ? settled : null;
+  // that frame: a result belongs to its provider and its access scope, or to
+  // no one.
+  const current =
+    settled !== null && settled.provider === provider && settled.accessKey === accessKey
+      ? settled
+      : null;
   const data = current?.data ?? null;
   const error = current?.error ?? null;
   return { data, error, loading: data === null && error === null, retry };

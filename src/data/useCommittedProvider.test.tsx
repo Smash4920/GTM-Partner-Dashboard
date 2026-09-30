@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { INTERNAL_DEMO_SCOPE } from './accessScope';
 import { CURRENT_FISCAL_QUARTER } from './constants';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
@@ -255,7 +256,11 @@ describe('probeProviderReadiness', () => {
     const provider = new MockDataProvider(makeProviderBook());
     const spy = vi.spyOn(provider, 'getForecastSummary');
     await probeProviderReadiness(provider);
-    expect(spy).toHaveBeenCalledWith({ quarter: CURRENT_FISCAL_QUARTER }, { signal: undefined });
+    expect(spy).toHaveBeenCalledWith(
+      INTERNAL_DEMO_SCOPE,
+      { quarter: CURRENT_FISCAL_QUARTER },
+      { signal: undefined },
+    );
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
   });
 
@@ -265,6 +270,7 @@ describe('probeProviderReadiness', () => {
     const controller = new AbortController();
     await probeProviderReadiness(provider, controller.signal);
     expect(spy).toHaveBeenCalledWith(
+      INTERNAL_DEMO_SCOPE,
       { quarter: CURRENT_FISCAL_QUARTER },
       { signal: controller.signal },
     );
@@ -277,9 +283,9 @@ describe('probeProviderReadiness', () => {
       const candidate = new MockDataProvider(makeProviderBook());
       if (id !== 'local') {
         const inner = candidate.getForecastSummary.bind(candidate);
-        candidate.getForecastSummary = (scope, context) => {
+        candidate.getForecastSummary = (access, scope, context) => {
           contexts.push(context);
-          return gate.promise.then(() => inner(scope, context));
+          return gate.promise.then(() => inner(access, scope, context));
         };
       }
       return candidate;

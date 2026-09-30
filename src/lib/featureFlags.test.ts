@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { scopeOpportunities } from '../data/accessScope';
+import type { DemoAccessScope } from '../data/accessScope';
+import { makeOpportunity, makePartner } from '../test/fixtures';
 import { auditFlagLifecycle, FLAG_GOVERNANCE_AS_OF, type FlagLifecycle } from './flagGovernance';
 import {
   createFailSafeEvaluator,
@@ -409,19 +412,24 @@ describe('environment-backed evaluation', () => {
 
 describe('authorization invariance', () => {
   it('never alters demo access scope or returned row ids in any evaluator state', () => {
-    // Representative demo scope and rows. The evaluator API has no scope,
-    // role, or partner parameter — this test pins that no evaluator state can
-    // change which rows a scope returns. The typed DemoAccessScope contract
-    // lands with the scoped provider migration; the invariant must already
-    // hold for the filtering it will govern.
-    const scope = { audience: 'partner', partnerId: 'partner-1' } as const;
-    const rows = [
-      { id: 'row-1', partnerId: 'partner-1' },
-      { id: 'row-2', partnerId: 'partner-2' },
-      { id: 'row-3', partnerId: 'partner-1' },
+    // The real demo access scope and the real scoping function, over real
+    // canonical opportunities. The evaluator API has no scope, role, or
+    // partner parameter — this test pins that no evaluator state can change
+    // which rows a scope returns. The stronger matrix (cold start, stale
+    // cache, recovery, malformed) lives in src/data/accessScope.test.ts,
+    // where the scoped contract lives.
+    const scope: DemoAccessScope = { audience: 'partner', partnerId: 'partner-1' };
+    const partners = [
+      makePartner({ id: 'partner-1', partnerManagerId: 'pm-1' }),
+      makePartner({ id: 'partner-2', partnerManagerId: 'pm-2' }),
     ];
-    const visibleRowIds = () =>
-      rows.filter((row) => row.partnerId === scope.partnerId).map((row) => row.id);
+    const rows = [
+      makeOpportunity({ id: 'row-1', partnerId: 'partner-1' }),
+      makeOpportunity({ id: 'row-2', partnerId: 'partner-2' }),
+      makeOpportunity({ id: 'row-3', partnerId: 'partner-1' }),
+      makeOpportunity({ id: 'row-4', partnerId: 'partner-1', oppType: 'sell-to' }),
+    ];
+    const visibleRowIds = () => scopeOpportunities(rows, partners, scope).map((row) => row.id);
 
     const baseline = visibleRowIds();
     const { evaluator, push, advance } = createHarness();

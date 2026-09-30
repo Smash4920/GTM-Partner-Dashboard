@@ -8,6 +8,7 @@ import type { QueryContext } from './queryContext';
 import { editMapKey } from './queryState';
 import { makeOpportunity, makeProviderBook } from '../test/fixtures';
 import type { Opportunity } from './types';
+import { INTERNAL_DEMO_SCOPE } from './accessScope';
 
 /**
  * VAL-RES-006 pagination semantics: cursor walks without duplicates,
@@ -57,7 +58,12 @@ function renderRows(
         refreshKey,
         pageSize: 2,
         fetchPage: (page: PageRequest, context: QueryContext) =>
-          provider.listQuarterOpportunities({ quarter, partnerManagerId: 'pm-1' }, page, context),
+          provider.listQuarterOpportunities(
+            INTERNAL_DEMO_SCOPE,
+            { quarter, partnerManagerId: 'pm-1' },
+            page,
+            context,
+          ),
         errorFallback: 'Failed to load this book',
         loadMoreErrorFallback: 'Failed to load more of this book',
       }),
@@ -102,12 +108,14 @@ describe('usePaginatedRows', () => {
     const provider = new MockDataProvider(book);
     const gate = deferred<void>();
     const real = provider.listQuarterOpportunities.bind(provider);
-    const spy = vi.spyOn(provider, 'listQuarterOpportunities').mockImplementation((scope, page) =>
-      (async () => {
-        if (page.cursor !== undefined) await gate.promise;
-        return real(scope, page);
-      })(),
-    );
+    const spy = vi
+      .spyOn(provider, 'listQuarterOpportunities')
+      .mockImplementation((access, scope, page) =>
+        (async () => {
+          if (page.cursor !== undefined) await gate.promise;
+          return real(access, scope, page);
+        })(),
+      );
     const { result } = renderRows(provider);
     await waitFor(() => expect(result.current.rows).toHaveLength(2));
 
@@ -151,7 +159,7 @@ describe('usePaginatedRows', () => {
     // The retry repeated the failed page request — same cursor, same limit —
     // and issued no other call.
     expect(spy).toHaveBeenCalledTimes(3);
-    expect(spy.mock.calls[2]?.[1]).toEqual({ cursor: 'offset:2', limit: 2 });
+    expect(spy.mock.calls[2]?.[2]).toEqual({ cursor: 'offset:2', limit: 2 });
   });
 
   it('a data change refreshes the loaded window in place instead of resetting pages', async () => {
@@ -165,7 +173,7 @@ describe('usePaginatedRows', () => {
     rerender({ enabled: true, resetKey: 'pm-1', refreshKey: 'rev:opp-1=9' });
     // One window-sized request, not a restart from page one.
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
-    expect(spy.mock.calls[2]?.[1]).toEqual({ limit: 4 });
+    expect(spy.mock.calls[2]?.[2]).toEqual({ limit: 4 });
     await waitFor(() => expect(result.current.refreshing).toBe(false));
     // The pages already on screen survive intact: same ids, same order.
     expect(result.current.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2', 'opp-3', 'opp-4']);
@@ -174,7 +182,7 @@ describe('usePaginatedRows', () => {
     // The cursor survived too: the next page continues where the window ends.
     act(() => result.current.loadMore());
     await waitFor(() => expect(result.current.rows).toHaveLength(5));
-    expect(spy.mock.calls[3]?.[1]).toEqual({ cursor: 'offset:4', limit: 2 });
+    expect(spy.mock.calls[3]?.[2]).toEqual({ cursor: 'offset:4', limit: 2 });
   });
 
   it('a failed window refresh keeps the loaded rows and recovers on retry', async () => {
@@ -197,7 +205,7 @@ describe('usePaginatedRows', () => {
     await waitFor(() => expect(result.current.error).toBeNull());
     expect(result.current.rows).toHaveLength(4);
     expect(spy).toHaveBeenCalledTimes(4);
-    expect(spy.mock.calls[3]?.[1]).toEqual({ limit: 4 });
+    expect(spy.mock.calls[3]?.[2]).toEqual({ limit: 4 });
   });
 
   it('a membership change resets to the first page', async () => {
@@ -214,17 +222,17 @@ describe('usePaginatedRows', () => {
     expect(result.current.loading).toBe(true);
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.rows).toHaveLength(2);
-    expect(spy.mock.calls[2]?.[1]).toEqual({ limit: 2 });
+    expect(spy.mock.calls[2]?.[2]).toEqual({ limit: 2 });
   });
 
   it('drops a page that arrives after the membership changed', async () => {
     const provider = new MockDataProvider(book);
     const gate = deferred<void>();
     const real = provider.listQuarterOpportunities.bind(provider);
-    vi.spyOn(provider, 'listQuarterOpportunities').mockImplementation((scope, page) =>
+    vi.spyOn(provider, 'listQuarterOpportunities').mockImplementation((access, scope, page) =>
       (async () => {
         if (page.cursor !== undefined) await gate.promise;
-        return real(scope, page);
+        return real(access, scope, page);
       })(),
     );
     const { result, rerender } = renderRows(provider);
@@ -249,10 +257,10 @@ describe('usePaginatedRows', () => {
     const provider = new MockDataProvider(book);
     const gate = deferred<void>();
     const real = provider.listQuarterOpportunities.bind(provider);
-    vi.spyOn(provider, 'listQuarterOpportunities').mockImplementation((scope, page) =>
+    vi.spyOn(provider, 'listQuarterOpportunities').mockImplementation((access, scope, page) =>
       (async () => {
         await gate.promise;
-        return real(scope, page);
+        return real(access, scope, page);
       })(),
     );
     const { result, unmount } = renderRows(provider);
@@ -271,10 +279,12 @@ describe('usePaginatedRows signal propagation', () => {
   function captureContexts(provider: MockDataProvider): QueryContext[] {
     const contexts: QueryContext[] = [];
     const real = provider.listQuarterOpportunities.bind(provider);
-    vi.spyOn(provider, 'listQuarterOpportunities').mockImplementation((scope, page, context) => {
-      if (context !== undefined) contexts.push(context);
-      return real(scope, page, context);
-    });
+    vi.spyOn(provider, 'listQuarterOpportunities').mockImplementation(
+      (access, scope, page, context) => {
+        if (context !== undefined) contexts.push(context);
+        return real(access, scope, page, context);
+      },
+    );
     return contexts;
   }
 
@@ -313,13 +323,15 @@ describe('usePaginatedRows signal propagation', () => {
     const contexts: QueryContext[] = [];
     const gate = deferred<void>();
     const real = provider.listQuarterOpportunities.bind(provider);
-    vi.spyOn(provider, 'listQuarterOpportunities').mockImplementation((scope, page, context) => {
-      if (context !== undefined) contexts.push(context);
-      return (async () => {
-        if (page.cursor !== undefined) await gate.promise;
-        return real(scope, page, context);
-      })();
-    });
+    vi.spyOn(provider, 'listQuarterOpportunities').mockImplementation(
+      (access, scope, page, context) => {
+        if (context !== undefined) contexts.push(context);
+        return (async () => {
+          if (page.cursor !== undefined) await gate.promise;
+          return real(access, scope, page, context);
+        })();
+      },
+    );
     const { result, rerender } = renderRows(provider);
     await waitFor(() => expect(result.current.rows).toHaveLength(2));
 
@@ -353,6 +365,7 @@ describe('usePaginatedRows rowEdits narrowing', () => {
           pageSize: 2,
           fetchPage: (page, context) =>
             provider.listQuarterOpportunities(
+              INTERNAL_DEMO_SCOPE,
               {
                 quarter,
                 partnerManagerId: 'pm-1',
@@ -399,7 +412,7 @@ describe('usePaginatedRows rowEdits narrowing', () => {
     // opp-3 is on the loaded second page.
     rerender({ edits: { 'opp-3': 42_000 } });
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
-    expect(spy.mock.calls[2]?.[1]).toEqual({ limit: 4 });
+    expect(spy.mock.calls[2]?.[2]).toEqual({ limit: 4 });
     await waitFor(() => expect(result.current.refreshing).toBe(false));
     // The window's values came back with the edit folded in.
     expect(result.current.rows.find((row) => row.id === 'opp-3')?.forecastedRevenue).toBe(42_000);

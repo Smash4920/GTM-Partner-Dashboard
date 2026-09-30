@@ -172,7 +172,7 @@ describe('VAL-RES-007 edit invalidation is narrow', () => {
       });
       // The book refetched the loaded window — both pages in one request, no
       // cursor — and the rows stayed on screen throughout.
-      expect(spies.book.mock.calls[2]?.[1]).toEqual({ limit: 27 });
+      expect(spies.book.mock.calls[2]?.[2]).toEqual({ limit: 27 });
       expect(screen.getByText('Showing 27 of 27')).toBeInTheDocument();
 
       // A forecast-call edit: the weighted forecast, quality, series, and book
@@ -192,7 +192,7 @@ describe('VAL-RES-007 edit invalidation is narrow', () => {
         book: 4,
         directory: 1,
       });
-      expect(spies.book.mock.calls[3]?.[1]).toEqual({ limit: 27 });
+      expect(spies.book.mock.calls[3]?.[2]).toEqual({ limit: 27 });
       expect(screen.getByText('Showing 27 of 27')).toBeInTheDocument();
 
       // A rebuilt-but-equal edits object is a presentation-level no-op.
@@ -213,11 +213,11 @@ describe('VAL-RES-007 edit invalidation is narrow', () => {
       expect(await screen.findByText('Showing 1 of 1')).toBeInTheDocument();
       // pm-2's first page is a legitimately new question, not a refetch.
       expect(counts()).toEqual({ ...before, summary: before.summary + 1, book: before.book + 1 });
-      expect(spies.summary.mock.calls.at(-1)?.[0]).toMatchObject({ partnerManagerId: 'pm-2' });
+      expect(spies.summary.mock.calls.at(-1)?.[1]).toMatchObject({ partnerManagerId: 'pm-2' });
       await user.selectOptions(screen.getByLabelText('Partner manager'), 'all');
       expect(screen.getByText('Showing 27 of 27')).toBeVisible();
       expect(counts()).toEqual({ ...before, summary: before.summary + 2, book: before.book + 1 });
-      expect(spies.summary.mock.calls.at(-1)?.[0].partnerManagerId).toBeUndefined();
+      expect(spies.summary.mock.calls.at(-1)?.[1].partnerManagerId).toBeUndefined();
 
       // Collapsing and reopening a group is presentation-only: no query,
       // and the loaded pages are still there.

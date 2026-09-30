@@ -22,6 +22,7 @@ import type {
   TeamUser,
   TeamUserStatus,
 } from './data/types';
+import { INTERNAL_DEMO_SCOPE } from './data/accessScope';
 import { useDashboardData } from './data/useDashboardData';
 import type { NotificationDraft } from './lib/notifications';
 import { formatDate } from './lib/format';
@@ -144,7 +145,7 @@ export default function App({
   const providerId = committed.id;
   const providerMeta = providerOption(providerId);
   const requestedMeta = providerOption(transition.requestedId);
-  const { data, loading, error, retry } = useDashboardData(provider);
+  const { data, loading, error, retry } = useDashboardData(provider, INTERNAL_DEMO_SCOPE);
 
   const partners = useMemo(
     () => [...(data?.partners ?? []), ...prospects],

@@ -16,6 +16,8 @@ import {
   SNAPSHOT_DATE,
   STAGE_META,
 } from '../data/constants';
+import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
+import type { DemoAccessScope } from '../data/accessScope';
 import type { DataProvider, ForecastScope } from '../data/DataProvider';
 import type { SessionEdits } from '../data/sessionEdits';
 import type { ForecastCategory } from '../data/types';
@@ -100,12 +102,14 @@ export default function ForecastingView({
         : { quarter, partnerManagerId: filterManagerId, edits },
     [edits, filterManagerId],
   );
-  const summary = useForecastSummary(provider, summaryScope);
-  const weighted = useWeightedForecast(provider, scope);
-  const quality = useForecastQuality(provider, scope);
-  const managerGroups = useManagerGroups(provider, scope);
-  const weeks = useWeeklySeries(provider, scope);
-  const directory = usePartnerNames(provider);
+  // The shell's audience is the internal team; the partner audience exists
+  // on the contract and in its conformance tests, not behind this view.
+  const summary = useForecastSummary(provider, INTERNAL_DEMO_SCOPE, summaryScope);
+  const weighted = useWeightedForecast(provider, INTERNAL_DEMO_SCOPE, scope);
+  const quality = useForecastQuality(provider, INTERNAL_DEMO_SCOPE, scope);
+  const managerGroups = useManagerGroups(provider, INTERNAL_DEMO_SCOPE, scope);
+  const weeks = useWeeklySeries(provider, INTERNAL_DEMO_SCOPE, scope);
+  const directory = usePartnerNames(provider, INTERNAL_DEMO_SCOPE);
   // The directory's retry gets the same focus recovery as every other
   // query: a successful retry lands focus on the named region, not the body.
   const directoryRecovery = useRetryRecovery('partner directory', directory.error !== null);
@@ -444,6 +448,7 @@ export default function ForecastingView({
                     <div hidden={!expanded}>
                       <ManagerBook
                         provider={provider}
+                        access={INTERNAL_DEMO_SCOPE}
                         scope={scope}
                         managerId={group.managerId}
                         partnerNames={directory.names}
@@ -476,6 +481,7 @@ export default function ForecastingView({
 
 interface ManagerBookProps extends ForecastEditHandlers {
   provider: DataProvider;
+  access: DemoAccessScope;
   scope: ForecastScope;
   managerId: string;
   partnerNames: Record<string, string>;
@@ -490,6 +496,7 @@ interface ManagerBookProps extends ForecastEditHandlers {
  */
 function ManagerBook({
   provider,
+  access,
   scope,
   managerId,
   partnerNames,
@@ -499,7 +506,7 @@ function ManagerBook({
   onSetNextStep,
   onSetForecastCall,
 }: ManagerBookProps) {
-  const book = useManagerBook(provider, scope, managerId);
+  const book = useManagerBook(provider, access, scope, managerId);
   // The recovery region survives the failure → recovered transition, so a
   // successful retry lands focus on the named book rather than the body.
   const recovery = useRetryRecovery(`manager book ${managerId}`, book.error !== null);

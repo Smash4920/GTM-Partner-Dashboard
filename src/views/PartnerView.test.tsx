@@ -5,6 +5,8 @@ import {
   makeCertification,
   makeDashboardData,
   makeOpportunity,
+  makePartner,
+  makeRegistration,
   makeTarget,
 } from '../test/fixtures';
 
@@ -118,5 +120,65 @@ describe('PartnerView certification attainment', () => {
   it('says so when the partner has no certification record at all', () => {
     render(<PartnerView data={makeDashboardData({ certifications: [] })} />);
     expect(screen.getAllByText('No certification data')).toHaveLength(2);
+  });
+});
+
+describe('PartnerView partner isolation (VAL-DATA-003)', () => {
+  /**
+   * The view renders one partner's slice of a two-partner book. The picker is
+   * an untrusted demo selector (VAL-GOV-008), so its options legitimately
+   * name every partner; what must never render is another partner's data —
+   * their deals, accounts, or certification standing — nor the viewer's own
+   * Sell To deals, which are internal revenue, not the partner's pipeline.
+   */
+  it('never renders another partner’s rows or the partner’s own Sell To deals', () => {
+    render(
+      <PartnerView
+        data={makeDashboardData({
+          partners: [
+            makePartner({ id: 'partner-1', name: 'Northwind Systems' }),
+            makePartner({ id: 'partner-2', name: 'Contoso Partners', partnerManagerId: 'pm-2' }),
+          ],
+          opportunities: [
+            makeOpportunity({ id: 'opp-mine', accountName: 'Acme Freight' }),
+            makeOpportunity({
+              id: 'opp-sell-to',
+              accountName: 'Northwind Internal Sell',
+              oppType: 'sell-to',
+            }),
+            makeOpportunity({
+              id: 'opp-theirs',
+              partnerId: 'partner-2',
+              accountName: 'Contoso Exclusive Account',
+            }),
+          ],
+          registrations: [
+            makeRegistration({ id: 'reg-mine', accountName: 'Acme Freight' }),
+            makeRegistration({
+              id: 'reg-theirs',
+              partnerId: 'partner-2',
+              accountName: 'Contoso Exclusive Account',
+            }),
+          ],
+          certifications: [
+            makeCertification({ partnerId: 'partner-1' }),
+            makeCertification({
+              partnerId: 'partner-2',
+              partnerStrategistsCertified: 9,
+              partnerStrategistsGoal: 9,
+            }),
+          ],
+        })}
+      />,
+    );
+
+    // Default selection is the first partner; their deal renders.
+    expect(screen.getAllByText('Acme Freight').length).toBeGreaterThan(0);
+    // The other partner's account never leaves the picker's option list.
+    expect(screen.queryByText('Contoso Exclusive Account')).not.toBeInTheDocument();
+    // A Sell To deal on the selected partner is internal revenue: hidden here.
+    expect(screen.queryByText('Northwind Internal Sell')).not.toBeInTheDocument();
+    // The other partner's certification standing (9/9) never shows.
+    expect(screen.queryByText('9/9')).not.toBeInTheDocument();
   });
 });

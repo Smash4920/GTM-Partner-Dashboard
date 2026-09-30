@@ -150,9 +150,9 @@ describe('runReadinessChecks', () => {
   it('degrades the data seam past the healthy latency budget without failing it', async () => {
     const slow = new MockDataProvider();
     const real = slow.getForecastSummary.bind(slow);
-    slow.getForecastSummary = async (scope) => {
+    slow.getForecastSummary = async (access, scope) => {
       await sleep(15);
-      return real(scope);
+      return real(access, scope);
     };
 
     const checks = await runReadinessChecks({

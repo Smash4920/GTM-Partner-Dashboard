@@ -22,6 +22,7 @@ import {
 } from '../../lib/metrics';
 import { generateDashboardData } from './generate';
 import { MockDataProvider } from './MockDataProvider';
+import { INTERNAL_DEMO_SCOPE } from '../accessScope';
 
 const PHASES = ['fy', 'q1', 'q2', 'q3', 'q4'] as const;
 
@@ -407,14 +408,14 @@ describe('MockDataProvider', () => {
       certifications,
       teamUsers,
     ] = await Promise.all([
-      provider.listPartnerManagers(),
-      provider.listPartners(),
-      provider.listRegistrations(),
-      provider.listOpportunities(),
-      provider.getTargets(),
-      provider.listActivities(),
-      provider.listCertifications(),
-      provider.listTeamUsers(),
+      provider.listPartnerManagers(INTERNAL_DEMO_SCOPE),
+      provider.listPartners(INTERNAL_DEMO_SCOPE),
+      provider.listRegistrations(INTERNAL_DEMO_SCOPE),
+      provider.listOpportunities(INTERNAL_DEMO_SCOPE),
+      provider.getTargets(INTERNAL_DEMO_SCOPE),
+      provider.listActivities(INTERNAL_DEMO_SCOPE),
+      provider.listCertifications(INTERNAL_DEMO_SCOPE),
+      provider.listTeamUsers(INTERNAL_DEMO_SCOPE),
     ]);
     expect(managers).toHaveLength(5);
     expect(partners).toHaveLength(25);
@@ -433,7 +434,7 @@ describe('MockDataProvider', () => {
     // only as the week-over-week series, which is ~13 buckets.
     expect('listPipelineSnapshots' in provider).toBe(false);
 
-    const { data: weeks, meta } = await provider.getWeeklyForecastSeries({
+    const { data: weeks, meta } = await provider.getWeeklyForecastSeries(INTERNAL_DEMO_SCOPE, {
       quarter: CURRENT_FISCAL_QUARTER,
     });
     expect(weeks.length).toBeGreaterThan(10);

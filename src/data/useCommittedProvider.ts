@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { INTERNAL_DEMO_SCOPE } from './accessScope';
 import { CURRENT_FISCAL_QUARTER } from './constants';
 import type { DataProvider } from './DataProvider';
 import { createProvider, type ProviderId } from './providers';
@@ -95,7 +96,12 @@ export function probeProviderReadiness(
   candidate: DataProvider,
   signal?: AbortSignal,
 ): Promise<unknown> {
-  return candidate.getForecastSummary({ quarter: CURRENT_FISCAL_QUARTER }, { signal });
+  // The probe asks as the shell does: the internal org-wide demo scope.
+  return candidate.getForecastSummary(
+    INTERNAL_DEMO_SCOPE,
+    { quarter: CURRENT_FISCAL_QUARTER },
+    { signal },
+  );
 }
 
 interface TransitionRequest {

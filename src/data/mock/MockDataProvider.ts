@@ -12,6 +12,17 @@ import type {
   WeightedForecastSummary,
 } from '../DataProvider';
 import { throwIfAborted } from '../../lib/abort';
+import {
+  scopeActivities,
+  scopeCertifications,
+  scopeOpportunities,
+  scopePartnerManagers,
+  scopePartners,
+  scopeRegistrations,
+  scopeTargets,
+  scopeTeamUsers,
+} from '../accessScope';
+import type { DemoAccessScope } from '../accessScope';
 import type { QueryContext } from '../queryContext';
 import {
   buildQueryMeta,
@@ -54,6 +65,12 @@ import { generateDashboardData } from './generate';
  * That also means `src/lib/metrics` is now the specification a server
  * implementation has to match, and its test suite is the conformance check.
  * See docs/migration-plan.md.
+ *
+ * Every method takes the required `DemoAccessScope` first and applies it
+ * (via src/data/accessScope.ts) before any aggregation, ordering, or
+ * pagination: the scoped collections are the input the metrics see, so a
+ * partner-audience answer is computed from that partner's rows alone. The
+ * scope is demonstrative filtering, never an authorization claim.
  */
 export class MockDataProvider implements DataProvider {
   protected readonly data: ProviderBook;
@@ -75,58 +92,65 @@ export class MockDataProvider implements DataProvider {
 
   // ---- the shape being retired --------------------------------------------
 
-  async listPartnerManagers(context?: QueryContext) {
+  async listPartnerManagers(access: DemoAccessScope, context?: QueryContext) {
     throwIfAborted(context?.signal);
-    return this.data.partnerManagers;
+    return scopePartnerManagers(this.data.partnerManagers, access);
   }
 
-  async listPartners(context?: QueryContext) {
+  async listPartners(access: DemoAccessScope, context?: QueryContext) {
     throwIfAborted(context?.signal);
-    return this.data.partners;
+    return scopePartners(this.data.partners, access);
   }
 
-  async listRegistrations(context?: QueryContext) {
+  async listRegistrations(access: DemoAccessScope, context?: QueryContext) {
     throwIfAborted(context?.signal);
-    return this.data.registrations;
+    return scopeRegistrations(this.data.registrations, this.data.partners, access);
   }
 
-  async listOpportunities(context?: QueryContext) {
+  async listOpportunities(access: DemoAccessScope, context?: QueryContext) {
     throwIfAborted(context?.signal);
-    return this.data.opportunities;
+    return scopeOpportunities(this.data.opportunities, this.data.partners, access);
   }
 
-  async getTargets(context?: QueryContext) {
+  async getTargets(access: DemoAccessScope, context?: QueryContext) {
     throwIfAborted(context?.signal);
-    return this.data.targets;
+    return scopeTargets(this.data.targets, this.data.partners, access);
   }
 
-  async listActivities(context?: QueryContext) {
+  async listActivities(access: DemoAccessScope, context?: QueryContext) {
     throwIfAborted(context?.signal);
-    return this.data.activities;
+    return scopeActivities(this.data.activities, this.data.partners, access);
   }
 
-  async listCertifications(context?: QueryContext) {
+  async listCertifications(access: DemoAccessScope, context?: QueryContext) {
     throwIfAborted(context?.signal);
-    return this.data.certifications;
+    return scopeCertifications(this.data.certifications, this.data.partners, access);
   }
 
-  async listTeamUsers(context?: QueryContext) {
+  async listTeamUsers(access: DemoAccessScope, context?: QueryContext) {
     throwIfAborted(context?.signal);
-    return this.data.teamUsers;
+    return scopeTeamUsers(this.data.teamUsers, access);
   }
 
   // ---- the target shape ----------------------------------------------------
 
   /**
-   * The book the scope describes, with the session's edits folded in first.
-   * Applying them here rather than in the view is what keeps every aggregate
-   * consistent with every other one.
+   * The book the query describes: the demo access scope first (the rows the
+   * audience may see at all), then the session's edits folded in, then the
+   * quarter and the optional manager selection. Applying the edits here
+   * rather than in the view is what keeps every aggregate consistent with
+   * every other one; applying the access scope first is what keeps every
+   * aggregate computed from visible rows alone.
    */
-  private scopedBook(scope: ForecastScope): {
+  private scopedBook(
+    access: DemoAccessScope,
+    scope: ForecastScope,
+  ): {
     inQuarter: Opportunity[];
     edited: Opportunity[];
   } {
-    const edited = applySessionEdits(this.data.opportunities, scope.edits ?? NO_SESSION_EDITS);
+    const visible = scopeOpportunities(this.data.opportunities, this.data.partners, access);
+    const edited = applySessionEdits(visible, scope.edits ?? NO_SESSION_EDITS);
     const phase = phaseForQuarter(scope.quarter);
     let inQuarter = filterByPhase(edited, phase);
     if (scope.partnerManagerId) {
@@ -138,14 +162,16 @@ export class MockDataProvider implements DataProvider {
   }
 
   /**
-   * The scope's target rows. A manager's quota, attainment, and coverage are
-   * measured against the targets committed to *their* partners only — folding
-   * the whole org's targets into a manager's summary would read a manager who
-   * hit their number as a fraction of everyone else's.
+   * The query's target rows, access-scoped first. A manager's quota,
+   * attainment, and coverage are measured against the targets committed to
+   * *their* partners only — folding the whole org's targets into a manager's
+   * summary would read a manager who hit their number as a fraction of
+   * everyone else's.
    */
-  private scopedTargets(scope: ForecastScope): Target[] {
-    if (!scope.partnerManagerId) return this.data.targets;
-    return this.data.targets.filter(
+  private scopedTargets(access: DemoAccessScope, scope: ForecastScope): Target[] {
+    const visible = scopeTargets(this.data.targets, this.data.partners, access);
+    if (!scope.partnerManagerId) return visible;
+    return visible.filter(
       (item) => this.managerByPartner.get(item.partnerId) === scope.partnerManagerId,
     );
   }
@@ -197,13 +223,14 @@ export class MockDataProvider implements DataProvider {
   }
 
   async getForecastSummary(
+    access: DemoAccessScope,
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<ForecastSummary>> {
     throwIfAborted(context?.signal);
-    const { inQuarter } = this.scopedBook(scope);
+    const { inQuarter } = this.scopedBook(access, scope);
     const phase = phaseForQuarter(scope.quarter);
-    const targets = this.scopedTargets(scope);
+    const targets = this.scopedTargets(access, scope);
     const open = openPipeline(inQuarter);
     const closedWon = closedWonForPhase(inQuarter, phase);
     const target = targetsForPhase(targets, phase).reduce(
@@ -227,21 +254,23 @@ export class MockDataProvider implements DataProvider {
   }
 
   async getWeightedForecast(
+    access: DemoAccessScope,
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<WeightedForecastSummary>> {
     throwIfAborted(context?.signal);
-    const { inQuarter } = this.scopedBook(scope);
+    const { inQuarter } = this.scopedBook(access, scope);
     return queryResult(weightedForecast(openOpportunities(inQuarter)), this.meta(scope.edits));
   }
 
   async getForecastQuality(
+    access: DemoAccessScope,
     scope: ForecastScope,
     sampleSize: number,
     context?: QueryContext,
   ): Promise<QueryResult<ForecastQualitySummary>> {
     throwIfAborted(context?.signal);
-    const { inQuarter } = this.scopedBook(scope);
+    const { inQuarter } = this.scopedBook(access, scope);
     const open = openOpportunities(inQuarter);
     const mismatches = categoryStageMismatches(open);
 
@@ -274,11 +303,12 @@ export class MockDataProvider implements DataProvider {
   }
 
   async getManagerForecastGroups(
+    access: DemoAccessScope,
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<ManagerForecastGroup[]>> {
     throwIfAborted(context?.signal);
-    const { inQuarter } = this.scopedBook(scope);
+    const { inQuarter } = this.scopedBook(access, scope);
     const phase = phaseForQuarter(scope.quarter);
 
     // One pass to bucket, rather than a filter of the whole book per manager.
@@ -291,7 +321,7 @@ export class MockDataProvider implements DataProvider {
       else byManager.set(managerId, [opp]);
     }
 
-    const groups = this.data.partnerManagers
+    const groups = scopePartnerManagers(this.data.partnerManagers, access)
       .filter((manager) => !scope.partnerManagerId || manager.id === scope.partnerManagerId)
       .map((manager) => {
         const opportunities = byManager.get(manager.id) ?? [];
@@ -315,17 +345,34 @@ export class MockDataProvider implements DataProvider {
   }
 
   async getWeeklyForecastSeries(
+    access: DemoAccessScope,
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<WeeklySeriesRow[]>> {
     throwIfAborted(context?.signal);
-    const { edited } = this.scopedBook(scope);
-    // Deliberately the whole book, not the scoped slice. A snapshot row records
-    // an amount, a call, and an expected close, but not whose book the deal was
-    // in, so filtering the live weeks by manager would leave the recorded weeks
-    // unfiltered and draw a cliff into the chart that never happened. The
-    // contract states this as the one documented exception to the scope.
-    const weeks = weeklyForecastRows(edited, scope.quarter, SNAPSHOT_DATE, this.data.snapshots);
+    const { edited } = this.scopedBook(access, scope);
+    // The manager *selection* stays quarter-level, deliberately: a snapshot
+    // row records an amount, a call, and an expected close, but not whose
+    // book the deal was in, so filtering the live weeks by manager would
+    // leave the recorded weeks unfiltered and draw a cliff into the chart
+    // that never happened. The contract states that as the one documented
+    // exception to the query scope. The *access* scope is not an exception:
+    // a partner audience's series is computed from its own opportunities and
+    // their snapshot rows alone, and a snapshot row always names its
+    // opportunity, so the recorded weeks filter by the same visibility as
+    // the live ones.
+    const snapshots =
+      access.audience === 'partner'
+        ? this.data.snapshots.filter((row) => {
+            const opportunity = this.data.opportunities.find((opp) => opp.id === row.opportunityId);
+            return (
+              opportunity !== undefined &&
+              opportunity.partnerId === access.partnerId &&
+              opportunity.oppType !== 'sell-to'
+            );
+          })
+        : this.data.snapshots;
+    const weeks = weeklyForecastRows(edited, scope.quarter, SNAPSHOT_DATE, snapshots);
     // A closed week with no recording is reconstructed from today's book,
     // which backdates every later change into it. That is usable but partial
     // history, and the envelope says so rather than drawing it as recorded
@@ -354,12 +401,13 @@ export class MockDataProvider implements DataProvider {
   }
 
   async listQuarterOpportunities(
+    access: DemoAccessScope,
     scope: ForecastScope,
     page: PageRequest,
     context?: QueryContext,
   ): Promise<QueryResult<Page<Opportunity>>> {
     throwIfAborted(context?.signal);
-    const { inQuarter } = this.scopedBook(scope);
+    const { inQuarter } = this.scopedBook(access, scope);
     // Stable order, so a cursor means the same thing between calls.
     const ordered = [...inQuarter].sort((a, b) =>
       a.expectedCloseDate === b.expectedCloseDate
@@ -379,10 +427,18 @@ export class MockDataProvider implements DataProvider {
     );
   }
 
-  async getPartnerDirectory(context?: QueryContext): Promise<QueryResult<PartnerRef[]>> {
+  async getPartnerDirectory(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerRef[]>> {
     throwIfAborted(context?.signal);
+    // Scoped like every other answer: a partner audience receives its own
+    // entry alone, never the directory.
     return queryResult(
-      this.data.partners.map((partner) => ({ id: partner.id, name: partner.name })),
+      scopePartners(this.data.partners, access).map((partner) => ({
+        id: partner.id,
+        name: partner.name,
+      })),
       this.meta(undefined),
     );
   }

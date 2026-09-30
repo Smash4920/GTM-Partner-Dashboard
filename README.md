@@ -636,6 +636,23 @@ never smoothed over.
 `listTeamUsers()`. The seven views still on this contract take the whole book
 and aggregate it in the browser.
 
+**Every method — both families — takes a required demo access scope first**
+([`src/data/accessScope.ts`](src/data/accessScope.ts)): `{ audience:
+'internal' }`, optionally narrowed to one partner manager, or `{ audience:
+'partner', partnerId }`. Providers apply it before any aggregation, ordering,
+or pagination, so a partner-audience answer is computed from that partner's
+rows alone: no Sell To opportunities (the partner is the customer there), no
+conflicting registrations (the conflict is internal), no other partner's
+rows, and no internal directories (the manager list and team roster). The
+demo's own shell asks as the internal audience. This is demonstrative
+filtering, and it is labelled that way wherever it surfaces — it is not
+authentication, authorization, or row-level security, because the browser is
+untrusted and any caller can construct any scope. Real enforcement is
+server-side row authorization behind trusted identity, which is Production:
+Prod Only. No feature flag can change what a scope returns; that invariance
+is pinned in `src/data/accessScope.test.ts` and enforced by the module
+boundary that keeps flag code out of the data layer.
+
 `MockDataProvider` fills both with deterministic, seeded data. To go live,
 implement the interface against your CRM (HubSpot, Salesforce) or warehouse
 (Snowflake, Looker) and swap the provider — no view code changes. The scoped
@@ -643,6 +660,19 @@ side is where a server does the arithmetic: `src/lib/metrics.ts` is the
 implementation today and the _specification_ a server implementation has to
 match, which is what makes its test suite a conformance check rather than a
 unit suite.
+
+**The source side has the same shape, as pure functions.** Nothing is
+connected — no CRM, PRM, calendar, enablement, target, or certification
+system, and no credential to connect one — but the ingestion path those
+exports will one day take exists as strict adapters in
+[`src/data/normalizers/`](src/data/normalizers/). Each maps the
+representative source shape (Salesforce-flavored `__c` fields, source
+picklist labels, source-owned ids) onto the canonical records above, with
+provenance: the source system, the source record id, and the fields consumed.
+They are pure — no fetch, no storage, no clock, no mutation — and strict:
+malformed ids, unknown foreign keys, unmapped enum values, non-ISO dates, and
+bad money are typed failures with stable codes, never guessed defaults. A
+server pipeline could call them unchanged.
 
 **Swap the provider from the header** to see the claim performed:
 

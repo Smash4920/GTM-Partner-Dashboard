@@ -1,3 +1,4 @@
+import type { DemoAccessScope } from './accessScope';
 import type { QueryContext } from './queryContext';
 import type { QueryResult } from './queryMetadata';
 import type { SessionEdits } from './sessionEdits';
@@ -32,6 +33,14 @@ import type {
  * The split is the backlog. A view moves across when its queries exist on the
  * scoped side, and `LegacyBookProvider` is deleted when the last one has.
  *
+ * Every method takes a `DemoAccessScope` (see src/data/accessScope.ts) as its
+ * first argument: the demo's required, non-authoritative record visibility
+ * scope. Providers apply it before any aggregation, ordering, or pagination,
+ * so a partner-audience answer is computed from that partner's rows alone.
+ * It is demonstrative filtering, not an authorization boundary: this demo
+ * has no identity or enforcement layer, and no caller may treat the scope
+ * as one.
+ *
  * Every method accepts a `QueryContext` (see src/data/queryContext.ts) as its
  * last argument: an abort signal that cancels provider-visible work when the
  * request becomes obsolete, and the trace context the seam creates per call.
@@ -50,20 +59,24 @@ import type {
  * and small dimensions, and it goes the same way view by view.
  */
 interface LegacyBookProvider {
-  listPartnerManagers(context?: QueryContext): Promise<PartnerManager[]>;
-  listPartners(context?: QueryContext): Promise<Partner[]>;
-  listRegistrations(context?: QueryContext): Promise<DealRegistration[]>;
-  listOpportunities(context?: QueryContext): Promise<Opportunity[]>;
-  getTargets(context?: QueryContext): Promise<Target[]>;
-  listActivities(context?: QueryContext): Promise<ActivityMeeting[]>;
-  listCertifications(context?: QueryContext): Promise<PartnerCertification[]>;
+  listPartnerManagers(access: DemoAccessScope, context?: QueryContext): Promise<PartnerManager[]>;
+  listPartners(access: DemoAccessScope, context?: QueryContext): Promise<Partner[]>;
+  listRegistrations(access: DemoAccessScope, context?: QueryContext): Promise<DealRegistration[]>;
+  listOpportunities(access: DemoAccessScope, context?: QueryContext): Promise<Opportunity[]>;
+  getTargets(access: DemoAccessScope, context?: QueryContext): Promise<Target[]>;
+  listActivities(access: DemoAccessScope, context?: QueryContext): Promise<ActivityMeeting[]>;
+  listCertifications(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<PartnerCertification[]>;
   /**
    * The internal partner-team roster, projected from the identity provider.
    * This is what decides who a deal-registration alert belongs to; a provider
    * with no roster yet may return an empty array, and the alerts simply carry
-   * no owner.
+   * no owner. The roster is internal, so a partner-audience scope receives
+   * an empty roster.
    */
-  listTeamUsers(context?: QueryContext): Promise<TeamUser[]>;
+  listTeamUsers(access: DemoAccessScope, context?: QueryContext): Promise<TeamUser[]>;
 }
 
 // ---- the target shape ------------------------------------------------------
@@ -208,19 +221,23 @@ export interface WeeklySeriesRow {
  */
 interface ScopedQueryProvider {
   getForecastSummary(
+    access: DemoAccessScope,
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<ForecastSummary>>;
   getWeightedForecast(
+    access: DemoAccessScope,
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<WeightedForecastSummary>>;
   getForecastQuality(
+    access: DemoAccessScope,
     scope: ForecastScope,
     sampleSize: number,
     context?: QueryContext,
   ): Promise<QueryResult<ForecastQualitySummary>>;
   getManagerForecastGroups(
+    access: DemoAccessScope,
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<ManagerForecastGroup[]>>;
@@ -229,6 +246,7 @@ interface ScopedQueryProvider {
    * fourteen of them, in place of every snapshot row ever written.
    */
   getWeeklyForecastSeries(
+    access: DemoAccessScope,
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<WeeklySeriesRow[]>>;
@@ -237,6 +255,7 @@ interface ScopedQueryProvider {
    * expanded, rather than loaded for every manager up front.
    */
   listQuarterOpportunities(
+    access: DemoAccessScope,
     scope: ForecastScope,
     page: PageRequest,
     context?: QueryContext,
@@ -247,11 +266,15 @@ interface ScopedQueryProvider {
    * A dimension, not a fact: it is a dictionary the client can hold — a few
    * thousand entries at production scale rather than the book itself — and it
    * is what lets a row DTO stay an opportunity instead of absorbing a display
-   * concern. Unpaginated on purpose, and scoped by the caller's authorization
-   * rather than by a scope argument: a partner signed into the portal receives
-   * one entry, their own.
+   * concern. Unpaginated on purpose, and scoped by the required demo access
+   * scope rather than by an argument: a partner-audience scope receives one
+   * entry, its own. In production this would be the caller's authorization;
+   * here it is demonstrative filtering only.
    */
-  getPartnerDirectory(context?: QueryContext): Promise<QueryResult<PartnerRef[]>>;
+  getPartnerDirectory(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerRef[]>>;
 }
 
 /**

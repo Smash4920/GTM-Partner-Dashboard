@@ -1,3 +1,4 @@
+import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
 import type { DataProvider } from '../data/DataProvider';
 import { CURRENT_FISCAL_QUARTER } from '../data/constants';
 import { TELEMETRY_STARTUP_EPOCH } from './telemetry/config';
@@ -199,7 +200,7 @@ async function dataSeamCheck(
     timer = setTimeout(() => reject(new Error(`ping exceeded ${pingBudgetMs}ms`)), pingBudgetMs);
   });
   try {
-    await Promise.race([provider.getForecastSummary({ quarter }), deadline]);
+    await Promise.race([provider.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter }), deadline]);
     const latencyMs = now() - startedAt;
     return {
       name: 'dataSeam',

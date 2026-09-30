@@ -7,6 +7,8 @@ import type {
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from './DataProvider';
+import { demoScopeKey } from './accessScope';
+import type { DemoAccessScope } from './accessScope';
 import { usePaginatedRows } from './paginationState';
 import type { PaginationState } from './paginationState';
 import type { QueryMeta } from './queryMetadata';
@@ -71,15 +73,17 @@ function editsOf(scope: ForecastScope) {
 /** The quarter's headline numbers: moved by revenue edits and the manager scope. */
 export function useForecastSummary(
   provider: DataProvider,
+  access: DemoAccessScope,
   scope: ForecastScope,
 ): QueryState<ForecastSummary> {
   const edits = editsOf(scope);
   const managerId = scope.partnerManagerId ?? 'all';
   return useScopedQuery({
     provider,
-    queryKey: `${scope.quarter}|manager:${managerId}|rev:${editMapKey(edits.revenueOverrides)}`,
+    queryKey: `access:${demoScopeKey(access)}|${scope.quarter}|manager:${managerId}|rev:${editMapKey(edits.revenueOverrides)}`,
     run: (context) =>
       provider.getForecastSummary(
+        access,
         {
           quarter: scope.quarter,
           partnerManagerId: scope.partnerManagerId,
@@ -94,13 +98,15 @@ export function useForecastSummary(
 /** The probability-weighted forecast: moved by revenue and re-calls. */
 export function useWeightedForecast(
   provider: DataProvider,
+  access: DemoAccessScope,
   scope: ForecastScope,
 ): QueryState<WeightedForecastSummary> {
   const edits = editsOf(scope);
   return useScopedQuery({
     provider,
-    queryKey: `${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
-    run: (context) => provider.getWeightedForecast({ quarter: scope.quarter, edits }, context),
+    queryKey: `access:${demoScopeKey(access)}|${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
+    run: (context) =>
+      provider.getWeightedForecast(access, { quarter: scope.quarter, edits }, context),
     errorFallback: 'Failed to load the weighted forecast',
   });
 }
@@ -108,14 +114,20 @@ export function useWeightedForecast(
 /** Stage-versus-call disagreements: moved by revenue and re-calls. */
 export function useForecastQuality(
   provider: DataProvider,
+  access: DemoAccessScope,
   scope: ForecastScope,
 ): QueryState<ForecastQualitySummary> {
   const edits = editsOf(scope);
   return useScopedQuery({
     provider,
-    queryKey: `${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
+    queryKey: `access:${demoScopeKey(access)}|${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
     run: (context) =>
-      provider.getForecastQuality({ quarter: scope.quarter, edits }, MISMATCH_SAMPLE_SIZE, context),
+      provider.getForecastQuality(
+        access,
+        { quarter: scope.quarter, edits },
+        MISMATCH_SAMPLE_SIZE,
+        context,
+      ),
     errorFallback: 'Failed to load the forecast quality',
   });
 }
@@ -123,13 +135,15 @@ export function useForecastQuality(
 /** The per-manager header lines: moved by revenue edits only. */
 export function useManagerGroups(
   provider: DataProvider,
+  access: DemoAccessScope,
   scope: ForecastScope,
 ): QueryState<ManagerForecastGroup[]> {
   const edits = editsOf(scope);
   return useScopedQuery({
     provider,
-    queryKey: `${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}`,
-    run: (context) => provider.getManagerForecastGroups({ quarter: scope.quarter, edits }, context),
+    queryKey: `access:${demoScopeKey(access)}|${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}`,
+    run: (context) =>
+      provider.getManagerForecastGroups(access, { quarter: scope.quarter, edits }, context),
     errorFallback: 'Failed to load the manager groups',
   });
 }
@@ -137,13 +151,15 @@ export function useManagerGroups(
 /** The week-over-week series: moved by revenue and re-calls. */
 export function useWeeklySeries(
   provider: DataProvider,
+  access: DemoAccessScope,
   scope: ForecastScope,
 ): QueryState<WeeklySeriesRow[]> {
   const edits = editsOf(scope);
   return useScopedQuery({
     provider,
-    queryKey: `${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
-    run: (context) => provider.getWeeklyForecastSeries({ quarter: scope.quarter, edits }, context),
+    queryKey: `access:${demoScopeKey(access)}|${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
+    run: (context) =>
+      provider.getWeeklyForecastSeries(access, { quarter: scope.quarter, edits }, context),
     errorFallback: 'Failed to load the weekly series',
   });
 }
@@ -172,12 +188,15 @@ export interface PartnerNamesState {
  * down. On a provider switch the previous provider's names are dropped
  * immediately: a name from another directory is a cross-source label.
  */
-export function usePartnerNames(provider: DataProvider): PartnerNamesState {
+export function usePartnerNames(
+  provider: DataProvider,
+  access: DemoAccessScope,
+): PartnerNamesState {
   const directory = useScopedQuery({
     provider,
-    queryKey: 'partner-directory',
+    queryKey: `partner-directory|access:${demoScopeKey(access)}`,
     run: async (context) => {
-      const result = await provider.getPartnerDirectory(context);
+      const result = await provider.getPartnerDirectory(access, context);
       return {
         data: Object.fromEntries(result.data.map((partner) => [partner.id, partner.name])),
         meta: result.meta,
@@ -211,6 +230,7 @@ export type ManagerBookState = PaginationState<Opportunity>;
  */
 export function useManagerBook(
   provider: DataProvider,
+  access: DemoAccessScope,
   scope: ForecastScope,
   managerId: string | null,
   pageSize: number = MANAGER_BOOK_PAGE_SIZE,
@@ -220,11 +240,12 @@ export function useManagerBook(
   return usePaginatedRows({
     provider,
     enabled: managerId !== null,
-    resetKey: `${quarter}|${managerId ?? 'none'}|${pageSize}`,
+    resetKey: `access:${demoScopeKey(access)}|${quarter}|${managerId ?? 'none'}|${pageSize}`,
     refreshKey: `rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
     pageSize,
     fetchPage: (page, context) =>
       provider.listQuarterOpportunities(
+        access,
         { quarter, partnerManagerId: managerId ?? undefined, edits },
         page,
         context,

@@ -1,0 +1,119 @@
+import { describe, expect, it } from 'vitest';
+
+import { makeProviderBook } from '../test/fixtures';
+import { INTERNAL_DEMO_SCOPE } from './accessScope';
+import type { DemoAccessScope } from './accessScope';
+import { DATA_PROVIDER_METHODS } from './DataProvider';
+import type { DataProvider } from './DataProvider';
+import { MockDataProvider } from './mock/MockDataProvider';
+
+/**
+ * VAL-DATA-003: the demo access scope is a required, first parameter of every
+ * data-bearing provider method — there is no unscoped path across the seam.
+ * TypeScript enforces the signature at compile time (the `@ts-expect-error`
+ * cases below fail the build the day one of them stops being an error); the
+ * runtime cases pin the fail-closed behavior for anything that bypasses the
+ * compiler, and the inventory pins the method set itself so a new
+ * data-bearing method cannot appear without this suite noticing.
+ */
+
+const quarter = 'FY27-Q3';
+
+/** Every method on the contract, exercised with no access scope at all. */
+function unscopedCalls(provider: DataProvider): (() => Promise<unknown>)[] {
+  const missing = undefined as unknown as DemoAccessScope;
+  return [
+    () => provider.listPartnerManagers(missing),
+    () => provider.listPartners(missing),
+    () => provider.listRegistrations(missing),
+    () => provider.listOpportunities(missing),
+    () => provider.getTargets(missing),
+    () => provider.listActivities(missing),
+    () => provider.listCertifications(missing),
+    () => provider.listTeamUsers(missing),
+    () => provider.getForecastSummary(missing, { quarter }),
+    () => provider.getWeightedForecast(missing, { quarter }),
+    () => provider.getForecastQuality(missing, { quarter }, 3),
+    () => provider.getManagerForecastGroups(missing, { quarter }),
+    () => provider.getWeeklyForecastSeries(missing, { quarter }),
+    () => provider.listQuarterOpportunities(missing, { quarter }, { limit: 5 }),
+    () => provider.getPartnerDirectory(missing),
+  ];
+}
+
+describe('DataProvider demo access scope (VAL-DATA-003)', () => {
+  it('keeps a closed inventory: exactly these fifteen data-bearing methods exist', () => {
+    expect([...DATA_PROVIDER_METHODS].sort()).toEqual([
+      'getForecastQuality',
+      'getForecastSummary',
+      'getManagerForecastGroups',
+      'getPartnerDirectory',
+      'getTargets',
+      'getWeeklyForecastSeries',
+      'getWeightedForecast',
+      'listActivities',
+      'listCertifications',
+      'listOpportunities',
+      'listPartnerManagers',
+      'listPartners',
+      'listQuarterOpportunities',
+      'listRegistrations',
+      'listTeamUsers',
+    ]);
+  });
+
+  it('rejects every method at the type level when the scope is missing or malformed', () => {
+    const provider: DataProvider = new MockDataProvider(makeProviderBook());
+
+    // Each case is wrapped in a lambda that is never invoked: the point is
+    // the compile error, and an executed scope-less call belongs to the
+    // fail-closed runtime test below.
+    // @ts-expect-error the access scope is required, not optional
+    void (() => provider.listPartners());
+    // @ts-expect-error the access scope is required, not optional
+    void (() => provider.getForecastSummary({ quarter }));
+    // @ts-expect-error the access scope is required, not optional
+    void (() => provider.getPartnerDirectory());
+    // @ts-expect-error the audience is a closed set; there is no guest audience
+    void (() => provider.listPartners({ audience: 'guest' }));
+    // @ts-expect-error a partner-audience scope must name its partner
+    void (() => provider.getForecastSummary({ audience: 'partner' }, { quarter }));
+    // @ts-expect-error an internal scope cannot claim a partner id
+    void (() => provider.listOpportunities({ audience: 'internal', partnerId: 'partner-1' }));
+    // A well-formed scope type-checks: the constant itself is the proof.
+    const scope: DemoAccessScope = INTERNAL_DEMO_SCOPE;
+    expect(scope.audience).toBe('internal');
+  });
+
+  it('fails closed at runtime: a scope-less call rejects rather than answering unscoped', async () => {
+    const provider = new MockDataProvider(makeProviderBook());
+    const calls = unscopedCalls(provider);
+    expect(calls).toHaveLength(DATA_PROVIDER_METHODS.length);
+    for (const [index, call] of calls.entries()) {
+      await expect(call(), DATA_PROVIDER_METHODS[index]).rejects.toThrow();
+    }
+  });
+
+  it('accepts a partner scope on every method without rejecting', async () => {
+    const provider = new MockDataProvider(makeProviderBook());
+    const scope: DemoAccessScope = { audience: 'partner', partnerId: 'partner-1' };
+    const results = await Promise.all([
+      provider.listPartnerManagers(scope),
+      provider.listPartners(scope),
+      provider.listRegistrations(scope),
+      provider.listOpportunities(scope),
+      provider.getTargets(scope),
+      provider.listActivities(scope),
+      provider.listCertifications(scope),
+      provider.listTeamUsers(scope),
+      provider.getForecastSummary(scope, { quarter }),
+      provider.getWeightedForecast(scope, { quarter }),
+      provider.getForecastQuality(scope, { quarter }, 3),
+      provider.getManagerForecastGroups(scope, { quarter }),
+      provider.getWeeklyForecastSeries(scope, { quarter }),
+      provider.listQuarterOpportunities(scope, { quarter }, { limit: 5 }),
+      provider.getPartnerDirectory(scope),
+    ]);
+    expect(results).toHaveLength(15);
+  });
+});

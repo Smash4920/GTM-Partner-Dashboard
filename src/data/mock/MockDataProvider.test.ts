@@ -12,6 +12,7 @@ import {
   weightedForecast,
   weeklyForecastRows,
 } from '../../lib/metrics';
+import { INTERNAL_DEMO_SCOPE } from '../accessScope';
 import { MockDataProvider } from './MockDataProvider';
 import { generateDashboardData } from './generate';
 import { NO_SESSION_EDITS } from '../sessionEdits';
@@ -19,7 +20,14 @@ import {
   unattributedOpportunitiesWarning,
   weeklyHistoryReconstructedWarning,
 } from '../queryMetadata';
-import { makeOpportunity, makePartner, makeProviderBook, makeTarget } from '../../test/fixtures';
+import {
+  makeOpportunity,
+  makePartner,
+  makeProviderBook,
+  makeRegistration,
+  makeTarget,
+  makeTeamUser,
+} from '../../test/fixtures';
 import type { Opportunity, PartnerManager } from '../types';
 
 /**
@@ -47,7 +55,7 @@ function openOf(rows: Opportunity[]): Opportunity {
 
 describe('MockDataProvider scoped contract', () => {
   it('answers the quarter summary the metrics layer computes', async () => {
-    const { data: summary } = await provider.getForecastSummary({ quarter });
+    const { data: summary } = await provider.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter });
     const open = openPipeline(inQuarter);
     const target = book.targets
       .filter((item) => item.quarter === quarter)
@@ -65,12 +73,16 @@ describe('MockDataProvider scoped contract', () => {
   });
 
   it('answers the weighted forecast in the shape the metrics layer returns', async () => {
-    const { data: weighted } = await provider.getWeightedForecast({ quarter });
+    const { data: weighted } = await provider.getWeightedForecast(INTERNAL_DEMO_SCOPE, { quarter });
     expect(weighted).toEqual(weightedForecast(openOpportunities(inQuarter)));
   });
 
   it('bounds the mismatch sample while sizing both sides in full', async () => {
-    const { data: quality } = await provider.getForecastQuality({ quarter }, 3);
+    const { data: quality } = await provider.getForecastQuality(
+      INTERNAL_DEMO_SCOPE,
+      { quarter },
+      3,
+    );
     const mismatches = categoryStageMismatches(openOpportunities(inQuarter));
 
     expect(quality.openCount).toBe(openOpportunities(inQuarter).length);
@@ -89,7 +101,9 @@ describe('MockDataProvider scoped contract', () => {
   });
 
   it('groups by manager and accounts for every in-quarter opportunity once', async () => {
-    const { data: groups } = await provider.getManagerForecastGroups({ quarter });
+    const { data: groups } = await provider.getManagerForecastGroups(INTERNAL_DEMO_SCOPE, {
+      quarter,
+    });
     expect(groups).toHaveLength(book.partnerManagers.length);
     expect(groups.reduce((sum, group) => sum + group.opportunityCount, 0)).toBe(inQuarter.length);
 
@@ -106,7 +120,9 @@ describe('MockDataProvider scoped contract', () => {
   });
 
   it('serves week-over-week history as buckets, not as snapshot rows', async () => {
-    const { data: weeks } = await provider.getWeeklyForecastSeries({ quarter });
+    const { data: weeks } = await provider.getWeeklyForecastSeries(INTERNAL_DEMO_SCOPE, {
+      quarter,
+    });
     expect(weeks).toEqual(
       weeklyForecastRows(book.opportunities, quarter, SNAPSHOT_DATE, book.snapshots),
     );
@@ -115,14 +131,18 @@ describe('MockDataProvider scoped contract', () => {
   });
 
   it('narrows aggregates and rows to one manager, and leaves history quarter-level', async () => {
-    const { data: groups } = await provider.getManagerForecastGroups({ quarter });
+    const { data: groups } = await provider.getManagerForecastGroups(INTERNAL_DEMO_SCOPE, {
+      quarter,
+    });
     const managerId = groups[0]!.managerId;
 
     const { data: page } = await provider.listQuarterOpportunities(
+      INTERNAL_DEMO_SCOPE,
       { quarter, partnerManagerId: managerId },
       { limit: 500 },
     );
     const { data: allRows } = await provider.listQuarterOpportunities(
+      INTERNAL_DEMO_SCOPE,
       { quarter },
       { limit: 5_000 },
     );
@@ -132,7 +152,7 @@ describe('MockDataProvider scoped contract', () => {
       book.partners.map((partner) => [partner.id, partner.partnerManagerId]),
     );
     const owned = inQuarter.filter((opp) => managerByPartner.get(opp.partnerId) === managerId);
-    const { data: scoped } = await provider.getForecastSummary({
+    const { data: scoped } = await provider.getForecastSummary(INTERNAL_DEMO_SCOPE, {
       quarter,
       partnerManagerId: managerId,
     });
@@ -140,7 +160,12 @@ describe('MockDataProvider scoped contract', () => {
     expect(scoped.openPipelineValue).toBe(openPipeline(owned).value);
 
     expect(
-      (await provider.getManagerForecastGroups({ quarter, partnerManagerId: managerId })).data,
+      (
+        await provider.getManagerForecastGroups(INTERNAL_DEMO_SCOPE, {
+          quarter,
+          partnerManagerId: managerId,
+        })
+      ).data,
     ).toEqual(groups.filter((group) => group.managerId === managerId));
 
     // The documented exception, pinned here so nobody "fixes" it by filtering
@@ -148,12 +173,18 @@ describe('MockDataProvider scoped contract', () => {
     // so a manager-filtered series would drop the recorded weeks' history and
     // draw a cliff that never happened.
     expect(
-      (await provider.getWeeklyForecastSeries({ quarter, partnerManagerId: managerId })).data,
-    ).toEqual((await provider.getWeeklyForecastSeries({ quarter })).data);
+      (
+        await provider.getWeeklyForecastSeries(INTERNAL_DEMO_SCOPE, {
+          quarter,
+          partnerManagerId: managerId,
+        })
+      ).data,
+    ).toEqual((await provider.getWeeklyForecastSeries(INTERNAL_DEMO_SCOPE, { quarter })).data);
   });
 
   it('walks a paged book exactly once, in a stable order', async () => {
     const { data: expected } = await provider.listQuarterOpportunities(
+      INTERNAL_DEMO_SCOPE,
       { quarter },
       { limit: 10_000 },
     );
@@ -163,6 +194,7 @@ describe('MockDataProvider scoped contract', () => {
 
     do {
       const { data: page } = await provider.listQuarterOpportunities(
+        INTERNAL_DEMO_SCOPE,
         { quarter },
         { ...(cursor ? { cursor } : {}), limit: 7 },
       );
@@ -179,13 +211,21 @@ describe('MockDataProvider scoped contract', () => {
 
     expect(ids.size).toBe(expected.totalCount);
     // Sorted by expected close, so the same page means the same thing twice.
-    const { data: once } = await provider.listQuarterOpportunities({ quarter }, { limit: 7 });
-    const { data: again } = await provider.listQuarterOpportunities({ quarter }, { limit: 7 });
+    const { data: once } = await provider.listQuarterOpportunities(
+      INTERNAL_DEMO_SCOPE,
+      { quarter },
+      { limit: 7 },
+    );
+    const { data: again } = await provider.listQuarterOpportunities(
+      INTERNAL_DEMO_SCOPE,
+      { quarter },
+      { limit: 7 },
+    );
     expect(once.rows.map((row) => row.id)).toEqual(again.rows.map((row) => row.id));
   });
 
   it('exposes the partner directory rather than the partner collection', async () => {
-    const { data: directory } = await provider.getPartnerDirectory();
+    const { data: directory } = await provider.getPartnerDirectory(INTERNAL_DEMO_SCOPE);
     expect(directory).toEqual(
       book.partners.map((partner) => ({ id: partner.id, name: partner.name })),
     );
@@ -256,7 +296,7 @@ describe('manager-scoped targets (VAL-DATA-001)', () => {
       ['partner-2', 'pm-2'],
     ]);
 
-    const { data: org } = await scopedProvider.getForecastSummary({ quarter });
+    const { data: org } = await scopedProvider.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter });
     expect(org.target).toBe(400_000); // partner-1 100k + partner-2 300k
     expect(org.closedWon).toBe(190_000);
     expect(org.remainingQuota).toBe(210_000);
@@ -265,7 +305,7 @@ describe('manager-scoped targets (VAL-DATA-001)', () => {
   });
 
   it('measures each manager only against their own partners’ targets', async () => {
-    const { data: pm1 } = await scopedProvider.getForecastSummary({
+    const { data: pm1 } = await scopedProvider.getForecastSummary(INTERNAL_DEMO_SCOPE, {
       quarter,
       partnerManagerId: 'pm-1',
     });
@@ -275,7 +315,7 @@ describe('manager-scoped targets (VAL-DATA-001)', () => {
     expect(pm1.attainment).toBeCloseTo(0.4, 10);
     expect(pm1.coverage).toEqual({ kind: 'coverage', value: 2 }); // 120k open / 60k gap
 
-    const { data: pm2 } = await scopedProvider.getForecastSummary({
+    const { data: pm2 } = await scopedProvider.getForecastSummary(INTERNAL_DEMO_SCOPE, {
       quarter,
       partnerManagerId: 'pm-2',
     });
@@ -294,16 +334,17 @@ describe('manager-scoped targets (VAL-DATA-001)', () => {
       ),
     });
 
-    const { data: before } = await scopedProvider.getForecastSummary({
+    const { data: before } = await scopedProvider.getForecastSummary(INTERNAL_DEMO_SCOPE, {
       quarter,
       partnerManagerId: 'pm-1',
     });
     // partner-2's target doubled, but pm-1's summary cannot tell.
-    expect((await changed.getForecastSummary({ quarter, partnerManagerId: 'pm-1' })).data).toEqual(
-      before,
-    );
+    expect(
+      (await changed.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter, partnerManagerId: 'pm-1' }))
+        .data,
+    ).toEqual(before);
 
-    const { data: pm2 } = await changed.getForecastSummary({
+    const { data: pm2 } = await changed.getForecastSummary(INTERNAL_DEMO_SCOPE, {
       quarter,
       partnerManagerId: 'pm-2',
     });
@@ -318,7 +359,7 @@ describe('manager-scoped targets (VAL-DATA-001)', () => {
       ...scopedBook,
       targets: scopedBook.targets.filter((item) => item.partnerId !== 'partner-1'),
     });
-    const { data: pm1 } = await noTarget.getForecastSummary({
+    const { data: pm1 } = await noTarget.getForecastSummary(INTERNAL_DEMO_SCOPE, {
       quarter,
       partnerManagerId: 'pm-1',
     });
@@ -327,7 +368,7 @@ describe('manager-scoped targets (VAL-DATA-001)', () => {
     expect(pm1.attainment).toBe(0);
     expect(pm1.coverage).toEqual({ kind: 'no-target' });
     // The org still sees partner-2's target — the state is scoped, not global.
-    const { data: org } = await noTarget.getForecastSummary({ quarter });
+    const { data: org } = await noTarget.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter });
     expect(org.target).toBe(300_000);
 
     const met = new MockDataProvider({
@@ -336,7 +377,7 @@ describe('manager-scoped targets (VAL-DATA-001)', () => {
         item.partnerId === 'partner-1' ? { ...item, revenueTarget: 30_000 } : item,
       ),
     });
-    const { data: pm1Met } = await met.getForecastSummary({
+    const { data: pm1Met } = await met.getForecastSummary(INTERNAL_DEMO_SCOPE, {
       quarter,
       partnerManagerId: 'pm-1',
     });
@@ -352,9 +393,9 @@ describe('MockDataProvider folds session edits behind the seam', () => {
   const target = openOf(inQuarter);
 
   it('moves open pipeline by the edited amount', async () => {
-    const { data: before } = await provider.getForecastSummary({ quarter });
+    const { data: before } = await provider.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter });
     const raise = 40_000;
-    const { data: after } = await provider.getForecastSummary({
+    const { data: after } = await provider.getForecastSummary(INTERNAL_DEMO_SCOPE, {
       quarter,
       edits: {
         ...NO_SESSION_EDITS,
@@ -367,8 +408,8 @@ describe('MockDataProvider folds session edits behind the seam', () => {
   });
 
   it('re-weights the forecast when a deal is re-called', async () => {
-    const { data: before } = await provider.getWeightedForecast({ quarter });
-    const { data: after } = await provider.getWeightedForecast({
+    const { data: before } = await provider.getWeightedForecast(INTERNAL_DEMO_SCOPE, { quarter });
+    const { data: after } = await provider.getWeightedForecast(INTERNAL_DEMO_SCOPE, {
       quarter,
       edits: { ...NO_SESSION_EDITS, forecastCalls: { [target.id]: 'commit' } },
     });
@@ -386,6 +427,7 @@ describe('MockDataProvider folds session edits behind the seam', () => {
     if (!seeded) throw new Error('fixture has no seeded next step');
 
     const { data: page } = await provider.listQuarterOpportunities(
+      INTERNAL_DEMO_SCOPE,
       { quarter, edits: { ...NO_SESSION_EDITS, nextSteps: { [seeded.id]: '' } } },
       { limit: 10_000 },
     );
@@ -401,12 +443,12 @@ describe('scoped answer metadata (VAL-DATA-006)', () => {
 
   it('every scoped method reports the provider, the snapshot as-of, and its lineage', async () => {
     const answers = await Promise.all([
-      provider.getForecastSummary({ quarter }),
-      provider.getWeightedForecast({ quarter }),
-      provider.getForecastQuality({ quarter }, 10),
-      provider.getManagerForecastGroups({ quarter }),
-      provider.listQuarterOpportunities({ quarter }, { limit: 25 }),
-      provider.getPartnerDirectory(),
+      provider.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter }),
+      provider.getWeightedForecast(INTERNAL_DEMO_SCOPE, { quarter }),
+      provider.getForecastQuality(INTERNAL_DEMO_SCOPE, { quarter }, 10),
+      provider.getManagerForecastGroups(INTERNAL_DEMO_SCOPE, { quarter }),
+      provider.listQuarterOpportunities(INTERNAL_DEMO_SCOPE, { quarter }, { limit: 25 }),
+      provider.getPartnerDirectory(INTERNAL_DEMO_SCOPE),
     ]);
 
     for (const { meta } of answers) {
@@ -419,7 +461,7 @@ describe('scoped answer metadata (VAL-DATA-006)', () => {
   });
 
   it('declares session edits in the lineage once any edit exists', async () => {
-    const { meta } = await provider.getForecastSummary({
+    const { meta } = await provider.getForecastSummary(INTERNAL_DEMO_SCOPE, {
       quarter,
       edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-x': 1 } },
     });
@@ -427,7 +469,7 @@ describe('scoped answer metadata (VAL-DATA-006)', () => {
   });
 
   it('the weekly series warns for exactly the weeks it reconstructed', async () => {
-    const { meta } = await provider.getWeeklyForecastSeries({ quarter });
+    const { meta } = await provider.getWeeklyForecastSeries(INTERNAL_DEMO_SCOPE, { quarter });
 
     // The seeded book records the weeks it has recorded; the fixture book
     // used elsewhere records none at all. Both answers name their basis.
@@ -437,6 +479,7 @@ describe('scoped answer metadata (VAL-DATA-006)', () => {
 
     const fixtureProvider = new MockDataProvider(makeProviderBook());
     const { data: fixtureWeeks, meta: fixtureMeta } = await fixtureProvider.getWeeklyForecastSeries(
+      INTERNAL_DEMO_SCOPE,
       { quarter },
     );
     expect(fixtureWeeks.length).toBeGreaterThan(0);
@@ -460,22 +503,28 @@ describe('scoped answer metadata (VAL-DATA-006)', () => {
       opportunities: [makeOpportunity({ id: 'opp-orphan', partnerId: 'partner-absent' })],
     });
     const unattributedProvider = new MockDataProvider(unattributedBook);
-    const { data: groups, meta } = await unattributedProvider.getManagerForecastGroups({
-      quarter,
-    });
+    const { data: groups, meta } = await unattributedProvider.getManagerForecastGroups(
+      INTERNAL_DEMO_SCOPE,
+      {
+        quarter,
+      },
+    );
 
     expect(groups).toEqual([]);
     expect(meta.completeness).toBe('partial');
     expect(meta.warnings).toEqual([unattributedOpportunitiesWarning(1)]);
     // The org-wide summary loses nothing: the warning is scoped to the
     // grouping that actually dropped the rows.
-    const { meta: summaryMeta } = await unattributedProvider.getForecastSummary({ quarter });
+    const { meta: summaryMeta } = await unattributedProvider.getForecastSummary(
+      INTERNAL_DEMO_SCOPE,
+      { quarter },
+    );
     expect(summaryMeta.completeness).toBe('complete');
   });
 
   it('lets implementations stamp their own identity on the answers they serve', async () => {
     const tagged = new MockDataProvider(book, { providerId: 'remote' });
-    const { meta } = await tagged.getPartnerDirectory();
+    const { meta } = await tagged.getPartnerDirectory(INTERNAL_DEMO_SCOPE);
     expect(meta.providerId).toBe('remote');
   });
 });
@@ -488,21 +537,21 @@ describe('cancellation', () => {
     const local = new MockDataProvider(makeProviderBook());
 
     const attempts: Promise<unknown>[] = [
-      local.listPartnerManagers(context),
-      local.listPartners(context),
-      local.listRegistrations(context),
-      local.listOpportunities(context),
-      local.getTargets(context),
-      local.listActivities(context),
-      local.listCertifications(context),
-      local.listTeamUsers(context),
-      local.getForecastSummary({ quarter }, context),
-      local.getWeightedForecast({ quarter }, context),
-      local.getForecastQuality({ quarter }, 3, context),
-      local.getManagerForecastGroups({ quarter }, context),
-      local.getWeeklyForecastSeries({ quarter }, context),
-      local.listQuarterOpportunities({ quarter }, { limit: 5 }, context),
-      local.getPartnerDirectory(context),
+      local.listPartnerManagers(INTERNAL_DEMO_SCOPE, context),
+      local.listPartners(INTERNAL_DEMO_SCOPE, context),
+      local.listRegistrations(INTERNAL_DEMO_SCOPE, context),
+      local.listOpportunities(INTERNAL_DEMO_SCOPE, context),
+      local.getTargets(INTERNAL_DEMO_SCOPE, context),
+      local.listActivities(INTERNAL_DEMO_SCOPE, context),
+      local.listCertifications(INTERNAL_DEMO_SCOPE, context),
+      local.listTeamUsers(INTERNAL_DEMO_SCOPE, context),
+      local.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter }, context),
+      local.getWeightedForecast(INTERNAL_DEMO_SCOPE, { quarter }, context),
+      local.getForecastQuality(INTERNAL_DEMO_SCOPE, { quarter }, 3, context),
+      local.getManagerForecastGroups(INTERNAL_DEMO_SCOPE, { quarter }, context),
+      local.getWeeklyForecastSeries(INTERNAL_DEMO_SCOPE, { quarter }, context),
+      local.listQuarterOpportunities(INTERNAL_DEMO_SCOPE, { quarter }, { limit: 5 }, context),
+      local.getPartnerDirectory(INTERNAL_DEMO_SCOPE, context),
     ];
     for (const attempt of attempts) {
       const rejected = await attempt.catch((error: unknown) => error);
@@ -514,7 +563,220 @@ describe('cancellation', () => {
   it('answers normally while the signal is live', async () => {
     const controller = new AbortController();
     const local = new MockDataProvider(makeProviderBook());
-    const { data } = await local.getForecastSummary({ quarter }, { signal: controller.signal });
+    const { data } = await local.getForecastSummary(
+      INTERNAL_DEMO_SCOPE,
+      { quarter },
+      { signal: controller.signal },
+    );
     expect(data.openCount).toBeGreaterThan(0);
+  });
+});
+
+describe('demo access scope isolation (VAL-DATA-003)', () => {
+  /**
+   * Two partners, one manager each. partner-1 has an open sell-with deal, a
+   * Sell To deal (partner-1 is the customer there), and a conflicting
+   * registration (partner-2 registered the same account). partner-2 has its
+   * own open deal. Every assertion below says the same thing: a
+   * partner-audience answer is computed from partner-1's visible rows alone.
+   */
+  const scopedBook = makeProviderBook({
+    partnerManagers: [
+      { id: 'pm-1', name: 'J. Alvarez' },
+      { id: 'pm-2', name: 'R. Diaz' },
+    ],
+    partners: [
+      makePartner({ id: 'partner-1', partnerManagerId: 'pm-1' }),
+      makePartner({ id: 'partner-2', partnerManagerId: 'pm-2', name: 'Contoso Partners' }),
+    ],
+    opportunities: [
+      makeOpportunity({
+        id: 'opp-open',
+        partnerId: 'partner-1',
+        forecastedRevenue: 100_000,
+        createdAt: '2026-08-03T00:00:00Z',
+        expectedCloseDate: '2026-10-15T00:00:00Z',
+      }),
+      makeOpportunity({
+        id: 'opp-sell-to',
+        partnerId: 'partner-1',
+        accountName: 'Northwind Systems',
+        oppType: 'sell-to',
+        forecastedRevenue: 50_000,
+        createdAt: '2026-08-03T00:00:00Z',
+        expectedCloseDate: '2026-10-15T00:00:00Z',
+      }),
+      makeOpportunity({
+        id: 'opp-other',
+        partnerId: 'partner-2',
+        accountName: 'Contoso Only Deal',
+        forecastedRevenue: 999_000,
+        createdAt: '2026-08-03T00:00:00Z',
+        expectedCloseDate: '2026-10-15T00:00:00Z',
+      }),
+    ],
+    registrations: [
+      makeRegistration({
+        id: 'reg-conflict',
+        partnerId: 'partner-1',
+        accountName: 'Shared Account',
+      }),
+      makeRegistration({
+        id: 'reg-other-side',
+        partnerId: 'partner-2',
+        accountName: 'Shared Account',
+      }),
+      makeRegistration({ id: 'reg-clean', partnerId: 'partner-1', accountName: 'Clean Account' }),
+      makeRegistration({
+        id: 'reg-other',
+        partnerId: 'partner-2',
+        accountName: 'Contoso Only Deal',
+      }),
+    ],
+    targets: [
+      makeTarget({ partnerId: 'partner-1', quarter, revenueTarget: 100_000 }),
+      makeTarget({ partnerId: 'partner-2', quarter, revenueTarget: 300_000 }),
+    ],
+    activities: [],
+    certifications: [
+      {
+        partnerId: 'partner-1',
+        partnerStrategistsCertified: 1,
+        partnerStrategistsGoal: 2,
+        partnerEngineersCertified: 0,
+        partnerEngineersGoal: 1,
+      },
+    ],
+    teamUsers: [makeTeamUser()],
+  });
+  const scopedProvider = new MockDataProvider(scopedBook);
+  const partnerScope = { audience: 'partner', partnerId: 'partner-1' } as const;
+
+  it('scopes every legacy collection before it crosses the seam', async () => {
+    expect((await scopedProvider.listPartners(partnerScope)).map((p) => p.id)).toEqual([
+      'partner-1',
+    ]);
+    expect((await scopedProvider.listOpportunities(partnerScope)).map((o) => o.id)).toEqual([
+      'opp-open',
+    ]);
+    // The conflict drops on BOTH sides of it; the clean registration stays.
+    expect((await scopedProvider.listRegistrations(partnerScope)).map((r) => r.id)).toEqual([
+      'reg-clean',
+    ]);
+    expect((await scopedProvider.getTargets(partnerScope)).map((t) => t.partnerId)).toEqual([
+      'partner-1',
+    ]);
+    expect((await scopedProvider.listCertifications(partnerScope)).map((c) => c.partnerId)).toEqual(
+      ['partner-1'],
+    );
+    // The internal directories: empty for a partner audience.
+    expect(await scopedProvider.listPartnerManagers(partnerScope)).toEqual([]);
+    expect(await scopedProvider.listTeamUsers(partnerScope)).toEqual([]);
+  });
+
+  it('computes the summary from the scoped rows, before aggregation', async () => {
+    const { data: scoped } = await scopedProvider.getForecastSummary(partnerScope, { quarter });
+    // 100k open over a 100k target; the 999k other-partner deal and the 50k
+    // Sell To deal cannot move a single figure.
+    expect(scoped.openPipelineValue).toBe(100_000);
+    expect(scoped.openCount).toBe(1);
+    expect(scoped.target).toBe(100_000);
+
+    const { data: org } = await scopedProvider.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter });
+    expect(org.openPipelineValue).toBe(1_149_000);
+    expect(org.target).toBe(400_000);
+  });
+
+  it('paginates only scoped rows: the page total is the scoped count', async () => {
+    const { data: page } = await scopedProvider.listQuarterOpportunities(
+      partnerScope,
+      { quarter },
+      { limit: 25 },
+    );
+    expect(page.totalCount).toBe(1);
+    expect(page.rows.map((row) => row.id)).toEqual(['opp-open']);
+    expect(page.nextCursor).toBeUndefined();
+  });
+
+  it('returns a one-entry directory and no manager groups for a partner audience', async () => {
+    const { data: directory } = await scopedProvider.getPartnerDirectory(partnerScope);
+    expect(directory).toEqual([{ id: 'partner-1', name: 'Northwind Systems' }]);
+    const { data: groups } = await scopedProvider.getManagerForecastGroups(partnerScope, {
+      quarter,
+    });
+    expect(groups).toEqual([]);
+  });
+
+  it('scopes the weekly series to the partner’s own opportunity history', async () => {
+    const withHistory = new MockDataProvider({
+      ...scopedBook,
+      snapshots: [
+        {
+          takenAt: '2026-09-07T00:00:00.000Z',
+          opportunityId: 'opp-open',
+          forecastedRevenue: 80_000,
+          forecastCategory: 'pipeline',
+          stage: 'scope',
+          expectedCloseDate: '2026-10-15T00:00:00Z',
+        },
+        {
+          takenAt: '2026-09-07T00:00:00.000Z',
+          opportunityId: 'opp-other',
+          forecastedRevenue: 999_000,
+          forecastCategory: 'commit',
+          stage: 'deal-desk-review',
+          expectedCloseDate: '2026-10-15T00:00:00Z',
+        },
+      ],
+    });
+    const { data: scopedWeeks } = await withHistory.getWeeklyForecastSeries(partnerScope, {
+      quarter,
+    });
+    const { data: orgWeeks } = await withHistory.getWeeklyForecastSeries(INTERNAL_DEMO_SCOPE, {
+      quarter,
+    });
+    // The recorded week carries only partner-1's 80k, never the other
+    // partner's 999k; the org view carries both.
+    const scopedRecorded = scopedWeeks.find((week) => week.recordedAt !== undefined);
+    const orgRecorded = orgWeeks.find((week) => week.recordedAt !== undefined);
+    expect(scopedRecorded?.total).toBe(80_000);
+    expect(orgRecorded?.total).toBe(1_079_000);
+  });
+
+  it('answers an unknown partner with empty collections, never the book', async () => {
+    const nobody = { audience: 'partner', partnerId: 'partner-absent' } as const;
+    expect(await scopedProvider.listPartners(nobody)).toEqual([]);
+    expect(await scopedProvider.listOpportunities(nobody)).toEqual([]);
+    const { data: summary } = await scopedProvider.getForecastSummary(nobody, { quarter });
+    expect(summary.openPipelineValue).toBe(0);
+    expect(summary.openCount).toBe(0);
+    const { data: directory } = await scopedProvider.getPartnerDirectory(nobody);
+    expect(directory).toEqual([]);
+  });
+
+  it('no partner-audience answer carries another partner’s identifiers anywhere inside it', async () => {
+    const answers = await Promise.all([
+      scopedProvider.listPartners(partnerScope),
+      scopedProvider.listOpportunities(partnerScope),
+      scopedProvider.listRegistrations(partnerScope),
+      scopedProvider.getTargets(partnerScope),
+      scopedProvider.listActivities(partnerScope),
+      scopedProvider.listCertifications(partnerScope),
+      scopedProvider.getForecastSummary(partnerScope, { quarter }),
+      scopedProvider.getWeightedForecast(partnerScope, { quarter }),
+      scopedProvider.getForecastQuality(partnerScope, { quarter }, 3),
+      scopedProvider.getManagerForecastGroups(partnerScope, { quarter }),
+      scopedProvider.listQuarterOpportunities(partnerScope, { quarter }, { limit: 25 }),
+      scopedProvider.getPartnerDirectory(partnerScope),
+    ]);
+    // A serialization scan: partner-2's id, name, and exclusive account name
+    // must appear nowhere in any answer, nested or not.
+    const serialized = JSON.stringify(answers);
+    expect(serialized).not.toContain('partner-2');
+    expect(serialized).not.toContain('Contoso');
+    expect(serialized).not.toContain('opp-other');
+    expect(serialized).not.toContain('opp-sell-to');
+    expect(serialized).not.toContain('reg-conflict');
+    expect(serialized).not.toContain('reg-other-side');
   });
 });

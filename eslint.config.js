@@ -181,4 +181,28 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // The source adapters in src/data/normalizers model other systems'
+    // payloads — CRM `__c` custom fields, PRM snake_case. Those keys are the
+    // contract under validation; renaming them to our conventions would
+    // misdescribe the wire shape. Everything else in the directory follows
+    // the project conventions unchanged.
+    files: ['src/data/normalizers/**'],
+    rules: {
+      '@typescript-eslint/naming-convention': [
+        'error',
+        { selector: 'default', format: ['camelCase'] },
+        { selector: 'import', format: ['camelCase', 'PascalCase'] },
+        {
+          selector: 'variable',
+          modifiers: ['const'],
+          format: ['camelCase', 'PascalCase', 'UPPER_CASE'],
+        },
+        { selector: 'function', format: ['camelCase', 'PascalCase'] },
+        { selector: 'parameter', format: ['camelCase', 'PascalCase'], leadingUnderscore: 'allow' },
+        { selector: 'typeLike', format: ['PascalCase'] },
+        { selector: 'property', format: null },
+      ],
+    },
+  },
 );

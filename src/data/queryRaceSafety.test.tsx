@@ -11,6 +11,7 @@ import type { PartnerRef } from './DataProvider';
 import { useDashboardData } from './useDashboardData';
 import { useForecastSummary, useManagerBook, usePartnerNames } from './useForecastQueries';
 import { makeOpportunity, makePartner, makeProviderBook } from '../test/fixtures';
+import { INTERNAL_DEMO_SCOPE } from './accessScope';
 
 /**
  * VAL-RES-002: abort and generation checks reject obsolete results.
@@ -56,11 +57,11 @@ async function directoryResult(partners: PartnerRef[]) {
 /** An aggregates-serving provider whose summary carries a visible tag. */
 function taggedAggregatesProvider(tag: number, gate?: () => Promise<unknown>): DataProvider {
   return stubProvider({
-    getForecastSummary: async (scope) => {
+    getForecastSummary: async (_access, scope) => {
       if (gate) await gate();
       const { data: base, meta } = await new MockDataProvider(
         makeProviderBook(),
-      ).getForecastSummary(scope);
+      ).getForecastSummary(INTERNAL_DEMO_SCOPE, scope);
       return { data: { ...base, openPipelineValue: tag }, meta };
     },
   });
@@ -81,7 +82,8 @@ describe('VAL-RES-002 query race safety', () => {
       });
 
       const { result, rerender } = renderHook(
-        ({ provider }: { provider: DataProvider }) => useDashboardData(provider),
+        ({ provider }: { provider: DataProvider }) =>
+          useDashboardData(provider, INTERNAL_DEMO_SCOPE),
         { initialProps: { provider: first } },
       );
       await waitFor(() => expect(result.current.data).not.toBeNull());
@@ -113,7 +115,8 @@ describe('VAL-RES-002 query race safety', () => {
       });
 
       const { result, rerender } = renderHook(
-        ({ provider }: { provider: DataProvider }) => useDashboardData(provider),
+        ({ provider }: { provider: DataProvider }) =>
+          useDashboardData(provider, INTERNAL_DEMO_SCOPE),
         { initialProps: { provider: slow } },
       );
       // Swap before the first answer exists at all, then let the loser land.
@@ -138,7 +141,8 @@ describe('VAL-RES-002 query race safety', () => {
       const healthy = stubProvider();
 
       const { result, rerender } = renderHook(
-        ({ provider }: { provider: DataProvider }) => useDashboardData(provider),
+        ({ provider }: { provider: DataProvider }) =>
+          useDashboardData(provider, INTERNAL_DEMO_SCOPE),
         { initialProps: { provider: failing } },
       );
       rerender({ provider: healthy });
@@ -161,7 +165,8 @@ describe('VAL-RES-002 query race safety', () => {
       const second = taggedAggregatesProvider(222, () => secondGate.promise);
 
       const { result, rerender } = renderHook(
-        ({ provider }: { provider: DataProvider }) => useForecastSummary(provider, baseScope),
+        ({ provider }: { provider: DataProvider }) =>
+          useForecastSummary(provider, INTERNAL_DEMO_SCOPE, baseScope),
         { initialProps: { provider: first } },
       );
       await waitFor(() => expect(result.current.data?.openPipelineValue).toBe(111));
@@ -182,11 +187,11 @@ describe('VAL-RES-002 query race safety', () => {
       const refreshGate = deferred<unknown>();
       let calls = 0;
       const first = stubProvider({
-        getForecastSummary: async (scope) => {
+        getForecastSummary: async (_access, scope) => {
           calls += 1;
           const { data: base, meta } = await new MockDataProvider(
             makeProviderBook(),
-          ).getForecastSummary(scope);
+          ).getForecastSummary(INTERNAL_DEMO_SCOPE, scope);
           // The first load lands immediately; the refresh waits on the gate.
           if (calls > 1) await refreshGate.promise;
           return { data: { ...base, openPipelineValue: 100 + calls }, meta };
@@ -196,7 +201,7 @@ describe('VAL-RES-002 query race safety', () => {
 
       const { result, rerender } = renderHook(
         ({ provider, scope }: { provider: DataProvider; scope: ForecastScope }) =>
-          useForecastSummary(provider, scope),
+          useForecastSummary(provider, INTERNAL_DEMO_SCOPE, scope),
         { initialProps: { provider: first, scope: baseScope } },
       );
       await waitFor(() => expect(result.current.data?.openPipelineValue).toBe(101));
@@ -237,7 +242,8 @@ describe('VAL-RES-002 query race safety', () => {
       });
 
       const { result, rerender } = renderHook(
-        ({ provider }: { provider: DataProvider }) => usePartnerNames(provider),
+        ({ provider }: { provider: DataProvider }) =>
+          usePartnerNames(provider, INTERNAL_DEMO_SCOPE),
         { initialProps: { provider: first } },
       );
       await waitFor(() => expect(result.current.names['partner-1']).toBe('FIRST partner'));
@@ -276,17 +282,21 @@ describe('VAL-RES-002 query race safety', () => {
     it("never shows one manager's rows under another manager while the page loads", async () => {
       const gates = new Map<string, ReturnType<typeof deferred<void>>>();
       const provider = stubProvider({
-        listQuarterOpportunities: async (scope, page) => {
+        listQuarterOpportunities: async (_access, scope, page) => {
           const gate = deferred<void>();
           gates.set(scope.partnerManagerId ?? 'none', gate);
           await gate.promise;
-          return new MockDataProvider(book).listQuarterOpportunities(scope, page);
+          return new MockDataProvider(book).listQuarterOpportunities(
+            INTERNAL_DEMO_SCOPE,
+            scope,
+            page,
+          );
         },
       });
 
       const { result, rerender } = renderHook(
         ({ managerId }: { managerId: string | null }) =>
-          useManagerBook(provider, baseScope, managerId, 1),
+          useManagerBook(provider, INTERNAL_DEMO_SCOPE, baseScope, managerId, 1),
         { initialProps: { managerId: 'pm-1' } },
       );
       await act(async () => {
@@ -311,27 +321,27 @@ describe('VAL-RES-002 query race safety', () => {
     it('drops a page that arrives after the provider changed', async () => {
       const firstGate = deferred<void>();
       const first = stubProvider({
-        listQuarterOpportunities: async (scope, page) => {
+        listQuarterOpportunities: async (_access, scope, page) => {
           await firstGate.promise;
           return new MockDataProvider(
             makeProviderBook({
               opportunities: [makeOpportunity({ id: 'first-provider-opp' })],
             }),
-          ).listQuarterOpportunities(scope, page);
+          ).listQuarterOpportunities(INTERNAL_DEMO_SCOPE, scope, page);
         },
       });
       const second = stubProvider({
-        listQuarterOpportunities: async (scope, page) =>
+        listQuarterOpportunities: async (_access, scope, page) =>
           new MockDataProvider(
             makeProviderBook({
               opportunities: [makeOpportunity({ id: 'second-provider-opp' })],
             }),
-          ).listQuarterOpportunities(scope, page),
+          ).listQuarterOpportunities(INTERNAL_DEMO_SCOPE, scope, page),
       });
 
       const { result, rerender } = renderHook(
         ({ provider }: { provider: DataProvider }) =>
-          useManagerBook(provider, baseScope, 'pm-1', 5),
+          useManagerBook(provider, INTERNAL_DEMO_SCOPE, baseScope, 'pm-1', 5),
         { initialProps: { provider: first } },
       );
 
@@ -360,13 +370,13 @@ describe('VAL-RES-002 query race safety', () => {
       const gate = deferred<void>();
       const contexts: QueryContext[] = [];
       const provider = stubProvider({
-        getPartnerDirectory: async (context) => {
+        getPartnerDirectory: async (_access, context) => {
           if (context !== undefined) contexts.push(context);
           await gate.promise;
           return directoryResult([{ id: 'partner-1', name: 'STALE directory' }]);
         },
       });
-      const { result, unmount } = renderHook(() => usePartnerNames(provider));
+      const { result, unmount } = renderHook(() => usePartnerNames(provider, INTERNAL_DEMO_SCOPE));
       await waitFor(() => expect(contexts).toHaveLength(1));
       unmount();
       expect(contexts[0]?.signal?.aborted).toBe(true);

@@ -4,6 +4,7 @@ import { useDashboardData } from './useDashboardData';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { makeProviderBook } from '../test/fixtures';
+import { INTERNAL_DEMO_SCOPE } from './accessScope';
 
 /**
  * A provider whose every method resolves from one in-memory book. The real
@@ -17,7 +18,7 @@ function stubProvider(overrides: Partial<DataProvider> = {}): DataProvider {
 describe('useDashboardData', () => {
   it('starts loading with no data', () => {
     const provider = stubProvider();
-    const { result } = renderHook(() => useDashboardData(provider));
+    const { result } = renderHook(() => useDashboardData(provider, INTERNAL_DEMO_SCOPE));
     expect(result.current).toMatchObject({ loading: true, data: null, error: null });
   });
 
@@ -27,7 +28,7 @@ describe('useDashboardData', () => {
     // and the hook refetches forever. App is what keeps this stable — it
     // memoises the provider — so the harness has to as well.
     const provider = stubProvider();
-    const { result } = renderHook(() => useDashboardData(provider));
+    const { result } = renderHook(() => useDashboardData(provider, INTERNAL_DEMO_SCOPE));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -51,7 +52,7 @@ describe('useDashboardData', () => {
         throw new Error('RAW SENTINEL: Salesforce query timed out at soql/page/7');
       },
     });
-    const { result } = renderHook(() => useDashboardData(provider));
+    const { result } = renderHook(() => useDashboardData(provider, INTERNAL_DEMO_SCOPE));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -66,7 +67,7 @@ describe('useDashboardData', () => {
         throw 'no session';
       },
     });
-    const { result } = renderHook(() => useDashboardData(provider));
+    const { result } = renderHook(() => useDashboardData(provider, INTERNAL_DEMO_SCOPE));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error).toBe('Failed to load dashboard data');
@@ -85,7 +86,7 @@ describe('useDashboardData', () => {
     const healthy = stubProvider();
 
     const { result, rerender } = renderHook(
-      ({ provider }: { provider: DataProvider }) => useDashboardData(provider),
+      ({ provider }: { provider: DataProvider }) => useDashboardData(provider, INTERNAL_DEMO_SCOPE),
       { initialProps: { provider: flaky } },
     );
     await waitFor(() => expect(result.current.error).not.toBeNull());
@@ -106,7 +107,7 @@ describe('useDashboardData', () => {
         return makeProviderBook().opportunities;
       },
     });
-    const { result } = renderHook(() => useDashboardData(provider));
+    const { result } = renderHook(() => useDashboardData(provider, INTERNAL_DEMO_SCOPE));
 
     await waitFor(() => expect(result.current.error).toBe('Failed to load dashboard data'));
     // The raw provider prose never reaches the state the views render.
@@ -138,7 +139,7 @@ describe('useDashboardData', () => {
       },
     });
 
-    const { unmount } = renderHook(() => useDashboardData(provider));
+    const { unmount } = renderHook(() => useDashboardData(provider, INTERNAL_DEMO_SCOPE));
 
     unmount();
     release();

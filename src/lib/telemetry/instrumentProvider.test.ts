@@ -7,6 +7,7 @@ import type { MetricAttributes } from './metrics';
 import { instrumentProvider, type ProviderTelemetry } from './instrumentProvider';
 import type { SpanAttributes } from './trace';
 import { createTelemetry } from './telemetry';
+import { INTERNAL_DEMO_SCOPE } from '../../data/accessScope';
 
 interface Observed {
   spans: Array<{ name: string; attributes: SpanAttributes }>;
@@ -88,9 +89,12 @@ describe('instrumentProvider proxying', () => {
     const inner = new MockDataProvider();
     const provider = instrumentProvider(inner, 'local');
 
-    const [wrapped, direct] = await Promise.all([provider.listPartners(), inner.listPartners()]);
+    const [wrapped, direct] = await Promise.all([
+      provider.listPartners(INTERNAL_DEMO_SCOPE),
+      inner.listPartners(INTERNAL_DEMO_SCOPE),
+    ]);
 
-    expect(wrapped).toBe(direct);
+    expect(wrapped).toStrictEqual(direct);
   });
 });
 
@@ -99,7 +103,7 @@ describe('instrumentProvider on a successful call', () => {
     const { client, seen } = observingClient();
     const provider = instrumentProvider(new MockDataProvider(), 'remote', client);
 
-    await provider.getPartnerDirectory();
+    await provider.getPartnerDirectory(INTERNAL_DEMO_SCOPE);
 
     expect(seen.spans).toEqual([
       {
@@ -121,7 +125,9 @@ describe('instrumentProvider on a successful call', () => {
     const { client, seen } = observingClient();
     const provider = instrumentProvider(new MockDataProvider(), 'scaled', client);
 
-    const { data: summary } = await provider.getForecastSummary({ quarter: 'FY27-Q3' });
+    const { data: summary } = await provider.getForecastSummary(INTERNAL_DEMO_SCOPE, {
+      quarter: 'FY27-Q3',
+    });
 
     expect(summary).toHaveProperty('openPipelineValue');
     expect(summary).toHaveProperty('daysLeftInQuarter');
@@ -138,7 +144,7 @@ describe('instrumentProvider on a failing call', () => {
     };
     const provider = instrumentProvider(failing, 'remote', client);
 
-    await expect(provider.getTargets()).rejects.toThrow('targets wire is down');
+    await expect(provider.getTargets(INTERNAL_DEMO_SCOPE)).rejects.toThrow('targets wire is down');
 
     expect(seen.counters).toEqual([
       {
@@ -171,7 +177,9 @@ describe('instrumentProvider on a failing call', () => {
     };
     const provider = instrumentProvider(cancelling, 'remote', client);
 
-    await expect(provider.getTargets()).rejects.toThrow('The operation was aborted');
+    await expect(provider.getTargets(INTERNAL_DEMO_SCOPE)).rejects.toThrow(
+      'The operation was aborted',
+    );
 
     expect(seen.counters).toEqual([
       {
@@ -190,7 +198,7 @@ describe('instrumentProvider on a failing call', () => {
     const provider = instrumentProvider(new MockDataProvider(), 'local', client);
     setFlagOverride('telemetry.enabled', false);
 
-    const partners = await provider.listPartners();
+    const partners = await provider.listPartners(INTERNAL_DEMO_SCOPE);
 
     expect(partners.length).toBeGreaterThan(0);
     expect(seen.spans).toEqual([]);
@@ -221,7 +229,7 @@ describe('instrumentProvider against the real facade', () => {
     try {
       const provider: DataProvider = instrumentProvider(new MockDataProvider(), 'local', real);
 
-      await provider.listCertifications();
+      await provider.listCertifications(INTERNAL_DEMO_SCOPE);
       await real.flush();
 
       const batch = collected[0] as {

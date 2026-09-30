@@ -3,6 +3,7 @@ import { makeProviderBook } from '../test/fixtures';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { TracedDataProvider } from './TracedDataProvider';
+import { INTERNAL_DEMO_SCOPE } from './accessScope';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -14,10 +15,10 @@ describe('TracedDataProvider', () => {
     const call = vi.spyOn(inner, 'listPartners');
     const provider = new TracedDataProvider(inner);
 
-    await provider.listPartners();
+    await provider.listPartners(INTERNAL_DEMO_SCOPE);
 
     expect(call).toHaveBeenCalledOnce();
-    const trace = call.mock.calls[0]?.[0]?.trace;
+    const trace = call.mock.calls[0]?.[1]?.trace;
     expect(trace).toMatchObject({
       traceId: expect.stringMatching(/^[0-9a-f]{32}$/),
       spanId: expect.stringMatching(/^[0-9a-f]{16}$/),
@@ -36,16 +37,20 @@ describe('TracedDataProvider', () => {
     const provider = new TracedDataProvider(inner);
     const controller = new AbortController();
 
-    await provider.getForecastSummary({ quarter: 'FY27-Q3' }, { signal: controller.signal });
+    await provider.getForecastSummary(
+      INTERNAL_DEMO_SCOPE,
+      { quarter: 'FY27-Q3' },
+      { signal: controller.signal },
+    );
 
-    const context = call.mock.calls[0]?.[1];
+    const context = call.mock.calls[0]?.[2];
     expect(context?.signal).toBe(controller.signal);
     expect(context?.trace?.headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
   });
 
   it('returns the underlying answer unchanged', async () => {
     const provider = new TracedDataProvider(new MockDataProvider(makeProviderBook()));
-    const { data, meta } = await provider.getPartnerDirectory();
+    const { data, meta } = await provider.getPartnerDirectory(INTERNAL_DEMO_SCOPE);
     expect(data).toEqual([{ id: 'partner-1', name: 'Northwind Systems' }]);
     expect(meta.providerId).toBe('local');
   });
@@ -57,6 +62,6 @@ describe('TracedDataProvider', () => {
     vi.spyOn(inner, 'getTargets').mockRejectedValue(failure);
     const provider = new TracedDataProvider(inner);
 
-    await expect(provider.getTargets()).rejects.toBe(failure);
+    await expect(provider.getTargets(INTERNAL_DEMO_SCOPE)).rejects.toBe(failure);
   });
 });

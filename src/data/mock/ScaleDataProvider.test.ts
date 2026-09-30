@@ -4,6 +4,7 @@ import { filterByPhase, phaseForQuarter } from '../../lib/metrics';
 import { MockDataProvider } from './MockDataProvider';
 import { DEFAULT_SCALE, ScaleDataProvider } from './ScaleDataProvider';
 import { generateDashboardData } from './generate';
+import { INTERNAL_DEMO_SCOPE } from '../accessScope';
 
 const quarter = CURRENT_FISCAL_QUARTER;
 const base = generateDashboardData();
@@ -35,8 +36,8 @@ describe('ScaleDataProvider', () => {
   });
 
   it('keeps every copy internally consistent', async () => {
-    const partners = await scaled.listPartners();
-    const opportunities = await scaled.listOpportunities();
+    const partners = await scaled.listPartners(INTERNAL_DEMO_SCOPE);
+    const opportunities = await scaled.listOpportunities(INTERNAL_DEMO_SCOPE);
     const snapshotRows = scaled.snapshotRows;
 
     expect(new Set(partners.map((partner) => partner.id)).size).toBe(partners.length);
@@ -52,25 +53,37 @@ describe('ScaleDataProvider', () => {
   });
 
   it('answers the scoped contract at the same size, and the legacy one at 5×', async () => {
-    const { data: weeks, meta } = await scaled.getWeeklyForecastSeries({ quarter });
-    const { data: flatWeeks } = await flat.getWeeklyForecastSeries({ quarter });
+    const { data: weeks, meta } = await scaled.getWeeklyForecastSeries(INTERNAL_DEMO_SCOPE, {
+      quarter,
+    });
+    const { data: flatWeeks } = await flat.getWeeklyForecastSeries(INTERNAL_DEMO_SCOPE, {
+      quarter,
+    });
     expect(weeks.length).toBe(flatWeeks.length);
 
-    const { data: page } = await scaled.listQuarterOpportunities({ quarter }, { limit: 25 });
+    const { data: page } = await scaled.listQuarterOpportunities(
+      INTERNAL_DEMO_SCOPE,
+      { quarter },
+      { limit: 25 },
+    );
     expect(page.rows).toHaveLength(25);
     expect(page.totalCount).toBe(
       filterByPhase(base.opportunities, phaseForQuarter(quarter)).length * SCALE,
     );
 
-    const { data: summary } = await scaled.getForecastSummary({ quarter });
-    const { data: flatSummary } = await flat.getForecastSummary({ quarter });
+    const { data: summary } = await scaled.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter });
+    const { data: flatSummary } = await flat.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter });
     expect(summary.openCount).toBe(flatSummary.openCount * SCALE);
     expect(summary.openPipelineValue).toBe(flatSummary.openPipelineValue * SCALE);
     // The 5× book is a different answer, and the envelope says so.
     expect(meta.providerId).toBe('scaled');
 
-    expect((await scaled.listOpportunities()).length).toBe(base.opportunities.length * SCALE);
-    expect((await scaled.listPartners()).length).toBe(base.partners.length * SCALE);
+    expect((await scaled.listOpportunities(INTERNAL_DEMO_SCOPE)).length).toBe(
+      base.opportunities.length * SCALE,
+    );
+    expect((await scaled.listPartners(INTERNAL_DEMO_SCOPE)).length).toBe(
+      base.partners.length * SCALE,
+    );
   });
 
   it('defaults to the multiple the demo advertises', () => {
@@ -81,6 +94,8 @@ describe('ScaleDataProvider', () => {
     const one = new ScaleDataProvider(1, base);
     expect(one.size.opportunities).toBe(base.opportunities.length);
     expect(one.size.snapshots).toBe(base.snapshots.length);
-    expect((await one.listOpportunities())[0]?.id).toBe(base.opportunities[0]?.id);
+    expect((await one.listOpportunities(INTERNAL_DEMO_SCOPE))[0]?.id).toBe(
+      base.opportunities[0]?.id,
+    );
   });
 });

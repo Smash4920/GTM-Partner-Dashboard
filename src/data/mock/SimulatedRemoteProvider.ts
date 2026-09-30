@@ -10,6 +10,7 @@ import type {
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from '../DataProvider';
+import type { DemoAccessScope } from '../accessScope';
 import type { QueryContext } from '../queryContext';
 import type { QueryResult } from '../queryMetadata';
 import { abortableDelay, throwIfAborted } from '../../lib/abort';
@@ -208,47 +209,63 @@ export class SimulatedRemoteProvider implements DataProvider {
 
   // ---- the shape being retired --------------------------------------------
 
-  async listPartnerManagers(context?: QueryContext): Promise<PartnerManager[]> {
+  async listPartnerManagers(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<PartnerManager[]> {
     return this.roundTrip('listPartnerManagers', context?.signal, () =>
-      this.inner.listPartnerManagers(context),
+      this.inner.listPartnerManagers(access, context),
     );
   }
 
-  async listPartners(context?: QueryContext): Promise<Partner[]> {
-    return this.roundTrip('listPartners', context?.signal, () => this.inner.listPartners(context));
+  async listPartners(access: DemoAccessScope, context?: QueryContext): Promise<Partner[]> {
+    return this.roundTrip('listPartners', context?.signal, () =>
+      this.inner.listPartners(access, context),
+    );
   }
 
-  async listRegistrations(context?: QueryContext): Promise<DealRegistration[]> {
+  async listRegistrations(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<DealRegistration[]> {
     return this.roundTrip('listRegistrations', context?.signal, () =>
-      this.inner.listRegistrations(context),
+      this.inner.listRegistrations(access, context),
     );
   }
 
-  async listOpportunities(context?: QueryContext): Promise<Opportunity[]> {
+  async listOpportunities(access: DemoAccessScope, context?: QueryContext): Promise<Opportunity[]> {
     return this.roundTrip('listOpportunities', context?.signal, () =>
-      this.inner.listOpportunities(context),
+      this.inner.listOpportunities(access, context),
     );
   }
 
-  async getTargets(context?: QueryContext): Promise<Target[]> {
-    return this.roundTrip('getTargets', context?.signal, () => this.inner.getTargets(context));
+  async getTargets(access: DemoAccessScope, context?: QueryContext): Promise<Target[]> {
+    return this.roundTrip('getTargets', context?.signal, () =>
+      this.inner.getTargets(access, context),
+    );
   }
 
-  async listActivities(context?: QueryContext): Promise<ActivityMeeting[]> {
+  async listActivities(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<ActivityMeeting[]> {
     return this.roundTrip('listActivities', context?.signal, () =>
-      this.inner.listActivities(context),
+      this.inner.listActivities(access, context),
     );
   }
 
-  async listCertifications(context?: QueryContext): Promise<PartnerCertification[]> {
+  async listCertifications(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<PartnerCertification[]> {
     return this.roundTrip('listCertifications', context?.signal, () =>
-      this.inner.listCertifications(context),
+      this.inner.listCertifications(access, context),
     );
   }
 
-  async listTeamUsers(context?: QueryContext): Promise<TeamUser[]> {
+  async listTeamUsers(access: DemoAccessScope, context?: QueryContext): Promise<TeamUser[]> {
     return this.roundTrip('listTeamUsers', context?.signal, () =>
-      this.inner.listTeamUsers(context),
+      this.inner.listTeamUsers(access, context),
     );
   }
 
@@ -266,77 +283,86 @@ export class SimulatedRemoteProvider implements DataProvider {
   }
 
   async getForecastSummary(
+    access: DemoAccessScope,
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<ForecastSummary>> {
     return this.stamp(
       this.roundTrip('getForecastSummary', context?.signal, () =>
-        this.inner.getForecastSummary(scope, context),
+        this.inner.getForecastSummary(access, scope, context),
       ),
     );
   }
 
   async getWeightedForecast(
+    access: DemoAccessScope,
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<WeightedForecastSummary>> {
     return this.stamp(
       this.roundTrip('getWeightedForecast', context?.signal, () =>
-        this.inner.getWeightedForecast(scope, context),
+        this.inner.getWeightedForecast(access, scope, context),
       ),
     );
   }
 
   async getForecastQuality(
+    access: DemoAccessScope,
     scope: ForecastScope,
     sampleSize: number,
     context?: QueryContext,
   ): Promise<QueryResult<ForecastQualitySummary>> {
     return this.stamp(
       this.roundTrip('getForecastQuality', context?.signal, () =>
-        this.inner.getForecastQuality(scope, sampleSize, context),
+        this.inner.getForecastQuality(access, scope, sampleSize, context),
       ),
     );
   }
 
   async getManagerForecastGroups(
+    access: DemoAccessScope,
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<ManagerForecastGroup[]>> {
     return this.stamp(
       this.roundTrip('getManagerForecastGroups', context?.signal, () =>
-        this.inner.getManagerForecastGroups(scope, context),
+        this.inner.getManagerForecastGroups(access, scope, context),
       ),
     );
   }
 
   async getWeeklyForecastSeries(
+    access: DemoAccessScope,
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<WeeklySeriesRow[]>> {
     return this.stamp(
       this.roundTrip('getWeeklyForecastSeries', context?.signal, () =>
-        this.inner.getWeeklyForecastSeries(scope, context),
+        this.inner.getWeeklyForecastSeries(access, scope, context),
       ),
     );
   }
 
   async listQuarterOpportunities(
+    access: DemoAccessScope,
     scope: ForecastScope,
     page: PageRequest,
     context?: QueryContext,
   ): Promise<QueryResult<Page<Opportunity>>> {
     return this.stamp(
       this.roundTrip('listQuarterOpportunities', context?.signal, () =>
-        this.inner.listQuarterOpportunities(scope, page, context),
+        this.inner.listQuarterOpportunities(access, scope, page, context),
       ),
     );
   }
 
-  async getPartnerDirectory(context?: QueryContext): Promise<QueryResult<PartnerRef[]>> {
+  async getPartnerDirectory(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerRef[]>> {
     return this.stamp(
       this.roundTrip('getPartnerDirectory', context?.signal, () =>
-        this.inner.getPartnerDirectory(context),
+        this.inner.getPartnerDirectory(access, context),
       ),
     );
   }

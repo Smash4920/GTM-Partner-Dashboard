@@ -238,7 +238,7 @@ describe('ForecastingView', () => {
     expect(within(await coverageTile()).getByText('$210K goal remaining')).toBeInTheDocument();
     expect(within(await closedWonTile()).getByText('$190K')).toBeInTheDocument();
     expect(within(await closedWonTile()).getByText('48% of Q3 goal')).toBeInTheDocument();
-    expect(summarySpy.mock.calls.at(-1)?.[0].partnerManagerId).toBeUndefined();
+    expect(summarySpy.mock.calls.at(-1)?.[1]?.partnerManagerId).toBeUndefined();
 
     // Selecting a manager re-asks the summary for that manager's partner
     // set: pm-2 alone is 300k target, 150k won, 90k open over a 150k gap.
@@ -247,13 +247,13 @@ describe('ForecastingView', () => {
     expect(within(await coverageTile()).getByText('$150K goal remaining')).toBeInTheDocument();
     expect(within(await closedWonTile()).getByText('$150K')).toBeInTheDocument();
     expect(within(await closedWonTile()).getByText('50% of Q3 goal')).toBeInTheDocument();
-    expect(summarySpy.mock.calls.at(-1)?.[0]).toMatchObject({ partnerManagerId: 'pm-2' });
+    expect(summarySpy.mock.calls.at(-1)?.[1]).toMatchObject({ partnerManagerId: 'pm-2' });
 
     // Switching back to all managers restores the organization scope.
     await user.selectOptions(screen.getByLabelText('Partner manager'), 'all');
     expect(await within(await coverageTile()).findByText('1.0x')).toBeInTheDocument();
     expect(within(await closedWonTile()).getByText('$190K')).toBeInTheDocument();
-    expect(summarySpy.mock.calls.at(-1)?.[0].partnerManagerId).toBeUndefined();
+    expect(summarySpy.mock.calls.at(-1)?.[1]?.partnerManagerId).toBeUndefined();
   });
 
   it('shows the session override in the row while the aggregates catch up', async () => {
@@ -498,10 +498,10 @@ describe('ForecastingView', () => {
     let failPm2 = true;
     const bookSpy = vi
       .spyOn(provider, 'listQuarterOpportunities')
-      .mockImplementation((scope, page) =>
+      .mockImplementation((access, scope, page) =>
         failPm2 && scope.partnerManagerId === 'pm-2'
           ? Promise.reject(new Error('RAW SENTINEL: book store internal detail'))
-          : real(scope, page),
+          : real(access, scope, page),
       );
 
     renderView({ provider });
@@ -519,7 +519,7 @@ describe('ForecastingView', () => {
     await user.click(screen.getByRole('button', { name: 'Retry this manager’s book' }));
     expect(await screen.findByText('Showing 1 of 1')).toBeInTheDocument();
     // The failed manager retried alone: pm-1's book was never refetched.
-    const pm1Calls = bookSpy.mock.calls.filter(([scope]) => scope.partnerManagerId === 'pm-1');
+    const pm1Calls = bookSpy.mock.calls.filter(([, scope]) => scope.partnerManagerId === 'pm-1');
     expect(pm1Calls).toHaveLength(1);
     // The recovered book owns the focus: it landed on its named region, not
     // the document body.

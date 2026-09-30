@@ -14,6 +14,7 @@ import {
   useWeightedForecast,
 } from './useForecastQueries';
 import { makeOpportunity, makePartner, makeProviderBook } from '../test/fixtures';
+import { INTERNAL_DEMO_SCOPE } from './accessScope';
 
 const quarter = CURRENT_FISCAL_QUARTER;
 const baseScope: ForecastScope = { quarter, edits: NO_SESSION_EDITS };
@@ -24,12 +25,12 @@ const baseScope: ForecastScope = { quarter, edits: NO_SESSION_EDITS };
  */
 function useForecastWidgets(provider: InstanceType<typeof MockDataProvider>, scope: ForecastScope) {
   return {
-    summary: useForecastSummary(provider, scope),
-    weighted: useWeightedForecast(provider, scope),
-    quality: useForecastQuality(provider, scope),
-    groups: useManagerGroups(provider, scope),
-    weeks: useWeeklySeries(provider, scope),
-    directory: usePartnerNames(provider),
+    summary: useForecastSummary(provider, INTERNAL_DEMO_SCOPE, scope),
+    weighted: useWeightedForecast(provider, INTERNAL_DEMO_SCOPE, scope),
+    quality: useForecastQuality(provider, INTERNAL_DEMO_SCOPE, scope),
+    groups: useManagerGroups(provider, INTERNAL_DEMO_SCOPE, scope),
+    weeks: useWeeklySeries(provider, INTERNAL_DEMO_SCOPE, scope),
+    directory: usePartnerNames(provider, INTERNAL_DEMO_SCOPE),
   };
 }
 
@@ -98,12 +99,12 @@ describe('forecast widgets (VAL-RES-005)', () => {
     // quarter-level aggregates do not move.
     rerender({ scope: { ...baseScope, partnerManagerId: 'pm-1' } });
     await waitFor(() => expect(summarySpy.mock.calls.length).toBe(summaryCalls + 1));
-    expect(summarySpy.mock.calls.at(-1)?.[0]).toMatchObject({ partnerManagerId: 'pm-1' });
+    expect(summarySpy.mock.calls.at(-1)?.[1]).toMatchObject({ partnerManagerId: 'pm-1' });
     expect(weightedSpy.mock.calls.length).toBe(weightedCalls);
 
     rerender({ scope: baseScope });
     await waitFor(() => expect(summarySpy.mock.calls.length).toBe(summaryCalls + 2));
-    expect(summarySpy.mock.calls.at(-1)?.[0].partnerManagerId).toBeUndefined();
+    expect(summarySpy.mock.calls.at(-1)?.[1].partnerManagerId).toBeUndefined();
   });
 
   it('fails one widget without disturbing its siblings, and retry repeats only that query', async () => {
@@ -191,7 +192,7 @@ describe('forecast widgets (VAL-RES-005)', () => {
       };
     });
 
-    const { result } = renderHook(() => usePartnerNames(provider));
+    const { result } = renderHook(() => usePartnerNames(provider, INTERNAL_DEMO_SCOPE));
 
     await waitFor(() => expect(result.current.names['partner-1']).toBe('Northwind Systems'));
     expect(result.current.meta).toMatchObject({
@@ -216,7 +217,7 @@ describe('forecast widgets (VAL-RES-005)', () => {
     );
     const { result } = renderHook(() => ({
       widgets: useForecastWidgets(provider, baseScope),
-      book: useManagerBook(provider, baseScope, 'pm-1'),
+      book: useManagerBook(provider, INTERNAL_DEMO_SCOPE, baseScope, 'pm-1'),
     }));
 
     await waitFor(() => expect(result.current.book.error).not.toBeNull());
@@ -338,8 +339,8 @@ describe('useManagerBook edit scoping (two-manager matrix)', () => {
   function renderTwoBooks(provider: MockDataProvider) {
     return renderHook(
       ({ scope }: { scope: ForecastScope }) => ({
-        first: useManagerBook(provider, scope, 'pm-1', 2),
-        second: useManagerBook(provider, scope, 'pm-2', 2),
+        first: useManagerBook(provider, INTERNAL_DEMO_SCOPE, scope, 'pm-1', 2),
+        second: useManagerBook(provider, INTERNAL_DEMO_SCOPE, scope, 'pm-2', 2),
       }),
       { initialProps: { scope: baseScope } },
     );
@@ -358,8 +359,8 @@ describe('useManagerBook edit scoping (two-manager matrix)', () => {
       scope: { quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 9 } } },
     });
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
-    expect(spy.mock.calls[2]?.[0]).toMatchObject({ partnerManagerId: 'pm-1' });
-    expect(spy.mock.calls[2]?.[1]).toEqual({ limit: 2 });
+    expect(spy.mock.calls[2]?.[1]).toMatchObject({ partnerManagerId: 'pm-1' });
+    expect(spy.mock.calls[2]?.[2]).toEqual({ limit: 2 });
     await act(async () => {});
     expect(spy).toHaveBeenCalledTimes(3);
     expect(result.current.first.rows.find((row) => row.id === 'opp-1')?.forecastedRevenue).toBe(9);
@@ -378,7 +379,7 @@ describe('useManagerBook edit scoping (two-manager matrix)', () => {
       scope: { quarter, edits: { ...NO_SESSION_EDITS, forecastCalls: { 'opp-9': 'commit' } } },
     });
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
-    expect(spy.mock.calls[2]?.[0]).toMatchObject({ partnerManagerId: 'pm-2' });
+    expect(spy.mock.calls[2]?.[1]).toMatchObject({ partnerManagerId: 'pm-2' });
     await act(async () => {});
     expect(spy).toHaveBeenCalledTimes(3);
     expect(result.current.second.rows[0]?.forecastCategory).toBe('commit');
@@ -416,14 +417,18 @@ describe('useManagerBook', () => {
   it('fetches nothing until a group is expanded', async () => {
     const provider = new MockDataProvider(book);
     const spy = vi.spyOn(provider, 'listQuarterOpportunities');
-    const { result } = renderHook(() => useManagerBook(provider, baseScope, null));
+    const { result } = renderHook(() =>
+      useManagerBook(provider, INTERNAL_DEMO_SCOPE, baseScope, null),
+    );
     expect(spy).not.toHaveBeenCalled();
     expect(result.current).toMatchObject({ rows: [], totalCount: 0, loading: false });
   });
 
   it('walks the book a page at a time', async () => {
     const provider = new MockDataProvider(book);
-    const { result } = renderHook(() => useManagerBook(provider, baseScope, 'pm-1', 2));
+    const { result } = renderHook(() =>
+      useManagerBook(provider, INTERNAL_DEMO_SCOPE, baseScope, 'pm-1', 2),
+    );
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.totalCount).toBe(5);
@@ -446,7 +451,7 @@ describe('useManagerBook', () => {
     const provider = new MockDataProvider(book);
     const spy = vi.spyOn(provider, 'listQuarterOpportunities');
     const { result, rerender } = renderHook(
-      (scope: ForecastScope) => useManagerBook(provider, scope, 'pm-1', 2),
+      (scope: ForecastScope) => useManagerBook(provider, INTERNAL_DEMO_SCOPE, scope, 'pm-1', 2),
       { initialProps: baseScope },
     );
     await waitFor(() => expect(result.current.rows).toHaveLength(2));
@@ -456,7 +461,7 @@ describe('useManagerBook', () => {
     rerender({ quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 9 } } });
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
     // One window-sized request; the loaded pages stay on screen throughout.
-    expect(spy.mock.calls[2]?.[1]).toEqual({ limit: 4 });
+    expect(spy.mock.calls[2]?.[2]).toEqual({ limit: 4 });
     expect(result.current.rows).toHaveLength(4);
     expect(result.current.hasMore).toBe(true);
   });
@@ -465,7 +470,7 @@ describe('useManagerBook', () => {
     const provider = new MockDataProvider(book);
     const spy = vi.spyOn(provider, 'listQuarterOpportunities');
     const { result, rerender } = renderHook(
-      (scope: ForecastScope) => useManagerBook(provider, scope, 'pm-1', 2),
+      (scope: ForecastScope) => useManagerBook(provider, INTERNAL_DEMO_SCOPE, scope, 'pm-1', 2),
       { initialProps: baseScope },
     );
     await waitFor(() => expect(result.current.rows).toHaveLength(2));
@@ -481,7 +486,9 @@ describe('useManagerBook', () => {
     vi.spyOn(provider, 'listQuarterOpportunities').mockRejectedValueOnce(
       new Error('RAW SENTINEL: listQuarterOpportunities blew up internally'),
     );
-    const { result } = renderHook(() => useManagerBook(provider, baseScope, 'pm-1', 2));
+    const { result } = renderHook(() =>
+      useManagerBook(provider, INTERNAL_DEMO_SCOPE, baseScope, 'pm-1', 2),
+    );
 
     await waitFor(() => expect(result.current.error).not.toBeNull());
     // Stable operation-specific copy, never the rejection's own prose.
