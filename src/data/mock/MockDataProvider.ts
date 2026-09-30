@@ -13,6 +13,7 @@ import type {
 } from '../DataProvider';
 import { throwIfAborted } from '../../lib/abort';
 import {
+  demoScopeKey,
   scopeActivities,
   scopeCertifications,
   scopeOpportunities,
@@ -23,6 +24,7 @@ import {
   scopeTeamUsers,
 } from '../accessScope';
 import type { DemoAccessScope } from '../accessScope';
+import { paginateRows } from '../pagination';
 import type { QueryContext } from '../queryContext';
 import {
   buildQueryMeta,
@@ -400,6 +402,17 @@ export class MockDataProvider implements DataProvider {
     );
   }
 
+  /**
+   * The data epoch cursors are minted against. The mock's book is fixed at
+   * the snapshot date, so the epoch is the snapshot date; a provider whose
+   * data has moved on (a re-sync, a new recording) answers with a newer
+   * epoch, and every cursor minted against the older book expires as a
+   * typed error rather than silently marking a position in moved rows.
+   */
+  protected dataEpoch(): string {
+    return SNAPSHOT_DATE.toISOString();
+  }
+
   async listQuarterOpportunities(
     access: DemoAccessScope,
     scope: ForecastScope,
@@ -414,15 +427,20 @@ export class MockDataProvider implements DataProvider {
         ? a.id.localeCompare(b.id)
         : a.expectedCloseDate.localeCompare(b.expectedCloseDate),
     );
-    const offset = decodeCursor(page.cursor);
-    const rows = ordered.slice(offset, offset + page.limit);
-    const next = offset + rows.length;
     return queryResult(
-      {
-        rows,
-        totalCount: ordered.length,
-        ...(next < ordered.length ? { nextCursor: encodeCursor(next) } : {}),
-      },
+      paginateRows({
+        rows: ordered,
+        // The cursor is bound to the query's membership: the access scope,
+        // the quarter, and the manager decide WHICH rows belong, so a
+        // cursor minted under any other combination is foreign here. Edits
+        // are deliberately absent — they change what a row says, never
+        // which rows the book holds or how they are ordered, so a cursor
+        // survives the edit-driven window refresh.
+        queryKey: `listQuarterOpportunities|access:${demoScopeKey(access)}|quarter:${scope.quarter}|manager:${scope.partnerManagerId ?? 'all'}`,
+        asOf: this.dataEpoch(),
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
       this.meta(scope.edits),
     );
   }
@@ -442,19 +460,4 @@ export class MockDataProvider implements DataProvider {
       this.meta(undefined),
     );
   }
-}
-
-/**
- * Offsets, wrapped so callers cannot do arithmetic on them. A real provider
- * would encode a sort key here; treating the cursor as opaque from the start
- * means swapping to one changes nothing above this line.
- */
-function encodeCursor(offset: number): string {
-  return `offset:${offset}`;
-}
-
-function decodeCursor(cursor: string | undefined): number {
-  if (!cursor) return 0;
-  const offset = Number(cursor.slice('offset:'.length));
-  return Number.isInteger(offset) && offset >= 0 ? offset : 0;
 }

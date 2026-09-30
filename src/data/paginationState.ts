@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DataProvider, Page, PageRequest } from './DataProvider';
+import { MAX_PAGE_LIMIT } from './pagination';
 import type { QueryContext } from './queryContext';
 import type { QueryMeta, QueryResult } from './queryMetadata';
 import { stableFailureCopy } from './queryState';
@@ -16,9 +17,10 @@ import { stableFailureCopy } from './queryState';
  * - A failed page keeps the pages already loaded; `retry` then repeats the
  *   failed page request (same cursor), not the whole collection.
  * - A data-only change (an edit that cannot change which rows belong to the
- *   collection) refetches the loaded window in place — one request sized to
- *   the rows on screen — instead of resetting to the first page. A failed
- *   window refresh keeps the loaded rows and reports the error alongside.
+ *   collection) refetches the loaded window in place — a chain of bounded
+ *   page requests covering the rows on screen — instead of resetting to the
+ *   first page. A failed window refresh keeps the loaded rows and reports
+ *   the error alongside.
  * - With `rowEdits` set, that window refresh is also *narrow*: an edit whose
  *   target no loaded row contains is not a refresh at all, so one manager's
  *   book does not refetch because another manager's deal was edited. A page
@@ -112,6 +114,40 @@ function emptyEntry<T>(provider: DataProvider, resetKey: string): PageEntry<T> {
 
 /** What the single in-flight slot is doing. Anything but idle blocks loadMore. */
 type Phase = 'idle' | 'initial' | 'refresh' | 'page';
+
+/**
+ * Refetches the rows on screen as a chain of bounded pages. One oversized
+ * request would be the natural idea — and a typed error at the seam once
+ * the loaded window outgrows the maximum page size, so the window is walked
+ * a page at a time instead. Every chunk carries the same abort signal, and
+ * the final answer keeps the first chunk's total and the last chunk's
+ * continuation cursor, which is exactly the cursor `loadMore` needs next.
+ */
+async function fetchWindowPages<T>(
+  fetchPage: (page: PageRequest, context: QueryContext) => Promise<QueryResult<Page<T>>>,
+  targetCount: number,
+  signal: AbortSignal,
+): Promise<QueryResult<Page<T>>> {
+  const first = await fetchPage({ limit: Math.min(targetCount, MAX_PAGE_LIMIT) }, { signal });
+  const rows = [...first.data.rows];
+  let nextCursor = first.data.nextCursor;
+  while (rows.length < targetCount && nextCursor !== undefined) {
+    const next = await fetchPage(
+      { cursor: nextCursor, limit: Math.min(targetCount - rows.length, MAX_PAGE_LIMIT) },
+      { signal },
+    );
+    rows.push(...next.data.rows);
+    nextCursor = next.data.nextCursor;
+  }
+  return {
+    data: {
+      rows,
+      totalCount: first.data.totalCount,
+      ...(nextCursor !== undefined ? { nextCursor } : {}),
+    },
+    meta: first.meta,
+  };
+}
 
 export function usePaginatedRows<T>(args: {
   provider: DataProvider;
@@ -286,15 +322,16 @@ export function usePaginatedRows<T>(args: {
       return () => controller.abort();
     }
 
-    // Same membership, new data: refetch the window already on screen (one
-    // request sized to the loaded rows) instead of resetting to page one.
+    // Same membership, new data: refetch the window already on screen
+    // (bounded pages covering the loaded rows) instead of resetting to
+    // page one.
     phase.current = 'refresh';
     setEntry((previous) =>
       previous.provider === provider && previous.resetKey === resetKey
         ? { ...previous, refreshing: true, error: null }
         : previous,
     );
-    fetchPageRef.current({ limit: loadedCount.current }, { signal: controller.signal }).then(
+    fetchWindowPages(fetchPageRef.current, loadedCount.current, controller.signal).then(
       (result) => {
         if (controller.signal.aborted || request !== latest.current) return;
         const page = acceptPage(result);

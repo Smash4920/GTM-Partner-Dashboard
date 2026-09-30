@@ -13,6 +13,9 @@ import {
   weeklyForecastRows,
 } from '../../lib/metrics';
 import { INTERNAL_DEMO_SCOPE } from '../accessScope';
+import type { DemoAccessScope } from '../accessScope';
+import { isPageQueryError, MAX_PAGE_LIMIT } from '../pagination';
+import type { PageQueryError } from '../pagination';
 import { MockDataProvider } from './MockDataProvider';
 import { generateDashboardData } from './generate';
 import { NO_SESSION_EDITS } from '../sessionEdits';
@@ -28,6 +31,7 @@ import {
   makeTarget,
   makeTeamUser,
 } from '../../test/fixtures';
+import type { ForecastScope } from '../DataProvider';
 import type { Opportunity, PartnerManager } from '../types';
 
 /**
@@ -136,15 +140,17 @@ describe('MockDataProvider scoped contract', () => {
     });
     const managerId = groups[0]!.managerId;
 
+    // totalCount is the scoped total however large the page, so a bounded
+    // request is enough to prove the manager scope narrowed the collection.
     const { data: page } = await provider.listQuarterOpportunities(
       INTERNAL_DEMO_SCOPE,
       { quarter, partnerManagerId: managerId },
-      { limit: 500 },
+      { limit: 25 },
     );
     const { data: allRows } = await provider.listQuarterOpportunities(
       INTERNAL_DEMO_SCOPE,
       { quarter },
-      { limit: 5_000 },
+      { limit: 25 },
     );
     expect(page.totalCount).toBeLessThan(allRows.totalCount);
 
@@ -183,14 +189,10 @@ describe('MockDataProvider scoped contract', () => {
   });
 
   it('walks a paged book exactly once, in a stable order', async () => {
-    const { data: expected } = await provider.listQuarterOpportunities(
-      INTERNAL_DEMO_SCOPE,
-      { quarter },
-      { limit: 10_000 },
-    );
     const ids = new Set<string>();
     let cursor: string | undefined;
     let pages = 0;
+    let expectedTotal = -1;
 
     do {
       const { data: page } = await provider.listQuarterOpportunities(
@@ -198,7 +200,8 @@ describe('MockDataProvider scoped contract', () => {
         { quarter },
         { ...(cursor ? { cursor } : {}), limit: 7 },
       );
-      expect(page.totalCount).toBe(expected.totalCount);
+      if (expectedTotal === -1) expectedTotal = page.totalCount;
+      expect(page.totalCount).toBe(expectedTotal);
       expect(page.rows.length).toBeLessThanOrEqual(7);
       for (const row of page.rows) {
         expect(ids.has(row.id)).toBe(false);
@@ -209,7 +212,9 @@ describe('MockDataProvider scoped contract', () => {
       expect(pages).toBeLessThan(50);
     } while (cursor !== undefined);
 
-    expect(ids.size).toBe(expected.totalCount);
+    // Exhaustive against the book itself, not merely self-consistent.
+    expect(ids.size).toBe(expectedTotal);
+    expect(ids.size).toBe(inQuarter.length);
     // Sorted by expected close, so the same page means the same thing twice.
     const { data: once } = await provider.listQuarterOpportunities(
       INTERNAL_DEMO_SCOPE,
@@ -229,6 +234,172 @@ describe('MockDataProvider scoped contract', () => {
     expect(directory).toEqual(
       book.partners.map((partner) => ({ id: partner.id, name: partner.name })),
     );
+  });
+});
+
+describe('cursor pagination contract (VAL-DATA-009)', () => {
+  const partnerScope: DemoAccessScope = {
+    audience: 'partner',
+    partnerId: book.partners[0]!.id,
+  };
+
+  /** Walks a scope to exhaustion with the given page size; fails on any repeat. */
+  async function walk(access: DemoAccessScope, scope: ForecastScope, limit: number) {
+    const ids = new Set<string>();
+    let cursor: string | undefined;
+    let totalCount = -1;
+    let pages = 0;
+    do {
+      const { data: page } = await provider.listQuarterOpportunities(access, scope, {
+        ...(cursor ? { cursor } : {}),
+        limit,
+      });
+      if (totalCount === -1) totalCount = page.totalCount;
+      expect(page.totalCount).toBe(totalCount);
+      expect(page.rows.length).toBeLessThanOrEqual(limit);
+      for (const row of page.rows) {
+        expect(ids.has(row.id)).toBe(false);
+        ids.add(row.id);
+      }
+      cursor = page.nextCursor;
+      pages += 1;
+      expect(pages).toBeLessThan(200);
+    } while (cursor !== undefined);
+    return { ids, totalCount };
+  }
+
+  it('walks internal, manager, and partner scopes exhaustively with no duplicates', async () => {
+    const org = await walk(INTERNAL_DEMO_SCOPE, { quarter }, 7);
+    expect(org.ids.size).toBe(inQuarter.length);
+
+    const { data: groups } = await provider.getManagerForecastGroups(INTERNAL_DEMO_SCOPE, {
+      quarter,
+    });
+    const managerId = groups.find((group) => group.opportunityCount > 0)!.managerId;
+    const managerByPartner = new Map(
+      book.partners.map((partner) => [partner.id, partner.partnerManagerId]),
+    );
+    const manager = await walk(INTERNAL_DEMO_SCOPE, { quarter, partnerManagerId: managerId }, 9);
+    expect(manager.ids.size).toBe(
+      inQuarter.filter((opp) => managerByPartner.get(opp.partnerId) === managerId).length,
+    );
+    // The manager's walk is a strict subset of the org's: no row appears
+    // that the wider scope would not have served.
+    for (const id of manager.ids) expect(org.ids.has(id)).toBe(true);
+
+    const partner = await walk(partnerScope, { quarter }, 5);
+    const expectedPartnerRows = inQuarter.filter(
+      (opp) => opp.partnerId === book.partners[0]!.id && opp.oppType !== 'sell-to',
+    );
+    expect(partner.ids.size).toBe(expectedPartnerRows.length);
+    for (const id of partner.ids) expect(org.ids.has(id)).toBe(true);
+  });
+
+  it('serves at most 25 rows when the request names no limit', async () => {
+    const { data: page } = await provider.listQuarterOpportunities(
+      INTERNAL_DEMO_SCOPE,
+      { quarter },
+      {},
+    );
+    expect(page.rows.length).toBeLessThanOrEqual(25);
+    expect(page.rows.length).toBe(Math.min(25, inQuarter.length));
+  });
+
+  it.each([0, -1, 1.5, Number.NaN, MAX_PAGE_LIMIT + 1, 5_000])(
+    'rejects the invalid or over-limit size %s with a typed error, not a clamp',
+    async (limit) => {
+      const error = await provider
+        .listQuarterOpportunities(INTERNAL_DEMO_SCOPE, { quarter }, { limit })
+        .catch((caught: unknown) => caught);
+      expect(isPageQueryError(error)).toBe(true);
+      expect((error as PageQueryError).code).toBe('invalid-page-limit');
+    },
+  );
+
+  it('rejects tokens it never issued, including the retired offset format', async () => {
+    const tokens = ['garbage', 'offset:2', btoa('{"o":2}'), btoa(JSON.stringify({ v: 9 }))];
+    for (const cursor of tokens) {
+      const error = await provider
+        .listQuarterOpportunities(INTERNAL_DEMO_SCOPE, { quarter }, { cursor, limit: 7 })
+        .catch((caught: unknown) => caught);
+      expect(isPageQueryError(error), cursor).toBe(true);
+      expect((error as PageQueryError).code, cursor).toBe('invalid-cursor');
+    }
+  });
+
+  it('rejects a cursor minted for another query rather than serving page one', async () => {
+    const { data: first } = await provider.listQuarterOpportunities(
+      INTERNAL_DEMO_SCOPE,
+      { quarter },
+      { limit: 7 },
+    );
+    const cursor = first.nextCursor;
+    if (cursor === undefined) throw new Error('expected a continuation');
+
+    const foreignQueries: Array<[DemoAccessScope, ForecastScope]> = [
+      // another manager
+      [INTERNAL_DEMO_SCOPE, { quarter, partnerManagerId: book.partnerManagers[0]!.id }],
+      // another quarter
+      [INTERNAL_DEMO_SCOPE, { quarter: 'FY27-Q4' }],
+      // another audience
+      [partnerScope, { quarter }],
+    ];
+    for (const [access, scope] of foreignQueries) {
+      const error = await provider
+        .listQuarterOpportunities(access, scope, { cursor, limit: 7 })
+        .catch((caught: unknown) => caught);
+      expect(isPageQueryError(error)).toBe(true);
+      expect((error as PageQueryError).code).toBe('foreign-cursor');
+    }
+  });
+
+  it('expires cursors when the data epoch moves on', async () => {
+    /** A provider whose book advanced: same rows, newer epoch. */
+    class EpochProvider extends MockDataProvider {
+      constructor(private readonly epoch: string) {
+        super(book);
+      }
+      protected override dataEpoch(): string {
+        return this.epoch;
+      }
+    }
+    const before = new EpochProvider('2026-09-11T00:00:00.000Z');
+    const after = new EpochProvider('2026-09-18T00:00:00.000Z');
+
+    const { data: first } = await before.listQuarterOpportunities(
+      INTERNAL_DEMO_SCOPE,
+      { quarter },
+      { limit: 7 },
+    );
+    if (first.nextCursor === undefined) throw new Error('expected a continuation');
+
+    // Same provider instance, same query, but the data has moved on: the
+    // cursor's position means nothing anymore.
+    const error = await after
+      .listQuarterOpportunities(
+        INTERNAL_DEMO_SCOPE,
+        { quarter },
+        {
+          cursor: first.nextCursor,
+          limit: 7,
+        },
+      )
+      .catch((caught: unknown) => caught);
+    expect(isPageQueryError(error)).toBe(true);
+    expect((error as PageQueryError).code).toBe('expired-cursor');
+  });
+
+  it('keeps typed page errors free of row data', async () => {
+    const error = await provider
+      .listQuarterOpportunities(INTERNAL_DEMO_SCOPE, { quarter }, { limit: 0 })
+      .catch((caught: unknown) => caught);
+    const serialized = JSON.stringify({
+      name: (error as Error).name,
+      code: (error as PageQueryError).code,
+      message: (error as Error).message,
+    });
+    expect(serialized).not.toContain('takenAt');
+    expect(serialized).not.toContain(inQuarter[0]!.id);
   });
 });
 
@@ -426,12 +597,20 @@ describe('MockDataProvider folds session edits behind the seam', () => {
     const seeded = inQuarter.find((opp) => opp.nextStep !== undefined);
     if (!seeded) throw new Error('fixture has no seeded next step');
 
-    const { data: page } = await provider.listQuarterOpportunities(
-      INTERNAL_DEMO_SCOPE,
-      { quarter, edits: { ...NO_SESSION_EDITS, nextSteps: { [seeded.id]: '' } } },
-      { limit: 10_000 },
-    );
-    const row = page.rows.find((candidate) => candidate.id === seeded.id);
+    // Walk bounded pages until the row turns up; there is no "fetch the
+    // whole book" page size to reach for.
+    const edits = { ...NO_SESSION_EDITS, nextSteps: { [seeded.id]: '' } };
+    let row: Opportunity | undefined;
+    let cursor: string | undefined;
+    do {
+      const { data: page } = await provider.listQuarterOpportunities(
+        INTERNAL_DEMO_SCOPE,
+        { quarter, edits },
+        { ...(cursor ? { cursor } : {}), limit: MAX_PAGE_LIMIT },
+      );
+      row = page.rows.find((candidate) => candidate.id === seeded.id) ?? row;
+      cursor = page.nextCursor;
+    } while (cursor !== undefined && row === undefined);
     // Presence is the edit; '' is the tombstone. A `??` fallback anywhere in
     // this path would restore the CRM's value and the clear would look broken.
     expect(row?.nextStep).toBe('');

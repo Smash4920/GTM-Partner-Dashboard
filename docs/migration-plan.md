@@ -84,8 +84,8 @@ interface ForecastScope {
   edits?: SessionEdits; // this session's uncommitted corrections
 }
 interface PageRequest {
-  cursor?: string;
-  limit: number;
+  cursor?: string; // opaque; bound to the query and data epoch that minted it
+  limit?: number; // positive, at most 100; defaults to 25
 }
 interface Page<T> {
   rows: T[];
@@ -104,7 +104,9 @@ interface ScopedQueryProvider {
   getManagerForecastGroups(scope: ForecastScope): Promise<QueryResult<ManagerForecastGroup[]>>;
   getWeeklyForecastSeries(scope: ForecastScope): Promise<QueryResult<WeeklySeriesRow[]>>;
 
-  // Rows: cursor-paginated, server-sorted, server-filtered.
+  // Rows: cursor-paginated, server-sorted, server-filtered. Invalid limits
+  // and invalid, foreign-query, or expired cursors are typed errors, never
+  // a quiet page one (src/data/pagination.ts).
   listQuarterOpportunities(
     scope: ForecastScope,
     page: PageRequest,

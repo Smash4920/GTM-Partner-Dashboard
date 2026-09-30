@@ -157,9 +157,12 @@ describe('usePaginatedRows', () => {
     await waitFor(() => expect(result.current.rows).toHaveLength(4));
     expect(result.current.error).toBeNull();
     // The retry repeated the failed page request — same cursor, same limit —
-    // and issued no other call.
+    // and issued no other call. The cursor is opaque; what matters is that
+    // it is exactly the continuation the first page handed out.
     expect(spy).toHaveBeenCalledTimes(3);
-    expect(spy.mock.calls[2]?.[2]).toEqual({ cursor: 'offset:2', limit: 2 });
+    const firstPage = await spy.mock.results[0]!.value;
+    expect(firstPage.data.nextCursor).toEqual(expect.any(String));
+    expect(spy.mock.calls[2]?.[2]).toEqual({ cursor: firstPage.data.nextCursor, limit: 2 });
   });
 
   it('a data change refreshes the loaded window in place instead of resetting pages', async () => {
@@ -182,7 +185,8 @@ describe('usePaginatedRows', () => {
     // The cursor survived too: the next page continues where the window ends.
     act(() => result.current.loadMore());
     await waitFor(() => expect(result.current.rows).toHaveLength(5));
-    expect(spy.mock.calls[3]?.[2]).toEqual({ cursor: 'offset:4', limit: 2 });
+    const refreshed = await spy.mock.results[2]!.value;
+    expect(spy.mock.calls[3]?.[2]).toEqual({ cursor: refreshed.data.nextCursor, limit: 2 });
   });
 
   it('a failed window refresh keeps the loaded rows and recovers on retry', async () => {

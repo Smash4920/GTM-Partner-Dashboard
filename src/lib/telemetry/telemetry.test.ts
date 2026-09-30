@@ -4,6 +4,8 @@ import { createLogger } from '../logging';
 import { clearFlagOverrides, setFlagOverride } from './flags';
 import type { TelemetryConfig } from './config';
 import { parseTraceparent } from './trace';
+import type { SpanAttributes } from './trace';
+import type { MetricAttributes } from './metrics';
 import { createTelemetry, type TelemetryFacade, type TelemetryOptions } from './telemetry';
 import type { TelemetryBatch, TelemetryEnvelope } from './transport';
 
@@ -585,5 +587,75 @@ describe('nothing sensitive leaves the browser (VAL-SEC-004)', () => {
     // Not even redacted echoes of the address or the secret may appear.
     expect(wire).not.toContain('corp.example');
     expect(wire).not.toContain('sk-');
+  });
+});
+
+describe('raw provider history stays out of telemetry (VAL-DATA-011)', () => {
+  // A raw weekly snapshot row, marked on every field with a value that can
+  // only arrive on the wire if the row itself leaked.
+  const SNAPSHOT_ROW = {
+    takenAt: '2026-09-07T00:00:00.000Z',
+    opportunityId: 'opp-history-sentinel',
+    forecastedRevenue: 987_654,
+    forecastCategory: 'commit',
+    stage: 'negotiation',
+    expectedCloseDate: '2026-10-01T00:00:00Z',
+  };
+
+  it('no envelope ships a snapshot row, whatever path a caller offers it on', async () => {
+    setFlagOverride('analytics.enabled', true);
+    setFlagOverride('telemetry.logShipping', true);
+    const { client, batches, envelopes } = harness();
+    const log = createLogger({ sink: () => {} });
+
+    // Every caller-controlled path gets the row: analytics properties, an
+    // error object carrying it, alert detail, a health artifact, a span
+    // attribute, a metric attribute, and a shipped log record. The casts
+    // model an ill-typed caller: the boundary must hold at runtime, not
+    // merely at the type level.
+    client.track('forecast_call_changed', {
+      opportunityId: 'opp-1',
+      category: 'commit',
+      snapshot: SNAPSHOT_ROW,
+    });
+    client.captureError(
+      Object.assign(new TypeError('provider read failed'), { snapshot: SNAPSHOT_ROW }),
+      { category: 'provider' },
+    );
+    client.raiseAlert({
+      key: 'health.degraded',
+      severity: 'warning',
+      title: 'History read degraded',
+      summary: 'Weekly history could not be read',
+      detail: { snapshot: SNAPSHOT_ROW },
+    });
+    client.reportHealth({
+      ...healthyArtifact,
+      snapshot: SNAPSHOT_ROW,
+    } as unknown as HealthArtifact);
+    client.recordCounter('provider.calls', {
+      method: 'getWeeklyForecastSeries',
+      snapshot: SNAPSHOT_ROW,
+    } as unknown as MetricAttributes);
+    const span = client.startSpan('provider.getWeeklyForecastSeries', {
+      providerId: 'local',
+      snapshot: SNAPSHOT_ROW,
+    } as unknown as SpanAttributes);
+    span.end();
+    log.error('Weekly history read failed', { snapshot: SNAPSHOT_ROW });
+    await client.flush();
+
+    // The test means something only if every offered path actually shipped.
+    const shippedTypes = new Set<string>(envelopes().map((envelope) => envelope.type));
+    for (const type of ['event', 'error', 'alert', 'health', 'log', 'metric', 'trace']) {
+      expect(shippedTypes.has(type), type).toBe(true);
+    }
+
+    const wire = JSON.stringify(batches());
+    expect(wire).not.toContain('takenAt');
+    expect(wire).not.toContain('expectedCloseDate');
+    expect(wire).not.toContain('opp-history-sentinel');
+    expect(wire).not.toContain('987654');
+    expect(wire).not.toContain('negotiation');
   });
 });

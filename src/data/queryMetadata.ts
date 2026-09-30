@@ -96,8 +96,9 @@ export function queryResult<T>(data: T, meta: QueryMeta): QueryResult<T> {
 /**
  * Some closed weeks of the quarter had no recorded snapshot, so the series
  * reconstructed them from the current book — which backdates every later
- * change into those weeks (see PipelineSnapshot in types.ts). The chart is
- * still usable; the warning says which part of it is a reconstruction.
+ * change into those weeks (see the snapshot row type in types.ts). The
+ * chart is still usable; the warning says which part of it is a
+ * reconstruction.
  */
 export function weeklyHistoryReconstructedWarning(
   reconstructedWeeks: number,

@@ -619,7 +619,7 @@ of the book. **Forecasting is built on this today.**
 | `getForecastQuality()`       | `QueryResult<ForecastQualitySummary>` (counts, exposure, sample) |
 | `getManagerForecastGroups()` | `QueryResult<ManagerForecastGroup[]>` (one row per manager)      |
 | `getWeeklyForecastSeries()`  | `QueryResult<WeeklySeriesRow[]>` (13 buckets)                    |
-| `listQuarterOpportunities()` | `QueryResult<Page<Opportunity>>` (cursor, 25 rows)               |
+| `listQuarterOpportunities()` | `QueryResult<Page<Opportunity>>` (opaque cursor, 25-row pages)   |
 | `getPartnerDirectory()`      | `QueryResult<PartnerRef[]>` (id → name)                          |
 
 Every scoped answer arrives in a `QueryResult` envelope

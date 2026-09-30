@@ -1,4 +1,5 @@
 import type { DemoAccessScope } from './accessScope';
+import type { Page, PageRequest } from './pagination';
 import type { QueryContext } from './queryContext';
 import type { QueryResult } from './queryMetadata';
 import type { SessionEdits } from './sessionEdits';
@@ -116,19 +117,11 @@ export interface PartnerRef {
   name: string;
 }
 
-export interface PageRequest {
-  /** Opaque cursor from a previous `Page`; omitted starts at the first page. */
-  cursor?: string;
-  limit: number;
-}
-
-export interface Page<T> {
-  rows: T[];
-  /** Absent once the last page has been served. */
-  nextCursor?: string;
-  /** Total matching the scope, for "showing 25 of 213". */
-  totalCount: number;
-}
+// The page contract lives with the primitive that enforces it: limits are
+// validated (positive, at most MAX_PAGE_LIMIT, default DEFAULT_PAGE_LIMIT)
+// and cursors are opaque tokens bound to the query and the data epoch they
+// were minted under. See src/data/pagination.ts.
+export type { Page, PageRequest } from './pagination';
 
 /** The quarter's headline numbers. Fixed size, whatever the book weighs. */
 export interface ForecastSummary {
@@ -253,6 +246,12 @@ interface ScopedQueryProvider {
   /**
    * One manager's in-quarter book, a page at a time. Requested when a group is
    * expanded, rather than loaded for every manager up front.
+   *
+   * Pages follow the shared contract in src/data/pagination.ts: the limit
+   * defaults to 25 and may not exceed the maximum, ordering is stable, and
+   * cursors are opaque and bound to this exact query and data epoch — an
+   * invalid limit or an invalid, foreign, or expired cursor rejects with a
+   * typed `PageQueryError` rather than quietly serving page one.
    */
   listQuarterOpportunities(
     access: DemoAccessScope,
