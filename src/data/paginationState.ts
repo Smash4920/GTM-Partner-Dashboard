@@ -4,6 +4,7 @@ import { MAX_PAGE_LIMIT } from './pagination';
 import type { QueryContext } from './queryContext';
 import type { QueryMeta, QueryResult } from './queryMetadata';
 import { stableFailureCopy } from './queryState';
+import type { QueryState } from './queryState';
 
 /**
  * The independent state of one cursor-paginated row collection — one
@@ -114,6 +115,26 @@ function emptyEntry<T>(provider: DataProvider, resetKey: string): PageEntry<T> {
 
 /** What the single in-flight slot is doing. Anything but idle blocks loadMore. */
 type Phase = 'idle' | 'initial' | 'refresh' | 'page';
+
+/**
+ * A paginated collection viewed as one query state, for cards that render a
+ * single page through the shared `renderQueryState` vocabulary. The marker
+ * for "an answer exists" is the first page's metadata: before it lands (or
+ * after an initial failure) there is no data — not even an empty array, so
+ * a legitimately empty collection can never be mistaken for a missing one.
+ * A failed refresh keeps the loaded rows with the error riding alongside,
+ * exactly like an aggregate's stale-beats-blank.
+ */
+export function pageWindowAsQuery<T>(state: PaginationState<T>): QueryState<T[]> {
+  return {
+    data: state.meta === null ? null : state.rows,
+    meta: state.meta,
+    loading: state.loading,
+    refreshing: state.refreshing,
+    error: state.error,
+    retry: state.retry,
+  };
+}
 
 /**
  * Refetches the rows on screen as a chain of bounded pages. One oversized

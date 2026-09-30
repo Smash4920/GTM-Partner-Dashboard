@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DataProvider } from './DataProvider';
 import type { QueryContext } from './queryContext';
 import type { QueryMeta, QueryResult } from './queryMetadata';
+import type { MeetingClassification, Partner } from './types';
 
 /**
  * The independent state of one logical query — one widget's worth of data.
@@ -74,6 +75,30 @@ export function editMapKey(map: Record<string, string | number>): string {
   return Object.keys(map)
     .sort()
     .map((key) => `${key}=${String(map[key])}`)
+    .join('&');
+}
+
+/**
+ * A stable, content-based serialization of the session's meeting
+ * classifications, for query keys: a re-render that rebuilt but did not
+ * change the classifications issues no request, and a reclassification —
+ * which can move a meeting between partners and types — does.
+ */
+export function classificationsKey(classifications: Record<string, MeetingClassification>): string {
+  return Object.keys(classifications)
+    .sort()
+    .map((id) => `${id}=${classifications[id].type}:${classifications[id].partnerId ?? ''}`)
+    .join('&');
+}
+
+/**
+ * The session prospect roster as a key, in order: the prospects ride along
+ * with roster-reading queries, and a key change is exactly what refetches
+ * them when one is added.
+ */
+export function prospectsKey(prospects: readonly Partner[]): string {
+  return prospects
+    .map((partner) => `${partner.id}=${partner.name}:${partner.partnerManagerId}`)
     .join('&');
 }
 

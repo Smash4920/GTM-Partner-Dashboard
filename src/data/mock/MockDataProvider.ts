@@ -1,4 +1,5 @@
 import type {
+  ActivityScope,
   DataProvider,
   ForecastQualitySummary,
   ForecastScope,
@@ -7,7 +8,17 @@ import type {
   MismatchRow,
   Page,
   PageRequest,
+  PartnerCertificationProfile,
+  PartnerCertificationScope,
+  PartnerDrilldown,
+  PartnerLeaderboardEntry,
   PartnerRef,
+  PendingRegistrationsScope,
+  PerformanceScope,
+  PerformanceSummary,
+  RegistrationOpsSummary,
+  RevenueTrendScope,
+  StageBreakdown,
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from '../DataProvider';
@@ -35,22 +46,57 @@ import {
 import type { DataLineage, DataWarning, QueryMeta, QueryResult } from '../queryMetadata';
 import { applySessionEdits, NO_SESSION_EDITS } from '../sessionEdits';
 import type { SessionEdits } from '../sessionEdits';
-import type { Opportunity, ProviderBook, Target } from '../types';
+import type {
+  DealRegistration,
+  Opportunity,
+  Partner,
+  PartnerManager,
+  ProviderBook,
+  Target,
+} from '../types';
 import { SNAPSHOT_DATE } from '../constants';
 import {
+  activePartnerCount,
+  approvalRate,
+  approvedNotConverted,
   avgOpenDealSize,
   categoryStageMismatches,
   closedWonForPhase,
+  closedWonPriorYearForPhase,
   coverageState,
   daysLeftInQuarter,
+  duplicateRegistrationGroups,
+  exclusivityLapsed,
   filterByPhase,
+  filterByType,
+  filterRegistrationsByPhase,
   openOpportunities,
   openPipeline,
+  outcomeTotals,
+  pendingRegistrations,
   phaseForQuarter,
+  quarterlyClosedWonAndTarget,
+  registrationConversionRate,
+  registrationConversionTimes,
+  registrationFunnel,
+  registrationsPastSla,
   remainingQuota,
+  stageBreakdown,
   targetsForPhase,
-  weightedForecast,
+  typeBreakdown,
+  weeklyActivity,
   weeklyForecastRows,
+  weeklyGoalProgress,
+  weightedForecast,
+  winRateForPhase,
+} from '../../lib/metrics';
+import type {
+  DuplicateRegistrationGroup,
+  QuarterRevenueRow,
+  RegistrationFunnel,
+  TypeRow,
+  WeeklyActivityRow,
+  WeeklyGoalProgress,
 } from '../../lib/metrics';
 import { generateDashboardData } from './generate';
 
@@ -457,6 +503,421 @@ export class MockDataProvider implements DataProvider {
         id: partner.id,
         name: partner.name,
       })),
+      this.meta(undefined),
+    );
+  }
+
+  // ---- Home and Partner Performance ----------------------------------------
+  //
+  // Same discipline as the forecast queries above: the demo access scope
+  // first, the drill-down selection next, the session's edits and
+  // classifications folded in, and then the same src/lib/metrics functions
+  // the views used to call themselves. What crosses the seam per method is
+  // one card's answer, so one rejection fails one card and nothing else.
+
+  /**
+   * The roster the drill-down selects from: the provider's partners plus the
+   * session's prospects, under the access scope.
+   */
+  private performanceRoster(access: DemoAccessScope, prospects?: Partner[]): Partner[] {
+    return scopePartners([...this.data.partners, ...(prospects ?? [])], access);
+  }
+
+  /**
+   * The partner set the drill-down selects, or undefined when the query is
+   * not drill-down restricted at all (Home's whole-book view). With
+   * `partnerFilter: 'roster'` — the shape Partner Performance has always
+   * applied — rows whose partner is not on the roster fall out even when no
+   * manager or partner is selected.
+   */
+  private selectedPartnerIds(scope: PartnerDrilldown, roster: Partner[]): Set<string> | undefined {
+    if (scope.partnerId !== undefined) return new Set([scope.partnerId]);
+    if (scope.partnerManagerId !== undefined) {
+      return new Set(
+        roster
+          .filter((partner) => partner.partnerManagerId === scope.partnerManagerId)
+          .map((partner) => partner.id),
+      );
+    }
+    if (scope.partnerFilter === 'roster') {
+      return new Set(roster.map((partner) => partner.id));
+    }
+    return undefined;
+  }
+
+  /** Every collection a performance query reads, access-scoped and then
+   * drill-down scoped — the rows the metrics below are allowed to see. */
+  private performanceBook(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+  ): {
+    roster: Partner[];
+    selected: Set<string> | undefined;
+    opportunities: Opportunity[];
+    registrations: DealRegistration[];
+    targets: Target[];
+  } {
+    const roster = this.performanceRoster(access, scope.prospects);
+    const selected = this.selectedPartnerIds(scope, roster);
+    const inScope = <T extends { partnerId: string }>(rows: T[]): T[] =>
+      selected === undefined ? rows : rows.filter((row) => selected.has(row.partnerId));
+    return {
+      roster,
+      selected,
+      opportunities: inScope(
+        scopeOpportunities(this.data.opportunities, this.data.partners, access),
+      ),
+      registrations: inScope(
+        scopeRegistrations(this.data.registrations, this.data.partners, access),
+      ),
+      targets: inScope(scopeTargets(this.data.targets, this.data.partners, access)),
+    };
+  }
+
+  /** The membership identity of a drill-down-scoped page query: everything
+   * that decides WHICH rows belong, and nothing that only changes what a
+   * row says — so a cursor survives an edit-driven window refresh. */
+  private drilldownKey(scope: PartnerDrilldown): string {
+    return [
+      `manager:${scope.partnerManagerId ?? 'all'}`,
+      `partner:${scope.partnerId ?? 'all'}`,
+      `filter:${scope.partnerFilter ?? 'none'}`,
+    ].join('|');
+  }
+
+  async getPerformanceSummary(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PerformanceSummary>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    const { selected } = book;
+    const edited = applySessionEdits(book.opportunities, scope.edits ?? NO_SESSION_EDITS);
+    const typed = filterByType(edited, scope.oppType ?? 'all');
+    const phaseOpps = filterByPhase(typed, scope.phase);
+    const phaseRegistrations = filterRegistrationsByPhase(book.registrations, scope.phase);
+    const funnel = registrationFunnel(phaseRegistrations);
+    const open = openPipeline(phaseOpps);
+    const closedWon = closedWonForPhase(phaseOpps, scope.phase);
+    const target = targetsForPhase(book.targets, scope.phase).reduce(
+      (sum, item) => sum + item.revenueTarget,
+      0,
+    );
+    return queryResult(
+      {
+        openPipelineValue: open.value,
+        openCount: open.count,
+        closedWon,
+        priorClosedWon: closedWonPriorYearForPhase(typed, scope.phase),
+        target,
+        attainment: target > 0 ? closedWon / target : 0,
+        coverage: coverageState(phaseOpps, book.targets, scope.phase),
+        remainingQuota: remainingQuota(phaseOpps, book.targets, scope.phase),
+        avgOpenDealSize: avgOpenDealSize(phaseOpps),
+        winRate: winRateForPhase(phaseOpps, scope.phase),
+        approvalRate: approvalRate(phaseRegistrations),
+        decidedRegistrations: funnel.approved + funnel.rejected,
+        conversionRate: registrationConversionRate(phaseRegistrations),
+        convertedRegistrations: funnel.converted,
+        // FY activity is deliberately not phase- or type-filtered, matching
+        // the tile's own subtitle.
+        activePartners: activePartnerCount(book.opportunities, book.registrations),
+        alignedPartners:
+          selected === undefined
+            ? book.roster.length
+            : book.roster.filter((partner) => selected.has(partner.id)).length,
+      },
+      this.meta(scope.edits),
+    );
+  }
+
+  async getRegistrationFunnel(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<RegistrationFunnel>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    return queryResult(
+      registrationFunnel(filterRegistrationsByPhase(book.registrations, scope.phase)),
+      this.meta(undefined),
+    );
+  }
+
+  async getStageBreakdown(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<StageBreakdown>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    const edited = applySessionEdits(book.opportunities, scope.edits ?? NO_SESSION_EDITS);
+    const phaseOpps = filterByPhase(filterByType(edited, scope.oppType ?? 'all'), scope.phase);
+    return queryResult(
+      { stages: stageBreakdown(phaseOpps), outcomes: outcomeTotals(phaseOpps) },
+      this.meta(scope.edits),
+    );
+  }
+
+  async getTypeBreakdown(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<TypeRow[]>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    const edited = applySessionEdits(book.opportunities, scope.edits ?? NO_SESSION_EDITS);
+    // The type mix of the phase: the type lens selects from this chart, so
+    // the chart itself is computed across every type.
+    return queryResult(typeBreakdown(filterByPhase(edited, scope.phase)), this.meta(scope.edits));
+  }
+
+  async getQuarterlyRevenueTrend(
+    access: DemoAccessScope,
+    scope: RevenueTrendScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<QuarterRevenueRow[]>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    const edited = applySessionEdits(book.opportunities, scope.edits ?? NO_SESSION_EDITS);
+    return queryResult(
+      quarterlyClosedWonAndTarget(filterByType(edited, scope.oppType ?? 'all'), book.targets),
+      this.meta(scope.edits),
+    );
+  }
+
+  async getWeeklyActivitySeries(
+    access: DemoAccessScope,
+    scope: ActivityScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<WeeklyActivityRow[]>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    const activities = scopeActivities(this.data.activities, this.data.partners, access);
+    return queryResult(
+      weeklyActivity(activities, scope.partnerManagerId, book.selected, scope.classifications),
+      this.meta(undefined),
+    );
+  }
+
+  async getWeeklyGoalProgress(
+    access: DemoAccessScope,
+    scope: ActivityScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<WeeklyGoalProgress>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    const activities = scopeActivities(this.data.activities, this.data.partners, access);
+    return queryResult(
+      weeklyGoalProgress(
+        activities,
+        scope.classifications ?? {},
+        scope.partnerManagerId,
+        book.selected,
+      ),
+      this.meta(undefined),
+    );
+  }
+
+  async getRegistrationOpsSummary(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    context?: QueryContext,
+  ): Promise<QueryResult<RegistrationOpsSummary>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    // Deliberately not phase-filtered: exclusivity lapsing and conversion
+    // times span quarters, so a Q3 scope must still see the older
+    // registrations that are leaking.
+    const leaking = approvedNotConverted(book.registrations);
+    return queryResult(
+      {
+        times: registrationConversionTimes(book.registrations, book.opportunities),
+        approvedNotConverted: leaking.length,
+        exclusivityLapsed: leaking.filter(exclusivityLapsed).length,
+        pastSla: registrationsPastSla(book.registrations).length,
+        duplicateGroups: duplicateRegistrationGroups(book.registrations, book.roster).length,
+      },
+      this.meta(undefined),
+    );
+  }
+
+  async getPartnerLeaderboard(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerLeaderboardEntry[]>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    const edited = applySessionEdits(book.opportunities, scope.edits ?? NO_SESSION_EDITS);
+    const phaseOpps = filterByType(filterByPhase(edited, scope.phase), scope.oppType ?? 'all');
+    const certifications = scopeCertifications(
+      this.data.certifications,
+      this.data.partners,
+      access,
+    );
+    const rows = book.roster
+      .filter((partner) => book.selected === undefined || book.selected.has(partner.id))
+      .map((partner): PartnerLeaderboardEntry => {
+        const own = phaseOpps.filter((opp) => opp.partnerId === partner.id);
+        const open = openPipeline(own);
+        return {
+          partner,
+          openPipelineValue: open.value,
+          openCount: open.count,
+          closedWonValue: closedWonForPhase(own, scope.phase),
+          winRate: winRateForPhase(own, scope.phase),
+          // undefined, not an empty record: no certification data is a fact
+          // about the partner, and the view renders it as such.
+          certification: certifications.find((cert) => cert.partnerId === partner.id),
+        };
+      });
+    rows.sort(
+      (a, b) => b.closedWonValue - a.closedWonValue || b.openPipelineValue - a.openPipelineValue,
+    );
+    return queryResult(rows, this.meta(scope.edits));
+  }
+
+  async getManagerDirectory(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerManager[]>> {
+    throwIfAborted(context?.signal);
+    return queryResult(
+      scopePartnerManagers(this.data.partnerManagers, access),
+      this.meta(undefined),
+    );
+  }
+
+  async getPartnerRoster(
+    access: DemoAccessScope,
+    scope: { prospects?: Partner[] },
+    context?: QueryContext,
+  ): Promise<QueryResult<Partner[]>> {
+    throwIfAborted(context?.signal);
+    return queryResult(this.performanceRoster(access, scope.prospects), this.meta(undefined));
+  }
+
+  async getPartnerCertification(
+    access: DemoAccessScope,
+    scope: PartnerCertificationScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerCertificationProfile | null>> {
+    throwIfAborted(context?.signal);
+    // The roster lookup comes first: it applies the access scope, so a
+    // scope-less call fails closed here rather than answering.
+    const roster = this.performanceRoster(access, scope.prospects);
+    if (scope.partnerId === undefined) return queryResult(null, this.meta(undefined));
+    const partner = roster.find((candidate) => candidate.id === scope.partnerId);
+    if (partner === undefined) return queryResult(null, this.meta(undefined));
+    const certification = scopeCertifications(
+      this.data.certifications,
+      this.data.partners,
+      access,
+    ).find((cert) => cert.partnerId === partner.id);
+    return queryResult(
+      { partner, ...(certification !== undefined ? { certification } : {}) },
+      this.meta(undefined),
+    );
+  }
+
+  async listScopedOpportunities(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<Opportunity>>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    const edited = applySessionEdits(book.opportunities, scope.edits ?? NO_SESSION_EDITS);
+    const phaseOpps = filterByPhase(filterByType(edited, scope.oppType ?? 'all'), scope.phase);
+    // Stable order, so a cursor means the same thing between calls.
+    const ordered = [...phaseOpps].sort((a, b) =>
+      a.expectedCloseDate === b.expectedCloseDate
+        ? a.id.localeCompare(b.id)
+        : a.expectedCloseDate.localeCompare(b.expectedCloseDate),
+    );
+    return queryResult(
+      paginateRows({
+        rows: ordered,
+        queryKey: `listScopedOpportunities|access:${demoScopeKey(access)}|phase:${scope.phase}|type:${scope.oppType ?? 'all'}|${this.drilldownKey(scope)}`,
+        asOf: this.dataEpoch(),
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
+      this.meta(scope.edits),
+    );
+  }
+
+  async listPendingRegistrations(
+    access: DemoAccessScope,
+    scope: PendingRegistrationsScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DealRegistration>>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    const registrations =
+      scope.phase === undefined
+        ? book.registrations
+        : filterRegistrationsByPhase(book.registrations, scope.phase);
+    // Oldest first — the metric's stable order over an immutable book, so a
+    // cursor walk over unchanged data visits every row exactly once.
+    const ordered = pendingRegistrations(registrations);
+    return queryResult(
+      paginateRows({
+        rows: ordered,
+        queryKey: `listPendingRegistrations|access:${demoScopeKey(access)}|phase:${scope.phase ?? 'all'}|${this.drilldownKey(scope)}`,
+        asOf: this.dataEpoch(),
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
+      this.meta(undefined),
+    );
+  }
+
+  async listUnconvertedRegistrations(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DealRegistration>>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    // Oldest decision first, exactly the order the exclusivity watch has
+    // always rendered.
+    const ordered = approvedNotConverted(book.registrations);
+    return queryResult(
+      paginateRows({
+        rows: ordered,
+        queryKey: `listUnconvertedRegistrations|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
+        asOf: this.dataEpoch(),
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
+      this.meta(undefined),
+    );
+  }
+
+  async listDuplicateRegistrationGroups(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DuplicateRegistrationGroup>>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    // Sorted by earliest submission — the metric's own stable order.
+    const ordered = duplicateRegistrationGroups(book.registrations, book.roster);
+    return queryResult(
+      paginateRows({
+        rows: ordered,
+        queryKey: `listDuplicateRegistrationGroups|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
+        asOf: this.dataEpoch(),
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
       this.meta(undefined),
     );
   }

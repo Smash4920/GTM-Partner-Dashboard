@@ -200,12 +200,12 @@ export default function App({
     [data, partners, opportunities, teamUsers],
   );
 
-  // The same edits in the shape the scoped contract takes. Forecasting's
-  // queries carry them so the provider aggregates the corrected book itself,
-  // rather than the client re-applying edits to an answer computed without
-  // them. The fold above is the same work for the seven views still on the
-  // load-everything contract; both exist only until those views move across,
-  // at which point the provider owns the edit path alone.
+  // The same edits in the shape the scoped contract takes. The scoped
+  // routes' queries carry them so the provider aggregates the corrected book
+  // itself, rather than the client re-applying edits to an answer computed
+  // without them. The fold above is the same work for the five views still
+  // on the load-everything contract; both exist only until those views move
+  // across, at which point the provider owns the edit path alone.
   const forecastEdits = useMemo<SessionEdits>(
     () => ({ revenueOverrides, notes, nextSteps, forecastCalls }),
     [revenueOverrides, notes, nextSteps, forecastCalls],
@@ -523,6 +523,7 @@ export default function App({
             provider={provider}
             forecastEdits={forecastEdits}
             classifications={classifications}
+            prospects={prospects}
             addedUserIds={addedUserIds}
             notifications={notifications}
             onSetRevenue={setRevenue}
@@ -562,6 +563,7 @@ interface RouteContentProps {
   provider: DataProvider;
   forecastEdits: SessionEdits;
   classifications: Record<string, MeetingClassification>;
+  prospects: Partner[];
   addedUserIds: Set<string>;
   notifications: DashboardNotification[];
   onSetRevenue: (opportunityId: string, value: number) => void;
@@ -583,9 +585,9 @@ interface RouteContentProps {
  *   render through total provider failure; only the roster and alert sections
  *   of Data Connections need the book, and those say so themselves, with a
  *   retry.
- * - Forecasting reads the scoped contract and carries per-widget failure
- *   state, so a failed whole-book load never blanks it: each widget names its
- *   own failure and retries its own query.
+ * - Forecasting, Home, and Partner Performance read the scoped contract and
+ *   carry per-widget failure state, so a failed whole-book load never blanks
+ *   them: each widget names its own failure and retries its own query.
  * - The remaining routes render the folded book. While it is absent they hold
  *   the route with a named loading or error state rather than rendering
  *   another provider's rows.
@@ -602,6 +604,7 @@ function RouteContent({
   provider,
   forecastEdits,
   classifications,
+  prospects,
   addedUserIds,
   notifications,
   onSetRevenue,
@@ -622,11 +625,11 @@ function RouteContent({
   // contain.
   const boundaryKey = `${providerId}:${generation}`;
   const isBookRoute =
-    route !== 'forecasting' && route !== 'production-requirements' && route !== 'data-connections';
-  // The book routes' recovery region: it survives the failure → recovered
-  // transition, so a successful retry lands focus on the named region rather
-  // than dropping it to the document body.
-  const bookRecovery = useRetryRecovery('dashboard data', error !== null && isBookRoute);
+    route !== 'home' &&
+    route !== 'partners' &&
+    route !== 'forecasting' &&
+    route !== 'production-requirements' &&
+    route !== 'data-connections';
   return (
     <>
       {/* Forecasting and Production Requirements do not read the book, but
@@ -671,51 +674,108 @@ function RouteContent({
           />
         </ErrorBoundary>
       )}
+      {route === 'home' && (
+        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:home`}>
+          <HomeView
+            provider={provider}
+            edits={forecastEdits}
+            classifications={classifications}
+            prospects={prospects}
+          />
+        </ErrorBoundary>
+      )}
+      {route === 'partners' && (
+        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:partners`}>
+          <PartnerPerformanceView
+            provider={provider}
+            edits={forecastEdits}
+            classifications={classifications}
+            prospects={prospects}
+          />
+        </ErrorBoundary>
+      )}
       {isBookRoute && (
-        <div ref={bookRecovery.regionRef} {...bookRecovery.regionProps}>
-          {/* The legacy book load is still one logical unit — the scoped-route
-              migration chain owns splitting it — so its failure names the load
-              and retries it as a unit. */}
-          {error !== null && (
-            <div className="rounded-card border border-ash p-4">
-              <QueryFailure
-                text="Dashboard data unavailable"
-                retryLabel="dashboard data"
-                error={error}
-                onRetry={bookRecovery.armRetry(retry)}
-              />
-            </div>
-          )}
-          {/* The book on screen always belongs to the committed provider: a
-              switch keeps the old book while the candidate is only requested,
-              and the commit drops it for a loading state until the new
-              provider's own data arrives. There is no frame in between. */}
-          {loading && !live && (
-            <p className="flex items-center gap-2 py-32 font-mono text-xs uppercase tracking-[0.08em] text-granite">
-              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal" />
-              Loading dashboard data
-            </p>
-          )}
-          {live !== null && (
-            <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:${route}`}>
-              {route === 'home' && <HomeView data={live} classifications={classifications} />}
-              {route === 'partners' && (
-                <PartnerPerformanceView data={live} classifications={classifications} />
-              )}
-              {route === 'registration-ops' && <DealRegistrationOpsView data={live} />}
-              {route === 'activity' && (
-                <ActivityTrackingView
-                  data={live}
-                  classifications={classifications}
-                  onCommitClassifications={onCommitClassifications}
-                  onAddPartner={onAddPartner}
-                />
-              )}
-              {route === 'partner-view' && <PartnerView data={live} />}
-            </ErrorBoundary>
-          )}
-        </div>
+        <BookRouteContent
+          route={route}
+          live={live}
+          loading={loading}
+          error={error}
+          retry={retry}
+          boundaryKey={boundaryKey}
+          classifications={classifications}
+          onCommitClassifications={onCommitClassifications}
+          onAddPartner={onAddPartner}
+        />
       )}
     </>
+  );
+}
+
+/** The folded-book routes: one load, one failure surface, one recovery region. */
+function BookRouteContent({
+  route,
+  live,
+  loading,
+  error,
+  retry,
+  boundaryKey,
+  classifications,
+  onCommitClassifications,
+  onAddPartner,
+}: {
+  route: Route;
+  live: DashboardData | null;
+  loading: boolean;
+  error: string | null;
+  retry: () => void;
+  boundaryKey: string;
+  classifications: Record<string, MeetingClassification>;
+  onCommitClassifications: (next: Record<string, MeetingClassification>) => void;
+  onAddPartner: (name: string, partnerManagerId: string) => string;
+}) {
+  // The book routes' recovery region: it survives the failure → recovered
+  // transition, so a successful retry lands focus on the named region rather
+  // than dropping it to the document body.
+  const recovery = useRetryRecovery('dashboard data', error !== null);
+  return (
+    <div ref={recovery.regionRef} {...recovery.regionProps}>
+      {/* The legacy book load is still one logical unit — the scoped-route
+          migration chain owns splitting it — so its failure names the load
+          and retries it as a unit. */}
+      {error !== null && (
+        <div className="rounded-card border border-ash p-4">
+          <QueryFailure
+            text="Dashboard data unavailable"
+            retryLabel="dashboard data"
+            error={error}
+            onRetry={recovery.armRetry(retry)}
+          />
+        </div>
+      )}
+      {/* The book on screen always belongs to the committed provider: a
+          switch keeps the old book while the candidate is only requested,
+          and the commit drops it for a loading state until the new
+          provider's own data arrives. There is no frame in between. */}
+      {loading && !live && (
+        <p className="flex items-center gap-2 py-32 font-mono text-xs uppercase tracking-[0.08em] text-granite">
+          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal" />
+          Loading dashboard data
+        </p>
+      )}
+      {live !== null && (
+        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:${route}`}>
+          {route === 'registration-ops' && <DealRegistrationOpsView data={live} />}
+          {route === 'activity' && (
+            <ActivityTrackingView
+              data={live}
+              classifications={classifications}
+              onCommitClassifications={onCommitClassifications}
+              onAddPartner={onAddPartner}
+            />
+          )}
+          {route === 'partner-view' && <PartnerView data={live} />}
+        </ErrorBoundary>
+      )}
+    </div>
   );
 }

@@ -279,9 +279,10 @@ The weekly snapshot job must be **idempotent**: a unique key on
 - Replace the single `Promise.all` in `useDashboardData` with a server-state
   library (TanStack Query) and **per-widget** loading and error states, so one
   slow endpoint no longer blanks the whole page. _Partly done:_ the migrated
-  view has hand-rolled per-widget states (`useForecastQueries.ts`) and a global
-  spinner still covers the other seven. The library is worth adopting when there
-  are several migrated views to share it, not before.
+  views have hand-rolled per-widget states (`useForecastQueries.ts`,
+  `useHomeQueries.ts`, `usePartnerPerformanceQueries.ts`) and a global spinner
+  still covers the other five. The library is worth adopting when there are
+  several migrated views to share it, not before.
 - Virtualize `OpportunityTable` and `ForecastTable`; give `Leaderboard` a real
   limit instead of `limit={uniquePartners}`. _Not started_ — the scoped contract
   now bounds what reaches the client, so this is comfort rather than survival.
@@ -349,7 +350,7 @@ rather than six months into a warehouse build.
 Migrate **Forecasting first**. It is the hard case: the hottest edit path, and
 the only view driven by the snapshot collection that can never ship whole. If
 the week-over-week series can be served as a ~14-row aggregate, the central
-thesis is proven and the remaining seven views are a template exercise.
+thesis is proven and the remaining views are a template exercise.
 
 Ship two additional providers behind the same contract:
 
@@ -359,8 +360,10 @@ Ship two additional providers behind the same contract:
 - a **scale provider** generating ~100× data, so the claim that the contract
   holds at volume is demonstrable rather than asserted.
 
-**Outcome, as built.** Forecast migrated end to end, the other seven views
-untouched and still on the list-everything contract. Measured on the built demo,
+**Outcome, as built.** Forecasting migrated end to end first; Home and Partner
+Performance have since followed, with the phase and manager/partner drill-downs
+as provider inputs, per-widget query states, and cursor-paginated tables. Five
+views remain on the list-everything contract. Measured on the built demo,
 which is honest about what the mock can and cannot show. Medians over five runs
 at 100× — 2,500 partners, 21,300 opportunities, 191,000 snapshot rows, ~45 MB of
 JSON:

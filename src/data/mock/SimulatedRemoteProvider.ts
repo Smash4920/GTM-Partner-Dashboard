@@ -1,4 +1,5 @@
 import type {
+  ActivityScope,
   DataProvider,
   ForecastQualitySummary,
   ForecastScope,
@@ -6,7 +7,17 @@ import type {
   ManagerForecastGroup,
   Page,
   PageRequest,
+  PartnerCertificationProfile,
+  PartnerCertificationScope,
+  PartnerDrilldown,
+  PartnerLeaderboardEntry,
   PartnerRef,
+  PendingRegistrationsScope,
+  PerformanceScope,
+  PerformanceSummary,
+  RegistrationOpsSummary,
+  RevenueTrendScope,
+  StageBreakdown,
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from '../DataProvider';
@@ -14,6 +25,14 @@ import type { DemoAccessScope } from '../accessScope';
 import type { QueryContext } from '../queryContext';
 import type { QueryResult } from '../queryMetadata';
 import { abortableDelay, throwIfAborted } from '../../lib/abort';
+import type {
+  DuplicateRegistrationGroup,
+  QuarterRevenueRow,
+  RegistrationFunnel,
+  TypeRow,
+  WeeklyActivityRow,
+  WeeklyGoalProgress,
+} from '../../lib/metrics';
 import type {
   ActivityMeeting,
   DealRegistration,
@@ -363,6 +382,203 @@ export class SimulatedRemoteProvider implements DataProvider {
     return this.stamp(
       this.roundTrip('getPartnerDirectory', context?.signal, () =>
         this.inner.getPartnerDirectory(access, context),
+      ),
+    );
+  }
+
+  // ---- Home and Partner Performance ----------------------------------------
+
+  async getPerformanceSummary(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PerformanceSummary>> {
+    return this.stamp(
+      this.roundTrip('getPerformanceSummary', context?.signal, () =>
+        this.inner.getPerformanceSummary(access, scope, context),
+      ),
+    );
+  }
+
+  async getRegistrationFunnel(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<RegistrationFunnel>> {
+    return this.stamp(
+      this.roundTrip('getRegistrationFunnel', context?.signal, () =>
+        this.inner.getRegistrationFunnel(access, scope, context),
+      ),
+    );
+  }
+
+  async getStageBreakdown(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<StageBreakdown>> {
+    return this.stamp(
+      this.roundTrip('getStageBreakdown', context?.signal, () =>
+        this.inner.getStageBreakdown(access, scope, context),
+      ),
+    );
+  }
+
+  async getTypeBreakdown(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<TypeRow[]>> {
+    return this.stamp(
+      this.roundTrip('getTypeBreakdown', context?.signal, () =>
+        this.inner.getTypeBreakdown(access, scope, context),
+      ),
+    );
+  }
+
+  async getQuarterlyRevenueTrend(
+    access: DemoAccessScope,
+    scope: RevenueTrendScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<QuarterRevenueRow[]>> {
+    return this.stamp(
+      this.roundTrip('getQuarterlyRevenueTrend', context?.signal, () =>
+        this.inner.getQuarterlyRevenueTrend(access, scope, context),
+      ),
+    );
+  }
+
+  async getWeeklyActivitySeries(
+    access: DemoAccessScope,
+    scope: ActivityScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<WeeklyActivityRow[]>> {
+    return this.stamp(
+      this.roundTrip('getWeeklyActivitySeries', context?.signal, () =>
+        this.inner.getWeeklyActivitySeries(access, scope, context),
+      ),
+    );
+  }
+
+  async getWeeklyGoalProgress(
+    access: DemoAccessScope,
+    scope: ActivityScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<WeeklyGoalProgress>> {
+    return this.stamp(
+      this.roundTrip('getWeeklyGoalProgress', context?.signal, () =>
+        this.inner.getWeeklyGoalProgress(access, scope, context),
+      ),
+    );
+  }
+
+  async getRegistrationOpsSummary(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    context?: QueryContext,
+  ): Promise<QueryResult<RegistrationOpsSummary>> {
+    return this.stamp(
+      this.roundTrip('getRegistrationOpsSummary', context?.signal, () =>
+        this.inner.getRegistrationOpsSummary(access, scope, context),
+      ),
+    );
+  }
+
+  async getPartnerLeaderboard(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerLeaderboardEntry[]>> {
+    return this.stamp(
+      this.roundTrip('getPartnerLeaderboard', context?.signal, () =>
+        this.inner.getPartnerLeaderboard(access, scope, context),
+      ),
+    );
+  }
+
+  async getManagerDirectory(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerManager[]>> {
+    return this.stamp(
+      this.roundTrip('getManagerDirectory', context?.signal, () =>
+        this.inner.getManagerDirectory(access, context),
+      ),
+    );
+  }
+
+  async getPartnerRoster(
+    access: DemoAccessScope,
+    scope: { prospects?: Partner[] },
+    context?: QueryContext,
+  ): Promise<QueryResult<Partner[]>> {
+    return this.stamp(
+      this.roundTrip('getPartnerRoster', context?.signal, () =>
+        this.inner.getPartnerRoster(access, scope, context),
+      ),
+    );
+  }
+
+  async getPartnerCertification(
+    access: DemoAccessScope,
+    scope: PartnerCertificationScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerCertificationProfile | null>> {
+    return this.stamp(
+      this.roundTrip('getPartnerCertification', context?.signal, () =>
+        this.inner.getPartnerCertification(access, scope, context),
+      ),
+    );
+  }
+
+  async listScopedOpportunities(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<Opportunity>>> {
+    return this.stamp(
+      this.roundTrip('listScopedOpportunities', context?.signal, () =>
+        this.inner.listScopedOpportunities(access, scope, page, context),
+      ),
+    );
+  }
+
+  async listPendingRegistrations(
+    access: DemoAccessScope,
+    scope: PendingRegistrationsScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DealRegistration>>> {
+    return this.stamp(
+      this.roundTrip('listPendingRegistrations', context?.signal, () =>
+        this.inner.listPendingRegistrations(access, scope, page, context),
+      ),
+    );
+  }
+
+  async listUnconvertedRegistrations(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DealRegistration>>> {
+    return this.stamp(
+      this.roundTrip('listUnconvertedRegistrations', context?.signal, () =>
+        this.inner.listUnconvertedRegistrations(access, scope, page, context),
+      ),
+    );
+  }
+
+  async listDuplicateRegistrationGroups(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DuplicateRegistrationGroup>>> {
+    return this.stamp(
+      this.roundTrip('listDuplicateRegistrationGroups', context?.signal, () =>
+        this.inner.listDuplicateRegistrationGroups(access, scope, page, context),
       ),
     );
   }

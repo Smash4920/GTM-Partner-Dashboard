@@ -193,7 +193,7 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
         text: 'Serve aggregated, paginated API responses rather than loading the entire ecosystem into the browser.',
         demo: 'wip',
         demoScope:
-          'Forecasting reads the scoped, cursor-paginated contract against the mock provider; the other seven views are mid-migration.',
+          'Forecasting, Home, and Partner Performance read the scoped, cursor-paginated contract against the mock provider; the other five views are mid-migration.',
         production: {
           status: 'prod-only',
           blocker:
@@ -439,8 +439,8 @@ const UTILITY_REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
  * the codebase, so the test harness came first. Doing both against mock data
  * answered the only question that really matters — do the views survive
  * pagination and server-side aggregation? — for the price of a refactor rather
- * than the price of a warehouse. The answer was yes, with one view migrated and
- * seven to go.
+ * than the price of a warehouse. The answer was yes, with three views migrated
+ * and five to go.
  */
 interface MigrationPhase {
   phase: string;
@@ -480,10 +480,11 @@ const MIGRATION_PHASES: MigrationPhase[] = [
     title: 'Contract rewrite against the mock',
     subtitle: 'No infrastructure required · landed in demo mode',
     demoMode: true,
-    status: 'Done for Forecasting · seven views still on the old contract',
+    status:
+      'Done for Forecasting, Home, and Partner Performance · five views still on the old contract',
     items: [
       {
-        text: 'DataProvider is split in two: the scoped aggregates and cursor-paginated row lists that are the target shape, and the eight list-everything calls still being retired. Forecasting reads only the first.',
+        text: 'DataProvider is split in two: the scoped aggregates and cursor-paginated row lists that are the target shape, and the eight list-everything calls still being retired. Forecasting, Home, and Partner Performance read only the first.',
         demo: 'complete',
       },
       {

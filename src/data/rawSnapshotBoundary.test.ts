@@ -107,6 +107,22 @@ async function collectAllAnswers(access: DemoAccessScope): Promise<unknown[]> {
     await provider.getManagerForecastGroups(access, { quarter }),
     await provider.getWeeklyForecastSeries(access, { quarter }),
     await provider.getPartnerDirectory(access),
+    await provider.getPerformanceSummary(access, { phase: 'q3' }),
+    await provider.getRegistrationFunnel(access, { phase: 'q3' }),
+    await provider.getStageBreakdown(access, { phase: 'q3' }),
+    await provider.getTypeBreakdown(access, { phase: 'q3' }),
+    await provider.getQuarterlyRevenueTrend(access, {}),
+    await provider.getWeeklyActivitySeries(access, {}),
+    await provider.getWeeklyGoalProgress(access, {}),
+    await provider.getRegistrationOpsSummary(access, {}),
+    await provider.getPartnerLeaderboard(access, { phase: 'q3' }),
+    await provider.getManagerDirectory(access),
+    await provider.getPartnerRoster(access, {}),
+    await provider.getPartnerCertification(access, {}),
+    await provider.listScopedOpportunities(access, { phase: 'q3' }, { limit: 50 }),
+    await provider.listPendingRegistrations(access, {}, { limit: 50 }),
+    await provider.listUnconvertedRegistrations(access, {}, { limit: 50 }),
+    await provider.listDuplicateRegistrationGroups(access, {}, { limit: 50 }),
   ];
   // The row query, walked to exhaustion rather than sampled: every page is
   // part of the public surface.
@@ -181,7 +197,15 @@ describe('static boundary', () => {
     const historyMethods = DATA_PROVIDER_METHODS.filter((method) =>
       /snapshot|history|weekly/i.test(method),
     );
-    expect(historyMethods).toEqual(['getWeeklyForecastSeries']);
+    // The forecast series is the only history-bearing method; the two weekly
+    // activity aggregates are bounded eight-week buckets over the meeting
+    // collection, and both are pinned here so nothing raw-bearing can join
+    // this list quietly.
+    expect(historyMethods).toEqual([
+      'getWeeklyForecastSeries',
+      'getWeeklyActivitySeries',
+      'getWeeklyGoalProgress',
+    ]);
     const managerHistory = DATA_PROVIDER_METHODS.filter(
       (method) => /manager/i.test(method) && /series|history|weekly/i.test(method),
     );

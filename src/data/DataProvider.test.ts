@@ -38,27 +38,59 @@ function unscopedCalls(provider: DataProvider): (() => Promise<unknown>)[] {
     () => provider.getWeeklyForecastSeries(missing, { quarter }),
     () => provider.listQuarterOpportunities(missing, { quarter }, { limit: 5 }),
     () => provider.getPartnerDirectory(missing),
+    () => provider.getPerformanceSummary(missing, { phase: 'q3' }),
+    () => provider.getRegistrationFunnel(missing, { phase: 'q3' }),
+    () => provider.getStageBreakdown(missing, { phase: 'q3' }),
+    () => provider.getTypeBreakdown(missing, { phase: 'q3' }),
+    () => provider.getQuarterlyRevenueTrend(missing, {}),
+    () => provider.getWeeklyActivitySeries(missing, {}),
+    () => provider.getWeeklyGoalProgress(missing, {}),
+    () => provider.getRegistrationOpsSummary(missing, {}),
+    () => provider.getPartnerLeaderboard(missing, { phase: 'q3' }),
+    () => provider.getManagerDirectory(missing),
+    () => provider.getPartnerRoster(missing, {}),
+    () => provider.getPartnerCertification(missing, {}),
+    () => provider.listScopedOpportunities(missing, { phase: 'q3' }, { limit: 5 }),
+    () => provider.listPendingRegistrations(missing, {}, { limit: 5 }),
+    () => provider.listUnconvertedRegistrations(missing, {}, { limit: 5 }),
+    () => provider.listDuplicateRegistrationGroups(missing, {}, { limit: 5 }),
   ];
 }
 
 describe('DataProvider demo access scope (VAL-DATA-003)', () => {
-  it('keeps a closed inventory: exactly these fifteen data-bearing methods exist', () => {
+  it('keeps a closed inventory: exactly these thirty-one data-bearing methods exist', () => {
     expect([...DATA_PROVIDER_METHODS].sort()).toEqual([
       'getForecastQuality',
       'getForecastSummary',
+      'getManagerDirectory',
       'getManagerForecastGroups',
+      'getPartnerCertification',
       'getPartnerDirectory',
+      'getPartnerLeaderboard',
+      'getPartnerRoster',
+      'getPerformanceSummary',
+      'getQuarterlyRevenueTrend',
+      'getRegistrationFunnel',
+      'getRegistrationOpsSummary',
+      'getStageBreakdown',
       'getTargets',
+      'getTypeBreakdown',
+      'getWeeklyActivitySeries',
       'getWeeklyForecastSeries',
+      'getWeeklyGoalProgress',
       'getWeightedForecast',
       'listActivities',
       'listCertifications',
+      'listDuplicateRegistrationGroups',
       'listOpportunities',
       'listPartnerManagers',
       'listPartners',
+      'listPendingRegistrations',
       'listQuarterOpportunities',
       'listRegistrations',
+      'listScopedOpportunities',
       'listTeamUsers',
+      'listUnconvertedRegistrations',
     ]);
   });
 
@@ -113,7 +145,23 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       provider.getWeeklyForecastSeries(scope, { quarter }),
       provider.listQuarterOpportunities(scope, { quarter }, { limit: 5 }),
       provider.getPartnerDirectory(scope),
+      provider.getPerformanceSummary(scope, { phase: 'q3' }),
+      provider.getRegistrationFunnel(scope, { phase: 'q3' }),
+      provider.getStageBreakdown(scope, { phase: 'q3' }),
+      provider.getTypeBreakdown(scope, { phase: 'q3' }),
+      provider.getQuarterlyRevenueTrend(scope, {}),
+      provider.getWeeklyActivitySeries(scope, {}),
+      provider.getWeeklyGoalProgress(scope, {}),
+      provider.getRegistrationOpsSummary(scope, {}),
+      provider.getPartnerLeaderboard(scope, { phase: 'q3' }),
+      provider.getManagerDirectory(scope),
+      provider.getPartnerRoster(scope, {}),
+      provider.getPartnerCertification(scope, {}),
+      provider.listScopedOpportunities(scope, { phase: 'q3' }, { limit: 5 }),
+      provider.listPendingRegistrations(scope, {}, { limit: 5 }),
+      provider.listUnconvertedRegistrations(scope, {}, { limit: 5 }),
+      provider.listDuplicateRegistrationGroups(scope, {}, { limit: 5 }),
     ]);
-    expect(results).toHaveLength(15);
+    expect(results).toHaveLength(31);
   });
 });

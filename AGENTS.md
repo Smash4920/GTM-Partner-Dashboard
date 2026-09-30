@@ -102,7 +102,7 @@ survivable.
 - `src/data/DataProvider.ts`: the read-side integration boundary used by the UI.
   It is mid-migration between two interfaces; see below.
 - `src/data/useDashboardData.ts`: loads and combines every provider collection
-  the seven un-migrated views still need.
+  the five un-migrated views still need.
 - `src/data/useForecastQueries.ts`: loads the scoped contract for Forecasting,
   with per-widget loading and error state.
 - `src/data/providers.ts`: selects between the three providers the header's

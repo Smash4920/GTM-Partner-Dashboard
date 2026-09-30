@@ -3,13 +3,28 @@ import type { Page, PageRequest } from './pagination';
 import type { QueryContext } from './queryContext';
 import type { QueryResult } from './queryMetadata';
 import type { SessionEdits } from './sessionEdits';
-import type { CoverageState } from '../lib/metrics';
+import type {
+  CoverageState,
+  DuplicateRegistrationGroup,
+  LeaderboardRow,
+  OutcomeTotals,
+  QuarterRevenueRow,
+  RegistrationConversionTimes,
+  RegistrationFunnel,
+  StageRow,
+  TypeRow,
+  WeeklyActivityRow,
+  WeeklyGoalProgress,
+} from '../lib/metrics';
 import type {
   ActivityMeeting,
   DealRegistration,
+  FiscalPhase,
   ForecastCategory,
+  MeetingClassification,
   Opportunity,
   OpportunityStage,
+  OpportunityType,
   Partner,
   PartnerCertification,
   PartnerManager,
@@ -25,11 +40,11 @@ import type {
  *
  * - `ScopedQueryProvider` is the target shape: the caller states a scope, the
  *   provider returns an answer. Aggregates come back as kilobytes however
- *   large the book is, and rows come back a page at a time. Forecasting is
- *   built on it.
+ *   large the book is, and rows come back a page at a time. Forecasting,
+ *   Home, and Partner Performance are built on it.
  * - `LegacyBookProvider` is the shape being retired: eight calls that each
  *   return an entire collection, which the browser then aggregates itself.
- *   Seven views still depend on it.
+ *   Five views still depend on it.
  *
  * The split is the backlog. A view moves across when its queries exist on the
  * scoped side, and `LegacyBookProvider` is deleted when the last one has.
@@ -205,6 +220,141 @@ export interface WeeklySeriesRow {
   recordedAt?: string;
 }
 
+// ---- Home and Partner Performance -----------------------------------------
+
+/**
+ * The drill-down the Home and Partner Performance routes scope by: one
+ * partner manager, one partner, or everyone.
+ *
+ * This is a provider input, not a browser reduction: the view states the
+ * selection, and the provider computes from the selected rows alone — a
+ * whole-book fetch narrowed in the browser would move everyone else's data
+ * across the seam to answer one manager's question.
+ */
+export interface PartnerDrilldown {
+  /** One manager's roster; absent means every manager. */
+  partnerManagerId?: string;
+  /** A single partner — the Partner Performance drill-in. Wins over the manager. */
+  partnerId?: string;
+  /**
+   * Restrict membership to the roster: rows whose partner the provider does
+   * not know (generated overlap remnants) fall out even with no manager or
+   * partner selected. This is the shape Partner Performance has always
+   * applied; Home does not set it and keeps the whole book.
+   */
+  partnerFilter?: 'roster';
+  /**
+   * Session prospect partners, appended to the roster before scoping. They
+   * exist only in the session (there is no write path yet), so they ride
+   * along with the query the way the session's edits do.
+   */
+  prospects?: Partner[];
+}
+
+/**
+ * The revenue-versus-target trend's scope: the drill-down, an optional
+ * opportunity-type lens, and the session edits. No phase — the trend spans
+ * every fiscal quarter by definition.
+ */
+export interface RevenueTrendScope extends PartnerDrilldown {
+  /** 'all' or one opportunity type. Absent means 'all'. */
+  oppType?: OpportunityType | 'all';
+  /** Session edits, applied before aggregation — see `ForecastScope.edits`. */
+  edits?: SessionEdits;
+}
+
+/** What one scoped Home or Partner Performance query needs. */
+export interface PerformanceScope extends RevenueTrendScope {
+  /** The fiscal phase the aggregates describe. */
+  phase: FiscalPhase;
+}
+
+/** The weekly activity and goal queries' scope: the drill-down plus the
+ * session's meeting classifications, which the aggregates apply the same way
+ * the views used to apply them client-side. */
+export interface ActivityScope extends PartnerDrilldown {
+  classifications?: Record<string, MeetingClassification>;
+}
+
+/** The pending-registration queue's scope: the drill-down, plus the phase
+ * when the route's queue is phase-filtered (Partner Performance) — Home's
+ * queue spans all history and omits it. */
+export interface PendingRegistrationsScope extends PartnerDrilldown {
+  phase?: FiscalPhase;
+}
+
+/** One partner's enablement lookup: the drill-in target plus the session's prospects. */
+export interface PartnerCertificationScope {
+  /** The partner to look up; absent (no drill-in) answers null. */
+  partnerId?: string;
+  prospects?: Partner[];
+}
+
+/**
+ * The phase's headline numbers for a scope, fixed in size whatever the book
+ * weighs. The two registration-rate counts ride along so the tiles they
+ * subtitle never read a different query's answer.
+ */
+export interface PerformanceSummary {
+  openPipelineValue: number;
+  openCount: number;
+  closedWon: number;
+  /** Closed-won in the same span a year earlier; the delta's denominator. */
+  priorClosedWon: number;
+  target: number;
+  attainment: number;
+  /** Same three-way state the forecast summary carries; see there. */
+  coverage: CoverageState;
+  remainingQuota: number;
+  avgOpenDealSize: number;
+  winRate: number;
+  approvalRate: number;
+  /** Decided registrations behind the approval rate (approved + rejected). */
+  decidedRegistrations: number;
+  conversionRate: number;
+  /** Approved registrations that became opportunities (the funnel's converted). */
+  convertedRegistrations: number;
+  /** Partners with fiscal-year opportunity or registration activity. */
+  activePartners: number;
+  /** Partners in the scope's roster selection. */
+  alignedPartners: number;
+}
+
+/** Open pipeline by stage plus the phase's closed outcomes. */
+export interface StageBreakdown {
+  stages: StageRow[];
+  outcomes: OutcomeTotals;
+}
+
+/**
+ * Deal-registration operations for a scope, deliberately NOT phase-filtered:
+ * exclusivity lapsing and conversion times span quarters, so a Q3 scope must
+ * still see the older registrations that are leaking.
+ */
+export interface RegistrationOpsSummary {
+  times: RegistrationConversionTimes;
+  /** Approved registrations that never became an opportunity. */
+  approvedNotConverted: number;
+  /** Of those, past the 60-calendar-day exclusivity window. */
+  exclusivityLapsed: number;
+  /** Pending registrations at or past the 5-business-day response SLA. */
+  pastSla: number;
+  /** Clients registered by more than one partner. Internal-only material. */
+  duplicateGroups: number;
+}
+
+/** One leaderboard row with the partner's certification record attached, so
+ * the enablement column never needs the certification collection. */
+export interface PartnerLeaderboardEntry extends LeaderboardRow {
+  certification?: PartnerCertification;
+}
+
+/** A partner and its certification record, or the record's absence made explicit. */
+export interface PartnerCertificationProfile {
+  partner: Partner;
+  certification?: PartnerCertification;
+}
+
 /**
  * Every scoped answer is an envelope: the data plus the metadata that makes
  * it honest — the committed provider's id, the deterministic as-of instant,
@@ -274,6 +424,142 @@ interface ScopedQueryProvider {
     access: DemoAccessScope,
     context?: QueryContext,
   ): Promise<QueryResult<PartnerRef[]>>;
+
+  // ---- Home and Partner Performance ----------------------------------------
+  //
+  // One method per widget region, so a rejected call fails exactly one card
+  // and its retry repeats only that call. Filters are scope inputs here, not
+  // browser reductions over a whole book.
+
+  /** The phase's KPI tiles: pipeline, closed-won and the prior-period delta,
+   * coverage, win rate, the two registration rates, and the partner counts. */
+  getPerformanceSummary(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PerformanceSummary>>;
+  /** The registration funnel for the phase, as counts and registered value. */
+  getRegistrationFunnel(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<RegistrationFunnel>>;
+  /** Open pipeline by stage plus the phase's won/lost outcomes. */
+  getStageBreakdown(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<StageBreakdown>>;
+  /**
+   * The phase's open pipeline split by opportunity type. The type lens does
+   * not narrow this answer — the chart exists to show the mix the lens
+   * selects from — but the session's edits still apply.
+   */
+  getTypeBreakdown(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<TypeRow[]>>;
+  /**
+   * Closed-won versus target for every fiscal quarter: a bounded row per
+   * quarter, never the deals behind them.
+   */
+  getQuarterlyRevenueTrend(
+    access: DemoAccessScope,
+    scope: RevenueTrendScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<QuarterRevenueRow[]>>;
+  /** Eight weekly meeting buckets for the scope, classifications applied. */
+  getWeeklyActivitySeries(
+    access: DemoAccessScope,
+    scope: ActivityScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<WeeklyActivityRow[]>>;
+  /** The current week's meetings against the weekly goal, classifications applied. */
+  getWeeklyGoalProgress(
+    access: DemoAccessScope,
+    scope: ActivityScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<WeeklyGoalProgress>>;
+  /** Registration operations for the scope: conversion times and leakage
+   * counts, spanning all history rather than the selected phase. */
+  getRegistrationOpsSummary(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    context?: QueryContext,
+  ): Promise<QueryResult<RegistrationOpsSummary>>;
+  /**
+   * Every partner in the scope's selection, ranked on the phase's closed-won:
+   * a bounded dimension row per partner, not a page, because the roster is
+   * bounded the way the manager directory is.
+   */
+  getPartnerLeaderboard(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerLeaderboardEntry[]>>;
+  /**
+   * The partner-manager directory, scoped like every other answer (a partner
+   * audience receives none). A small dimension the drill-down selects from.
+   */
+  getManagerDirectory(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerManager[]>>;
+  /**
+   * The partner roster — provider partners plus the session's prospects —
+   * under the access scope. A dimension lookup: it lets a registration row
+   * stay a registration instead of absorbing a display concern, and it is
+   * what the drill-down options render from.
+   */
+  getPartnerRoster(
+    access: DemoAccessScope,
+    scope: { prospects?: Partner[] },
+    context?: QueryContext,
+  ): Promise<QueryResult<Partner[]>>;
+  /** One partner's enablement standing; null when no partner is drilled into. */
+  getPartnerCertification(
+    access: DemoAccessScope,
+    scope: PartnerCertificationScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerCertificationProfile | null>>;
+  /**
+   * The scope's pipeline opportunities, a page at a time. Pages follow the
+   * shared contract in src/data/pagination.ts: bounded limits, stable
+   * ordering by expected close date then id, and opaque cursors bound to
+   * this exact query and data epoch.
+   */
+  listScopedOpportunities(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<Opportunity>>>;
+  /** The review queue, oldest first, a page at a time. */
+  listPendingRegistrations(
+    access: DemoAccessScope,
+    scope: PendingRegistrationsScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DealRegistration>>>;
+  /** Approved registrations with no opportunity yet — the exclusivity watch. */
+  listUnconvertedRegistrations(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DealRegistration>>>;
+  /**
+   * Clients registered by more than one partner, a page of groups at a time.
+   * Internal-only material: a partner-audience scope receives no groups,
+   * because the conflict rows themselves never enter that scope.
+   */
+  listDuplicateRegistrationGroups(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DuplicateRegistrationGroup>>>;
 }
 
 /**
@@ -311,6 +597,23 @@ const METHOD_INDEX: Record<keyof DataProvider, true> = {
   getWeeklyForecastSeries: true,
   listQuarterOpportunities: true,
   getPartnerDirectory: true,
+  // Home and Partner Performance
+  getPerformanceSummary: true,
+  getRegistrationFunnel: true,
+  getStageBreakdown: true,
+  getTypeBreakdown: true,
+  getQuarterlyRevenueTrend: true,
+  getWeeklyActivitySeries: true,
+  getWeeklyGoalProgress: true,
+  getRegistrationOpsSummary: true,
+  getPartnerLeaderboard: true,
+  getManagerDirectory: true,
+  getPartnerRoster: true,
+  getPartnerCertification: true,
+  listScopedOpportunities: true,
+  listPendingRegistrations: true,
+  listUnconvertedRegistrations: true,
+  listDuplicateRegistrationGroups: true,
 };
 
 export const DATA_PROVIDER_METHODS = Object.keys(METHOD_INDEX) as (keyof DataProvider)[];

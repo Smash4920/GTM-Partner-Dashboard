@@ -509,7 +509,13 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     const refreshed = await window.GTM_HEALTH?.refresh();
     expect(refreshed?.status).toBe('unavailable');
     expect(window.GTM_HEALTH?.artifact).toBe(refreshed);
-    expect(screen.queryByRole('heading', { name: 'Partner Performance Overview' })).toBeNull();
+    // Home reads the scoped contract now, so its overview still renders
+    // through the failed book load; its widgets report their own failures
+    // with the same stable copy.
+    expect(
+      await screen.findByRole('heading', { name: 'Partner Performance Overview' }),
+    ).toBeInTheDocument();
+    await screen.findByText('Performance summary unavailable:');
 
     // The route itself tells the truth too — in the load's stable copy, not
     // the rejection's own prose (the raw detail stays in the health check).
@@ -574,14 +580,14 @@ describe('App under total provider failure (VAL-RES-008)', () => {
   it('a successful book-route retry moves focus to the recovered dashboard region', async () => {
     // Every book route shares one failure surface. When its retry succeeds,
     // focus lands on the stable "dashboard data" region instead of falling
-    // to document.body with the Retry button that just unmounted.
+    // to document.body with the Retry button that just unmounted. Home no
+    // longer shows that takeover, so the check runs on a book route.
     const user = userEvent.setup();
     render(<App providerFactory={() => flakyOnceProvider()} />);
 
+    await user.click(await screen.findByRole('button', { name: 'Activity Tracking' }));
     await user.click(await screen.findByRole('button', { name: 'Retry dashboard data' }));
-    expect(
-      await screen.findByRole('heading', { name: 'Partner Performance Overview' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Activity Tracking' })).toBeInTheDocument();
 
     const region = screen.getByRole('group', { name: 'dashboard data' });
     expect(document.activeElement).toBe(region);
