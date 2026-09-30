@@ -203,9 +203,9 @@ export default function App({
   // The same edits in the shape the scoped contract takes. The scoped
   // routes' queries carry them so the provider aggregates the corrected book
   // itself, rather than the client re-applying edits to an answer computed
-  // without them. The fold above is the same work for the five views still
-  // on the load-everything contract; both exist only until those views move
-  // across, at which point the provider owns the edit path alone.
+  // without them. The fold above is the same work for the last view still
+  // on the load-everything contract; both exist only until Partner View
+  // moves across, at which point the provider owns the edit path alone.
   const forecastEdits = useMemo<SessionEdits>(
     () => ({ revenueOverrides, notes, nextSteps, forecastCalls }),
     [revenueOverrides, notes, nextSteps, forecastCalls],
@@ -624,12 +624,9 @@ function RouteContent({
   // instead of pointing at ids another provider's directory may not even
   // contain.
   const boundaryKey = `${providerId}:${generation}`;
-  const isBookRoute =
-    route !== 'home' &&
-    route !== 'partners' &&
-    route !== 'forecasting' &&
-    route !== 'production-requirements' &&
-    route !== 'data-connections';
+  // Only Partner View still rides the folded book; every other route is
+  // scoped or static.
+  const isBookRoute = route === 'partner-view';
   return (
     <>
       {/* Forecasting and Production Requirements do not read the book, but
@@ -694,6 +691,22 @@ function RouteContent({
           />
         </ErrorBoundary>
       )}
+      {route === 'registration-ops' && (
+        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:registration-ops`}>
+          <DealRegistrationOpsView provider={provider} prospects={prospects} />
+        </ErrorBoundary>
+      )}
+      {route === 'activity' && (
+        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:activity`}>
+          <ActivityTrackingView
+            provider={provider}
+            classifications={classifications}
+            onCommitClassifications={onCommitClassifications}
+            onAddPartner={onAddPartner}
+            prospects={prospects}
+          />
+        </ErrorBoundary>
+      )}
       {isBookRoute && (
         <BookRouteContent
           route={route}
@@ -702,16 +715,13 @@ function RouteContent({
           error={error}
           retry={retry}
           boundaryKey={boundaryKey}
-          classifications={classifications}
-          onCommitClassifications={onCommitClassifications}
-          onAddPartner={onAddPartner}
         />
       )}
     </>
   );
 }
 
-/** The folded-book routes: one load, one failure surface, one recovery region. */
+/** The folded-book route: one load, one failure surface, one recovery region. */
 function BookRouteContent({
   route,
   live,
@@ -719,9 +729,6 @@ function BookRouteContent({
   error,
   retry,
   boundaryKey,
-  classifications,
-  onCommitClassifications,
-  onAddPartner,
 }: {
   route: Route;
   live: DashboardData | null;
@@ -729,9 +736,6 @@ function BookRouteContent({
   error: string | null;
   retry: () => void;
   boundaryKey: string;
-  classifications: Record<string, MeetingClassification>;
-  onCommitClassifications: (next: Record<string, MeetingClassification>) => void;
-  onAddPartner: (name: string, partnerManagerId: string) => string;
 }) {
   // The book routes' recovery region: it survives the failure → recovered
   // transition, so a successful retry lands focus on the named region rather
@@ -764,15 +768,6 @@ function BookRouteContent({
       )}
       {live !== null && (
         <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:${route}`}>
-          {route === 'registration-ops' && <DealRegistrationOpsView data={live} />}
-          {route === 'activity' && (
-            <ActivityTrackingView
-              data={live}
-              classifications={classifications}
-              onCommitClassifications={onCommitClassifications}
-              onAddPartner={onAddPartner}
-            />
-          )}
           {route === 'partner-view' && <PartnerView data={live} />}
         </ErrorBoundary>
       )}

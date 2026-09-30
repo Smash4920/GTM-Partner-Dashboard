@@ -52,7 +52,7 @@ export default defineConfig({
       // layer sat at 0% before Phase 0 of docs/migration-plan.md, which is how
       // a refactor of 5,700 unverified lines came to look survivable.
       thresholds: {
-        statements: 94.5,
+        statements: 95,
         branches: 90,
         functions: 96,
         lines: 96,

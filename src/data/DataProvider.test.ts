@@ -54,11 +54,17 @@ function unscopedCalls(provider: DataProvider): (() => Promise<unknown>)[] {
     () => provider.listPendingRegistrations(missing, {}, { limit: 5 }),
     () => provider.listUnconvertedRegistrations(missing, {}, { limit: 5 }),
     () => provider.listDuplicateRegistrationGroups(missing, {}, { limit: 5 }),
+    () =>
+      provider.listWeeklyClassificationMeetings(
+        missing,
+        { partnerManagerId: 'pm-1' },
+        { limit: 5 },
+      ),
   ];
 }
 
 describe('DataProvider demo access scope (VAL-DATA-003)', () => {
-  it('keeps a closed inventory: exactly these thirty-one data-bearing methods exist', () => {
+  it('keeps a closed inventory: exactly these thirty-two data-bearing methods exist', () => {
     expect([...DATA_PROVIDER_METHODS].sort()).toEqual([
       'getForecastQuality',
       'getForecastSummary',
@@ -91,6 +97,7 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       'listScopedOpportunities',
       'listTeamUsers',
       'listUnconvertedRegistrations',
+      'listWeeklyClassificationMeetings',
     ]);
   });
 
@@ -161,7 +168,8 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       provider.listPendingRegistrations(scope, {}, { limit: 5 }),
       provider.listUnconvertedRegistrations(scope, {}, { limit: 5 }),
       provider.listDuplicateRegistrationGroups(scope, {}, { limit: 5 }),
+      provider.listWeeklyClassificationMeetings(scope, { partnerManagerId: 'pm-1' }, { limit: 5 }),
     ]);
-    expect(results).toHaveLength(31);
+    expect(results).toHaveLength(32);
   });
 });

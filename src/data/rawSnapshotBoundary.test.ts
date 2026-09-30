@@ -123,6 +123,11 @@ async function collectAllAnswers(access: DemoAccessScope): Promise<unknown[]> {
     await provider.listPendingRegistrations(access, {}, { limit: 50 }),
     await provider.listUnconvertedRegistrations(access, {}, { limit: 50 }),
     await provider.listDuplicateRegistrationGroups(access, {}, { limit: 50 }),
+    await provider.listWeeklyClassificationMeetings(
+      access,
+      { partnerManagerId: book.partnerManagers[0]!.id },
+      { limit: 50 },
+    ),
   ];
   // The row query, walked to exhaustion rather than sampled: every page is
   // part of the public surface.
@@ -199,12 +204,14 @@ describe('static boundary', () => {
     );
     // The forecast series is the only history-bearing method; the two weekly
     // activity aggregates are bounded eight-week buckets over the meeting
-    // collection, and both are pinned here so nothing raw-bearing can join
-    // this list quietly.
+    // collection, and the classification calendar is a bounded one-week page
+    // of meeting rows — all three are pinned here so nothing raw-bearing can
+    // join this list quietly.
     expect(historyMethods).toEqual([
       'getWeeklyForecastSeries',
       'getWeeklyActivitySeries',
       'getWeeklyGoalProgress',
+      'listWeeklyClassificationMeetings',
     ]);
     const managerHistory = DATA_PROVIDER_METHODS.filter(
       (method) => /manager/i.test(method) && /series|history|weekly/i.test(method),

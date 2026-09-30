@@ -19,6 +19,7 @@ import type {
   RegistrationOpsSummary,
   RevenueTrendScope,
   StageBreakdown,
+  WeeklyClassificationScope,
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from './DataProvider';
@@ -344,6 +345,17 @@ export class TracedDataProvider implements DataProvider {
   ): Promise<QueryResult<Page<DuplicateRegistrationGroup>>> {
     return this.request('listDuplicateRegistrationGroups', context, (withTrace) =>
       this.inner.listDuplicateRegistrationGroups(access, scope, page, withTrace),
+    );
+  }
+
+  listWeeklyClassificationMeetings(
+    access: DemoAccessScope,
+    scope: WeeklyClassificationScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<ActivityMeeting>>> {
+    return this.request('listWeeklyClassificationMeetings', context, (withTrace) =>
+      this.inner.listWeeklyClassificationMeetings(access, scope, page, withTrace),
     );
   }
 }

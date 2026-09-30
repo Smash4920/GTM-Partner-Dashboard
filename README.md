@@ -610,34 +610,35 @@ and deliberately reads that way. Two families:
 **The target shape — scoped aggregates and paginated rows.** A caller states a
 scope (a fiscal quarter, optionally one partner manager, plus the session's
 uncommitted edits) and receives an answer whose size does not depend on the size
-of the book. **Forecasting, Home, and Partner Performance are built on it
-today.**
+of the book. **Forecasting, Home, Partner Performance, Deal Reg Ops, and
+Activity Tracking are built on it today.**
 
-| Method                              | Returns                                                           |
-| ----------------------------------- | ----------------------------------------------------------------- |
-| `getForecastSummary()`              | `QueryResult<ForecastSummary>` (8 numbers + coverage state)       |
-| `getWeightedForecast()`             | `QueryResult<WeightedForecastSummary>`                            |
-| `getForecastQuality()`              | `QueryResult<ForecastQualitySummary>` (counts, exposure, sample)  |
-| `getManagerForecastGroups()`        | `QueryResult<ManagerForecastGroup[]>` (one row per manager)       |
-| `getWeeklyForecastSeries()`         | `QueryResult<WeeklySeriesRow[]>` (13 buckets)                     |
-| `listQuarterOpportunities()`        | `QueryResult<Page<Opportunity>>` (opaque cursor, 25-row pages)    |
-| `getPartnerDirectory()`             | `QueryResult<PartnerRef[]>` (id → name)                           |
-| `getPerformanceSummary()`           | `QueryResult<PerformanceSummary>` (the KPI tiles, one aggregate)  |
-| `getRegistrationFunnel()`           | `QueryResult<RegistrationFunnel>` (counts + registered value)     |
-| `getStageBreakdown()`               | `QueryResult<StageBreakdown>` (open stages + closed outcomes)     |
-| `getTypeBreakdown()`                | `QueryResult<TypeRow[]>` (open pipeline by revenue motion)        |
-| `getQuarterlyRevenueTrend()`        | `QueryResult<QuarterlyPoint[]>` (all FY quarters, four points)    |
-| `getWeeklyActivitySeries()`         | `QueryResult<WeeklyActivityRow[]>` (8 weeks of meetings)          |
-| `getWeeklyGoalProgress()`           | `QueryResult<WeeklyGoalProgress>` (this week vs. goal)            |
-| `getRegistrationOpsSummary()`       | `QueryResult<RegistrationOpsSummary>` (leakage, SLA, conversion)  |
-| `getPartnerLeaderboard()`           | `QueryResult<PartnerLeaderboardEntry[]>` (one row per partner)    |
-| `getManagerDirectory()`             | `QueryResult<PartnerManager[]>` (internal audience only)          |
-| `getPartnerRoster()`                | `QueryResult<Partner[]>` (the partners in scope)                  |
-| `getPartnerCertification()`         | `QueryResult<PartnerCertificationProfile \| null>`                |
-| `listScopedOpportunities()`         | `QueryResult<Page<Opportunity>>` (opaque cursor, 25-row pages)    |
-| `listPendingRegistrations()`        | `QueryResult<Page<DealRegistration>>` (oldest first, 7-row pages) |
-| `listUnconvertedRegistrations()`    | `QueryResult<Page<DealRegistration>>` (exclusivity watch)         |
-| `listDuplicateRegistrationGroups()` | `QueryResult<Page<DuplicateRegistrationGroup>>` (internal only)   |
+| Method                               | Returns                                                            |
+| ------------------------------------ | ------------------------------------------------------------------ |
+| `getForecastSummary()`               | `QueryResult<ForecastSummary>` (8 numbers + coverage state)        |
+| `getWeightedForecast()`              | `QueryResult<WeightedForecastSummary>`                             |
+| `getForecastQuality()`               | `QueryResult<ForecastQualitySummary>` (counts, exposure, sample)   |
+| `getManagerForecastGroups()`         | `QueryResult<ManagerForecastGroup[]>` (one row per manager)        |
+| `getWeeklyForecastSeries()`          | `QueryResult<WeeklySeriesRow[]>` (13 buckets)                      |
+| `listQuarterOpportunities()`         | `QueryResult<Page<Opportunity>>` (opaque cursor, 25-row pages)     |
+| `getPartnerDirectory()`              | `QueryResult<PartnerRef[]>` (id → name)                            |
+| `getPerformanceSummary()`            | `QueryResult<PerformanceSummary>` (the KPI tiles, one aggregate)   |
+| `getRegistrationFunnel()`            | `QueryResult<RegistrationFunnel>` (counts + registered value)      |
+| `getStageBreakdown()`                | `QueryResult<StageBreakdown>` (open stages + closed outcomes)      |
+| `getTypeBreakdown()`                 | `QueryResult<TypeRow[]>` (open pipeline by revenue motion)         |
+| `getQuarterlyRevenueTrend()`         | `QueryResult<QuarterlyPoint[]>` (all FY quarters, four points)     |
+| `getWeeklyActivitySeries()`          | `QueryResult<WeeklyActivityRow[]>` (8 weeks of meetings)           |
+| `getWeeklyGoalProgress()`            | `QueryResult<WeeklyGoalProgress>` (this week vs. goal)             |
+| `getRegistrationOpsSummary()`        | `QueryResult<RegistrationOpsSummary>` (leakage, SLA, conversion)   |
+| `getPartnerLeaderboard()`            | `QueryResult<PartnerLeaderboardEntry[]>` (one row per partner)     |
+| `getManagerDirectory()`              | `QueryResult<PartnerManager[]>` (internal audience only)           |
+| `getPartnerRoster()`                 | `QueryResult<Partner[]>` (the partners in scope)                   |
+| `getPartnerCertification()`          | `QueryResult<PartnerCertificationProfile \| null>`                 |
+| `listScopedOpportunities()`          | `QueryResult<Page<Opportunity>>` (opaque cursor, 25-row pages)     |
+| `listPendingRegistrations()`         | `QueryResult<Page<DealRegistration>>` (oldest first, cursor pages) |
+| `listUnconvertedRegistrations()`     | `QueryResult<Page<DealRegistration>>` (exclusivity watch)          |
+| `listDuplicateRegistrationGroups()`  | `QueryResult<Page<DuplicateRegistrationGroup>>` (internal only)    |
+| `listWeeklyClassificationMeetings()` | `QueryResult<Page<ActivityMeeting>>` (one week, cursor pages)      |
 
 Every scoped answer arrives in a `QueryResult` envelope
 ([`src/data/queryMetadata.ts`](src/data/queryMetadata.ts)): the data plus
@@ -650,8 +651,8 @@ never smoothed over.
 **The shape being retired — eight list-everything calls.** `listPartners()`,
 `listOpportunities()`, `listRegistrations()`, `getTargets()`,
 `listPartnerManagers()`, `listActivities()`, `listCertifications()`,
-`listTeamUsers()`. The five views still on this contract take the whole book
-and aggregate it in the browser.
+`listTeamUsers()`. Partner View — the last view on this contract — takes the
+whole book and aggregates it in the browser.
 
 **Every method — both families — takes a required demo access scope first**
 ([`src/data/accessScope.ts`](src/data/accessScope.ts)): `{ audience:
@@ -700,17 +701,18 @@ server pipeline could call them unchanged.
   exercised rather than theoretical. Seeded, so a failing run can be replayed.
 - **Scaled 100×** — 100 copies of the book: 2,500 partners, 21,300
   opportunities, 191,000 weekly snapshot rows, ~45 MB. The scoped queries return
-  the same kilobytes (five aggregates, 25 rows a page); the load-everything path
-  is what changes. That is the argument, and it is why the default is the local
-  mock: this provider deliberately makes the un-migrated views slow.
+  the same kilobytes (a handful of aggregates, one cursor page of rows); the
+  load-everything path is what changes. That is the argument, and it is why
+  the default is the local mock: this provider deliberately makes the
+  un-migrated view slow.
 
 The interface is read-only. `App.tsx` layers the session's in-app edits —
 revenue overrides, forecast-category calls, notes, next steps, meeting
 classifications, added prospects, roster changes, and sent notifications — on
-top of the provider's book before handing a single merged `DashboardData` to the
-views still on the old contract; the three scoped views instead pass the edits
-_into_ their queries, so the provider aggregates the corrected book itself. Writes are the
-one thing a live provider still needs to add.
+top of the provider's book before handing a single merged `DashboardData` to
+Partner View, the last view on the old contract; the scoped views instead pass
+the edits _into_ their queries, so the provider aggregates the corrected book
+itself. Writes are the one thing a live provider still needs to add.
 
 **Weekly pipeline history never crosses the seam whole.** It used to arrive as
 `listPipelineSnapshots()`: 1,911 rows in the demo and ~87% of the payload at

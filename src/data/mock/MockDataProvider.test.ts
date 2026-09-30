@@ -3,6 +3,7 @@ import { CURRENT_FISCAL_QUARTER, SNAPSHOT_DATE } from '../constants';
 import {
   categoryStageMismatches,
   coverageState,
+  currentWeekMeetings,
   daysLeftInQuarter,
   openOpportunities,
   openPipeline,
@@ -644,6 +645,11 @@ describe('scoped answer metadata (VAL-DATA-006)', () => {
       provider.listPendingRegistrations(INTERNAL_DEMO_SCOPE, {}, { limit: 25 }),
       provider.listUnconvertedRegistrations(INTERNAL_DEMO_SCOPE, {}, { limit: 25 }),
       provider.listDuplicateRegistrationGroups(INTERNAL_DEMO_SCOPE, {}, { limit: 25 }),
+      provider.listWeeklyClassificationMeetings(
+        INTERNAL_DEMO_SCOPE,
+        { partnerManagerId: book.partnerManagers[0]!.id },
+        { limit: 25 },
+      ),
     ]);
 
     for (const { meta } of answers) {
@@ -724,6 +730,75 @@ describe('scoped answer metadata (VAL-DATA-006)', () => {
   });
 });
 
+describe('listWeeklyClassificationMeetings (VAL-DATA-015)', () => {
+  const managerId = book.partnerManagers[0]!.id;
+
+  it('answers the manager’s current-week calendar the metrics layer computes', async () => {
+    const { data: page } = await provider.listWeeklyClassificationMeetings(
+      INTERNAL_DEMO_SCOPE,
+      { partnerManagerId: managerId },
+      { limit: MAX_PAGE_LIMIT },
+    );
+    const expected = currentWeekMeetings(book.activities, managerId);
+    // The fixture has to contain a real week, or this test proves nothing.
+    expect(expected.length).toBeGreaterThan(0);
+    expect(page.rows).toEqual(expected);
+    expect(page.totalCount).toBe(expected.length);
+    expect(page.nextCursor).toBeUndefined();
+  });
+
+  it('pages the week by cursor, oldest first, with no duplicates or gaps', async () => {
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const { data: page } = await provider.listWeeklyClassificationMeetings(
+        INTERNAL_DEMO_SCOPE,
+        { partnerManagerId: managerId },
+        { ...(cursor !== undefined ? { cursor } : {}), limit: 3 },
+      );
+      seen.push(...page.rows.map((row) => row.id));
+      cursor = page.nextCursor;
+      pages += 1;
+      expect(pages).toBeLessThan(50);
+    } while (cursor !== undefined);
+
+    const expected = currentWeekMeetings(book.activities, managerId);
+    expect(seen).toEqual(expected.map((row) => row.id));
+    expect(new Set(seen).size).toBe(seen.length);
+  });
+
+  it('keeps another manager’s week out of the answer', async () => {
+    const otherManager = book.partnerManagers[1]!;
+    const { data: page } = await provider.listWeeklyClassificationMeetings(
+      INTERNAL_DEMO_SCOPE,
+      { partnerManagerId: otherManager.id },
+      { limit: MAX_PAGE_LIMIT },
+    );
+    expect(page.rows.every((row) => row.partnerManagerId === otherManager.id)).toBe(true);
+    expect(page.rows.map((row) => row.id)).not.toContain(
+      currentWeekMeetings(book.activities, managerId)[0]?.id,
+    );
+  });
+
+  it('scopes a partner audience to its own meetings before the week filter', async () => {
+    const partner = book.partners.find((candidate) =>
+      currentWeekMeetings(book.activities, candidate.partnerManagerId).some(
+        (row) => row.partnerId === candidate.id,
+      ),
+    );
+    if (!partner) throw new Error('fixture has no partner with a current-week meeting');
+    const audience: DemoAccessScope = { audience: 'partner', partnerId: partner.id };
+    const { data: page } = await provider.listWeeklyClassificationMeetings(
+      audience,
+      { partnerManagerId: partner.partnerManagerId },
+      { limit: MAX_PAGE_LIMIT },
+    );
+    expect(page.rows.length).toBeGreaterThan(0);
+    expect(page.rows.every((row) => row.partnerId === partner.id)).toBe(true);
+  });
+});
+
 describe('cancellation', () => {
   it('rejects every method with an abort error when the signal is already spent', async () => {
     const controller = new AbortController();
@@ -763,6 +838,12 @@ describe('cancellation', () => {
       local.listPendingRegistrations(INTERNAL_DEMO_SCOPE, {}, { limit: 5 }, context),
       local.listUnconvertedRegistrations(INTERNAL_DEMO_SCOPE, {}, { limit: 5 }, context),
       local.listDuplicateRegistrationGroups(INTERNAL_DEMO_SCOPE, {}, { limit: 5 }, context),
+      local.listWeeklyClassificationMeetings(
+        INTERNAL_DEMO_SCOPE,
+        { partnerManagerId: 'pm-1' },
+        { limit: 5 },
+        context,
+      ),
     ];
     for (const attempt of attempts) {
       const rejected = await attempt.catch((error: unknown) => error);
@@ -995,6 +1076,11 @@ describe('demo access scope isolation (VAL-DATA-003)', () => {
       scopedProvider.listPendingRegistrations(partnerScope, {}, { limit: 25 }),
       scopedProvider.listUnconvertedRegistrations(partnerScope, {}, { limit: 25 }),
       scopedProvider.listDuplicateRegistrationGroups(partnerScope, {}, { limit: 25 }),
+      scopedProvider.listWeeklyClassificationMeetings(
+        partnerScope,
+        { partnerManagerId: 'pm-1' },
+        { limit: 25 },
+      ),
     ]);
     // A serialization scan: partner-2's id, name, and exclusive account name
     // must appear nowhere in any answer, nested or not.

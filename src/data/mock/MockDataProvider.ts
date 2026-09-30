@@ -19,6 +19,7 @@ import type {
   RegistrationOpsSummary,
   RevenueTrendScope,
   StageBreakdown,
+  WeeklyClassificationScope,
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from '../DataProvider';
@@ -47,6 +48,7 @@ import type { DataLineage, DataWarning, QueryMeta, QueryResult } from '../queryM
 import { applySessionEdits, NO_SESSION_EDITS } from '../sessionEdits';
 import type { SessionEdits } from '../sessionEdits';
 import type {
+  ActivityMeeting,
   DealRegistration,
   Opportunity,
   Partner,
@@ -64,6 +66,7 @@ import {
   closedWonForPhase,
   closedWonPriorYearForPhase,
   coverageState,
+  currentWeekMeetings,
   daysLeftInQuarter,
   duplicateRegistrationGroups,
   exclusivityLapsed,
@@ -914,6 +917,33 @@ export class MockDataProvider implements DataProvider {
       paginateRows({
         rows: ordered,
         queryKey: `listDuplicateRegistrationGroups|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
+        asOf: this.dataEpoch(),
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
+      this.meta(undefined),
+    );
+  }
+
+  // ---- Activity Tracking ----------------------------------------------------
+
+  async listWeeklyClassificationMeetings(
+    access: DemoAccessScope,
+    scope: WeeklyClassificationScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<ActivityMeeting>>> {
+    throwIfAborted(context?.signal);
+    // Access scope first, manager second: a partner-audience calendar is
+    // computed from the meetings that audience may see at all.
+    const activities = scopeActivities(this.data.activities, this.data.partners, access);
+    // Oldest first — the metric's stable order, so a cursor walk over an
+    // unchanged week visits every meeting exactly once.
+    const ordered = currentWeekMeetings(activities, scope.partnerManagerId);
+    return queryResult(
+      paginateRows({
+        rows: ordered,
+        queryKey: `listWeeklyClassificationMeetings|access:${demoScopeKey(access)}|manager:${scope.partnerManagerId}`,
         asOf: this.dataEpoch(),
         cursor: page.cursor,
         limit: page.limit,

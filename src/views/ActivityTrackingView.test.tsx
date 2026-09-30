@@ -1,20 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ActivityTrackingView from './ActivityTrackingView';
-import { makeDashboardData, makeMeeting, makePartner } from '../test/fixtures';
+import { makeMeeting, makePartner, makeProviderBook } from '../test/fixtures';
 import { SNAPSHOT_DATE } from '../data/constants';
+import type { DataProvider } from '../data/DataProvider';
+import { MockDataProvider } from '../data/mock/MockDataProvider';
+import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
 import { startOfWeekUtc } from '../lib/fiscal';
 import { formatDate } from '../lib/format';
-import type { DashboardData, MeetingClassification } from '../data/types';
+import type { MeetingClassification, ProviderBook } from '../data/types';
 
 /**
- * Activity Tracking: the weekly goal counts every call across a partner
- * manager's whole book while the partner dropdown only re-scopes the eight-week
- * chart, classifications reach the page through `onCommitClassifications`, and
- * the inline Add Partner form validates before it hands a prospect to
- * `onAddPartner`. The book is hand-built so an assertion fails because the view
- * broke, not because a seeded volume moved. Meeting times are derived from
+ * Activity Tracking over the scoped contract (VAL-DATA-015): the weekly goal
+ * counts every call across a partner manager's whole book while the partner
+ * dropdown only re-scopes the eight-week chart, classifications reach the
+ * page through `onCommitClassifications`, the Log Meetings calendar is a
+ * paginated provider query with its own failure and retry, and a failed
+ * directory or roster degrades the selectors without blanking the charts.
+ * The book is hand-built so an assertion fails because the view broke, not
+ * because a seeded volume moved. Meeting times are derived from
  * SNAPSHOT_DATE, so the suite's "this week" moves with the snapshot.
  */
 
@@ -26,8 +31,8 @@ function at(day: number, hour: number): string {
   return new Date(WEEK_START.getTime() + day * DAY + hour * 3_600_000).toISOString();
 }
 
-function makeBook(overrides: Partial<DashboardData> = {}): DashboardData {
-  return makeDashboardData({
+function makeBook(): ProviderBook {
+  return makeProviderBook({
     partnerManagers: [
       { id: 'pm-1', name: 'J. Alvarez' },
       { id: 'pm-2', name: 'R. Diaz' },
@@ -71,19 +76,30 @@ function makeBook(overrides: Partial<DashboardData> = {}): DashboardData {
     opportunities: [],
     targets: [],
     certifications: [],
-    ...overrides,
   });
 }
 
-function renderView(
-  data: DashboardData = makeBook(),
-  classifications: Record<string, MeetingClassification> = {},
-) {
+function renderView({
+  book = makeBook(),
+  classifications = {},
+  provider,
+}: {
+  book?: ProviderBook;
+  classifications?: Record<string, MeetingClassification>;
+  provider?: DataProvider;
+} = {}) {
   const handlers = {
     onCommitClassifications: vi.fn(),
     onAddPartner: vi.fn(() => 'partner-new'),
   };
-  render(<ActivityTrackingView data={data} classifications={classifications} {...handlers} />);
+  render(
+    <ActivityTrackingView
+      provider={provider ?? new MockDataProvider(book)}
+      classifications={classifications}
+      prospects={[]}
+      {...handlers}
+    />,
+  );
   return handlers;
 }
 
@@ -96,18 +112,25 @@ function cardWith(title: string): HTMLElement {
 const goalCard = () => cardWith('Progress to weekly goal');
 const volumeCard = () => cardWith('Weekly meeting volume');
 
+/** Waits until the view has followed the directory to the first manager. */
+async function settleToFirstManager() {
+  await within(goalCard()).findByText('2/10');
+}
+
 describe('ActivityTrackingView', () => {
-  it("aggregates the weekly goal across the manager's whole book", () => {
+  it("aggregates the weekly goal across the manager's whole book", async () => {
     renderView();
 
     const weekLabelStart = formatDate(WEEK_START.toISOString());
     const weekLabelEnd = formatDate(new Date(WEEK_START.getTime() + 6 * DAY).toISOString());
     expect(
-      within(goalCard()).getByText(`This week ${weekLabelStart} – ${weekLabelEnd} · J. Alvarez`),
+      await within(goalCard()).findByText(
+        `This week ${weekLabelStart} – ${weekLabelEnd} · J. Alvarez`,
+      ),
     ).toBeInTheDocument();
 
     // Two calls inside the snapshot week: one discovery, one PIO interlock.
-    expect(within(goalCard()).getByText('2/10')).toBeInTheDocument();
+    await settleToFirstManager();
     expect(within(goalCard()).getByText('20% of goal')).toBeInTheDocument();
     expect(within(goalCard()).getByText('1/3')).toBeInTheDocument();
     expect(within(goalCard()).getByText('33% of goal')).toBeInTheDocument();
@@ -117,7 +140,7 @@ describe('ActivityTrackingView', () => {
 
     // The chart spans eight weeks, so the prior-week call is in scope without
     // counting toward this week's goal.
-    expect(within(volumeCard()).getByText('3 meetings in scope')).toBeInTheDocument();
+    expect(await within(volumeCard()).findByText('3 meetings in scope')).toBeInTheDocument();
     expect(within(volumeCard()).getByLabelText('2 meetings')).toBeInTheDocument();
     expect(within(volumeCard()).getByLabelText('1 meetings')).toBeInTheDocument();
   });
@@ -125,17 +148,18 @@ describe('ActivityTrackingView', () => {
   it('re-scopes the chart to one partner without shrinking the manager-wide goal', async () => {
     const user = userEvent.setup();
     renderView();
+    await settleToFirstManager();
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), 'partner-1');
 
-    expect(within(volumeCard()).getByText('2 meetings in scope')).toBeInTheDocument();
+    expect(await within(volumeCard()).findByText('2 meetings in scope')).toBeInTheDocument();
     // The goal belongs to the manager, not to the partner filter.
     expect(within(goalCard()).getByText('2/10')).toBeInTheDocument();
 
     // A partner on the roster with no calls is a real, empty scope.
     await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), 'partner-4');
 
-    expect(within(volumeCard()).getByText('0 meetings in scope')).toBeInTheDocument();
+    expect(await within(volumeCard()).findByText('0 meetings in scope')).toBeInTheDocument();
     expect(within(volumeCard()).getAllByLabelText('0 meetings')).toHaveLength(8);
     expect(within(volumeCard()).queryByLabelText('1 meetings')).not.toBeInTheDocument();
   });
@@ -143,48 +167,57 @@ describe('ActivityTrackingView', () => {
   it('resets the partner filter when the manager changes', async () => {
     const user = userEvent.setup();
     renderView();
+    await settleToFirstManager();
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), 'partner-1');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Partner manager' }), 'pm-2');
 
     expect(screen.getByRole('combobox', { name: 'Partner' })).toHaveValue('all');
-    expect(screen.getByRole('option', { name: 'All Partners (1)' })).toBeInTheDocument();
-    expect(within(goalCard()).getByText(/· R\. Diaz$/)).toBeInTheDocument();
-    expect(within(volumeCard()).getByText('1 meetings in scope')).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'All Partners (1)' })).toBeInTheDocument();
+    await within(goalCard()).findByText(/· R\. Diaz$/);
+    expect(await within(volumeCard()).findByText('1 meetings in scope')).toBeInTheDocument();
   });
 
   it('reflects classifications that were committed before the modal opens', async () => {
     const user = userEvent.setup();
-    renderView(makeBook(), {
-      // Both of this week's calls re-pointed at partner-2, and the PIO
-      // interlock re-typed as deal support.
-      'meeting-mon': { partnerId: 'partner-2', type: 'discovery' },
-      'meeting-tue': { partnerId: 'partner-2', type: 'deal-support' },
+    renderView({
+      classifications: {
+        // Both of this week's calls re-pointed at partner-2, and the PIO
+        // interlock re-typed as deal support.
+        'meeting-mon': { partnerId: 'partner-2', type: 'discovery' },
+        'meeting-tue': { partnerId: 'partner-2', type: 'deal-support' },
+      },
     });
 
-    expect(within(goalCard()).getByText('0/3')).toBeInTheDocument();
+    await within(goalCard()).findByText('0/3');
     expect(within(goalCard()).getByText('0% of goal')).toBeInTheDocument();
     expect(within(goalCard()).getByText('Deal Support')).toBeInTheDocument();
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), 'partner-2');
-    expect(within(volumeCard()).getByText('2 meetings in scope')).toBeInTheDocument();
+    expect(await within(volumeCard()).findByText('2 meetings in scope')).toBeInTheDocument();
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), 'partner-1');
-    expect(within(volumeCard()).getByText('1 meetings in scope')).toBeInTheDocument();
+    expect(await within(volumeCard()).findByText('1 meetings in scope')).toBeInTheDocument();
   });
 
   it('commits the classifications confirmed in Log Meetings', async () => {
     const user = userEvent.setup();
-    const { onCommitClassifications } = renderView(makeBook(), {
-      'meeting-mon': { partnerId: 'partner-1', type: 'deal-support' },
+    const { onCommitClassifications } = renderView({
+      classifications: {
+        'meeting-mon': { partnerId: 'partner-1', type: 'deal-support' },
+      },
     });
+    await settleToFirstManager();
 
-    await user.click(screen.getByRole('button', { name: 'Log Meetings' }));
+    const openButton = screen.getByRole('button', { name: 'Log Meetings' });
+    await waitFor(() => expect(openButton).toBeEnabled());
+    await user.click(openButton);
     const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
     expect(within(dialog).getByText('Log meetings · J. Alvarez')).toBeInTheDocument();
-    // The committed classification seeds the draft the manager edits.
+    // The committed classification seeds the draft the manager edits, once
+    // the calendar's page has landed.
     expect(
-      within(dialog).getByRole('combobox', { name: 'Call type for 15:00 meeting' }),
+      await within(dialog).findByRole('combobox', { name: 'Call type for 15:00 meeting' }),
     ).toHaveValue('deal-support');
 
     await user.selectOptions(
@@ -211,8 +244,12 @@ describe('ActivityTrackingView', () => {
   it('closes Log Meetings silently when nothing was reclassified', async () => {
     const user = userEvent.setup();
     const { onCommitClassifications } = renderView();
+    await settleToFirstManager();
 
-    await user.click(screen.getByRole('button', { name: 'Log Meetings' }));
+    const openButton = screen.getByRole('button', { name: 'Log Meetings' });
+    await waitFor(() => expect(openButton).toBeEnabled());
+    await user.click(openButton);
+    await screen.findByRole('dialog', { name: 'Log meetings' });
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(screen.queryByRole('dialog', { name: 'Log meetings' })).not.toBeInTheDocument();
@@ -221,16 +258,21 @@ describe('ActivityTrackingView', () => {
 
   it('treats a re-typed call as unsubmitted work even when its partner did not move', async () => {
     const user = userEvent.setup();
-    const { onCommitClassifications } = renderView(makeBook(), {
-      // Identical to the calendar's own default for this call: recording it
-      // still says a manager confirmed it, so editing the type leaves a draft.
-      'meeting-tue': { partnerId: 'partner-2', type: 'pio-interlock' },
+    const { onCommitClassifications } = renderView({
+      classifications: {
+        // Identical to the calendar's own default for this call: recording it
+        // still says a manager confirmed it, so editing the type leaves a draft.
+        'meeting-tue': { partnerId: 'partner-2', type: 'pio-interlock' },
+      },
     });
+    await settleToFirstManager();
 
-    await user.click(screen.getByRole('button', { name: 'Log Meetings' }));
+    const openButton = screen.getByRole('button', { name: 'Log Meetings' });
+    await waitFor(() => expect(openButton).toBeEnabled());
+    await user.click(openButton);
     const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
     await user.selectOptions(
-      within(dialog).getByRole('combobox', { name: 'Call type for 09:00 meeting' }),
+      await within(dialog).findByRole('combobox', { name: 'Call type for 09:00 meeting' }),
       'gtm-enablement',
     );
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -239,9 +281,89 @@ describe('ActivityTrackingView', () => {
     expect(onCommitClassifications).not.toHaveBeenCalled();
   });
 
+  it('keeps the goal standing when the calendar fails, and retries only the calendar', async () => {
+    const user = userEvent.setup();
+    renderView({
+      provider: new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+        latencyMs: 0,
+        failMethods: { listWeeklyClassificationMeetings: 1 },
+      }),
+    });
+    await settleToFirstManager();
+
+    const openButton = screen.getByRole('button', { name: 'Log Meetings' });
+    await waitFor(() => expect(openButton).toBeEnabled());
+    await user.click(openButton);
+    const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
+
+    // The calendar page failed inside the modal; the goal card is untouched.
+    await within(dialog).findByText('Failed to load the week’s meetings');
+    expect(within(goalCard()).getByText('2/10')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Retry' }));
+
+    expect(
+      await within(dialog).findByRole('combobox', { name: 'Call type for 15:00 meeting' }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText('Failed to load the week’s meetings'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('degrades the selectors when the directory fails, but keeps the aggregates', async () => {
+    const user = userEvent.setup();
+    renderView({
+      provider: new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+        latencyMs: 0,
+        failMethods: { getManagerDirectory: 1 },
+      }),
+    });
+
+    // No directory: the header falls back, the manager select is disabled
+    // with a retry, and the aggregates answer org-wide (three calls across
+    // both managers) rather than going blank.
+    const directoryError = await screen.findByText(/Failed to load the manager directory/);
+    expect(screen.getByRole('combobox', { name: 'Partner manager' })).toBeDisabled();
+    expect(within(goalCard()).getByText('3/10')).toBeInTheDocument();
+    const heading = screen.getByRole('heading', { name: 'Activity Tracking' });
+    expect(
+      within(heading.parentElement as HTMLElement).getByText('Partner manager'),
+    ).toBeInTheDocument();
+
+    // Retrying the directory alone restores the selection.
+    await user.click(
+      within(directoryError.closest('p') as HTMLElement).getByRole('button', { name: 'Retry' }),
+    );
+    await settleToFirstManager();
+    expect(screen.getByRole('combobox', { name: 'Partner manager' })).toBeEnabled();
+  });
+
+  it('degrades the partner selector when the roster fails, but keeps the goal', async () => {
+    const user = userEvent.setup();
+    renderView({
+      provider: new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+        latencyMs: 0,
+        failMethods: { getPartnerRoster: 1 },
+      }),
+    });
+
+    await settleToFirstManager();
+    const rosterError = screen.getByText(/Failed to load the partner roster/);
+    expect(screen.getByRole('combobox', { name: 'Partner' })).toBeDisabled();
+    // Without a roster the calendar cannot label its partner selects.
+    expect(screen.getByRole('button', { name: 'Log Meetings' })).toBeDisabled();
+
+    await user.click(
+      within(rosterError.closest('p') as HTMLElement).getByRole('button', { name: 'Retry' }),
+    );
+    expect(await screen.findByRole('option', { name: 'All Partners (3)' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Partner' })).toBeEnabled();
+  });
+
   it('registers a prospect from the partner dropdown', async () => {
     const user = userEvent.setup();
     const { onAddPartner } = renderView();
+    await settleToFirstManager();
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), '__add_partner__');
     const form = screen.getByRole('dialog', { name: 'Add prospective partner' });
@@ -268,6 +390,7 @@ describe('ActivityTrackingView', () => {
   it('abandons the prospect form on Escape and on Cancel', async () => {
     const user = userEvent.setup();
     const { onAddPartner } = renderView();
+    await settleToFirstManager();
     const partnerSelect = screen.getByRole('combobox', { name: 'Partner' });
 
     await user.selectOptions(partnerSelect, '__add_partner__');
@@ -289,12 +412,15 @@ describe('ActivityTrackingView', () => {
   it('registers a prospect from inside Log Meetings and drafts it onto the call', async () => {
     const user = userEvent.setup();
     const { onAddPartner, onCommitClassifications } = renderView();
+    await settleToFirstManager();
 
-    await user.click(screen.getByRole('button', { name: 'Log Meetings' }));
+    const openButton = screen.getByRole('button', { name: 'Log Meetings' });
+    await waitFor(() => expect(openButton).toBeEnabled());
+    await user.click(openButton);
     const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
 
     await user.selectOptions(
-      within(dialog).getByRole('combobox', { name: 'Partner for 15:00 meeting' }),
+      await within(dialog).findByRole('combobox', { name: 'Partner for 15:00 meeting' }),
       '__add_partner__',
     );
     const form = within(dialog).getByRole('dialog', { name: 'Add prospective partner' });
@@ -314,10 +440,15 @@ describe('ActivityTrackingView', () => {
   it('backs out of the inline prospect form inside Log Meetings', async () => {
     const user = userEvent.setup();
     const { onAddPartner } = renderView();
+    await settleToFirstManager();
 
-    await user.click(screen.getByRole('button', { name: 'Log Meetings' }));
+    const openButton = screen.getByRole('button', { name: 'Log Meetings' });
+    await waitFor(() => expect(openButton).toBeEnabled());
+    await user.click(openButton);
     const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
-    const partnerFor = within(dialog).getByRole('combobox', { name: 'Partner for 15:00 meeting' });
+    const partnerFor = await within(dialog).findByRole('combobox', {
+      name: 'Partner for 15:00 meeting',
+    });
 
     await user.selectOptions(partnerFor, '__add_partner__');
     const form = within(dialog).getByRole('dialog', { name: 'Add prospective partner' });
@@ -330,20 +461,32 @@ describe('ActivityTrackingView', () => {
     expect(partnerFor).toHaveValue('partner-1');
   });
 
-  it('falls back to unnamed copy when the book carries no partner managers', async () => {
+  it('falls back to unnamed copy when the directory holds no partner managers', async () => {
     const user = userEvent.setup();
-    renderView(makeBook({ partnerManagers: [], partners: [], activities: [] }));
+    renderView({
+      book: makeProviderBook({
+        partnerManagers: [],
+        partners: [],
+        activities: [],
+        registrations: [],
+        opportunities: [],
+        targets: [],
+        certifications: [],
+      }),
+    });
 
     const heading = screen.getByRole('heading', { name: 'Activity Tracking' });
     expect(
       within(heading.parentElement as HTMLElement).getByText('Partner manager'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'All Partners (0)' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'All Partners (0)' })).toBeInTheDocument();
     // Both progress bars — meetings and PIO interlocks — sit at zero.
+    await within(goalCard()).findByText('0/10');
     expect(within(goalCard()).getAllByText('0% of goal')).toHaveLength(2);
-    expect(screen.getByText(/under the selected manager/)).toBeInTheDocument();
+    expect(screen.getByText(/registered account under/)).toBeInTheDocument();
 
     // Nobody to log against, so the calendar never opens.
+    expect(screen.getByRole('button', { name: 'Log Meetings' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Log Meetings' }));
     expect(screen.queryByRole('dialog', { name: 'Log meetings' })).not.toBeInTheDocument();
 

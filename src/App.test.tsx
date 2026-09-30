@@ -578,16 +578,20 @@ describe('App under total provider failure (VAL-RES-008)', () => {
   }, 30_000);
 
   it('a successful book-route retry moves focus to the recovered dashboard region', async () => {
-    // Every book route shares one failure surface. When its retry succeeds,
-    // focus lands on the stable "dashboard data" region instead of falling
-    // to document.body with the Retry button that just unmounted. Home no
-    // longer shows that takeover, so the check runs on a book route.
+    // The remaining book route keeps the shared failure surface. When its
+    // retry succeeds, focus lands on the stable "dashboard data" region
+    // instead of falling to document.body with the Retry button that just
+    // unmounted. Home and the other migrated routes no longer show that
+    // takeover, so the check runs on Partner View.
     const user = userEvent.setup();
     render(<App providerFactory={() => flakyOnceProvider()} />);
 
-    await user.click(await screen.findByRole('button', { name: 'Activity Tracking' }));
+    await user.click(await screen.findByRole('button', { name: 'Partner View' }));
     await user.click(await screen.findByRole('button', { name: 'Retry dashboard data' }));
-    expect(await screen.findByRole('heading', { name: 'Activity Tracking' })).toBeInTheDocument();
+    // The recovered book renders Partner View: the failure surface is gone.
+    await waitFor(() =>
+      expect(screen.queryByText(/Dashboard data unavailable/)).not.toBeInTheDocument(),
+    );
 
     const region = screen.getByRole('group', { name: 'dashboard data' });
     expect(document.activeElement).toBe(region);

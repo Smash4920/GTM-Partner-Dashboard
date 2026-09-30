@@ -361,9 +361,11 @@ Ship two additional providers behind the same contract:
   holds at volume is demonstrable rather than asserted.
 
 **Outcome, as built.** Forecasting migrated end to end first; Home and Partner
-Performance have since followed, with the phase and manager/partner drill-downs
-as provider inputs, per-widget query states, and cursor-paginated tables. Five
-views remain on the list-everything contract. Measured on the built demo,
+Performance followed, and Deal Reg Ops and Activity Tracking have since joined
+them — the manager/partner selection is a provider input, the Log Meetings
+calendar is a cursor-paginated week of raw calls, and every card carries its
+own loading, error, retry, and metadata state. Only Partner View remains on
+the list-everything contract. Measured on the built demo,
 which is honest about what the mock can and cannot show. Medians over five runs
 at 100× — 2,500 partners, 21,300 opportunities, 191,000 snapshot rows, ~45 MB of
 JSON:

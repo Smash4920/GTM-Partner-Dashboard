@@ -18,6 +18,7 @@ import type {
   RegistrationOpsSummary,
   RevenueTrendScope,
   StageBreakdown,
+  WeeklyClassificationScope,
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from '../DataProvider';
@@ -579,6 +580,21 @@ export class SimulatedRemoteProvider implements DataProvider {
     return this.stamp(
       this.roundTrip('listDuplicateRegistrationGroups', context?.signal, () =>
         this.inner.listDuplicateRegistrationGroups(access, scope, page, context),
+      ),
+    );
+  }
+
+  // ---- Activity Tracking ----------------------------------------------------
+
+  async listWeeklyClassificationMeetings(
+    access: DemoAccessScope,
+    scope: WeeklyClassificationScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<ActivityMeeting>>> {
+    return this.stamp(
+      this.roundTrip('listWeeklyClassificationMeetings', context?.signal, () =>
+        this.inner.listWeeklyClassificationMeetings(access, scope, page, context),
       ),
     );
   }

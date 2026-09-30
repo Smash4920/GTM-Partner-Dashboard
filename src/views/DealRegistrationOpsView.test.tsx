@@ -1,18 +1,68 @@
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
 import DealRegistrationOpsView from './DealRegistrationOpsView';
 import { REGISTRATION_SLA_BUSINESS_DAYS } from '../data/constants';
-import { makeDashboardData, makeRegistration } from '../test/fixtures';
+import type { DataProvider } from '../data/DataProvider';
+import { MockDataProvider } from '../data/mock/MockDataProvider';
+import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
+import { makePartner, makeProviderBook, makeRegistration } from '../test/fixtures';
+import type { DealRegistration, ProviderBook } from '../data/types';
 
 /**
- * Deal Registration Ops SLA presentation (VAL-DATA-007): the breach boundary
- * is inclusive — a pending registration that has waited exactly
- * REGISTRATION_SLA_BUSINESS_DAYS business days is past the SLA — and the
- * tile copy must describe that boundary rather than a strict ">" reading.
+ * Deal Registration Ops over the scoped contract (VAL-DATA-015): the tiles,
+ * conversion chart, and three tables answer from provider queries with their
+ * own loading, error, retry, metadata, and pagination. The VAL-DATA-007 SLA
+ * presentation pins stay: the breach boundary is inclusive — a pending
+ * registration that has waited exactly REGISTRATION_SLA_BUSINESS_DAYS
+ * business days is past the SLA — and the tile copy must describe that
+ * boundary rather than a strict ">" reading.
  *
  * Dates pin to the fixed snapshot (Friday 2026-09-18): Sunday 2026-09-13 is
- * exactly five business days back (Mon–Fri), Thursday 2026-09-17 is one.
+ * exactly five business days back (Mon–Fri), Thursday 2026-09-17 is one. The
+ * books are hand-built so an assertion fails because the view broke, not
+ * because a seeded volume moved.
  */
+
+const PARTNERS = [
+  makePartner({ id: 'partner-1', name: 'Northwind Systems', partnerManagerId: 'pm-1' }),
+  makePartner({ id: 'partner-2', name: 'Beacon Consulting', partnerManagerId: 'pm-1' }),
+];
+
+function makeBook(registrations: DealRegistration[]): ProviderBook {
+  return makeProviderBook({
+    partners: PARTNERS,
+    registrations,
+    activities: [],
+    opportunities: [],
+    targets: [],
+    certifications: [],
+  });
+}
+
+/** The two registrations the SLA boundary tests are built around. */
+function boundaryBook(): ProviderBook {
+  return makeBook([
+    // At the boundary exactly: five business days awaiting review.
+    makeRegistration({
+      id: 'reg-at-boundary',
+      partnerId: 'partner-1',
+      submittedAt: '2026-09-13T00:00:00.000Z',
+      status: 'pending',
+    }),
+    // Still inside the SLA: one business day awaiting review.
+    makeRegistration({
+      id: 'reg-inside',
+      partnerId: 'partner-2',
+      submittedAt: '2026-09-17T00:00:00.000Z',
+      status: 'pending',
+    }),
+  ]);
+}
+
+function renderView(provider: DataProvider = new MockDataProvider(boundaryBook())) {
+  render(<DealRegistrationOpsView provider={provider} prospects={[]} />);
+}
 
 /** The KPI tile whose label matches, so neighboring tiles cannot leak in. */
 function tileWith(label: string): HTMLElement {
@@ -21,30 +71,18 @@ function tileWith(label: string): HTMLElement {
   return tile;
 }
 
+/** The card whose <h2> carries this title, so queries cannot leak across panels. */
+function cardWith(title: string): HTMLElement {
+  const heading = screen.getByRole('heading', { name: title });
+  return heading.closest('section') as HTMLElement;
+}
+
 describe('DealRegistrationOpsView', () => {
-  it('counts an exactly-five-business-day pending registration as past SLA (VAL-DATA-007)', () => {
-    render(
-      <DealRegistrationOpsView
-        data={makeDashboardData({
-          registrations: [
-            // At the boundary exactly: five business days awaiting review.
-            makeRegistration({
-              id: 'reg-at-boundary',
-              submittedAt: '2026-09-13T00:00:00.000Z',
-              status: 'pending',
-            }),
-            // Still inside the SLA: one business day awaiting review.
-            makeRegistration({
-              id: 'reg-inside',
-              submittedAt: '2026-09-17T00:00:00.000Z',
-              status: 'pending',
-            }),
-          ],
-        })}
-      />,
-    );
+  it('counts an exactly-five-business-day pending registration as past SLA (VAL-DATA-007)', async () => {
+    renderView();
 
     // Only the boundary registration counts: the boundary is inclusive.
+    await screen.findByText('Pending past SLA');
     const tile = tileWith('Pending past SLA');
     expect(tile).toHaveTextContent('1');
     // The copy describes the same inclusive boundary the counter uses.
@@ -54,12 +92,98 @@ describe('DealRegistrationOpsView', () => {
     expect(screen.queryByText(/> \d+ business days awaiting review/)).not.toBeInTheDocument();
   });
 
-  it('states the response SLA in business days and exclusivity in calendar days', () => {
-    render(<DealRegistrationOpsView data={makeDashboardData()} />);
+  it('states the response SLA in business days and exclusivity in calendar days', async () => {
+    renderView();
 
+    await screen.findByText('Pending past SLA');
     expect(
-      screen.getByText(`avg business days · ${REGISTRATION_SLA_BUSINESS_DAYS}-business-day SLA`),
-    ).toBeInTheDocument();
+      screen.getAllByText(`avg business days · ${REGISTRATION_SLA_BUSINESS_DAYS}-business-day SLA`)
+        .length,
+    ).toBeGreaterThan(0);
     expect(screen.queryByText(/24\s*(h|hours)/i)).not.toBeInTheDocument();
+  });
+
+  it('answers every card from its own scoped query, with metadata on screen', async () => {
+    renderView();
+
+    await screen.findByText('Pending past SLA');
+    // The queue card's subtitle reports the collection's total, not the page.
+    expect(
+      within(cardWith('Registrations awaiting review')).getByText(
+        /2 pending · day counter is green/,
+      ),
+    ).toBeInTheDocument();
+    // Both pending rows render, resolved through the roster to partner names.
+    const queue = cardWith('Registrations awaiting review');
+    expect(within(queue).getByText('Northwind Systems')).toBeInTheDocument();
+    expect(within(queue).getByText('Beacon Consulting')).toBeInTheDocument();
+    // Each settled query carries its own as-of/provider/completeness caption.
+    expect(within(queue).getAllByText(/^As of /).length).toBeGreaterThan(0);
+    expect(
+      within(cardWith('Exclusivity window')).getByText(/still without an opportunity/),
+    ).toBeInTheDocument();
+    expect(
+      within(cardWith('Duplicate & conflicting registrations')).getByText(
+        /registered by more than one partner/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the tiles standing when the review queue fails, and retries only it', async () => {
+    const user = userEvent.setup();
+    renderView(
+      new SimulatedRemoteProvider(new MockDataProvider(boundaryBook()), {
+        latencyMs: 0,
+        failMethods: { listPendingRegistrations: 1 },
+      }),
+    );
+
+    // The queue alone is unavailable; the ops aggregate and the other tables
+    // answered.
+    const queue = cardWith('Registrations awaiting review');
+    await within(queue).findByText(/Review queue unavailable/);
+    expect(within(queue).getByText('Failed to load the review queue')).toBeInTheDocument();
+    expect(screen.getByText('Pending past SLA')).toBeInTheDocument();
+    expect(
+      within(cardWith('Exclusivity window')).getByText(/still without an opportunity/),
+    ).toBeInTheDocument();
+
+    await user.click(within(queue).getByRole('button', { name: 'Retry review queue' }));
+
+    // The retry repeated the failed page: the rows and the SLA footer land.
+    await within(queue).findByText('Northwind Systems');
+    expect(within(queue).queryByText(/Review queue unavailable/)).not.toBeInTheDocument();
+    expect(
+      within(queue).getByText(/1 of 2 pending registrations are already past the response SLA/),
+    ).toBeInTheDocument();
+  });
+
+  it('pages the review queue a cursor at a time', async () => {
+    const user = userEvent.setup();
+    // Twelve pending registrations force a second ten-row page.
+    const pending = Array.from({ length: 12 }, (_, index) =>
+      makeRegistration({
+        id: `reg-${String(index).padStart(2, '0')}`,
+        partnerId: index % 2 === 0 ? 'partner-1' : 'partner-2',
+        submittedAt: '2026-09-17T00:00:00.000Z',
+        status: 'pending',
+      }),
+    );
+    renderView(new MockDataProvider(makeBook(pending)));
+
+    const queue = cardWith('Registrations awaiting review');
+    await within(queue).findByText('Showing 10 of 12 pending');
+    expect(within(queue).getByRole('button', { name: 'Load 10 more' })).toBeInTheDocument();
+
+    await user.click(within(queue).getByRole('button', { name: 'Load 10 more' }));
+
+    await within(queue).findByText('Showing 12 of 12 pending');
+    expect(within(queue).queryByRole('button', { name: /Load \d+ more/ })).not.toBeInTheDocument();
+    // No duplicate rows across the page boundary.
+    await waitFor(() => {
+      const cells = within(queue).getAllByRole('row');
+      // One header row plus the twelve data rows.
+      expect(cells).toHaveLength(13);
+    });
   });
 });

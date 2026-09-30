@@ -8,9 +8,23 @@ import { XIcon } from './icons';
 
 const ADD_PARTNER = '__add_partner__';
 
+/**
+ * The cursor-paginated calendar the modal classifies: how to retry a failed
+ * first page and how to walk forward when the week is longer than the page
+ * size. Absent when the caller already holds the full week.
+ */
+interface MeetingCalendar {
+  loading: boolean;
+  error: string | null;
+  retry: () => void;
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadMore: () => void;
+}
+
 interface MeetingLogModalProps {
   managerName: string;
-  /** The manager's current-week calendar ("Google Calendar" import). */
+  /** The manager's current-week calendar, as loaded so far. */
   meetings: ActivityMeeting[];
   /** Partners assigned to this manager, including newly added prospects. */
   roster: Partner[];
@@ -20,6 +34,8 @@ interface MeetingLogModalProps {
   onAddPartner: (name: string) => string;
   /** True when the draft holds classifications that have not been submitted. */
   dirty: boolean;
+  /** Paging surface for the meetings list; omit to render what was passed. */
+  calendar?: MeetingCalendar;
   onClose: () => void;
   onSubmit: () => void;
 }
@@ -49,6 +65,7 @@ export default function MeetingLogModal({
   onChange,
   onAddPartner,
   dirty,
+  calendar,
   onClose,
   onSubmit,
 }: MeetingLogModalProps) {
@@ -166,100 +183,133 @@ export default function MeetingLogModal({
           </button>
         </div>
 
-        <div className="grid grid-cols-5 gap-2 px-5 py-4">
-          {byDay.map((dayMeetings, dayIndex) => (
-            <div key={dayIndex} className="min-w-0">
-              <p className="border-b border-carbon pb-2 text-center font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-                {DAY_LABELS[dayIndex]}
-              </p>
-              <div className="mt-2 space-y-2">
-                {dayMeetings.map((meeting) => {
-                  const classification = classificationFor(meeting, classifications);
-                  const end = new Date(
-                    new Date(meeting.occurredAt).getTime() + meeting.durationMinutes * 60_000,
-                  );
-                  return (
-                    <div
-                      key={meeting.id}
-                      className="rounded border border-l-2 border-carbon bg-carbon/60 p-2"
-                      style={{ borderLeftColor: MEETING_TYPE_META[classification.type].color }}
-                    >
-                      <p className="font-mono text-[10px] tabular-nums text-granite">
-                        {formatTime(meeting.occurredAt)}–{formatTime(end.toISOString())}
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-stone">
-                        {partnerName(classification.partnerId)}
-                      </p>
-                      <div className="mt-1.5 space-y-1.5">
-                        {addingPartnerFor === meeting.id ? (
-                          <AddPartnerForm
-                            partnerManagerName={managerName}
-                            onAdd={(name) => {
-                              const partnerId = onAddPartner(name);
-                              onChange(meeting.id, { ...classification, partnerId });
-                              setAddingPartnerFor(null);
-                            }}
-                            onCancel={() => setAddingPartnerFor(null)}
-                          />
-                        ) : (
-                          <>
-                            <select
-                              value={classification.partnerId}
-                              onChange={(event) => {
-                                if (event.target.value === ADD_PARTNER) {
-                                  setAddingPartnerFor(meeting.id);
-                                  return;
-                                }
-                                onChange(meeting.id, {
-                                  ...classification,
-                                  partnerId: event.target.value,
-                                });
+        {calendar && meetings.length === 0 && calendar.error !== null ? (
+          <div className="px-5 py-10 text-center">
+            <p className="text-sm text-signal">{calendar.error}</p>
+            <button
+              type="button"
+              onClick={calendar.retry}
+              className="mt-3 rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20"
+            >
+              Retry
+            </button>
+          </div>
+        ) : calendar?.loading && meetings.length === 0 ? (
+          <p className="px-5 py-10 text-center font-mono text-[10px] uppercase tracking-[0.08em] text-granite">
+            Loading meetings…
+          </p>
+        ) : (
+          <div className="grid grid-cols-5 gap-2 px-5 py-4">
+            {byDay.map((dayMeetings, dayIndex) => (
+              <div key={dayIndex} className="min-w-0">
+                <p className="border-b border-carbon pb-2 text-center font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+                  {DAY_LABELS[dayIndex]}
+                </p>
+                <div className="mt-2 space-y-2">
+                  {dayMeetings.map((meeting) => {
+                    const classification = classificationFor(meeting, classifications);
+                    const end = new Date(
+                      new Date(meeting.occurredAt).getTime() + meeting.durationMinutes * 60_000,
+                    );
+                    return (
+                      <div
+                        key={meeting.id}
+                        className="rounded border border-l-2 border-carbon bg-carbon/60 p-2"
+                        style={{ borderLeftColor: MEETING_TYPE_META[classification.type].color }}
+                      >
+                        <p className="font-mono text-[10px] tabular-nums text-granite">
+                          {formatTime(meeting.occurredAt)}–{formatTime(end.toISOString())}
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-stone">
+                          {partnerName(classification.partnerId)}
+                        </p>
+                        <div className="mt-1.5 space-y-1.5">
+                          {addingPartnerFor === meeting.id ? (
+                            <AddPartnerForm
+                              partnerManagerName={managerName}
+                              onAdd={(name) => {
+                                const partnerId = onAddPartner(name);
+                                onChange(meeting.id, { ...classification, partnerId });
+                                setAddingPartnerFor(null);
                               }}
-                              aria-label={`Partner for ${formatTime(meeting.occurredAt)} meeting`}
-                              className="w-full rounded border border-ash bg-canvas px-1.5 py-1 text-xs text-bone focus:border-signal focus:outline-none"
-                            >
-                              {roster
-                                .slice()
-                                .sort((a, b) => a.name.localeCompare(b.name))
-                                .map((partner) => (
-                                  <option key={partner.id} value={partner.id}>
-                                    {partner.name}
+                              onCancel={() => setAddingPartnerFor(null)}
+                            />
+                          ) : (
+                            <>
+                              <select
+                                value={classification.partnerId}
+                                onChange={(event) => {
+                                  if (event.target.value === ADD_PARTNER) {
+                                    setAddingPartnerFor(meeting.id);
+                                    return;
+                                  }
+                                  onChange(meeting.id, {
+                                    ...classification,
+                                    partnerId: event.target.value,
+                                  });
+                                }}
+                                aria-label={`Partner for ${formatTime(meeting.occurredAt)} meeting`}
+                                className="w-full rounded border border-ash bg-canvas px-1.5 py-1 text-xs text-bone focus:border-signal focus:outline-none"
+                              >
+                                {roster
+                                  .slice()
+                                  .sort((a, b) => a.name.localeCompare(b.name))
+                                  .map((partner) => (
+                                    <option key={partner.id} value={partner.id}>
+                                      {partner.name}
+                                    </option>
+                                  ))}
+                                <option value={ADD_PARTNER}>＋ Add partner…</option>
+                              </select>
+                              <select
+                                value={classification.type}
+                                onChange={(event) =>
+                                  onChange(meeting.id, {
+                                    ...classification,
+                                    type: event.target.value as MeetingType,
+                                  })
+                                }
+                                aria-label={`Call type for ${formatTime(meeting.occurredAt)} meeting`}
+                                className="w-full rounded border border-ash bg-canvas px-1.5 py-1 text-xs text-bone focus:border-signal focus:outline-none"
+                              >
+                                {MEETING_TYPES.map((type) => (
+                                  <option key={type} value={type}>
+                                    {MEETING_TYPE_META[type].label}
                                   </option>
                                 ))}
-                              <option value={ADD_PARTNER}>＋ Add partner…</option>
-                            </select>
-                            <select
-                              value={classification.type}
-                              onChange={(event) =>
-                                onChange(meeting.id, {
-                                  ...classification,
-                                  type: event.target.value as MeetingType,
-                                })
-                              }
-                              aria-label={`Call type for ${formatTime(meeting.occurredAt)} meeting`}
-                              className="w-full rounded border border-ash bg-canvas px-1.5 py-1 text-xs text-bone focus:border-signal focus:outline-none"
-                            >
-                              {MEETING_TYPES.map((type) => (
-                                <option key={type} value={type}>
-                                  {MEETING_TYPE_META[type].label}
-                                </option>
-                              ))}
-                            </select>
-                          </>
-                        )}
+                              </select>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-                {dayMeetings.length === 0 && (
-                  <p className="pt-6 text-center font-mono text-[10px] uppercase tracking-[0.05em] text-graphite">
-                    —
-                  </p>
-                )}
+                    );
+                  })}
+                  {dayMeetings.length === 0 && (
+                    <p className="pt-6 text-center font-mono text-[10px] uppercase tracking-[0.05em] text-graphite">
+                      —
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
+
+        {calendar?.hasMore && (
+          <div className="flex items-center justify-between gap-3 border-t border-carbon px-5 py-3">
+            <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              Showing {meetings.length} meetings this week
+            </p>
+            <button
+              type="button"
+              onClick={calendar.loadMore}
+              disabled={calendar.loadingMore}
+              className="rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20 disabled:opacity-50"
+            >
+              {calendar.loadingMore ? 'Loading…' : 'Load more meetings'}
+            </button>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center justify-end gap-3 border-t border-carbon px-5 py-4">
           {confirmingDiscard && (

@@ -193,7 +193,7 @@ const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
         text: 'Serve aggregated, paginated API responses rather than loading the entire ecosystem into the browser.',
         demo: 'wip',
         demoScope:
-          'Forecasting, Home, and Partner Performance read the scoped, cursor-paginated contract against the mock provider; the other five views are mid-migration.',
+          'Forecasting, Home, Partner Performance, Deal Reg Ops, and Activity Tracking read the scoped, cursor-paginated contract against the mock provider; Partner View is mid-migration.',
         production: {
           status: 'prod-only',
           blocker:
@@ -481,10 +481,10 @@ const MIGRATION_PHASES: MigrationPhase[] = [
     subtitle: 'No infrastructure required · landed in demo mode',
     demoMode: true,
     status:
-      'Done for Forecasting, Home, and Partner Performance · five views still on the old contract',
+      'Done for Forecasting, Home, Partner Performance, Deal Reg Ops, and Activity Tracking · Partner View still on the old contract',
     items: [
       {
-        text: 'DataProvider is split in two: the scoped aggregates and cursor-paginated row lists that are the target shape, and the eight list-everything calls still being retired. Forecasting, Home, and Partner Performance read only the first.',
+        text: 'DataProvider is split in two: the scoped aggregates and cursor-paginated row lists that are the target shape, and the eight list-everything calls still being retired. Only Partner View reads the second.',
         demo: 'complete',
       },
       {

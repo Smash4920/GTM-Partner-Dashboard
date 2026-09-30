@@ -41,10 +41,11 @@ import type {
  * - `ScopedQueryProvider` is the target shape: the caller states a scope, the
  *   provider returns an answer. Aggregates come back as kilobytes however
  *   large the book is, and rows come back a page at a time. Forecasting,
- *   Home, and Partner Performance are built on it.
+ *   Home, Partner Performance, Deal Reg Ops, and Activity Tracking are built
+ *   on it.
  * - `LegacyBookProvider` is the shape being retired: eight calls that each
  *   return an entire collection, which the browser then aggregates itself.
- *   Five views still depend on it.
+ *   Two views still depend on it (Partner View and Data Connections).
  *
  * The split is the backlog. A view moves across when its queries exist on the
  * scoped side, and `LegacyBookProvider` is deleted when the last one has.
@@ -288,6 +289,17 @@ export interface PartnerCertificationScope {
   /** The partner to look up; absent (no drill-in) answers null. */
   partnerId?: string;
   prospects?: Partner[];
+}
+
+/**
+ * The Log Meetings calendar's scope: exactly one partner manager. The answer
+ * is that manager's current-week calendar — the raw "Google Calendar import"
+ * the classification modal works from — and it is deliberately NOT the
+ * classified aggregate: the modal edits classifications against the raw
+ * meetings, and only a submit moves the weekly goal and series.
+ */
+export interface WeeklyClassificationScope {
+  partnerManagerId: string;
 }
 
 /**
@@ -560,6 +572,27 @@ interface ScopedQueryProvider {
     page: PageRequest,
     context?: QueryContext,
   ): Promise<QueryResult<Page<DuplicateRegistrationGroup>>>;
+
+  // ---- Activity Tracking ---------------------------------------------------
+
+  /**
+   * One partner manager's current-week calendar meetings, oldest first, a
+   * page at a time — the bounded classification input behind Log Meetings.
+   *
+   * The week is bounded by definition (a manager's Monday–Friday calendar),
+   * so the collection is small next to the book, but it is still fact rows:
+   * it paginates through the shared contract in src/data/pagination.ts like
+   * every other row collection, because a scaled book turns one manager's
+   * week into hundreds of calls. Session classifications are not an input
+   * here — they belong to the aggregates (`getWeeklyActivitySeries`,
+   * `getWeeklyGoalProgress`), and the modal keeps its own unsubmitted draft.
+   */
+  listWeeklyClassificationMeetings(
+    access: DemoAccessScope,
+    scope: WeeklyClassificationScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<ActivityMeeting>>>;
 }
 
 /**
@@ -614,6 +647,8 @@ const METHOD_INDEX: Record<keyof DataProvider, true> = {
   listPendingRegistrations: true,
   listUnconvertedRegistrations: true,
   listDuplicateRegistrationGroups: true,
+  // Activity Tracking
+  listWeeklyClassificationMeetings: true,
 };
 
 export const DATA_PROVIDER_METHODS = Object.keys(METHOD_INDEX) as (keyof DataProvider)[];

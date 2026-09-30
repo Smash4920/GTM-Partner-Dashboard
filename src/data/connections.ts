@@ -171,7 +171,12 @@ export const CONNECTION_NODES: ConnectionNode[] = [
     status: 'required',
     summary: 'Partner meetings, imported per manager and classified into call types.',
     supplies: ['Weekly activity and meeting goals', 'PIO interlock counting'],
-    methods: ['listActivities()', 'getWeeklyActivitySeries()', 'getWeeklyGoalProgress()'],
+    methods: [
+      'listActivities()',
+      'getWeeklyActivitySeries()',
+      'getWeeklyGoalProgress()',
+      'listWeeklyClassificationMeetings()',
+    ],
     source: 'Event resources, one primary calendar per partner manager',
     auth: 'OAuth 2.0 offline access, domain-wide delegation',
     cadence: 'Daily sync plus push notification channels',
