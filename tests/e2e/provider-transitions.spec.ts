@@ -8,7 +8,9 @@ import { expect, test, type Page } from '@playwright/test';
  *   local (edit + narrowed selection)
  *     → request Simulated remote, whose first call is scripted to fail
  *       (?remoteFailFirst=1, see src/data/providers.ts)
- *     → failure state: Local mock stays committed — label, rows, and the edit
+ *     → failure state: Local mock stays committed — label, rows, and the
+ *       edit — and the notice uses the stable operation-specific failure
+ *       copy, never the probe rejection's raw prose
  *     → Retry: the probe passes, and label and rows commit together while the
  *       session edit and the selection stay behind
  *     → Scaled 100×: a disjoint book replaces label and rows together again.
@@ -69,11 +71,17 @@ test('VAL-RES-010: switching local → failed remote → retried remote → scal
 
   // Request the simulated remote: the scripted first call fails, so the
   // transition must surface a failure without disturbing what is on screen.
+  // The provider's raw rejection prose — a deterministic, unique sentinel
+  // under this failure plan — must never reach the notice or any rendered
+  // DOM; the alert speaks in the stable operation-specific copy instead.
+  const RAW_PROBE_SENTINEL = 'getForecastSummary failed in transit (simulated)';
   await page.getByLabel('Data provider').selectOption('remote');
   const failureAlert = page.getByRole('alert');
   await expect(failureAlert).toContainText('Couldn’t switch to Simulated remote');
-  await expect(failureAlert).toContainText('getForecastSummary failed in transit (simulated)');
+  await expect(failureAlert).toContainText('The readiness check failed');
   await expect(failureAlert).toContainText('Still using Local mock');
+  await expect(failureAlert).not.toContainText(RAW_PROBE_SENTINEL);
+  await expect(page.getByText(RAW_PROBE_SENTINEL)).toHaveCount(0);
 
   // Requested versus committed: the selector shows the request, while the
   // banner, the figures, the rows, and the edit all remain the local

@@ -2,7 +2,11 @@ import type { ProviderTransitionStatus } from '../data/useCommittedProvider';
 
 interface ProviderTransitionNoticeProps {
   status: ProviderTransitionStatus;
-  /** Why the readiness probe failed, when status is 'failed'. */
+  /**
+   * Stable, operation-specific copy for a failed readiness probe, when
+   * status is 'failed' — never the rejection's own prose, so this notice
+   * can never render provider internals, source text, or user data.
+   */
   failure: string | null;
   /** The candidate the user asked for. */
   requestedLabel: string;

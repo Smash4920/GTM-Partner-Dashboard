@@ -91,11 +91,15 @@ describe('useCommittedProvider', () => {
 
     act(() => result.current.requestProvider('remote'));
     await act(async () => {
-      gate.reject(new Error('getForecastSummary failed in transit (simulated)'));
+      gate.reject(new Error('RAW SENTINEL: readiness probe upstream refused 10.0.0.9:5432'));
     });
 
     expect(result.current.status).toBe('failed');
-    expect(result.current.failure).toBe('getForecastSummary failed in transit (simulated)');
+    // The transition state carries the stable, operation-specific copy —
+    // never the rejection's own prose, which could hold internal detail or
+    // user data (see `stableFailureCopy`).
+    expect(result.current.failure).toBe('The readiness check failed');
+    expect(result.current.failure).not.toContain('RAW SENTINEL');
     // The failure changed nothing about who is in charge.
     expect(result.current.committed).toMatchObject({ id: 'local', generation: 0 });
     expect(result.current.committed.provider).toBe(localProvider);
@@ -228,7 +232,7 @@ describe('useCommittedProvider', () => {
     expect(result.current.committed).toMatchObject({ id: 'local', generation: 0 });
   });
 
-  it('describes a non-Error probe rejection', async () => {
+  it('describes a non-Error probe rejection with the same stable copy', async () => {
     const { createCandidate } = candidateFactory();
     const gate = deferred<unknown>();
     const { result } = renderHook(() =>
@@ -237,11 +241,12 @@ describe('useCommittedProvider', () => {
 
     act(() => result.current.requestProvider('scaled'));
     await act(async () => {
-      gate.reject('no session');
+      gate.reject('RAW SENTINEL: non-Error rejection prose');
     });
 
     expect(result.current.status).toBe('failed');
     expect(result.current.failure).toBe('The readiness check failed');
+    expect(result.current.failure).not.toContain('RAW SENTINEL');
   });
 });
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CURRENT_FISCAL_QUARTER } from './constants';
 import type { DataProvider } from './DataProvider';
 import { createProvider, type ProviderId } from './providers';
+import { stableFailureCopy } from './queryState';
 
 /**
  * Requested versus committed provider coordination.
@@ -54,7 +55,14 @@ export interface ProviderTransition {
   /** What the selector shows: the candidate while switching, the committed id otherwise. */
   requestedId: ProviderId;
   status: ProviderTransitionStatus;
-  /** Why the probe failed, while status is 'failed'. */
+  /**
+   * Stable, operation-specific copy shown while status is 'failed' — never
+   * the probe rejection's own prose (see `stableFailureCopy` in
+   * `queryState.ts`). A provider error can carry internal detail, source
+   * text, or user data, and none of that belongs on screen; the raw error
+   * still reaches the structured log and the allowlisted telemetry
+   * fingerprint at the instrumented provider seam.
+   */
   failure: string | null;
   /** Ask for a different provider. Asking for the committed id cancels a pending switch. */
   requestProvider: (id: ProviderId) => void;
@@ -98,9 +106,13 @@ interface TransitionRequest {
   failure: string | null;
 }
 
-function failureMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'The readiness check failed';
-}
+/**
+ * The one thing the transition notice may say about a failed probe. Stable
+ * and operation-specific, so the alert can never render provider internals,
+ * source text, or user data — the same failure-copy policy every query
+ * surface follows.
+ */
+const READINESS_FAILURE_COPY = 'The readiness check failed';
 
 export function useCommittedProvider(
   options: UseCommittedProviderOptions = {},
@@ -163,11 +175,14 @@ export function useCommittedProvider(
         setRequest(null);
         onCommitRef.current?.(next);
       },
-      (error: unknown) => {
+      () => {
         if (!alive || controller.signal.aborted) return;
+        // The rejection's own prose stays at the instrumented seam (log and
+        // telemetry fingerprint); the failure state carries only the stable
+        // operation-specific copy, so the notice can never render it.
         setRequest((current) =>
           current !== null && current.candidate === request.candidate
-            ? { ...current, failure: failureMessage(error) }
+            ? { ...current, failure: stableFailureCopy(READINESS_FAILURE_COPY) }
             : current,
         );
       },

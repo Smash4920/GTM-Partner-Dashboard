@@ -324,16 +324,24 @@ describe('App provider transitions', () => {
     expect(editedPipeline).not.toBe(localPipeline);
 
     await user.selectOptions(screen.getByLabelText('Data provider'), 'remote');
+    // The sentinel stands in for whatever a real readiness probe might put in
+    // an error message — internal detail, source text, user data. None of it
+    // may reach the notice or any rendered DOM.
+    const sentinel = 'RAW SENTINEL: readiness probe upstream refused 10.0.0.9:5432';
     await act(async () => {
-      control.probes[0]!.reject(new Error('getForecastSummary failed in transit (simulated)'));
+      control.probes[0]!.reject(new Error(sentinel));
     });
 
     // Failure: the candidate stays requested-but-uncommitted. The alert names
-    // both halves — what failed, and who is still in charge — and the edit
-    // and figures on screen are still the local provider's.
+    // both halves — what failed, and who is still in charge — in the stable
+    // operation-specific copy, and the edit and figures on screen are still
+    // the local provider's.
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/Couldn’t switch to Simulated remote/);
+    expect(alert).toHaveTextContent('The readiness check failed');
     expect(alert).toHaveTextContent(/Still using Local mock/);
+    expect(alert).not.toHaveTextContent(/RAW SENTINEL/);
+    expect(document.body.textContent ?? '').not.toContain('RAW SENTINEL');
     expect(screen.queryByText(REMOTE_BANNER)).not.toBeInTheDocument();
     expect(pipelineTileValue()).toBe(editedPipeline);
     expect(screen.getByText('$987,654,321')).toBeInTheDocument();
@@ -344,12 +352,15 @@ describe('App provider transitions', () => {
     expect(screen.getByLabelText('Data provider')).toHaveValue('local');
     expect(screen.getByText('$987,654,321')).toBeInTheDocument();
 
-    // A fresh request, failed again, then retried through to a commit.
+    // A fresh request, failed again with fresh sentinel prose, then retried
+    // through to a commit.
     await user.selectOptions(screen.getByLabelText('Data provider'), 'remote');
     await act(async () => {
-      control.probes[1]!.reject(new Error('getForecastSummary failed in transit (simulated)'));
+      control.probes[1]!.reject(new Error('RAW SENTINEL: second probe refusal detail'));
     });
-    await screen.findByRole('alert');
+    const retriedAlert = await screen.findByRole('alert');
+    expect(retriedAlert).toHaveTextContent('The readiness check failed');
+    expect(document.body.textContent ?? '').not.toContain('RAW SENTINEL');
     await user.click(screen.getByRole('button', { name: 'Retry switch to Simulated remote' }));
     // The retry re-probes the same candidate instance.
     expect(control.probes).toHaveLength(3);
