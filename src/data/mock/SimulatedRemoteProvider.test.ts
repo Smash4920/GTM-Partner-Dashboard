@@ -265,6 +265,109 @@ describe('SimulatedRemoteProvider', () => {
     );
   });
 
+  it('aborts during the delay without invoking the inner provider', async () => {
+    vi.useFakeTimers();
+    try {
+      const inner = new MockDataProvider();
+      const spy = vi.spyOn(inner, 'getForecastSummary');
+      const provider = new SimulatedRemoteProvider(inner, {
+        latencyMs: 100,
+        failureRate: 0,
+        seed: 5,
+      });
+      const controller = new AbortController();
+
+      let rejected: unknown = null;
+      const pending = provider
+        .getForecastSummary({ quarter }, { signal: controller.signal })
+        .catch((error: unknown) => {
+          rejected = error;
+        });
+      expect(vi.getTimerCount()).toBe(1);
+
+      // The abort lands while the wire wait is still running.
+      await vi.advanceTimersByTimeAsync(20);
+      controller.abort();
+      await pending;
+
+      expect(rejected).toBeInstanceOf(Error);
+      expect((rejected as Error).name).toBe('AbortError');
+      // The wire never completed, so the inner provider never ran.
+      expect(spy).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does no work at all for an already-aborted signal', async () => {
+    vi.useFakeTimers();
+    try {
+      const inner = new MockDataProvider();
+      const spy = vi.spyOn(inner, 'listPartners');
+      const provider = new SimulatedRemoteProvider(inner, {
+        latencyMs: 100,
+        failureRate: 0,
+      });
+      const controller = new AbortController();
+      controller.abort();
+
+      const rejected = await provider
+        .listPartners({ signal: controller.signal })
+        .catch((error: unknown) => error);
+      expect(rejected).toBeInstanceOf(Error);
+      expect((rejected as Error).name).toBe('AbortError');
+      expect(spy).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an aborted call consumes no failure-plan slot and no failure draw', async () => {
+    vi.useFakeTimers();
+    try {
+      const provider = new SimulatedRemoteProvider(new MockDataProvider(), {
+        latencyMs: 100,
+        failMethods: { getTargets: 1 },
+      });
+      const controller = new AbortController();
+
+      // The first call is cancelled in transit; the plan slot must survive.
+      const aborted = provider
+        .getTargets({ signal: controller.signal })
+        .catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(10);
+      controller.abort();
+      const abortedError = await aborted;
+      expect(abortedError).toBeInstanceOf(Error);
+      expect((abortedError as Error).name).toBe('AbortError');
+
+      // The plan is unspent: the next completed call is the one that fails…
+      const second = provider.getTargets().catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(await second).toBeInstanceOf(Error);
+      // …and the call after it succeeds, proving exactly one slot existed.
+      const third = provider.getTargets();
+      await vi.advanceTimersByTimeAsync(100);
+      await expect(third).resolves.toBeInstanceOf(Array);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('forwards the caller’s signal to the inner provider once the wait completes', async () => {
+    const inner = new MockDataProvider();
+    const spy = vi.spyOn(inner, 'getPartnerDirectory');
+    const provider = new SimulatedRemoteProvider(inner, instant);
+    const controller = new AbortController();
+
+    await provider.getPartnerDirectory({ signal: controller.signal });
+
+    expect(spy).toHaveBeenCalledWith({ signal: controller.signal });
+    expect(controller.signal.aborted).toBe(false);
+  });
+
   it('preserves trace context across the simulated network boundary', async () => {
     const inner = new MockDataProvider();
     const call = vi.spyOn(inner, 'getPartnerDirectory');
@@ -279,8 +382,8 @@ describe('SimulatedRemoteProvider', () => {
       },
     };
 
-    await provider.getPartnerDirectory(trace);
+    await provider.getPartnerDirectory({ trace });
 
-    expect(call).toHaveBeenCalledWith(trace);
+    expect(call).toHaveBeenCalledWith({ trace });
   });
 });

@@ -1,7 +1,7 @@
+import type { QueryContext } from './queryContext';
 import type { QueryResult } from './queryMetadata';
 import type { SessionEdits } from './sessionEdits';
 import type { CoverageState } from '../lib/metrics';
-import type { TraceContext } from '../lib/tracing';
 import type {
   ActivityMeeting,
   DealRegistration,
@@ -31,6 +31,10 @@ import type {
  *
  * The split is the backlog. A view moves across when its queries exist on the
  * scoped side, and `LegacyBookProvider` is deleted when the last one has.
+ *
+ * Every method accepts a `QueryContext` (see src/data/queryContext.ts) as its
+ * last argument: an abort signal that cancels provider-visible work when the
+ * request becomes obsolete, and the trace context the seam creates per call.
  */
 
 // ---- the shape being retired ----------------------------------------------
@@ -46,20 +50,20 @@ import type {
  * and small dimensions, and it goes the same way view by view.
  */
 interface LegacyBookProvider {
-  listPartnerManagers(trace?: TraceContext): Promise<PartnerManager[]>;
-  listPartners(trace?: TraceContext): Promise<Partner[]>;
-  listRegistrations(trace?: TraceContext): Promise<DealRegistration[]>;
-  listOpportunities(trace?: TraceContext): Promise<Opportunity[]>;
-  getTargets(trace?: TraceContext): Promise<Target[]>;
-  listActivities(trace?: TraceContext): Promise<ActivityMeeting[]>;
-  listCertifications(trace?: TraceContext): Promise<PartnerCertification[]>;
+  listPartnerManagers(context?: QueryContext): Promise<PartnerManager[]>;
+  listPartners(context?: QueryContext): Promise<Partner[]>;
+  listRegistrations(context?: QueryContext): Promise<DealRegistration[]>;
+  listOpportunities(context?: QueryContext): Promise<Opportunity[]>;
+  getTargets(context?: QueryContext): Promise<Target[]>;
+  listActivities(context?: QueryContext): Promise<ActivityMeeting[]>;
+  listCertifications(context?: QueryContext): Promise<PartnerCertification[]>;
   /**
    * The internal partner-team roster, projected from the identity provider.
    * This is what decides who a deal-registration alert belongs to; a provider
    * with no roster yet may return an empty array, and the alerts simply carry
    * no owner.
    */
-  listTeamUsers(trace?: TraceContext): Promise<TeamUser[]>;
+  listTeamUsers(context?: QueryContext): Promise<TeamUser[]>;
 }
 
 // ---- the target shape ------------------------------------------------------
@@ -205,20 +209,20 @@ export interface WeeklySeriesRow {
 interface ScopedQueryProvider {
   getForecastSummary(
     scope: ForecastScope,
-    trace?: TraceContext,
+    context?: QueryContext,
   ): Promise<QueryResult<ForecastSummary>>;
   getWeightedForecast(
     scope: ForecastScope,
-    trace?: TraceContext,
+    context?: QueryContext,
   ): Promise<QueryResult<WeightedForecastSummary>>;
   getForecastQuality(
     scope: ForecastScope,
     sampleSize: number,
-    trace?: TraceContext,
+    context?: QueryContext,
   ): Promise<QueryResult<ForecastQualitySummary>>;
   getManagerForecastGroups(
     scope: ForecastScope,
-    trace?: TraceContext,
+    context?: QueryContext,
   ): Promise<QueryResult<ManagerForecastGroup[]>>;
   /**
    * Week-over-week state of the quarter's pipeline: one row per week, about
@@ -226,7 +230,7 @@ interface ScopedQueryProvider {
    */
   getWeeklyForecastSeries(
     scope: ForecastScope,
-    trace?: TraceContext,
+    context?: QueryContext,
   ): Promise<QueryResult<WeeklySeriesRow[]>>;
   /**
    * One manager's in-quarter book, a page at a time. Requested when a group is
@@ -235,7 +239,7 @@ interface ScopedQueryProvider {
   listQuarterOpportunities(
     scope: ForecastScope,
     page: PageRequest,
-    trace?: TraceContext,
+    context?: QueryContext,
   ): Promise<QueryResult<Page<Opportunity>>>;
   /**
    * Partner id to name, for the partner column of a row.
@@ -247,7 +251,7 @@ interface ScopedQueryProvider {
    * rather than by a scope argument: a partner signed into the portal receives
    * one entry, their own.
    */
-  getPartnerDirectory(trace?: TraceContext): Promise<QueryResult<PartnerRef[]>>;
+  getPartnerDirectory(context?: QueryContext): Promise<QueryResult<PartnerRef[]>>;
 }
 
 /**

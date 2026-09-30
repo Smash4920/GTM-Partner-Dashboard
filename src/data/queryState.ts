@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DataProvider } from './DataProvider';
+import type { QueryContext } from './queryContext';
 import type { QueryMeta, QueryResult } from './queryMetadata';
 
 /**
@@ -23,7 +24,10 @@ import type { QueryMeta, QueryResult } from './queryMetadata';
  *   produced it and is gated at read time, and each request carries an
  *   abort-tagged sequence guard, so a late answer from a superseded provider
  *   or an abandoned render cycle is dropped — never rendered, not even for
- *   one frame. An aborted request writes nothing, so aborts are silent.
+ *   one frame. The request's AbortSignal reaches the provider itself through
+ *   the query context, so obsolete provider work stops instead of merely
+ *   being ignored; a provider that ignores the signal is still fenced off by
+ *   the guards. An aborted request writes nothing, so aborts are silent.
  */
 export interface QueryState<T> {
   data: T | null;
@@ -82,8 +86,12 @@ interface QueryEntry<T> {
 export function useScopedQuery<T>(args: {
   provider: DataProvider;
   queryKey: string;
-  /** One scoped provider call; the answer arrives in its metadata envelope. */
-  run: () => Promise<QueryResult<T>>;
+  /**
+   * One scoped provider call; the answer arrives in its metadata envelope.
+   * The context carries the attempt's AbortSignal — forward it to the
+   * provider so obsolete work is cancelled, not just ignored.
+   */
+  run: (context: QueryContext) => Promise<QueryResult<T>>;
   /** Fallback message when the rejection carries none. */
   errorFallback: string;
 }): QueryState<T> {
@@ -103,7 +111,7 @@ export function useScopedQuery<T>(args: {
     const request = ++latest.current;
     const controller = new AbortController();
     setInFlight(true);
-    runRef.current().then(
+    runRef.current({ signal: controller.signal }).then(
       (result) => {
         if (controller.signal.aborted || request !== latest.current) return;
         setEntry({ provider, data: result.data, meta: result.meta, error: null });

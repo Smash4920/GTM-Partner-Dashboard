@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { CURRENT_FISCAL_QUARTER, SNAPSHOT_DATE } from './constants';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
+import type { QueryContext } from './queryContext';
 import { buildQueryMeta, queryResult } from './queryMetadata';
 import { NO_SESSION_EDITS } from './sessionEdits';
 import type { ForecastScope } from './DataProvider';
@@ -14,12 +15,13 @@ import { makeOpportunity, makePartner, makeProviderBook } from '../test/fixtures
 /**
  * VAL-RES-002: abort and generation checks reject obsolete results.
  *
- * The seam's methods cannot be cancelled mid-flight yet — the contract takes
- * no signal — so the hooks carry the guard that matters: a result is written
- * only while its request is still the newest one for the provider that is
- * still committed. Every test here resolves promises out of order with
- * provider-tagged values and asserts the hook's output only ever shows the
- * newest generation's tag.
+ * Every request's AbortSignal now reaches the provider through the query
+ * context, so obsolete work is cancelled at the seam — and the hooks still
+ * carry the guard that matters for a provider that ignores its signal: a
+ * result is written only while its request is still the newest one for the
+ * provider that is still committed. Every test here resolves promises out of
+ * order with provider-tagged values and asserts the hook's output only ever
+ * shows the newest generation's tag.
  */
 
 const quarter = CURRENT_FISCAL_QUARTER;
@@ -350,19 +352,24 @@ describe('VAL-RES-002 query race safety', () => {
       // The coordinator-level half of VAL-RES-002 lives in
       // useCommittedProvider.test.tsx ("a newer request abandons the older
       // probe"), which captures the probe AbortSignal and asserts it is
-      // aborted. This pins the hook-level half: an abandoned request's late
-      // resolution writes nothing, even though the provider ignored every
-      // cancellation hint and resolved anyway.
+      // aborted. This pins the hook-level half: the abandoned request's
+      // signal is aborted for providers that honour it, and its late
+      // resolution writes nothing even though this provider ignored the
+      // signal and resolved anyway.
       const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
       const gate = deferred<void>();
+      const contexts: QueryContext[] = [];
       const provider = stubProvider({
-        getPartnerDirectory: async () => {
+        getPartnerDirectory: async (context) => {
+          if (context !== undefined) contexts.push(context);
           await gate.promise;
           return directoryResult([{ id: 'partner-1', name: 'STALE directory' }]);
         },
       });
       const { result, unmount } = renderHook(() => usePartnerNames(provider));
+      await waitFor(() => expect(contexts).toHaveLength(1));
       unmount();
+      expect(contexts[0]?.signal?.aborted).toBe(true);
       await act(async () => {
         gate.resolve();
       });

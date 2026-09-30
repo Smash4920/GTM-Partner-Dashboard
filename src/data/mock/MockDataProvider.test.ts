@@ -479,3 +479,42 @@ describe('scoped answer metadata (VAL-DATA-006)', () => {
     expect(meta.providerId).toBe('remote');
   });
 });
+
+describe('cancellation', () => {
+  it('rejects every method with an abort error when the signal is already spent', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const context = { signal: controller.signal };
+    const local = new MockDataProvider(makeProviderBook());
+
+    const attempts: Promise<unknown>[] = [
+      local.listPartnerManagers(context),
+      local.listPartners(context),
+      local.listRegistrations(context),
+      local.listOpportunities(context),
+      local.getTargets(context),
+      local.listActivities(context),
+      local.listCertifications(context),
+      local.listTeamUsers(context),
+      local.getForecastSummary({ quarter }, context),
+      local.getWeightedForecast({ quarter }, context),
+      local.getForecastQuality({ quarter }, 3, context),
+      local.getManagerForecastGroups({ quarter }, context),
+      local.getWeeklyForecastSeries({ quarter }, context),
+      local.listQuarterOpportunities({ quarter }, { limit: 5 }, context),
+      local.getPartnerDirectory(context),
+    ];
+    for (const attempt of attempts) {
+      const rejected = await attempt.catch((error: unknown) => error);
+      expect(rejected).toBeInstanceOf(Error);
+      expect((rejected as Error).name).toBe('AbortError');
+    }
+  });
+
+  it('answers normally while the signal is live', async () => {
+    const controller = new AbortController();
+    const local = new MockDataProvider(makeProviderBook());
+    const { data } = await local.getForecastSummary({ quarter }, { signal: controller.signal });
+    expect(data.openCount).toBeGreaterThan(0);
+  });
+});

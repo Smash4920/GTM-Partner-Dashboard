@@ -17,7 +17,7 @@ describe('TracedDataProvider', () => {
     await provider.listPartners();
 
     expect(call).toHaveBeenCalledOnce();
-    const trace = call.mock.calls[0]?.[0];
+    const trace = call.mock.calls[0]?.[0]?.trace;
     expect(trace).toMatchObject({
       traceId: expect.stringMatching(/^[0-9a-f]{32}$/),
       spanId: expect.stringMatching(/^[0-9a-f]{16}$/),
@@ -28,6 +28,19 @@ describe('TracedDataProvider', () => {
       },
     });
     expect(trace?.headers['x-request-id']).toBe(trace?.requestId);
+  });
+
+  it('passes the caller’s abort signal through untouched alongside the created trace', async () => {
+    const inner: DataProvider = new MockDataProvider(makeProviderBook());
+    const call = vi.spyOn(inner, 'getForecastSummary');
+    const provider = new TracedDataProvider(inner);
+    const controller = new AbortController();
+
+    await provider.getForecastSummary({ quarter: 'FY27-Q3' }, { signal: controller.signal });
+
+    const context = call.mock.calls[0]?.[1];
+    expect(context?.signal).toBe(controller.signal);
+    expect(context?.trace?.headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
   });
 
   it('returns the underlying answer unchanged', async () => {

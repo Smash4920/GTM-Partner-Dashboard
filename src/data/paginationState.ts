@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DataProvider, Page, PageRequest } from './DataProvider';
+import type { QueryContext } from './queryContext';
 import type { QueryMeta, QueryResult } from './queryMetadata';
 import { messageOf } from './queryState';
 
@@ -18,11 +19,20 @@ import { messageOf } from './queryState';
  *   collection) refetches the loaded window in place — one request sized to
  *   the rows on screen — instead of resetting to the first page. A failed
  *   window refresh keeps the loaded rows and reports the error alongside.
+ * - With `rowEdits` set, that window refresh is also *narrow*: an edit whose
+ *   target no loaded row contains is not a refresh at all, so one manager's
+ *   book does not refetch because another manager's deal was edited. A page
+ *   appended after the edit already carries it, so no later refresh is owed
+ *   for that row either.
  * - A membership change (provider, business scope, or page size) resets to
  *   the first page: rows fetched under another membership would read as
  *   members of a collection they do not belong to.
- * - Late answers are dropped by request sequence and read-time identity
- *   gating, and an aborted request writes nothing, so aborts are silent.
+ * - Every request's AbortSignal reaches the provider through the query
+ *   context, so a superseded initial load, refresh, or page fetch stops
+ *   provider-visible work instead of merely being ignored. Late answers are
+ *   still dropped by request sequence and read-time identity gating for
+ *   providers that ignore the signal, and an aborted request writes nothing,
+ *   so aborts are silent.
  */
 export interface PaginationState<T> {
   rows: T[];
@@ -39,6 +49,36 @@ export interface PaginationState<T> {
   hasMore: boolean;
   loadMore: () => void;
   retry: () => void;
+}
+
+/**
+ * Per-row edit tracking, for collections whose rows a session edit can move.
+ *
+ * The hook records which edit values each loaded row was fetched with; a
+ * change to an entry whose id no loaded row contains then does not count as
+ * a refresh trigger. That is what keeps edit invalidation exact when several
+ * collections are open at once: each collection answers "do my rows care?"
+ * for itself.
+ */
+export interface RowEditScope<T> {
+  /**
+   * The edit maps a refresh depends on, keyed by row id under a stable label
+   * (the manager book passes `rev` revenue overrides and `call` forecast
+   * calls). Maps that cannot move a row's fetched values — notes, next
+   * steps — are absent by construction.
+   */
+  maps: Record<string, Record<string, string | number>>;
+  /** A row's identity, matching the keys of `maps`. */
+  idOf: (row: T) => string;
+}
+
+/** One row's relevant edits, serialized; '' when no map touches the row. */
+function rowEditKey(id: string, maps: Record<string, Record<string, string | number>>): string {
+  return Object.keys(maps)
+    .sort()
+    .filter((name) => id in maps[name])
+    .map((name) => `${name}=${String(maps[name][id])}`)
+    .join('&');
 }
 
 /** A settled collection, tagged with the exact question it answers. */
@@ -82,7 +122,18 @@ export function usePaginatedRows<T>(args: {
   /** Data identity: a change refreshes the loaded window in place. */
   refreshKey: string;
   pageSize: number;
-  fetchPage: (page: PageRequest) => Promise<QueryResult<Page<T>>>;
+  /**
+   * One page request. The context carries the attempt's AbortSignal —
+   * forward it to the provider so obsolete work is cancelled, not just
+   * ignored.
+   */
+  fetchPage: (page: PageRequest, context: QueryContext) => Promise<QueryResult<Page<T>>>;
+  /**
+   * Narrows `refreshKey` refreshes to edits that touch a loaded row. Omit it
+   * and every `refreshKey` change refreshes, which is the right default for
+   * collections without per-row edit maps.
+   */
+  rowEdits?: RowEditScope<T>;
   /** Fallback messages when a rejection carries none. */
   errorFallback: string;
   loadMoreErrorFallback: string;
@@ -96,6 +147,10 @@ export function usePaginatedRows<T>(args: {
   const lastFailure = useRef<'initial' | 'refresh' | 'page' | null>(null);
   /** Rows currently held, so the effect can size an in-place refresh. */
   const loadedCount = useRef(0);
+  /** The edit values each loaded row was fetched with, by row id. */
+  const appliedEdits = useRef(new Map<string, string>());
+  /** The controller of a page fetch in flight, if one is. */
+  const pageRequest = useRef<AbortController | null>(null);
   const membership = useRef<{
     provider: DataProvider;
     resetKey: string;
@@ -104,12 +159,30 @@ export function usePaginatedRows<T>(args: {
   } | null>(null);
   const fetchPageRef = useRef(args.fetchPage);
   fetchPageRef.current = args.fetchPage;
+  const rowEditsRef = useRef(args.rowEdits);
+  rowEditsRef.current = args.rowEdits;
   const fallbacksRef = useRef({ error: args.errorFallback, more: args.loadMoreErrorFallback });
   fallbacksRef.current = { error: args.errorFallback, more: args.loadMoreErrorFallback };
 
+  /** The edit values freshly landed rows carry, remembered per row id. */
+  function recordApplied(rows: T[], tracking: RowEditScope<T> | undefined, replace: boolean): void {
+    if (replace) appliedEdits.current.clear();
+    if (tracking === undefined) return;
+    for (const row of rows) {
+      const id = tracking.idOf(row);
+      appliedEdits.current.set(id, rowEditKey(id, tracking.maps));
+    }
+  }
+
+  /** True when an edit moved a value a loaded row was fetched with. */
+  function loadedRowsStale(tracking: RowEditScope<T>): boolean {
+    for (const [id, applied] of appliedEdits.current) {
+      if (rowEditKey(id, tracking.maps) !== applied) return true;
+    }
+    return false;
+  }
+
   useEffect(() => {
-    const request = ++latest.current;
-    const controller = new AbortController();
     const prev = membership.current;
     const membershipChanged =
       prev === null ||
@@ -119,11 +192,38 @@ export function usePaginatedRows<T>(args: {
       prev.enabled !== enabled;
     membership.current = { provider, resetKey, pageSize, enabled };
 
+    // Narrowed invalidation: an edit-only re-run that changes no loaded
+    // row's applied edits asks for nothing. Only an idle, healthy collection
+    // may skip — an in-flight window fetch carries older edits and must be
+    // replaced, a page fetch in flight must give way to the refresh, and a
+    // recorded failure owes its retry.
+    const tracking = rowEditsRef.current;
+    if (
+      !membershipChanged &&
+      enabled &&
+      tracking !== undefined &&
+      phase.current === 'idle' &&
+      lastFailure.current === null &&
+      loadedRowsStale(tracking) === false
+    ) {
+      return undefined;
+    }
+
+    const request = ++latest.current;
+    const controller = new AbortController();
+    // A window fetch supersedes a page fetch still in flight: its answer
+    // belongs to a window this run is about to replace.
+    pageRequest.current?.abort();
+    pageRequest.current = null;
+    // The edit values this run's fetch applies, recorded when it lands.
+    const fetchTracking = rowEditsRef.current;
+
     if (!enabled) {
       cursor.current = undefined;
       phase.current = 'idle';
       lastFailure.current = null;
       loadedCount.current = 0;
+      appliedEdits.current.clear();
       setEntry(emptyEntry(provider, resetKey));
       return () => controller.abort();
     }
@@ -141,21 +241,30 @@ export function usePaginatedRows<T>(args: {
       error: null,
     });
 
+    // Both window fetches land through the same bookkeeping once their
+    // guards pass: the page becomes the collection.
+    const acceptPage = (result: QueryResult<Page<T>>): Page<T> => {
+      const page = result.data;
+      phase.current = 'idle';
+      lastFailure.current = null;
+      cursor.current = page.nextCursor;
+      loadedCount.current = page.rows.length;
+      recordApplied(page.rows, fetchTracking, true);
+      return page;
+    };
+
     if (membershipChanged || loadedCount.current === 0) {
       // First page of a (new) collection. A stale page from the previous
       // membership is dropped rather than shown under the new question.
       phase.current = 'initial';
       cursor.current = undefined;
       loadedCount.current = 0;
+      appliedEdits.current.clear();
       setEntry({ ...currentEntry(), loading: true });
-      fetchPageRef.current({ limit: pageSize }).then(
+      fetchPageRef.current({ limit: pageSize }, { signal: controller.signal }).then(
         (result) => {
           if (controller.signal.aborted || request !== latest.current) return;
-          const page = result.data;
-          phase.current = 'idle';
-          lastFailure.current = null;
-          cursor.current = page.nextCursor;
-          loadedCount.current = page.rows.length;
+          const page = acceptPage(result);
           setEntry({
             ...currentEntry(),
             rows: page.rows,
@@ -185,14 +294,10 @@ export function usePaginatedRows<T>(args: {
         ? { ...previous, refreshing: true, error: null }
         : previous,
     );
-    fetchPageRef.current({ limit: loadedCount.current }).then(
+    fetchPageRef.current({ limit: loadedCount.current }, { signal: controller.signal }).then(
       (result) => {
         if (controller.signal.aborted || request !== latest.current) return;
-        const page = result.data;
-        phase.current = 'idle';
-        lastFailure.current = null;
-        cursor.current = page.nextCursor;
-        loadedCount.current = page.rows.length;
+        const page = acceptPage(result);
         setEntry((previous) =>
           previous.provider === provider && previous.resetKey === resetKey
             ? {
@@ -227,6 +332,17 @@ export function usePaginatedRows<T>(args: {
     return () => controller.abort();
   }, [provider, enabled, resetKey, refreshKey, pageSize, attempt]);
 
+  // Unmount cancels a page fetch still in flight. This sits in its own
+  // effect because a narrowed no-op run registers no cleanup of its own, and
+  // an abandoned page fetch must never outlive the collection.
+  useEffect(
+    () => () => {
+      pageRequest.current?.abort();
+      pageRequest.current = null;
+    },
+    [],
+  );
+
   const loadMore = useCallback(() => {
     // Coalescing: one page request per collection at a time. A second call —
     // a double-click, a repeat while a refresh runs — issues no request, so
@@ -238,21 +354,27 @@ export function usePaginatedRows<T>(args: {
     const { provider: owner, resetKey: key, pageSize: limit } = mem;
     phase.current = 'page';
     const request = latest.current;
+    const controller = new AbortController();
+    pageRequest.current = controller;
+    // The edit values this page's fetch applies, recorded when it lands:
+    // rows appended after an edit already carry it and owe no refresh.
+    const tracking = rowEditsRef.current;
     setEntry((previous) =>
       previous.provider === owner && previous.resetKey === key
         ? { ...previous, loadingMore: true, error: null }
         : previous,
     );
-    fetchPageRef.current({ cursor: next, limit }).then(
+    fetchPageRef.current({ cursor: next, limit }, { signal: controller.signal }).then(
       (result) => {
         // Superseded by a newer effect: the newer request owns the phase
         // slot, and this answer belongs to a question nobody is asking.
-        if (request !== latest.current) return;
+        if (controller.signal.aborted || request !== latest.current) return;
         const page = result.data;
         phase.current = 'idle';
         lastFailure.current = null;
         cursor.current = page.nextCursor;
         loadedCount.current += page.rows.length;
+        recordApplied(page.rows, tracking, false);
         setEntry((previous) =>
           previous.provider === owner && previous.resetKey === key
             ? {
@@ -267,7 +389,7 @@ export function usePaginatedRows<T>(args: {
         );
       },
       (error: unknown) => {
-        if (request !== latest.current) return;
+        if (controller.signal.aborted || request !== latest.current) return;
         phase.current = 'idle';
         lastFailure.current = 'page';
         // The cursor is not advanced, so the failed page is still the next

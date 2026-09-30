@@ -161,6 +161,30 @@ describe('instrumentProvider on a failing call', () => {
     });
   });
 
+  it('records an aborted call as a cancellation, never as an error', async () => {
+    const { client, seen } = observingClient();
+    const cancelling = new MockDataProvider();
+    cancelling.getTargets = async () => {
+      const error = new Error('The operation was aborted');
+      error.name = 'AbortError';
+      throw error;
+    };
+    const provider = instrumentProvider(cancelling, 'remote', client);
+
+    await expect(provider.getTargets()).rejects.toThrow('The operation was aborted');
+
+    expect(seen.counters).toEqual([
+      {
+        name: 'provider.call',
+        attributes: { method: 'getTargets', providerId: 'remote', status: 'aborted' },
+      },
+    ]);
+    expect(seen.durations[0]).toMatchObject({ name: 'provider.call.duration' });
+    // A cancellation is not a fault: no breadcrumb, no captured error.
+    expect(seen.breadcrumbs).toEqual([]);
+    expect(seen.captures).toEqual([]);
+  });
+
   it('stays quiet when the telemetry master flag is switched off mid-session', async () => {
     const { client, seen } = observingClient();
     const provider = instrumentProvider(new MockDataProvider(), 'local', client);

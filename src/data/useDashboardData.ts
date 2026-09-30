@@ -42,10 +42,10 @@ interface SettledLoad {
  * migrated views their own loading and error states; this one follows as the
  * remaining views move across.
  *
- * Cancellation: the seam's methods take no abort signal yet, so cleanup
- * aborts a controller the hook checks before writing. A provider that cannot
- * honour abort still cannot get a late answer committed — the write is
- * skipped and the settled record stays tagged to the provider that owns it.
+ * Cancellation: every call carries the attempt's AbortSignal, so a provider
+ * that honours cancellation stops the obsolete work itself. One that cannot
+ * still cannot get a late answer committed — the write is skipped and the
+ * settled record stays tagged to the provider that owns it.
  */
 export function useDashboardData(provider: DataProvider): DashboardState {
   const [settled, setSettled] = useState<SettledLoad | null>(null);
@@ -64,15 +64,18 @@ export function useDashboardData(provider: DataProvider): DashboardState {
           : previous,
       );
     }
+    // One context, one signal: the eight calls are one logical load, so they
+    // become obsolete together.
+    const context = { signal: controller.signal };
     Promise.all([
-      provider.listPartners(),
-      provider.listRegistrations(),
-      provider.listOpportunities(),
-      provider.getTargets(),
-      provider.listPartnerManagers(),
-      provider.listActivities(),
-      provider.listCertifications(),
-      provider.listTeamUsers(),
+      provider.listPartners(context),
+      provider.listRegistrations(context),
+      provider.listOpportunities(context),
+      provider.getTargets(context),
+      provider.listPartnerManagers(context),
+      provider.listActivities(context),
+      provider.listCertifications(context),
+      provider.listTeamUsers(context),
     ]).then(
       ([
         partners,

@@ -54,7 +54,7 @@ export function providerOption(id: ProviderId): ProviderOption {
  * remote on a deterministic positional failure plan — its first two calls
  * fail and everything after succeeds — so the provider-switch failure and
  * retry path can be exercised in a browser without depending on the seeded
- * draw. `?remoteFailMethods=getForecastSummary:2,getManagerBook:1` instead
+ * draw. `?remoteFailMethods=getForecastSummary:2,listQuarterOpportunities:1` instead
  * fails the first N calls of each named method, which survives the readiness
  * probe: only the named widgets fail, so per-widget failure and focused retry
  * can be exercised past a committed provider. Unset in normal use, and

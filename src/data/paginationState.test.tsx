@@ -4,6 +4,8 @@ import { CURRENT_FISCAL_QUARTER } from './constants';
 import type { PageRequest } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { usePaginatedRows } from './paginationState';
+import type { QueryContext } from './queryContext';
+import { editMapKey } from './queryState';
 import { makeOpportunity, makeProviderBook } from '../test/fixtures';
 import type { Opportunity } from './types';
 
@@ -54,8 +56,8 @@ function renderRows(
         resetKey,
         refreshKey,
         pageSize: 2,
-        fetchPage: (page: PageRequest) =>
-          provider.listQuarterOpportunities({ quarter, partnerManagerId: 'pm-1' }, page),
+        fetchPage: (page: PageRequest, context: QueryContext) =>
+          provider.listQuarterOpportunities({ quarter, partnerManagerId: 'pm-1' }, page, context),
         errorFallback: 'Failed to load this book',
         loadMoreErrorFallback: 'Failed to load more of this book',
       }),
@@ -256,5 +258,191 @@ describe('usePaginatedRows', () => {
     expect(result.current.rows).toEqual([]);
     expect(errors).not.toHaveBeenCalled();
     errors.mockRestore();
+  });
+});
+
+describe('usePaginatedRows signal propagation', () => {
+  /** Captures the query context of every page request. */
+  function captureContexts(provider: MockDataProvider): QueryContext[] {
+    const contexts: QueryContext[] = [];
+    const real = provider.listQuarterOpportunities.bind(provider);
+    vi.spyOn(provider, 'listQuarterOpportunities').mockImplementation((scope, page, context) => {
+      if (context !== undefined) contexts.push(context);
+      return real(scope, page, context);
+    });
+    return contexts;
+  }
+
+  it('hands a live signal to the initial, load-more, and refresh requests', async () => {
+    const provider = new MockDataProvider(book);
+    const contexts = captureContexts(provider);
+    const { result, rerender, unmount } = renderRows(provider);
+
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]?.signal).toBeInstanceOf(AbortSignal);
+    expect(contexts[0]?.signal?.aborted).toBe(false);
+
+    // Load-more is a request of its own, with its own live signal; the
+    // settled initial request's signal is untouched.
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.rows).toHaveLength(4));
+    expect(contexts).toHaveLength(2);
+    expect(contexts[0]?.signal?.aborted).toBe(false);
+    expect(contexts[1]?.signal?.aborted).toBe(false);
+
+    // The refresh supersedes the initial run's attempt: its signal aborts,
+    // and the window refetch carries a fresh one.
+    rerender({ enabled: true, resetKey: 'pm-1', refreshKey: 'rev:opp-1=9' });
+    await waitFor(() => expect(result.current.refreshing).toBe(false));
+    expect(contexts).toHaveLength(3);
+    expect(contexts[0]?.signal?.aborted).toBe(true);
+    expect(contexts[2]?.signal?.aborted).toBe(false);
+
+    unmount();
+    expect(contexts[2]?.signal?.aborted).toBe(true);
+  });
+
+  it('a membership change aborts a page fetch still in flight', async () => {
+    const provider = new MockDataProvider(book);
+    const contexts: QueryContext[] = [];
+    const gate = deferred<void>();
+    const real = provider.listQuarterOpportunities.bind(provider);
+    vi.spyOn(provider, 'listQuarterOpportunities').mockImplementation((scope, page, context) => {
+      if (context !== undefined) contexts.push(context);
+      return (async () => {
+        if (page.cursor !== undefined) await gate.promise;
+        return real(scope, page, context);
+      })();
+    });
+    const { result, rerender } = renderRows(provider);
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.loadingMore).toBe(true));
+    expect(contexts).toHaveLength(2);
+    expect(contexts[1]?.signal?.aborted).toBe(false);
+
+    rerender({ enabled: true, resetKey: 'pm-2', refreshKey: 'rev:' });
+    // The abandoned page fetch is cancelled at the seam, not just ignored.
+    expect(contexts[1]?.signal?.aborted).toBe(true);
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+
+    await act(async () => {
+      gate.resolve();
+    });
+    expect(result.current.rows).toHaveLength(2);
+  });
+});
+
+describe('usePaginatedRows rowEdits narrowing', () => {
+  /** A tracked collection whose edits arrive as a prop, like the real book. */
+  function renderTracked(provider: MockDataProvider) {
+    return renderHook(
+      ({ edits }: { edits: Record<string, number> }) =>
+        usePaginatedRows<Opportunity>({
+          provider,
+          enabled: true,
+          resetKey: 'pm-1',
+          refreshKey: `rev:${editMapKey(edits)}`,
+          pageSize: 2,
+          fetchPage: (page, context) =>
+            provider.listQuarterOpportunities(
+              {
+                quarter,
+                partnerManagerId: 'pm-1',
+                edits: {
+                  revenueOverrides: edits,
+                  notes: {},
+                  nextSteps: {},
+                  forecastCalls: {},
+                },
+              },
+              page,
+              context,
+            ),
+          rowEdits: { maps: { rev: edits }, idOf: (row) => row.id },
+          errorFallback: 'Failed to load this book',
+          loadMoreErrorFallback: 'Failed to load more of this book',
+        }),
+      { initialProps: { edits: {} as Record<string, number> } },
+    );
+  }
+
+  it('an edit no loaded row contains issues no request', async () => {
+    const provider = new MockDataProvider(book);
+    const spy = vi.spyOn(provider, 'listQuarterOpportunities');
+    const { result, rerender } = renderTracked(provider);
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+
+    // opp-5 sits on the third page, which was never loaded.
+    rerender({ edits: { 'opp-5': 9 } });
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(result.current.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2']);
+    expect(result.current.refreshing).toBe(false);
+  });
+
+  it('an edit a loaded row contains refreshes the window in place', async () => {
+    const provider = new MockDataProvider(book);
+    const spy = vi.spyOn(provider, 'listQuarterOpportunities');
+    const { result, rerender } = renderTracked(provider);
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.rows).toHaveLength(4));
+
+    // opp-3 is on the loaded second page.
+    rerender({ edits: { 'opp-3': 42_000 } });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
+    expect(spy.mock.calls[2]?.[1]).toEqual({ limit: 4 });
+    await waitFor(() => expect(result.current.refreshing).toBe(false));
+    // The window's values came back with the edit folded in.
+    expect(result.current.rows.find((row) => row.id === 'opp-3')?.forecastedRevenue).toBe(42_000);
+    expect(result.current.rows).toHaveLength(4);
+  });
+
+  it('a page appended after the edit already carries it, and owes no refresh', async () => {
+    const provider = new MockDataProvider(book);
+    const spy = vi.spyOn(provider, 'listQuarterOpportunities');
+    const { result, rerender } = renderTracked(provider);
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+
+    // The edit targets page two before page two is loaded: no refresh,
+    // because no loaded row is affected.
+    rerender({ edits: { 'opp-3': 42_000 } });
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // The append fetches with the current edits, so the row lands already
+    // carrying the override…
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.rows).toHaveLength(4));
+    expect(result.current.rows.find((row) => row.id === 'opp-3')?.forecastedRevenue).toBe(42_000);
+
+    // …and loading it must not now trigger the refresh the earlier edit
+    // skipped: the fetch-time edit values moved with the page.
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('a recorded failure still retries, narrowing or not', async () => {
+    const provider = new MockDataProvider(book);
+    const spy = vi.spyOn(provider, 'listQuarterOpportunities');
+    const { result, rerender } = renderTracked(provider);
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+
+    // The refresh fails; the loaded rows stay, and the failure is recorded.
+    spy.mockRejectedValueOnce(new Error('refresh failed in transit (simulated)'));
+    rerender({ edits: { 'opp-1': 7 } });
+    await waitFor(() => expect(result.current.error).toBe('refresh failed in transit (simulated)'));
+    expect(result.current.rows).toHaveLength(2);
+    expect(spy).toHaveBeenCalledTimes(2);
+
+    // The retry repeats the failed window fetch — narrowing never swallows
+    // a recorded failure, even though the edit maps have not moved since.
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.error).toBeNull());
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(result.current.rows.find((row) => row.id === 'opp-1')?.forecastedRevenue).toBe(7);
   });
 });

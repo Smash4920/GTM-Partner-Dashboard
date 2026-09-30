@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { MockDataProvider } from './mock/MockDataProvider';
+import type { QueryContext } from './queryContext';
 import { buildQueryMeta } from './queryMetadata';
 import type { QueryMeta, QueryResult } from './queryMetadata';
 import { editMapKey, useScopedQuery } from './queryState';
@@ -242,6 +243,87 @@ describe('useScopedQuery', () => {
     });
     expect(result.current.data).toBe('fast answer');
     expect(result.current.error).toBeNull();
+  });
+
+  it('hands every attempt a live abort signal and aborts the one a key change supersedes', async () => {
+    const stableProvider = provider();
+    const contexts: QueryContext[] = [];
+    const gates = new Map<string, () => void>();
+    const { result, rerender } = renderHook(
+      ({ queryKey }) =>
+        useScopedQuery({
+          provider: stableProvider,
+          queryKey,
+          run: (context) => {
+            contexts.push(context);
+            return new Promise<QueryResult<unknown>>((resolve) => {
+              gates.set(queryKey, () => resolve(answered(queryKey)));
+            });
+          },
+          errorFallback: 'x',
+        }),
+      { initialProps: { queryKey: 'one' } },
+    );
+    await waitFor(() => expect(contexts).toHaveLength(1));
+    expect(contexts[0]?.signal).toBeInstanceOf(AbortSignal);
+    expect(contexts[0]?.signal?.aborted).toBe(false);
+
+    // The key change supersedes the in-flight request: its signal aborts,
+    // and the replacement gets a fresh, live one.
+    rerender({ queryKey: 'two' });
+    await waitFor(() => expect(contexts).toHaveLength(2));
+    expect(contexts[0]?.signal?.aborted).toBe(true);
+    expect(contexts[1]?.signal?.aborted).toBe(false);
+
+    await act(async () => {
+      gates.get('two')!();
+    });
+    await waitFor(() => expect(result.current.data).toBe('two'));
+    // The cancelled first request may still resolve; it writes nothing.
+    await act(async () => {
+      gates.get('one')!();
+    });
+    expect(result.current.data).toBe('two');
+  });
+
+  it('retry aborts the in-flight attempt it replaces', async () => {
+    const stableProvider = provider();
+    const contexts: QueryContext[] = [];
+    const { result } = renderHook(() =>
+      useScopedQuery({
+        provider: stableProvider,
+        queryKey: 'q',
+        run: (context) => {
+          contexts.push(context);
+          return new Promise<QueryResult<unknown>>(() => {});
+        },
+        errorFallback: 'x',
+      }),
+    );
+    await waitFor(() => expect(contexts).toHaveLength(1));
+
+    act(() => result.current.retry());
+    await waitFor(() => expect(contexts).toHaveLength(2));
+    expect(contexts[0]?.signal?.aborted).toBe(true);
+    expect(contexts[1]?.signal?.aborted).toBe(false);
+  });
+
+  it('unmount aborts the in-flight request', async () => {
+    const contexts: QueryContext[] = [];
+    const { unmount } = renderHook(() =>
+      useScopedQuery({
+        provider: provider(),
+        queryKey: 'q',
+        run: (context) => {
+          contexts.push(context);
+          return new Promise<QueryResult<unknown>>(() => {});
+        },
+        errorFallback: 'x',
+      }),
+    );
+    await waitFor(() => expect(contexts).toHaveLength(1));
+    unmount();
+    expect(contexts[0]?.signal?.aborted).toBe(true);
   });
 
   it('an aborted request writes nothing and logs nothing', async () => {

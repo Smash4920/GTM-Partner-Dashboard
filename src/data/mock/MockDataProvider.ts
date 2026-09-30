@@ -11,6 +11,8 @@ import type {
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from '../DataProvider';
+import { throwIfAborted } from '../../lib/abort';
+import type { QueryContext } from '../queryContext';
 import {
   buildQueryMeta,
   queryResult,
@@ -73,35 +75,43 @@ export class MockDataProvider implements DataProvider {
 
   // ---- the shape being retired --------------------------------------------
 
-  async listPartnerManagers() {
+  async listPartnerManagers(context?: QueryContext) {
+    throwIfAborted(context?.signal);
     return this.data.partnerManagers;
   }
 
-  async listPartners() {
+  async listPartners(context?: QueryContext) {
+    throwIfAborted(context?.signal);
     return this.data.partners;
   }
 
-  async listRegistrations() {
+  async listRegistrations(context?: QueryContext) {
+    throwIfAborted(context?.signal);
     return this.data.registrations;
   }
 
-  async listOpportunities() {
+  async listOpportunities(context?: QueryContext) {
+    throwIfAborted(context?.signal);
     return this.data.opportunities;
   }
 
-  async getTargets() {
+  async getTargets(context?: QueryContext) {
+    throwIfAborted(context?.signal);
     return this.data.targets;
   }
 
-  async listActivities() {
+  async listActivities(context?: QueryContext) {
+    throwIfAborted(context?.signal);
     return this.data.activities;
   }
 
-  async listCertifications() {
+  async listCertifications(context?: QueryContext) {
+    throwIfAborted(context?.signal);
     return this.data.certifications;
   }
 
-  async listTeamUsers() {
+  async listTeamUsers(context?: QueryContext) {
+    throwIfAborted(context?.signal);
     return this.data.teamUsers;
   }
 
@@ -186,7 +196,11 @@ export class MockDataProvider implements DataProvider {
     return inQuarter.filter((opp) => !this.managerByPartner.has(opp.partnerId));
   }
 
-  async getForecastSummary(scope: ForecastScope): Promise<QueryResult<ForecastSummary>> {
+  async getForecastSummary(
+    scope: ForecastScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<ForecastSummary>> {
+    throwIfAborted(context?.signal);
     const { inQuarter } = this.scopedBook(scope);
     const phase = phaseForQuarter(scope.quarter);
     const targets = this.scopedTargets(scope);
@@ -212,7 +226,11 @@ export class MockDataProvider implements DataProvider {
     );
   }
 
-  async getWeightedForecast(scope: ForecastScope): Promise<QueryResult<WeightedForecastSummary>> {
+  async getWeightedForecast(
+    scope: ForecastScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<WeightedForecastSummary>> {
+    throwIfAborted(context?.signal);
     const { inQuarter } = this.scopedBook(scope);
     return queryResult(weightedForecast(openOpportunities(inQuarter)), this.meta(scope.edits));
   }
@@ -220,7 +238,9 @@ export class MockDataProvider implements DataProvider {
   async getForecastQuality(
     scope: ForecastScope,
     sampleSize: number,
+    context?: QueryContext,
   ): Promise<QueryResult<ForecastQualitySummary>> {
+    throwIfAborted(context?.signal);
     const { inQuarter } = this.scopedBook(scope);
     const open = openOpportunities(inQuarter);
     const mismatches = categoryStageMismatches(open);
@@ -255,7 +275,9 @@ export class MockDataProvider implements DataProvider {
 
   async getManagerForecastGroups(
     scope: ForecastScope,
+    context?: QueryContext,
   ): Promise<QueryResult<ManagerForecastGroup[]>> {
+    throwIfAborted(context?.signal);
     const { inQuarter } = this.scopedBook(scope);
     const phase = phaseForQuarter(scope.quarter);
 
@@ -292,7 +314,11 @@ export class MockDataProvider implements DataProvider {
     );
   }
 
-  async getWeeklyForecastSeries(scope: ForecastScope): Promise<QueryResult<WeeklySeriesRow[]>> {
+  async getWeeklyForecastSeries(
+    scope: ForecastScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<WeeklySeriesRow[]>> {
+    throwIfAborted(context?.signal);
     const { edited } = this.scopedBook(scope);
     // Deliberately the whole book, not the scoped slice. A snapshot row records
     // an amount, a call, and an expected close, but not whose book the deal was
@@ -330,7 +356,9 @@ export class MockDataProvider implements DataProvider {
   async listQuarterOpportunities(
     scope: ForecastScope,
     page: PageRequest,
+    context?: QueryContext,
   ): Promise<QueryResult<Page<Opportunity>>> {
+    throwIfAborted(context?.signal);
     const { inQuarter } = this.scopedBook(scope);
     // Stable order, so a cursor means the same thing between calls.
     const ordered = [...inQuarter].sort((a, b) =>
@@ -351,7 +379,8 @@ export class MockDataProvider implements DataProvider {
     );
   }
 
-  async getPartnerDirectory(): Promise<QueryResult<PartnerRef[]>> {
+  async getPartnerDirectory(context?: QueryContext): Promise<QueryResult<PartnerRef[]>> {
+    throwIfAborted(context?.signal);
     return queryResult(
       this.data.partners.map((partner) => ({ id: partner.id, name: partner.name })),
       this.meta(undefined),

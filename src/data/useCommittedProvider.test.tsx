@@ -4,6 +4,7 @@ import { CURRENT_FISCAL_QUARTER } from './constants';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import type { ProviderId } from './providers';
+import type { QueryContext } from './queryContext';
 import { probeProviderReadiness, useCommittedProvider } from './useCommittedProvider';
 import { makeProviderBook } from '../test/fixtures';
 
@@ -249,7 +250,51 @@ describe('probeProviderReadiness', () => {
     const provider = new MockDataProvider(makeProviderBook());
     const spy = vi.spyOn(provider, 'getForecastSummary');
     await probeProviderReadiness(provider);
-    expect(spy).toHaveBeenCalledWith({ quarter: CURRENT_FISCAL_QUARTER });
+    expect(spy).toHaveBeenCalledWith({ quarter: CURRENT_FISCAL_QUARTER }, { signal: undefined });
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+  });
+
+  it('threads the caller’s abort signal into the probe’s provider call', async () => {
+    const provider = new MockDataProvider(makeProviderBook());
+    const spy = vi.spyOn(provider, 'getForecastSummary');
+    const controller = new AbortController();
+    await probeProviderReadiness(provider, controller.signal);
+    expect(spy).toHaveBeenCalledWith(
+      { quarter: CURRENT_FISCAL_QUARTER },
+      { signal: controller.signal },
+    );
+  });
+
+  it('a cancelled switch aborts the in-flight probe call, and its late answer never commits', async () => {
+    const gate = deferred<unknown>();
+    const contexts: (QueryContext | undefined)[] = [];
+    const createCandidate = (id: ProviderId): DataProvider => {
+      const candidate = new MockDataProvider(makeProviderBook());
+      if (id !== 'local') {
+        const inner = candidate.getForecastSummary.bind(candidate);
+        candidate.getForecastSummary = (scope, context) => {
+          contexts.push(context);
+          return gate.promise.then(() => inner(scope, context));
+        };
+      }
+      return candidate;
+    };
+    const onCommit = vi.fn();
+    const { result } = renderHook(() => useCommittedProvider({ createCandidate, onCommit }));
+
+    act(() => result.current.requestProvider('remote'));
+    await waitFor(() => expect(contexts).toHaveLength(1));
+    expect(contexts[0]?.signal?.aborted).toBe(false);
+
+    act(() => result.current.cancel());
+    // Cancellation reached the provider-visible work, not just the hook.
+    expect(contexts[0]?.signal?.aborted).toBe(true);
+    expect(result.current.status).toBe('idle');
+
+    await act(async () => {
+      gate.resolve(undefined);
+    });
+    expect(result.current.committed).toMatchObject({ id: 'local', generation: 0 });
+    expect(onCommit).not.toHaveBeenCalled();
   });
 });

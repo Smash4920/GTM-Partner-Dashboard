@@ -13,7 +13,7 @@ import {
   useWeeklySeries,
   useWeightedForecast,
 } from './useForecastQueries';
-import { makeOpportunity, makeProviderBook } from '../test/fixtures';
+import { makeOpportunity, makePartner, makeProviderBook } from '../test/fixtures';
 
 const quarter = CURRENT_FISCAL_QUARTER;
 const baseScope: ForecastScope = { quarter, edits: NO_SESSION_EDITS };
@@ -253,6 +253,100 @@ describe('edit invalidation (VAL-RES-007)', () => {
     expect(weeksSpy).toHaveBeenCalledTimes(2);
     expect(summarySpy).toHaveBeenCalledTimes(1);
     expect(groupsSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useManagerBook edit scoping (two-manager matrix)', () => {
+  /**
+   * Two open books over disjoint deals: pm-1 owns opp-1…opp-3 (page size 2,
+   * so opp-3 is never loaded), pm-2 owns opp-9. An edit must refresh exactly
+   * the books whose loaded rows contain the deal — and no others.
+   */
+  const twoManagerBook = makeProviderBook({
+    partnerManagers: [
+      { id: 'pm-1', name: 'J. Alvarez' },
+      { id: 'pm-2', name: 'R. Diaz' },
+    ],
+    partners: [
+      makePartner({ id: 'partner-1', partnerManagerId: 'pm-1' }),
+      makePartner({ id: 'partner-2', name: 'Contoso Partners', partnerManagerId: 'pm-2' }),
+    ],
+    opportunities: [
+      makeOpportunity({ id: 'opp-1', expectedCloseDate: '2026-08-10T00:00:00.000Z' }),
+      makeOpportunity({ id: 'opp-2', expectedCloseDate: '2026-08-20T00:00:00.000Z' }),
+      makeOpportunity({ id: 'opp-3', expectedCloseDate: '2026-09-01T00:00:00.000Z' }),
+      makeOpportunity({
+        id: 'opp-9',
+        partnerId: 'partner-2',
+        expectedCloseDate: '2026-08-15T00:00:00.000Z',
+      }),
+    ],
+  });
+
+  function renderTwoBooks(provider: MockDataProvider) {
+    return renderHook(
+      ({ scope }: { scope: ForecastScope }) => ({
+        first: useManagerBook(provider, scope, 'pm-1', 2),
+        second: useManagerBook(provider, scope, 'pm-2', 2),
+      }),
+      { initialProps: { scope: baseScope } },
+    );
+  }
+
+  it('a revenue edit refreshes only the book whose loaded rows contain the deal', async () => {
+    const provider = new MockDataProvider(twoManagerBook);
+    const spy = vi.spyOn(provider, 'listQuarterOpportunities');
+    const { result, rerender } = renderTwoBooks(provider);
+    await waitFor(() => expect(result.current.first.rows).toHaveLength(2));
+    await waitFor(() => expect(result.current.second.rows).toHaveLength(1));
+    expect(spy).toHaveBeenCalledTimes(2);
+
+    // opp-1 is in pm-1's loaded window: that book refreshes, pm-2's does not.
+    rerender({
+      scope: { quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 9 } } },
+    });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
+    expect(spy.mock.calls[2]?.[0]).toMatchObject({ partnerManagerId: 'pm-1' });
+    expect(spy.mock.calls[2]?.[1]).toEqual({ limit: 2 });
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(result.current.first.rows.find((row) => row.id === 'opp-1')?.forecastedRevenue).toBe(9);
+    expect(result.current.second.rows.map((row) => row.id)).toEqual(['opp-9']);
+  });
+
+  it('a forecast-call edit refreshes only the book whose loaded rows contain the deal', async () => {
+    const provider = new MockDataProvider(twoManagerBook);
+    const spy = vi.spyOn(provider, 'listQuarterOpportunities');
+    const { result, rerender } = renderTwoBooks(provider);
+    await waitFor(() => expect(result.current.first.rows).toHaveLength(2));
+    await waitFor(() => expect(result.current.second.rows).toHaveLength(1));
+
+    // opp-9 is in pm-2's loaded window: that book refreshes, pm-1's does not.
+    rerender({
+      scope: { quarter, edits: { ...NO_SESSION_EDITS, forecastCalls: { 'opp-9': 'commit' } } },
+    });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
+    expect(spy.mock.calls[2]?.[0]).toMatchObject({ partnerManagerId: 'pm-2' });
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(result.current.second.rows[0]?.forecastCategory).toBe('commit');
+  });
+
+  it('an edit to a deal no open book has loaded refreshes neither', async () => {
+    const provider = new MockDataProvider(twoManagerBook);
+    const spy = vi.spyOn(provider, 'listQuarterOpportunities');
+    const { result, rerender } = renderTwoBooks(provider);
+    await waitFor(() => expect(result.current.first.rows).toHaveLength(2));
+    await waitFor(() => expect(result.current.second.rows).toHaveLength(1));
+
+    // opp-3 belongs to pm-1 but sits on a page that was never loaded.
+    rerender({
+      scope: { quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-3': 9 } } },
+    });
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(result.current.first.refreshing).toBe(false);
+    expect(result.current.second.refreshing).toBe(false);
   });
 });
 

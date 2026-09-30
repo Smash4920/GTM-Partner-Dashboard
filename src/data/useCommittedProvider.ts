@@ -79,10 +79,15 @@ export interface UseCommittedProviderOptions {
  * The bounded readiness check: the smallest scoped query on the contract, the
  * same call the runtime health check pings the seam with. One call is the
  * right size — readiness is about whether this source answers at all, and
- * every per-widget failure path past commit already has its own retry.
+ * every per-widget failure path past commit already has its own retry. The
+ * probe honours the caller's signal, so a cancelled or superseded switch
+ * stops the candidate's work instead of waiting it out.
  */
-export function probeProviderReadiness(candidate: DataProvider): Promise<unknown> {
-  return candidate.getForecastSummary({ quarter: CURRENT_FISCAL_QUARTER });
+export function probeProviderReadiness(
+  candidate: DataProvider,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return candidate.getForecastSummary({ quarter: CURRENT_FISCAL_QUARTER }, { signal });
 }
 
 interface TransitionRequest {

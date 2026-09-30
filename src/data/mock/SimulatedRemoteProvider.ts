@@ -10,8 +10,9 @@ import type {
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from '../DataProvider';
+import type { QueryContext } from '../queryContext';
 import type { QueryResult } from '../queryMetadata';
-import type { TraceContext } from '../../lib/tracing';
+import { abortableDelay, throwIfAborted } from '../../lib/abort';
 import type {
   ActivityMeeting,
   DealRegistration,
@@ -104,6 +105,13 @@ function methodSeed(seed: number, method: string): number {
  * touches the inner provider, so it cannot half-succeed, and a succeeded call
  * runs the inner method exactly once.
  *
+ * Cancellation is part of the wire too. A call made with an already-aborted
+ * signal does nothing at all, and a call aborted while the delay is running
+ * rejects with an abort error without ever invoking the inner provider. The
+ * success/failure decision is made only once the wait completes, so a
+ * cancelled call consumes no failure-plan slot and no seeded draw, and a
+ * replayed run stays deterministic.
+ *
  * Deterministic on purpose. A random failure rate that cannot be reproduced is
  * a flaky demo; the same seed means the same calls fail on the same run, and
  * named failure plans replay identically however the calls around them are
@@ -155,12 +163,12 @@ export class SimulatedRemoteProvider implements DataProvider {
   }
 
   /**
-   * The plan's say on this call, or undefined when no plan is set. While a
-   * plan exists it owns every failure decision outright — no draw, no jitter —
-   * so a scripted run replays identically no matter what else was called.
+   * The plan's say on this call. While a plan exists it owns every failure
+   * decision outright — no draw, no jitter — so a scripted run replays
+   * identically no matter what else was called. Consumed only once the wait
+   * completes: a call aborted in transit spends no slot.
    */
-  private plannedFailure(method: string): boolean | undefined {
-    if (this.failFirstCalls === undefined && this.failMethods === undefined) return undefined;
+  private plannedFailure(method: string): boolean {
     this.calls += 1;
     if (this.failFirstCalls !== undefined && this.calls <= this.failFirstCalls) return true;
     const remaining = this.failMethods?.get(method);
@@ -172,23 +180,27 @@ export class SimulatedRemoteProvider implements DataProvider {
   }
 
   /** The wire: one wait, one decision, then either the answer or a failure. */
-  private async roundTrip<T>(method: keyof DataProvider, run: () => Promise<T>): Promise<T> {
-    const planned = this.plannedFailure(method);
-    if (planned !== undefined) {
-      await new Promise((resolve) => setTimeout(resolve, this.latencyMs));
-      if (planned) {
-        throw new Error(`${method} failed in transit (simulated)`);
-      }
-      return run();
-    }
+  private async roundTrip<T>(
+    method: keyof DataProvider,
+    signal: AbortSignal | undefined,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    // A call that arrives already cancelled does no work at all.
+    throwIfAborted(signal);
+    const planned = this.failFirstCalls !== undefined || this.failMethods !== undefined;
     // Jitter, because a fixed delay hides the difference between a fast page
-    // and a slow one. Both draws come from this method's own stream, so the
+    // and a slow one. The draws come from this method's own stream, so the
     // outcome depends on the seed and this method's call history — never on
-    // how unrelated calls happened to interleave.
-    const random = this.streamFor(method);
-    const wait = Math.round(this.latencyMs * (0.6 + random() * 0.8));
-    await new Promise((resolve) => setTimeout(resolve, wait));
-    if (random() < this.failureRate) {
+    // how unrelated calls happened to interleave. A plan holds the latency at
+    // the base value and skips the stream entirely.
+    const random = planned ? undefined : this.streamFor(method);
+    const wait = planned ? this.latencyMs : Math.round(this.latencyMs * (0.6 + random!() * 0.8));
+    // The wait is the cancellable part: an abort here rejects without
+    // touching the inner provider, and without spending a plan slot or a
+    // failure draw.
+    await abortableDelay(wait, signal);
+    const failed = planned ? this.plannedFailure(method) : random!() < this.failureRate;
+    if (failed) {
       throw new Error(`${method} failed in transit (simulated)`);
     }
     return run();
@@ -196,36 +208,48 @@ export class SimulatedRemoteProvider implements DataProvider {
 
   // ---- the shape being retired --------------------------------------------
 
-  async listPartnerManagers(trace?: TraceContext): Promise<PartnerManager[]> {
-    return this.roundTrip('listPartnerManagers', () => this.inner.listPartnerManagers(trace));
+  async listPartnerManagers(context?: QueryContext): Promise<PartnerManager[]> {
+    return this.roundTrip('listPartnerManagers', context?.signal, () =>
+      this.inner.listPartnerManagers(context),
+    );
   }
 
-  async listPartners(trace?: TraceContext): Promise<Partner[]> {
-    return this.roundTrip('listPartners', () => this.inner.listPartners(trace));
+  async listPartners(context?: QueryContext): Promise<Partner[]> {
+    return this.roundTrip('listPartners', context?.signal, () => this.inner.listPartners(context));
   }
 
-  async listRegistrations(trace?: TraceContext): Promise<DealRegistration[]> {
-    return this.roundTrip('listRegistrations', () => this.inner.listRegistrations(trace));
+  async listRegistrations(context?: QueryContext): Promise<DealRegistration[]> {
+    return this.roundTrip('listRegistrations', context?.signal, () =>
+      this.inner.listRegistrations(context),
+    );
   }
 
-  async listOpportunities(trace?: TraceContext): Promise<Opportunity[]> {
-    return this.roundTrip('listOpportunities', () => this.inner.listOpportunities(trace));
+  async listOpportunities(context?: QueryContext): Promise<Opportunity[]> {
+    return this.roundTrip('listOpportunities', context?.signal, () =>
+      this.inner.listOpportunities(context),
+    );
   }
 
-  async getTargets(trace?: TraceContext): Promise<Target[]> {
-    return this.roundTrip('getTargets', () => this.inner.getTargets(trace));
+  async getTargets(context?: QueryContext): Promise<Target[]> {
+    return this.roundTrip('getTargets', context?.signal, () => this.inner.getTargets(context));
   }
 
-  async listActivities(trace?: TraceContext): Promise<ActivityMeeting[]> {
-    return this.roundTrip('listActivities', () => this.inner.listActivities(trace));
+  async listActivities(context?: QueryContext): Promise<ActivityMeeting[]> {
+    return this.roundTrip('listActivities', context?.signal, () =>
+      this.inner.listActivities(context),
+    );
   }
 
-  async listCertifications(trace?: TraceContext): Promise<PartnerCertification[]> {
-    return this.roundTrip('listCertifications', () => this.inner.listCertifications(trace));
+  async listCertifications(context?: QueryContext): Promise<PartnerCertification[]> {
+    return this.roundTrip('listCertifications', context?.signal, () =>
+      this.inner.listCertifications(context),
+    );
   }
 
-  async listTeamUsers(trace?: TraceContext): Promise<TeamUser[]> {
-    return this.roundTrip('listTeamUsers', () => this.inner.listTeamUsers(trace));
+  async listTeamUsers(context?: QueryContext): Promise<TeamUser[]> {
+    return this.roundTrip('listTeamUsers', context?.signal, () =>
+      this.inner.listTeamUsers(context),
+    );
   }
 
   // ---- the target shape ----------------------------------------------------
@@ -243,52 +267,56 @@ export class SimulatedRemoteProvider implements DataProvider {
 
   async getForecastSummary(
     scope: ForecastScope,
-    trace?: TraceContext,
+    context?: QueryContext,
   ): Promise<QueryResult<ForecastSummary>> {
     return this.stamp(
-      this.roundTrip('getForecastSummary', () => this.inner.getForecastSummary(scope, trace)),
+      this.roundTrip('getForecastSummary', context?.signal, () =>
+        this.inner.getForecastSummary(scope, context),
+      ),
     );
   }
 
   async getWeightedForecast(
     scope: ForecastScope,
-    trace?: TraceContext,
+    context?: QueryContext,
   ): Promise<QueryResult<WeightedForecastSummary>> {
     return this.stamp(
-      this.roundTrip('getWeightedForecast', () => this.inner.getWeightedForecast(scope, trace)),
+      this.roundTrip('getWeightedForecast', context?.signal, () =>
+        this.inner.getWeightedForecast(scope, context),
+      ),
     );
   }
 
   async getForecastQuality(
     scope: ForecastScope,
     sampleSize: number,
-    trace?: TraceContext,
+    context?: QueryContext,
   ): Promise<QueryResult<ForecastQualitySummary>> {
     return this.stamp(
-      this.roundTrip('getForecastQuality', () =>
-        this.inner.getForecastQuality(scope, sampleSize, trace),
+      this.roundTrip('getForecastQuality', context?.signal, () =>
+        this.inner.getForecastQuality(scope, sampleSize, context),
       ),
     );
   }
 
   async getManagerForecastGroups(
     scope: ForecastScope,
-    trace?: TraceContext,
+    context?: QueryContext,
   ): Promise<QueryResult<ManagerForecastGroup[]>> {
     return this.stamp(
-      this.roundTrip('getManagerForecastGroups', () =>
-        this.inner.getManagerForecastGroups(scope, trace),
+      this.roundTrip('getManagerForecastGroups', context?.signal, () =>
+        this.inner.getManagerForecastGroups(scope, context),
       ),
     );
   }
 
   async getWeeklyForecastSeries(
     scope: ForecastScope,
-    trace?: TraceContext,
+    context?: QueryContext,
   ): Promise<QueryResult<WeeklySeriesRow[]>> {
     return this.stamp(
-      this.roundTrip('getWeeklyForecastSeries', () =>
-        this.inner.getWeeklyForecastSeries(scope, trace),
+      this.roundTrip('getWeeklyForecastSeries', context?.signal, () =>
+        this.inner.getWeeklyForecastSeries(scope, context),
       ),
     );
   }
@@ -296,18 +324,20 @@ export class SimulatedRemoteProvider implements DataProvider {
   async listQuarterOpportunities(
     scope: ForecastScope,
     page: PageRequest,
-    trace?: TraceContext,
+    context?: QueryContext,
   ): Promise<QueryResult<Page<Opportunity>>> {
     return this.stamp(
-      this.roundTrip('listQuarterOpportunities', () =>
-        this.inner.listQuarterOpportunities(scope, page, trace),
+      this.roundTrip('listQuarterOpportunities', context?.signal, () =>
+        this.inner.listQuarterOpportunities(scope, page, context),
       ),
     );
   }
 
-  async getPartnerDirectory(trace?: TraceContext): Promise<QueryResult<PartnerRef[]>> {
+  async getPartnerDirectory(context?: QueryContext): Promise<QueryResult<PartnerRef[]>> {
     return this.stamp(
-      this.roundTrip('getPartnerDirectory', () => this.inner.getPartnerDirectory(trace)),
+      this.roundTrip('getPartnerDirectory', context?.signal, () =>
+        this.inner.getPartnerDirectory(context),
+      ),
     );
   }
 }
