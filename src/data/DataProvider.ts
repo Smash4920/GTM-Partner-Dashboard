@@ -760,57 +760,6 @@ interface ScopedQueryProvider {
 export type DataProvider = ScopedQueryProvider;
 
 /**
- * Every method on the contract, as strings, because types are erased at
- * runtime and the integration map in connections.ts is checked against a list.
- *
- * Built from a record keyed by the interface's own method names rather than
- * typed as an array: adding a method to `DataProvider` and forgetting it here
- * is a compile error, and `connections.test.ts` then fails until the new
- * method has a wire or a box on the map. That is the check the map's header
- * promises — a method with no wire is a connection nobody planned for — and
- * it should not depend on anyone remembering to update two lists.
- */
-const METHOD_INDEX: Record<keyof DataProvider, true> = {
-  // Action Center
-  getActionCenterSummary: true,
-  listActionItems: true,
-  // Forecasting
-  getForecastSummary: true,
-  getWeightedForecast: true,
-  getForecastQuality: true,
-  getManagerForecastGroups: true,
-  getWeeklyForecastSeries: true,
-  listQuarterOpportunities: true,
-  getPartnerDirectory: true,
-  // Home and Partner Performance
-  getPerformanceSummary: true,
-  getRegistrationFunnel: true,
-  getStageBreakdown: true,
-  getTypeBreakdown: true,
-  getQuarterlyRevenueTrend: true,
-  getWeeklyActivitySeries: true,
-  getWeeklyGoalProgress: true,
-  getRegistrationOpsSummary: true,
-  getTopPartnerLeaders: true,
-  listPartnerLeaderboard: true,
-  getManagerDirectory: true,
-  getPartnerRoster: true,
-  getPartnerCertification: true,
-  listScopedOpportunities: true,
-  listPendingRegistrations: true,
-  listUnconvertedRegistrations: true,
-  listDuplicateRegistrationGroups: true,
-  listRecentRegistrations: true,
-  // Data Connections
-  getTeamRoster: true,
-  getRegistrationSlaAlerts: true,
-  // Activity Tracking
-  listWeeklyClassificationMeetings: true,
-};
-
-export const DATA_PROVIDER_METHODS = Object.keys(METHOD_INDEX) as (keyof DataProvider)[];
-
-/**
  * How many arguments each contract method takes before its trailing
  * `QueryContext`, keyed by the interface's own method names so a method
  * added without an entry here is a compile error. The seam wrappers forward
@@ -857,3 +806,12 @@ export const DATA_PROVIDER_CONTEXT_SLOTS: Record<keyof DataProvider, number> = {
   // Activity Tracking
   listWeeklyClassificationMeetings: 3,
 };
+
+/**
+ * The method inventory derives from the compile-enforced context registry.
+ * Adding a contract method without a slot is a compile error; the connection
+ * catalog then requires its box/wire without maintaining a second index.
+ */
+export const DATA_PROVIDER_METHODS = Object.keys(
+  DATA_PROVIDER_CONTEXT_SLOTS,
+) as (keyof DataProvider)[];

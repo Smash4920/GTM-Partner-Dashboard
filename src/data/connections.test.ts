@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ORIGINAL_CONNECTION_EDGES, ORIGINAL_CONNECTION_NODES } from './__fixtures__/connections';
 import {
   CONNECTION_EDGES,
   CONNECTION_METHOD_COVERAGE,
@@ -13,6 +14,43 @@ import {
  * map, and no two boxes are drawn on top of each other.
  */
 describe('connection catalog', () => {
+  it('preserves every original node and edge record in catalog order', () => {
+    expect(CONNECTION_NODES).toStrictEqual(ORIGINAL_CONNECTION_NODES);
+    expect(CONNECTION_EDGES).toStrictEqual(ORIGINAL_CONNECTION_EDGES);
+    expect(CONNECTION_NODES.map((node) => node.id)).toEqual(
+      ORIGINAL_CONNECTION_NODES.map((node) => node.id),
+    );
+    expect(CONNECTION_EDGES.map((edge) => edge.id)).toEqual(
+      ORIGINAL_CONNECTION_EDGES.map((edge) => edge.id),
+    );
+  });
+
+  it('preserves optional-property presence without materializing absent fields', () => {
+    const optionalProperties = ['source', 'auth', 'cadence', 'blocker', 'owner', 'hostsTeam'];
+    for (const [index, original] of ORIGINAL_CONNECTION_NODES.entries()) {
+      const node = CONNECTION_NODES[index];
+      expect(Object.keys(node).sort()).toEqual(Object.keys(original).sort());
+      for (const property of optionalProperties) {
+        expect(Object.hasOwn(node, property)).toBe(Object.hasOwn(original, property));
+      }
+    }
+    for (const [index, original] of ORIGINAL_CONNECTION_EDGES.entries()) {
+      expect(Object.keys(CONNECTION_EDGES[index]).sort()).toEqual(Object.keys(original).sort());
+    }
+  });
+
+  it('preserves the original column geometry and tier ordering', () => {
+    expect(CONNECTION_NODES.map(({ tier, x, y, w, h }) => ({ tier, x, y, w, h }))).toStrictEqual(
+      ORIGINAL_CONNECTION_NODES.map(({ tier, x, y, w, h }) => ({ tier, x, y, w, h })),
+    );
+    for (const node of CONNECTION_NODES) {
+      expect({ x: node.x, w: node.w }).toStrictEqual({
+        x: CONNECTION_TIER_META[node.tier].x,
+        w: CONNECTION_TIER_META[node.tier].w,
+      });
+    }
+  });
+
   it('draws each node once, inside the diagram', () => {
     expect(new Set(CONNECTION_NODES.map((node) => node.id)).size).toBe(CONNECTION_NODES.length);
     for (const node of CONNECTION_NODES) {

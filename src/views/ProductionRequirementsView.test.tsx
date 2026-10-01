@@ -6,8 +6,14 @@ import {
   ROADMAP_PRODUCTION_STATUSES,
   ROADMAP_STATUS_META,
 } from '../data/constants';
+import type { RoadmapItem } from '../data/types';
 import { formatDate } from '../lib/format';
-import ProductionRequirementsView from './ProductionRequirementsView';
+import ProductionRequirementsView, {
+  MIGRATION_PHASES,
+  REQUIREMENTS,
+  UTILITY_REQUIREMENTS,
+} from './ProductionRequirementsView';
+import { ROADMAP_BASELINE } from './__fixtures__/productionRequirements';
 
 /**
  * The Production Requirements view is a static board. These tests pin the thing
@@ -35,6 +41,72 @@ const allBadgeLabels = () => [
 ];
 
 describe('ProductionRequirementsView', () => {
+  it('preserves every baseline record, ordered field value, and optional-property omission', () => {
+    const current = { REQUIREMENTS, UTILITY_REQUIREMENTS, MIGRATION_PHASES };
+    expect(current).toStrictEqual(ROADMAP_BASELINE);
+
+    for (const board of ['REQUIREMENTS', 'UTILITY_REQUIREMENTS', 'MIGRATION_PHASES'] as const) {
+      for (const [groupIndex, group] of current[board].entries()) {
+        const baselineGroup = ROADMAP_BASELINE[board][groupIndex];
+        expect(Object.keys(group).sort()).toStrictEqual(Object.keys(baselineGroup).sort());
+        for (const [itemIndex, item] of group.items.entries()) {
+          const baselineItem = baselineGroup.items[itemIndex];
+          expect(Object.keys(item).sort()).toStrictEqual(Object.keys(baselineItem).sort());
+          for (const optional of ['demoScope', 'production'] as const) {
+            expect(Object.hasOwn(item, optional)).toBe(Object.hasOwn(baselineItem, optional));
+          }
+        }
+      }
+    }
+  });
+
+  it('renders all 66 full baseline rows in board and group order, with no added or missing details', () => {
+    render(<ProductionRequirementsView />);
+
+    const groups = [
+      ...ROADMAP_BASELINE.REQUIREMENTS,
+      ...ROADMAP_BASELINE.MIGRATION_PHASES,
+      ...ROADMAP_BASELINE.UTILITY_REQUIREMENTS,
+    ];
+    const expectedRows = groups.flatMap<RoadmapItem>((group) => group.items);
+    expect(expectedRows).toHaveLength(66);
+    expect(screen.getAllByRole('listitem').map((row) => row.textContent)).toStrictEqual(
+      expectedRows.map(
+        (item) =>
+          item.text +
+          (item.demoScope === undefined ? '' : `Demo today: ${item.demoScope}`) +
+          (item.production === undefined ? '' : `Production blocker: ${item.production.blocker}`) +
+          demoLabel(item.demo) +
+          (item.production === undefined
+            ? ''
+            : `Production: ${ROADMAP_STATUS_META[item.production.status].label}`),
+      ),
+    );
+    const lists = screen.getAllByRole('list');
+    expect(lists).toHaveLength(20);
+    expect(
+      lists.map((list) =>
+        within(list)
+          .getAllByRole('listitem')
+          .map((row) => row.querySelector('span.block')?.textContent),
+      ),
+    ).toStrictEqual(groups.map((group) => group.items.map((item) => item.text)));
+    expect(
+      lists.map((list) => list.closest('section')?.querySelector('h2')?.textContent),
+    ).toStrictEqual(
+      groups.map((group) => ('phase' in group ? `${group.phase} · ${group.title}` : group.title)),
+    );
+    for (const phase of ROADMAP_BASELINE.MIGRATION_PHASES) {
+      const section = screen
+        .getByRole('heading', { name: `${phase.phase} · ${phase.title}` })
+        .closest('section');
+      expect(section).not.toBeNull();
+      const phaseCard = within(section as HTMLElement);
+      expect(phaseCard.getByText(phase.subtitle)).toBeInTheDocument();
+      if ('status' in phase) expect(phaseCard.getByText(phase.status)).toBeInTheDocument();
+    }
+  });
+
   it('renders the three boards', () => {
     render(<ProductionRequirementsView />);
 

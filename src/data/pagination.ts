@@ -1,3 +1,5 @@
+import { fnv1a } from '../lib/fnv1a';
+
 /**
  * The cursor-pagination primitive every row query on the scoped contract
  * shares.
@@ -129,26 +131,13 @@ interface CursorPayload {
   s: string;
 }
 
-const FNV_OFFSET_BASIS = 0x811c9dc5;
-const FNV_PRIME = 0x01000193;
-
-/** FNV-1a continued from `state`, so keyed folds can be chained. */
-function fnvMix(state: number, text: string): number {
-  let hash = state;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, FNV_PRIME);
-  }
-  return hash >>> 0;
-}
-
 /**
  * FNV-1a, hex. Folds the query key into the cursor so a cursor minted for
  * one query is a typed error on any other, without the token carrying the
  * key around in readable form.
  */
 function queryFingerprint(queryKey: string): string {
-  return fnvMix(FNV_OFFSET_BASIS, queryKey).toString(16).padStart(8, '0');
+  return fnv1a(queryKey).toString(16).padStart(8, '0');
 }
 
 /**
@@ -166,8 +155,8 @@ function queryFingerprint(queryKey: string): string {
  */
 function sealPayload(secret: string, payload: Omit<CursorPayload, 's'>): string {
   const body = `${payload.v}|${payload.q}|${payload.at}|${payload.o}`;
-  const inner = fnvMix(FNV_OFFSET_BASIS, `${secret}\n${body}`);
-  return fnvMix(FNV_OFFSET_BASIS, `${secret}\n${inner.toString(36)}`).toString(36);
+  const inner = fnv1a(`${secret}\n${body}`);
+  return fnv1a(`${secret}\n${inner.toString(36)}`).toString(36);
 }
 
 /**

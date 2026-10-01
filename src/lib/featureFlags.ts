@@ -1,4 +1,5 @@
-import type { FlagLifecycle } from './flagGovernance';
+import { PRODUCT_FLAG_RUNTIME, parseFlagValue } from './flagRuntime';
+export { FEATURE_FLAG_DEFINITIONS } from './productFlagDefinitions';
 
 /**
  * Product feature flags: local, deterministic, and non-authoritative.
@@ -24,36 +25,12 @@ import type { FlagLifecycle } from './flagGovernance';
  * 4. A later valid value replaces the cache, so recovery is immediate.
  */
 
-interface FeatureFlagDefinition {
-  lifecycle: FlagLifecycle;
-  overrideEnvironmentKey: string;
-  rolloutEnvironmentKey: string;
-}
-
-export const FEATURE_FLAG_DEFINITIONS = {
-  productionRequirements: {
-    lifecycle: {
-      owner: 'GTM platform',
-      purpose: 'Show the production requirements migration workspace.',
-      environments: ['development', 'preview', 'production'],
-      safeDefault: true,
-      rolloutTrigger: 'Raise once workspace content matches the verified build.',
-      rollbackTrigger: 'Safe default if the workspace shows unverified claims.',
-      reviewDate: '2026-12-29',
-      expiresAt: '2027-03-29',
-      removalCondition: 'Remove once the workspace is a permanent route.',
-    },
-    overrideEnvironmentKey: 'VITE_FEATURE_PRODUCTION_REQUIREMENTS',
-    rolloutEnvironmentKey: 'VITE_FEATURE_PRODUCTION_REQUIREMENTS_ROLLOUT',
-  },
-} as const satisfies Record<string, FeatureFlagDefinition>;
-
-export type FeatureFlagKey = keyof typeof FEATURE_FLAG_DEFINITIONS;
+export type FeatureFlagKey = keyof typeof PRODUCT_FLAG_RUNTIME;
 
 type FeatureFlagEnvironment = Partial<
   Record<
-    | (typeof FEATURE_FLAG_DEFINITIONS)[FeatureFlagKey]['overrideEnvironmentKey']
-    | (typeof FEATURE_FLAG_DEFINITIONS)[FeatureFlagKey]['rolloutEnvironmentKey'],
+    | (typeof PRODUCT_FLAG_RUNTIME)[FeatureFlagKey]['overrideEnvironmentKey']
+    | (typeof PRODUCT_FLAG_RUNTIME)[FeatureFlagKey]['rolloutEnvironmentKey'],
     string
   >
 >;
@@ -113,15 +90,9 @@ interface FlagCacheEntry {
 /** How long a last-known-good value may serve while the source keeps failing. */
 export const FLAG_CACHE_MAX_AGE_MS = 300_000; // 5 minutes
 
-const ENABLED_VALUES = new Set(['1', 'true', 'on']);
-const DISABLED_VALUES = new Set(['0', 'false', 'off']);
-
 function parseOverride(value: string | undefined): boolean | undefined | null {
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized) return undefined;
-  if (ENABLED_VALUES.has(normalized)) return true;
-  if (DISABLED_VALUES.has(normalized)) return false;
-  return null;
+  if (!value?.trim()) return undefined;
+  return parseFlagValue(value);
 }
 
 function parseRollout(value: string | undefined): number | undefined | null {
@@ -143,7 +114,7 @@ export function featureFlagBucket(key: FeatureFlagKey, subjectKey: string): numb
 
 function createEnvironmentSource(environment: FeatureFlagEnvironment): FlagSource {
   return (key, context) => {
-    const definition = FEATURE_FLAG_DEFINITIONS[key];
+    const definition = PRODUCT_FLAG_RUNTIME[key];
     const override = parseOverride(environment[definition.overrideEnvironmentKey]);
     if (override === null) return { kind: 'malformed' };
     if (override !== undefined) {
@@ -191,7 +162,7 @@ export function createFailSafeEvaluator(
     key: FeatureFlagKey,
     context: FeatureFlagContext = {},
   ): FeatureFlagEvaluation => {
-    const safeDefault = FEATURE_FLAG_DEFINITIONS[key].lifecycle.safeDefault;
+    const safeDefault = PRODUCT_FLAG_RUNTIME[key].safeDefault;
     const outcome = source(key, context);
     const evaluatedAt = now();
 

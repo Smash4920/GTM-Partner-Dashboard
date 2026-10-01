@@ -1,12 +1,6 @@
 import { traceProviderRequest } from '../lib/tracing';
-import {
-  DATA_PROVIDER_CONTEXT_SLOTS,
-  DATA_PROVIDER_METHODS,
-  type DataProvider,
-} from './DataProvider';
-import type { QueryContext } from './queryContext';
-
-const PROVIDER_METHODS = new Set<string>(DATA_PROVIDER_METHODS);
+import type { DataProvider } from './DataProvider';
+import { wrapDataProvider } from './wrapDataProvider';
 
 /**
  * Adds one observable span to every call across the application's integration
@@ -25,36 +19,7 @@ const PROVIDER_METHODS = new Set<string>(DATA_PROVIDER_METHODS);
  * it, exactly as explicit forwarding methods would.
  */
 export function traceDataProvider(inner: DataProvider): DataProvider {
-  return new Proxy(inner, {
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
-      if (
-        typeof property !== 'string' ||
-        typeof value !== 'function' ||
-        !PROVIDER_METHODS.has(property)
-      ) {
-        return value;
-      }
-      const method = property as keyof DataProvider;
-      const contextSlot = DATA_PROVIDER_CONTEXT_SLOTS[method];
-      return (...args: unknown[]) => {
-        const context = args[contextSlot] as QueryContext | undefined;
-        // Rebuild the full argument list with the traced context in the
-        // contract's trailing slot, padding arguments the caller omitted.
-        const forwarded = args.slice(0, contextSlot);
-        while (forwarded.length < contextSlot) {
-          forwarded.push(undefined);
-        }
-        return traceProviderRequest(
-          method,
-          (trace) =>
-            (value as (...rest: unknown[]) => Promise<unknown>).apply(target, [
-              ...forwarded,
-              { ...context, trace },
-            ]),
-          context?.trace,
-        );
-      };
-    },
-  });
+  return wrapDataProvider(inner, (method, context, run) =>
+    traceProviderRequest(method, (trace) => run({ ...context, trace }), context?.trace),
+  );
 }

@@ -70,7 +70,10 @@ export default tseslint.config(
           pattern: [
             'src/lib/featureFlags.ts',
             'src/lib/flagGovernance.ts',
+            'src/lib/flagRuntime.ts',
+            'src/lib/productFlagDefinitions.ts',
             'src/lib/telemetry/flags.ts',
+            'src/lib/telemetry/flagDefinitions.ts',
           ],
         },
       ],

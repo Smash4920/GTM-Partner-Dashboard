@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { makeProviderBook } from '../test/fixtures';
 import { INTERNAL_DEMO_SCOPE } from './accessScope';
 import type { DemoAccessScope } from './accessScope';
-import { DATA_PROVIDER_METHODS } from './DataProvider';
+import { DATA_PROVIDER_CONTEXT_SLOTS, DATA_PROVIDER_METHODS } from './DataProvider';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { DEFAULT_ACTION_POLICY } from '../lib/actionPolicy';
@@ -63,6 +63,43 @@ function unscopedCalls(provider: DataProvider): (() => Promise<unknown>)[] {
 }
 
 describe('DataProvider demo access scope (VAL-DATA-003)', () => {
+  it('preserves the complete seam method order and trailing context slots', () => {
+    const slots = {
+      getActionCenterSummary: 2,
+      listActionItems: 3,
+      getForecastSummary: 2,
+      getWeightedForecast: 2,
+      getForecastQuality: 3,
+      getManagerForecastGroups: 2,
+      getWeeklyForecastSeries: 2,
+      listQuarterOpportunities: 3,
+      getPartnerDirectory: 1,
+      getPerformanceSummary: 2,
+      getRegistrationFunnel: 2,
+      getStageBreakdown: 2,
+      getTypeBreakdown: 2,
+      getQuarterlyRevenueTrend: 2,
+      getWeeklyActivitySeries: 2,
+      getWeeklyGoalProgress: 2,
+      getRegistrationOpsSummary: 2,
+      getTopPartnerLeaders: 2,
+      listPartnerLeaderboard: 3,
+      getManagerDirectory: 1,
+      getPartnerRoster: 2,
+      getPartnerCertification: 2,
+      listScopedOpportunities: 3,
+      listPendingRegistrations: 3,
+      listUnconvertedRegistrations: 3,
+      listDuplicateRegistrationGroups: 3,
+      listRecentRegistrations: 3,
+      getTeamRoster: 2,
+      getRegistrationSlaAlerts: 3,
+      listWeeklyClassificationMeetings: 3,
+    };
+    expect(DATA_PROVIDER_CONTEXT_SLOTS).toStrictEqual(slots);
+    expect(DATA_PROVIDER_METHODS).toStrictEqual(Object.keys(slots));
+  });
+
   it('keeps a closed inventory: exactly these thirty data-bearing methods exist', () => {
     expect([...DATA_PROVIDER_METHODS].sort()).toEqual([
       'getActionCenterSummary',

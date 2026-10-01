@@ -1,5 +1,6 @@
 import type { AlertInput, AlertSeverity } from './alerts';
 import type { MetricsRegistry } from './metrics';
+import { fnv1a } from '../fnv1a';
 
 /**
  * Contextual error capture: breadcrumbs, fingerprints, and the aggregation
@@ -104,12 +105,7 @@ export function fingerprintError(name: string, message: string, stack?: string):
     .filter((line): line is string => line !== null)
     .slice(0, 5);
   const basis = frames.length > 0 ? [name, ...frames].join('|') : `${name}|${message}`;
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < basis.length; index += 1) {
-    hash ^= basis.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0');
+  return fnv1a(basis).toString(16).padStart(8, '0');
 }
 
 function normalizeError(error: unknown): { name: string; message: string; stack?: string } {

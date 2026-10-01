@@ -1,5 +1,7 @@
-import type { FlagLifecycle } from '../flagGovernance';
+import { OPERATIONAL_FLAG_DEFAULTS, parseFlagValue } from '../flagRuntime';
 import type { TelemetryEnv } from './config';
+export { FLAG_DEFINITIONS } from './flagDefinitions';
+export type { FlagDefinition } from './flagDefinitions';
 
 /**
  * Explicit operational flags for the dashboard's telemetry pipeline.
@@ -22,64 +24,9 @@ import type { TelemetryEnv } from './config';
  * switch with an owner, not a settings page.
  */
 
-export interface FlagDefinition {
-  readonly lifecycle: FlagLifecycle;
-}
+export type FlagKey = keyof typeof OPERATIONAL_FLAG_DEFAULTS;
 
-/** Shared environment scope; lifecycle strings stay terse — the bundle ships them. */
-const ALL_ENVIRONMENTS = ['development', 'preview', 'production'] as const;
-
-export const FLAG_DEFINITIONS = {
-  // Master switch for spans, metrics, error capture, and envelope shipping.
-  // When off, provider calls delegate straight through and nothing is recorded.
-  'telemetry.enabled': {
-    lifecycle: {
-      owner: 'GTM platform',
-      purpose: 'Master switch for telemetry capture.',
-      environments: ALL_ENVIRONMENTS,
-      safeDefault: true,
-      rolloutTrigger: 'Keep on while envelopes stay allowlisted.',
-      rollbackTrigger: 'Off if a payload carries unlisted fields.',
-      reviewDate: '2026-12-29',
-      expiresAt: '2027-03-29',
-      removalCondition: 'Remove when the switch moves server-side.',
-    },
-  },
-  // Off by default: logs are chatty, and shipping them is a deliberate choice.
-  'telemetry.logShipping': {
-    lifecycle: {
-      owner: 'GTM platform',
-      purpose: 'Ship structured logs at the configured level.',
-      environments: ALL_ENVIRONMENTS,
-      safeDefault: false,
-      rolloutTrigger: 'Enable after volume and redaction review.',
-      rollbackTrigger: 'Off on redaction gaps or cost spikes.',
-      reviewDate: '2026-12-29',
-      expiresAt: '2027-03-29',
-      removalCondition: 'Remove when configured at the collector.',
-    },
-  },
-  // Route views, provider swaps, and manager edits; counts and identifiers
-  // only, never user prose. Off by default pending privacy approval, and
-  // emits only while the telemetry master switch is also on.
-  'analytics.enabled': {
-    lifecycle: {
-      owner: 'GTM platform',
-      purpose: 'Emit allowlisted product analytics events.',
-      environments: ALL_ENVIRONMENTS,
-      safeDefault: false,
-      rolloutTrigger: 'On only after privacy approval, with telemetry on.',
-      rollbackTrigger: 'Off on a privacy finding or new event field.',
-      reviewDate: '2026-12-29',
-      expiresAt: '2027-03-29',
-      removalCondition: 'Remove when analytics moves server-side.',
-    },
-  },
-} satisfies Record<string, FlagDefinition>;
-
-export type FlagKey = keyof typeof FLAG_DEFINITIONS;
-
-export const FLAG_KEYS = Object.keys(FLAG_DEFINITIONS) as FlagKey[];
+export const FLAG_KEYS = Object.keys(OPERATIONAL_FLAG_DEFAULTS) as FlagKey[];
 
 type FlagSource = 'default' | 'env' | 'override';
 
@@ -105,13 +52,6 @@ export function flagEnvKey(key: FlagKey): string {
     .toUpperCase()}`;
 }
 
-function parseFlagValue(value: string): boolean | null {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'true' || normalized === '1' || normalized === 'on') return true;
-  if (normalized === 'false' || normalized === '0' || normalized === 'off') return false;
-  return null;
-}
-
 /**
  * Resolves one flag against the override, then the environment, then the
  * default. An env value that is not a recognized boolean is ignored and left
@@ -132,7 +72,7 @@ export function resolveFlag(key: FlagKey, env: TelemetryEnv = import.meta.env): 
       : parseFlagValue(envValue);
   if (parsed !== null) return { key, enabled: parsed, source: 'env' };
 
-  return { key, enabled: FLAG_DEFINITIONS[key].lifecycle.safeDefault, source: 'default' };
+  return { key, enabled: OPERATIONAL_FLAG_DEFAULTS[key], source: 'default' };
 }
 
 /** Every flag and how it resolved, for the health artifact and support conversations. */

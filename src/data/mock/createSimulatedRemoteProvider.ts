@@ -1,11 +1,8 @@
-import {
-  DATA_PROVIDER_CONTEXT_SLOTS,
-  DATA_PROVIDER_METHODS,
-  type DataProvider,
-} from '../DataProvider';
-import type { QueryContext } from '../queryContext';
+import type { DataProvider } from '../DataProvider';
 import type { QueryResult } from '../queryMetadata';
+import { wrapDataProvider } from '../wrapDataProvider';
 import { abortableDelay, throwIfAborted } from '../../lib/abort';
+import { fnv1a } from '../../lib/fnv1a';
 import { MockDataProvider } from './MockDataProvider';
 import { mulberry32 } from './rng';
 
@@ -74,15 +71,8 @@ export interface FailurePlanEntry {
  * own call history alone.
  */
 function methodSeed(seed: number, method: string): number {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < method.length; index += 1) {
-    hash ^= method.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (seed ^ hash) >>> 0;
+  return (seed ^ fnv1a(method)) >>> 0;
 }
-
-const PROVIDER_METHODS = new Set<string>(DATA_PROVIDER_METHODS);
 
 /**
  * Any provider, behind a simulated network.
@@ -229,36 +219,7 @@ export function createSimulatedRemoteProvider(
     return { ...result, meta: { ...result.meta, providerId } };
   }
 
-  return new Proxy(inner, {
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
-      if (
-        typeof property !== 'string' ||
-        typeof value !== 'function' ||
-        !PROVIDER_METHODS.has(property)
-      ) {
-        return value;
-      }
-      const method = property as keyof DataProvider;
-      const contextSlot = DATA_PROVIDER_CONTEXT_SLOTS[method];
-      return (...args: unknown[]) => {
-        const context = args[contextSlot] as QueryContext | undefined;
-        // Rebuild the full argument list with the context in the contract's
-        // trailing slot, padding arguments the caller omitted, so the inner
-        // provider sees exactly the call shape explicit forwarding produced.
-        const forwarded = args.slice(0, contextSlot);
-        while (forwarded.length < contextSlot) {
-          forwarded.push(undefined);
-        }
-        return stamp(
-          roundTrip(method, context?.signal, () =>
-            (value as (...rest: unknown[]) => Promise<QueryResult<unknown>>).apply(target, [
-              ...forwarded,
-              context,
-            ]),
-          ),
-        );
-      };
-    },
-  });
+  return wrapDataProvider(inner, (method, context, run) =>
+    stamp(roundTrip(method, context?.signal, () => run(context))),
+  );
 }
