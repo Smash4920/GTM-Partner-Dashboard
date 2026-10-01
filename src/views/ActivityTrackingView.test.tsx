@@ -374,7 +374,8 @@ describe('ActivityTrackingView', () => {
     await within(dialog).findByText('Failed to load the week’s meetings');
     expect(within(goalCard()).getByText('2/10')).toBeInTheDocument();
 
-    await user.click(within(dialog).getByRole('button', { name: 'Retry' }));
+    // The retry names the failed collection.
+    await user.click(within(dialog).getByRole('button', { name: 'Retry meeting calendar' }));
 
     expect(
       await within(dialog).findByRole('combobox', { name: 'Call type for 15:00 meeting' }),

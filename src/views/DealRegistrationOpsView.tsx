@@ -3,7 +3,7 @@ import DuplicateRegistrationsTable from '../components/DuplicateRegistrationsTab
 import ExclusivityTable from '../components/ExclusivityTable';
 import KpiTile from '../components/KpiTile';
 import MetricBars, { type MetricBarRow } from '../components/MetricBars';
-import { renderQueryState } from '../components/QueryState';
+import { QueryFailure, renderQueryState, useRetryRecovery } from '../components/QueryState';
 import PageFooter from '../components/PageFooter';
 import RegistrationsTable from '../components/RegistrationsTable';
 import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
@@ -190,6 +190,12 @@ export default function DealRegistrationOpsView({
     prospects,
   });
   const roster = queries.roster.data ?? [];
+  // The roster names the partner column of every table below. Its failure
+  // must not take the cards down with it: they keep rendering with the
+  // explicit partner-id fallback, and the named retry repeats only the
+  // roster query. The region persists across the recovery so the successful
+  // retry has a stable focus target.
+  const rosterRecovery = useRetryRecovery('partner roster', queries.roster.error !== null);
 
   return (
     <div className="space-y-6">
@@ -256,6 +262,19 @@ export default function DealRegistrationOpsView({
           deadline after approval.
         </p>
       </Card>
+
+      {(queries.roster.data !== null || queries.roster.error !== null) && (
+        <div ref={rosterRecovery.regionRef} {...rosterRecovery.regionProps}>
+          {queries.roster.error !== null && (
+            <QueryFailure
+              text="Partner names unavailable — showing partner ids"
+              retryLabel="partner roster"
+              error={queries.roster.error}
+              onRetry={rosterRecovery.armRetry(queries.roster.retry)}
+            />
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ReviewQueueCard pending={queries.pending} ops={queries.ops} roster={roster} />

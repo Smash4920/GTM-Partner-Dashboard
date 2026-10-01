@@ -3,7 +3,7 @@ import { TracedDataProvider } from './TracedDataProvider';
 import { instrumentProvider } from '../lib/telemetry/instrumentProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { ScaleDataProvider } from './mock/ScaleDataProvider';
-import { SimulatedRemoteProvider } from './mock/SimulatedRemoteProvider';
+import { SimulatedRemoteProvider, type FailurePlanEntry } from './mock/SimulatedRemoteProvider';
 
 /**
  * The provider the app is wired to, switchable from the header.
@@ -57,23 +57,34 @@ export function providerOption(id: ProviderId): ProviderOption {
  * draw. `?remoteFailMethods=getForecastSummary:2,listQuarterOpportunities:1` instead
  * fails the first N calls of each named method, which survives the readiness
  * probe: only the named widgets fail, so per-widget failure and focused retry
- * can be exercised past a committed provider. Unset in normal use, and
- * meaningless for the local and scaled providers, which never fail.
+ * can be exercised past a committed provider. The three-part form
+ * `?remoteFailMethods=listWeeklyClassificationMeetings:1:1` skips the first
+ * call, then fails exactly one — the load-more failure a retained page has to
+ * survive. Unset in normal use, and meaningless for the local and scaled
+ * providers, which never fail.
  */
 function scriptedRemoteFailures():
   | { failFirstCalls: number }
-  | { failMethods: Partial<Record<keyof DataProvider, number>> }
+  | { failMethods: Partial<Record<keyof DataProvider, number | FailurePlanEntry>> }
   | undefined {
   if (typeof window === 'undefined') return undefined;
   const params = new URLSearchParams(window.location.search);
   const named = params.get('remoteFailMethods');
   if (named !== null) {
-    const failMethods: Partial<Record<keyof DataProvider, number>> = {};
+    const failMethods: Partial<Record<keyof DataProvider, number | FailurePlanEntry>> = {};
     for (const pair of named.split(',')) {
-      const [method, raw] = pair.split(':');
-      const count = Number.parseInt(raw ?? '', 10);
-      if (method !== undefined && Number.isFinite(count) && count > 0) {
-        failMethods[method as keyof DataProvider] = count;
+      const [method, first, second] = pair.split(':');
+      // Two parts are `method:fail`; three are `method:skip:fail`.
+      const skip = second === undefined ? 0 : Number.parseInt(first ?? '', 10);
+      const count = Number.parseInt(second ?? first ?? '', 10);
+      if (
+        method !== undefined &&
+        Number.isFinite(skip) &&
+        skip >= 0 &&
+        Number.isFinite(count) &&
+        count > 0
+      ) {
+        failMethods[method as keyof DataProvider] = skip > 0 ? { skip, fail: count } : count;
       }
     }
     return { failMethods };

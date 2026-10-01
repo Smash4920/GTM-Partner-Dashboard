@@ -282,6 +282,113 @@ describe('DataConnectionsView', () => {
     expect(screen.getByText('Failed to load the partner roster')).toBeInTheDocument();
   });
 
+  it('keeps retained data visible with truthful tiles and focused retries when a same-scope refresh fails', async () => {
+    // The regression this pins: a failed refresh with a retained answer used
+    // to render exactly like a healthy panel — no failure copy, no retry,
+    // and tiles that read as freshly answered.
+    const user = userEvent.setup();
+    const onSendNotification = vi.fn();
+    const provider = new MockDataProvider(
+      makeProviderBook({ partners: PARTNERS, registrations: REGISTRATIONS, teamUsers: TEAM_USERS }),
+    );
+    // The first answer lands; the overlay-driven refresh (the second call on
+    // each method) fails with raw transport prose that must never render.
+    const rosterAnswers = provider.getTeamRoster.bind(provider);
+    let rosterCalls = 0;
+    const rosterSpy = vi
+      .spyOn(provider, 'getTeamRoster')
+      .mockImplementation((access, scope, context) => {
+        rosterCalls += 1;
+        if (rosterCalls === 2) {
+          return Promise.reject(new Error('RAW SENTINEL: roster transport trace'));
+        }
+        return rosterAnswers(access, scope, context);
+      });
+    const alertAnswers = provider.getRegistrationSlaAlerts.bind(provider);
+    let alertCalls = 0;
+    const alertsSpy = vi
+      .spyOn(provider, 'getRegistrationSlaAlerts')
+      .mockImplementation((access, scope, maxAlerts, context) => {
+        alertCalls += 1;
+        if (alertCalls === 2) {
+          return Promise.reject(new Error('RAW SENTINEL: alert transport trace'));
+        }
+        return alertAnswers(access, scope, maxAlerts, context);
+      });
+
+    const view = (overrides: Record<string, Partial<TeamUser>>) => (
+      <DataConnectionsView
+        provider={provider}
+        teamUserOverrides={overrides}
+        addedTeamUsers={[]}
+        notifications={[]}
+        onAddTeamUser={vi.fn()}
+        onSetTeamUserStatus={vi.fn()}
+        onRemoveTeamUser={vi.fn()}
+        onSendNotification={onSendNotification}
+      />
+    );
+    const { rerender } = render(view({}));
+    await waitFor(() => expect(screen.getAllByText('J. Alvarez').length).toBeGreaterThan(0));
+    expect(
+      tile('Receiving notifications').getByText(
+        'roster entries routed simulated notifications this session',
+      ),
+    ).toBeInTheDocument();
+
+    // A session roster overlay refreshes exactly the two queries that read
+    // it — and both refreshes fail.
+    rerender(view({ [OWNER_USER_ID]: { status: 'suspended' } }));
+
+    // Every section that reads a failed dependency keeps its retained content
+    // and names the refresh failure; the raw rejection prose never renders.
+    await waitFor(() => expect(screen.getAllByText('Latest refresh failed:')).toHaveLength(3));
+    expect(screen.getAllByText('Failed to load the notification roster')).toHaveLength(2);
+    expect(screen.getByText('Failed to load the registration SLA alerts')).toBeInTheDocument();
+    expect(screen.queryByText(/RAW SENTINEL/)).not.toBeInTheDocument();
+    // The roster panel, the alert queue, and the composer all still render
+    // their last good answers.
+    expect(screen.getAllByText('J. Alvarez').length).toBeGreaterThan(0);
+    expect(queueRow('Acme Freight')).toBeInTheDocument();
+    expect(composerRegion().getByLabelText('To')).toBeInTheDocument();
+    // The tiles keep the prior numbers and say the latest refresh failed.
+    expect(tile('Receiving notifications').getByText('2/4')).toBeInTheDocument();
+    expect(tile('Receiving notifications').getByText(/latest refresh failed/)).toBeInTheDocument();
+    expect(tile('SLA alerts due').getByText('3')).toBeInTheDocument();
+    expect(tile('SLA alerts due').getByText(/latest refresh failed/)).toBeInTheDocument();
+
+    // The roster section's retry repeats only the roster query; the composer
+    // section shares that dependency and recovers with it, while the alert
+    // queue's own failed dependency is still owed its retry.
+    await user.click(screen.getByRole('button', { name: 'Retry The team roster' }));
+    await waitFor(() => expect(screen.getAllByText('Latest refresh failed:')).toHaveLength(1));
+    expect(rosterSpy).toHaveBeenCalledTimes(3);
+    expect(alertsSpy).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('group', { name: 'The team roster' })).toHaveFocus();
+    expect(screen.getByText('Failed to load the registration SLA alerts')).toBeInTheDocument();
+    expect(queueRow('Acme Freight')).toBeInTheDocument();
+    expect(
+      tile('Receiving notifications').getByText(
+        'roster entries routed simulated notifications this session',
+      ),
+    ).toBeInTheDocument();
+
+    // The alert queue's retry fires exactly its failed dependency, and the
+    // route is fully recovered.
+    await user.click(screen.getByRole('button', { name: 'Retry The SLA alert queue' }));
+    await waitFor(() =>
+      expect(screen.queryByText('Latest refresh failed:')).not.toBeInTheDocument(),
+    );
+    expect(alertsSpy).toHaveBeenCalledTimes(3);
+    expect(rosterSpy).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole('group', { name: 'The SLA alert queue' })).toHaveFocus();
+    expect(
+      tile('SLA alerts due').getByText(
+        `1 due next business day · 2 past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('distinguishes the initial load from a failure: loading announces itself and offers no retry', () => {
     // The defect this guards: the route used to render "the provider did not
     // answer" with a Retry button while the provider was still answering.

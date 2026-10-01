@@ -74,8 +74,13 @@ export interface RemoteOptions {
    * without caring what else the page happens to fetch, and replaying the
    * plan on a fresh instance reproduces the same outcomes regardless of
    * unrelated call order.
+   *
+   * An entry may instead be `{ skip, fail }`: the method's first `skip`
+   * calls succeed, then exactly `fail` fail, then it succeeds — so a plan
+   * can fail "the second page" of a paginated query without touching the
+   * first, the failure a retained list has to survive.
    */
-  failMethods?: Partial<Record<keyof DataProvider, number>>;
+  failMethods?: Partial<Record<keyof DataProvider, number | FailurePlanEntry>>;
   /**
    * The identity stamped into the metadata of every scoped answer that
    * crosses this wire. The inner provider computed the answer, but the
@@ -90,6 +95,15 @@ export interface RemoteOptions {
 const DEFAULT_LATENCY_MS = 250;
 const DEFAULT_FAILURE_RATE = 0.15;
 const DEFAULT_SEED = 20260918;
+
+/**
+ * One entry of a named failure plan: `fail` calls fail after the first
+ * `skip` (default 0) succeed. The plain-number form is `{ fail: n }`.
+ */
+export interface FailurePlanEntry {
+  skip?: number;
+  fail: number;
+}
 
 /**
  * FNV-1a: folds a method name into the seed so each public method draws from
@@ -144,8 +158,8 @@ export class SimulatedRemoteProvider implements DataProvider {
   private readonly latencyMs: number;
   private readonly failureRate: number;
   private readonly failFirstCalls: number | undefined;
-  /** Remaining planned failures per method; decremented as they are spent. */
-  private readonly failMethods: Map<string, number> | undefined;
+  /** Remaining planned skips and failures per method; decremented as they are spent. */
+  private readonly failMethods: Map<string, { skip: number; fail: number }> | undefined;
   private readonly seed: number;
   /** Metadata identity stamped on scoped answers, when set. */
   private readonly providerId: string | undefined;
@@ -165,10 +179,16 @@ export class SimulatedRemoteProvider implements DataProvider {
     this.failMethods =
       options.failMethods !== undefined
         ? new Map(
-            Object.entries(options.failMethods).map(([method, count]) => [
-              method,
-              Math.max(0, Math.floor(count ?? 0)),
-            ]),
+            Object.entries(options.failMethods).map(([method, entry]) => {
+              const plan = typeof entry === 'number' ? { fail: entry } : entry;
+              return [
+                method,
+                {
+                  skip: Math.max(0, Math.floor(plan?.skip ?? 0)),
+                  fail: Math.max(0, Math.floor(plan?.fail ?? 0)),
+                },
+              ];
+            }),
           )
         : undefined;
     this.seed = options.seed ?? DEFAULT_SEED;
@@ -193,10 +213,18 @@ export class SimulatedRemoteProvider implements DataProvider {
   private plannedFailure(method: string): boolean {
     this.calls += 1;
     if (this.failFirstCalls !== undefined && this.calls <= this.failFirstCalls) return true;
-    const remaining = this.failMethods?.get(method);
-    if (remaining !== undefined && remaining > 0) {
-      this.failMethods?.set(method, remaining - 1);
-      return true;
+    const plan = this.failMethods?.get(method);
+    if (plan !== undefined) {
+      // Skips are spent first, so a plan can aim at a call past the first —
+      // the load-more failure a retained page has to survive.
+      if (plan.skip > 0) {
+        plan.skip -= 1;
+        return false;
+      }
+      if (plan.fail > 0) {
+        plan.fail -= 1;
+        return true;
+      }
     }
     return false;
   }

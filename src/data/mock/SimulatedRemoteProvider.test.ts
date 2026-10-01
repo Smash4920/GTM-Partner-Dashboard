@@ -181,6 +181,33 @@ describe('SimulatedRemoteProvider', () => {
     expect(await run(true)).toEqual([false, false, true]);
   });
 
+  it('a skip plan lets the first calls succeed, then fails exactly the named count', async () => {
+    const inner = new MockDataProvider();
+    const summaryCalls = vi.spyOn(inner, 'getForecastSummary');
+    const provider = new SimulatedRemoteProvider(inner, {
+      latencyMs: 0,
+      // A rate that must be ignored while the plan runs: the plan, not the
+      // draw, decides.
+      failureRate: 1,
+      failMethods: { getForecastSummary: { skip: 2, fail: 1 } },
+    });
+
+    const attempt = () =>
+      provider.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter }).then(
+        () => true,
+        () => false,
+      );
+    // The load page one, fail the load-more, recover on retry shape that a
+    // paginated surface rehearses: succeed, succeed, fail once, succeed.
+    expect(await attempt()).toBe(true);
+    expect(await attempt()).toBe(true);
+    expect(await attempt()).toBe(false);
+    expect(await attempt()).toBe(true);
+    // The failed call never reached the inner provider; the three successful
+    // ones ran exactly once each.
+    expect(summaryCalls).toHaveBeenCalledTimes(3);
+  });
+
   it('a method’s seeded failure pattern is independent of unrelated calls', async () => {
     const outcomesOf = async (interleave: boolean) => {
       const provider = new SimulatedRemoteProvider(new MockDataProvider(), {

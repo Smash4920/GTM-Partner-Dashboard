@@ -211,7 +211,11 @@ export default function DataConnectionsView({
           value={routingOn === null ? '—' : `${routingOn}/${teamUsers.data?.length ?? 0}`}
           sub={
             teamUsers.data !== null
-              ? 'roster entries routed simulated notifications this session'
+              ? // A failed refresh keeps the last good roster on screen — the
+                // tile says so rather than reading as freshly answered.
+                teamUsers.error !== null
+                ? 'latest refresh failed — showing the last good roster'
+                : 'roster entries routed simulated notifications this session'
               : teamUsers.error !== null
                 ? 'roster unavailable — the provider did not answer'
                 : 'roster loading — waiting on the provider'
@@ -222,9 +226,11 @@ export default function DataConnectionsView({
           value={alerts.data === null ? '—' : `${alerts.data.totalCount}`}
           sub={
             alerts.data !== null
-              ? `${alerts.data.approachingCount} due next business day · ${
-                  alerts.data.totalCount - alerts.data.approachingCount
-                } past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`
+              ? alerts.error !== null
+                ? 'latest refresh failed — showing the last good alert counts'
+                : `${alerts.data.approachingCount} due next business day · ${
+                    alerts.data.totalCount - alerts.data.approachingCount
+                  } past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`
               : alerts.error !== null
                 ? 'alert queue unavailable — the provider did not answer'
                 : 'alert queue loading — waiting on the provider'

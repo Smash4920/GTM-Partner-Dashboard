@@ -206,8 +206,16 @@ export function renderQueryState<T>(
 /**
  * One section, several queries: the multi-query sibling of
  * `QueryStateRegion` for panels whose content needs more than one answer
- * before it can render at all. The first failed dependency supplies the
- * error copy; the section's one Retry repeats exactly the failed provider
+ * before it can render at all. Every errored dependency is surfaced, in one
+ * of two shapes:
+ *
+ * - **unavailable** (error, no retained answer): the panel cannot render,
+ *   so the first such dependency supplies the error copy.
+ * - **refresh failed** (error over a retained answer): the content still
+ *   renders — the last good answers stay on screen — with the failure named
+ *   alongside it, never silently rendered as healthy.
+ *
+ * Either way the section's one Retry repeats exactly the failed provider
  * calls — every failed dependency once, none of the answered ones — so one
  * click recovers the panel without re-running work that already succeeded.
  * While none has failed, the first unanswered dependency's name is the
@@ -224,20 +232,29 @@ function QuerySectionRegion<TStates extends Array<readonly [string, QueryState<u
   states: TStates;
   render: () => ReactNode;
 }) {
-  const failedAll = states.filter(([, state]) => state.error !== null && state.data === null);
-  const failed = failedAll[0];
+  // Every errored dependency, whether or not it kept its last answer. The
+  // hook's stable copy is what renders here — never the rejection's prose.
+  const errored = states.filter(([, state]) => state.error !== null);
+  const unavailable = errored.filter(([, state]) => state.data === null);
+  const refreshFailed = errored.filter(([, state]) => state.data !== null);
+  const firstUnavailable = unavailable[0];
+  const firstRefreshFailed = refreshFailed[0];
   const loading = states.find(([, state]) => state.data === null && state.error === null);
-  const { regionRef, regionProps, armRetry } = useRetryRecovery(label, failed !== undefined);
+  const { regionRef, regionProps, armRetry } = useRetryRecovery(label, errored.length > 0);
+  // One click repeats every failed dependency exactly once — an initial
+  // failure and a failed refresh are both still owed their retry — and
+  // never re-runs a dependency that already answered.
+  const retryFailed = armRetry(() => {
+    for (const [, state] of errored) state.retry();
+  });
   return (
     <div ref={regionRef} {...regionProps}>
-      {failed !== undefined ? (
+      {firstUnavailable !== undefined ? (
         <QueryFailure
           text={`${label} unavailable`}
           retryLabel={label}
-          error={failed[1].error ?? 'Failed to load'}
-          onRetry={armRetry(() => {
-            for (const [, state] of failedAll) state.retry();
-          })}
+          error={firstUnavailable[1].error ?? 'Failed to load'}
+          onRetry={retryFailed}
         />
       ) : loading !== undefined ? (
         // The loading line names the section, not one of its queries: the
@@ -245,7 +262,17 @@ function QuerySectionRegion<TStates extends Array<readonly [string, QueryState<u
         // precision belongs (it is the failed query's own message).
         <QueryLoading label={label.charAt(0).toLowerCase() + label.slice(1)} />
       ) : (
-        render()
+        <>
+          {firstRefreshFailed !== undefined && (
+            <QueryFailure
+              text="Latest refresh failed"
+              retryLabel={label}
+              error={firstRefreshFailed[1].error ?? 'Failed to load'}
+              onRetry={retryFailed}
+            />
+          )}
+          {render()}
+        </>
       )}
     </div>
   );

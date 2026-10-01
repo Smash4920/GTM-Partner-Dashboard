@@ -6,6 +6,7 @@ import {
   QueryFailure,
   QueryMetaCaption,
   renderQueryState,
+  renderQueryStates,
 } from '../components/QueryState';
 import { buildQueryMeta, unattributedOpportunitiesWarning } from '../data/queryMetadata';
 import type { QueryMeta } from '../data/queryMetadata';
@@ -325,5 +326,207 @@ describe('query states (VAL-DATA-006)', () => {
     expect(caption).toHaveTextContent('partial');
     expect(screen.getByText(/1 in-quarter opportunity/)).toBeInTheDocument();
     expect(screen.getByText(/2 of 7 closed weeks were reconstructed/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * The multi-query sibling of the states above: a panel whose content needs
+ * several answers. The regression these pin: a failed refresh with retained
+ * data used to fall through as healthy — the content rendered and no failure
+ * or retry was ever shown.
+ */
+describe('query section states', () => {
+  const renderRoster = () => <p>The roster is on screen</p>;
+
+  it('renders retained content with a named refresh failure, retrying only the failed dependency', async () => {
+    const user = userEvent.setup();
+    const rosterRetry = vi.fn();
+    const managersRetry = vi.fn();
+    render(
+      <>
+        {renderQueryStates(
+          'The team roster',
+          [
+            [
+              'the notification roster',
+              state({
+                data: { total: 4 },
+                meta: meta(),
+                error: 'Failed to load the notification roster',
+                retry: rosterRetry,
+              }),
+            ],
+            [
+              'the manager directory',
+              state({ data: { total: 2 }, meta: meta(), retry: managersRetry }),
+            ],
+          ],
+          renderRoster,
+        )}
+      </>,
+    );
+
+    // Stale beats blank: the last good content stays, the failure is named
+    // next to it with the dependency's stable copy — never raw rejection
+    // prose — and the answered dependency is not re-run by the retry.
+    expect(screen.getByText('The roster is on screen')).toBeInTheDocument();
+    expect(screen.getByText('Latest refresh failed:')).toBeInTheDocument();
+    expect(screen.getByText('Failed to load the notification roster')).toBeInTheDocument();
+    expect(screen.queryByText(/The team roster unavailable/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry The team roster' }));
+    expect(rosterRetry).toHaveBeenCalledTimes(1);
+    expect(managersRetry).not.toHaveBeenCalled();
+  });
+
+  it('retries every failed dependency exactly once on one click', async () => {
+    const user = userEvent.setup();
+    const alertsRetry = vi.fn();
+    const rosterRetry = vi.fn();
+    const managersRetry = vi.fn();
+    render(
+      <>
+        {renderQueryStates(
+          'The SLA alert queue',
+          [
+            [
+              'the registration SLA alerts',
+              state({
+                data: { total: 3 },
+                meta: meta(),
+                error: 'Failed to load the registration SLA alerts',
+                retry: alertsRetry,
+              }),
+            ],
+            [
+              'the notification roster',
+              state({
+                data: { total: 4 },
+                meta: meta(),
+                error: 'Failed to load the notification roster',
+                retry: rosterRetry,
+              }),
+            ],
+            [
+              'the manager directory',
+              state({ data: { total: 2 }, meta: meta(), retry: managersRetry }),
+            ],
+          ],
+          renderRoster,
+        )}
+      </>,
+    );
+
+    // Two dependencies failed their refresh; the first one's copy leads and
+    // one click repeats both — each exactly once, the healthy one never.
+    expect(screen.getByText('Failed to load the registration SLA alerts')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Retry The SLA alert queue' }));
+    expect(alertsRetry).toHaveBeenCalledTimes(1);
+    expect(rosterRetry).toHaveBeenCalledTimes(1);
+    expect(managersRetry).not.toHaveBeenCalled();
+  });
+
+  it('a mix of initial and refresh failures renders unavailable and retries every failed dependency', async () => {
+    const user = userEvent.setup();
+    const rosterRetry = vi.fn();
+    const recordsRetry = vi.fn();
+    render(
+      <>
+        {renderQueryStates(
+          'The notification composer',
+          [
+            [
+              'the notification roster',
+              state({ error: 'Failed to load the notification roster', retry: rosterRetry }),
+            ],
+            [
+              'the registration records',
+              state({
+                data: { total: 9 },
+                meta: meta(),
+                error: 'Failed to load the registration records',
+                retry: recordsRetry,
+              }),
+            ],
+          ],
+          renderRoster,
+        )}
+      </>,
+    );
+
+    // A dependency with no answer takes the panel down, but the retry still
+    // owes the refresh-failed dependency its one repeat too.
+    expect(screen.getByText('The notification composer unavailable:')).toBeInTheDocument();
+    expect(screen.queryByText('The roster is on screen')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry The notification composer' }));
+    expect(rosterRetry).toHaveBeenCalledTimes(1);
+    expect(recordsRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('a successful section retry lands focus on the section region, never the body', async () => {
+    const user = userEvent.setup();
+    const failing = state({
+      data: { total: 4 },
+      meta: meta(),
+      error: 'Failed to load the notification roster',
+      retry: vi.fn(),
+    });
+    const recovered = state({ data: { total: 4 }, meta: meta() });
+    const { rerender } = render(
+      <>
+        {renderQueryStates('The team roster', [['the notification roster', failing]], renderRoster)}
+      </>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Retry The team roster' }));
+    rerender(
+      <>
+        {renderQueryStates(
+          'The team roster',
+          [['the notification roster', recovered]],
+          renderRoster,
+        )}
+      </>,
+    );
+
+    expect(screen.queryByText('Latest refresh failed:')).not.toBeInTheDocument();
+    const region = screen.getByRole('group', { name: 'The team roster' });
+    expect(region).toContainElement(screen.getByText('The roster is on screen'));
+    expect(document.activeElement).toBe(region);
+  });
+
+  it('an unretried section recovery does not claim focus', () => {
+    const { rerender } = render(
+      <>
+        {renderQueryStates(
+          'The team roster',
+          [
+            [
+              'the notification roster',
+              state({
+                data: { total: 4 },
+                meta: meta(),
+                error: 'Failed to load the notification roster',
+                retry: vi.fn(),
+              }),
+            ],
+          ],
+          renderRoster,
+        )}
+      </>,
+    );
+
+    rerender(
+      <>
+        {renderQueryStates(
+          'The team roster',
+          [['the notification roster', state({ data: { total: 4 }, meta: meta() })]],
+          renderRoster,
+        )}
+      </>,
+    );
+
+    expect(document.activeElement).toBe(document.body);
   });
 });

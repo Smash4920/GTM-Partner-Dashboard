@@ -5,6 +5,7 @@ import { formatTime } from '../lib/format';
 import { startOfWeekUtc } from '../lib/fiscal';
 import AddPartnerForm from './AddPartnerForm';
 import { XIcon } from './icons';
+import { QueryFailure, useRetryRecovery } from './QueryState';
 
 const ADD_PARTNER = '__add_partner__';
 
@@ -72,6 +73,19 @@ export default function MeetingLogModal({
   const [addingPartnerFor, setAddingPartnerFor] = useState<string | null>(null);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+
+  // A failed calendar page keeps the meetings already loaded — and the draft
+  // classifying them — mounted; the failure is named next to them with a
+  // retry that repeats only the failed request. The retry unmounts with the
+  // failure UI it lives in — and the page request clears the error the
+  // moment it starts, so the failure UI goes away before the answer arrives.
+  // The recovery region therefore wraps every calendar state (failure,
+  // reloading, rows) and never unmounts between them: it claims the orphaned
+  // focus whenever the failure clears, and hands it to a stable target
+  // inside the dialog.
+  const calendarFailed = calendar !== undefined && calendar.error !== null;
+  const loadMoreFailed = calendarFailed && meetings.length > 0;
+  const calendarRecovery = useRetryRecovery('meeting calendar', calendarFailed);
 
   // Closing with unsubmitted classifications asks first. A backdrop click is
   // easy to do by accident, and the draft is a manager's whole week of work.
@@ -183,133 +197,153 @@ export default function MeetingLogModal({
           </button>
         </div>
 
-        {calendar && meetings.length === 0 && calendar.error !== null ? (
-          <div className="px-5 py-10 text-center">
-            <p className="text-sm text-signal">{calendar.error}</p>
-            <button
-              type="button"
-              onClick={calendar.retry}
-              className="mt-3 rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20"
-            >
-              Retry
-            </button>
-          </div>
-        ) : calendar?.loading && meetings.length === 0 ? (
-          <p className="px-5 py-10 text-center font-mono text-[10px] uppercase tracking-[0.08em] text-granite">
-            Loading meetings…
-          </p>
-        ) : (
-          <div className="grid grid-cols-5 gap-2 px-5 py-4">
-            {byDay.map((dayMeetings, dayIndex) => (
-              <div key={dayIndex} className="min-w-0">
-                <p className="border-b border-carbon pb-2 text-center font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-                  {DAY_LABELS[dayIndex]}
-                </p>
-                <div className="mt-2 space-y-2">
-                  {dayMeetings.map((meeting) => {
-                    const classification = classificationFor(meeting, classifications);
-                    const end = new Date(
-                      new Date(meeting.occurredAt).getTime() + meeting.durationMinutes * 60_000,
-                    );
-                    return (
-                      <div
-                        key={meeting.id}
-                        className="rounded border border-l-2 border-carbon bg-carbon/60 p-2"
-                        style={{ borderLeftColor: MEETING_TYPE_META[classification.type].color }}
-                      >
-                        <p className="font-mono text-[10px] tabular-nums text-granite">
-                          {formatTime(meeting.occurredAt)}–{formatTime(end.toISOString())}
-                        </p>
-                        <p className="mt-0.5 truncate text-xs text-stone">
-                          {partnerName(classification.partnerId)}
-                        </p>
-                        <div className="mt-1.5 space-y-1.5">
-                          {addingPartnerFor === meeting.id ? (
-                            <AddPartnerForm
-                              partnerManagerName={managerName}
-                              onAdd={(name) => {
-                                const partnerId = onAddPartner(name);
-                                onChange(meeting.id, { ...classification, partnerId });
-                                setAddingPartnerFor(null);
-                              }}
-                              onCancel={() => setAddingPartnerFor(null)}
-                            />
-                          ) : (
-                            <>
-                              <select
-                                value={classification.partnerId}
-                                onChange={(event) => {
-                                  if (event.target.value === ADD_PARTNER) {
-                                    setAddingPartnerFor(meeting.id);
-                                    return;
-                                  }
-                                  onChange(meeting.id, {
-                                    ...classification,
-                                    partnerId: event.target.value,
-                                  });
+        {/* One recovery region wraps every calendar state — failure, reload,
+            and rows — so a retried failure always has its stable focus
+            target, however many renders the recovery takes. */}
+        <div ref={calendarRecovery.regionRef} {...calendarRecovery.regionProps}>
+          {calendar && meetings.length === 0 && calendar.error !== null ? (
+            <div className="px-5 py-10 text-center">
+              <p className="text-sm text-signal">{calendar.error}</p>
+              <button
+                type="button"
+                onClick={calendarRecovery.armRetry(calendar.retry)}
+                aria-label="Retry meeting calendar"
+                className="mt-3 rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20"
+              >
+                Retry
+              </button>
+            </div>
+          ) : calendar?.loading && meetings.length === 0 ? (
+            <p className="px-5 py-10 text-center font-mono text-[10px] uppercase tracking-[0.08em] text-granite">
+              Loading meetings…
+            </p>
+          ) : (
+            <div className="grid grid-cols-5 gap-2 px-5 py-4">
+              {byDay.map((dayMeetings, dayIndex) => (
+                <div key={dayIndex} className="min-w-0">
+                  <p className="border-b border-carbon pb-2 text-center font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+                    {DAY_LABELS[dayIndex]}
+                  </p>
+                  <div className="mt-2 space-y-2">
+                    {dayMeetings.map((meeting) => {
+                      const classification = classificationFor(meeting, classifications);
+                      const end = new Date(
+                        new Date(meeting.occurredAt).getTime() + meeting.durationMinutes * 60_000,
+                      );
+                      return (
+                        <div
+                          key={meeting.id}
+                          className="rounded border border-l-2 border-carbon bg-carbon/60 p-2"
+                          style={{ borderLeftColor: MEETING_TYPE_META[classification.type].color }}
+                        >
+                          <p className="font-mono text-[10px] tabular-nums text-granite">
+                            {formatTime(meeting.occurredAt)}–{formatTime(end.toISOString())}
+                          </p>
+                          <p className="mt-0.5 truncate text-xs text-stone">
+                            {partnerName(classification.partnerId)}
+                          </p>
+                          <div className="mt-1.5 space-y-1.5">
+                            {addingPartnerFor === meeting.id ? (
+                              <AddPartnerForm
+                                partnerManagerName={managerName}
+                                onAdd={(name) => {
+                                  const partnerId = onAddPartner(name);
+                                  onChange(meeting.id, { ...classification, partnerId });
+                                  setAddingPartnerFor(null);
                                 }}
-                                aria-label={`Partner for ${formatTime(meeting.occurredAt)} meeting`}
-                                className="w-full rounded border border-ash bg-canvas px-1.5 py-1 text-xs text-bone focus:border-signal focus:outline-none"
-                              >
-                                {roster
-                                  .slice()
-                                  .sort((a, b) => a.name.localeCompare(b.name))
-                                  .map((partner) => (
-                                    <option key={partner.id} value={partner.id}>
-                                      {partner.name}
+                                onCancel={() => setAddingPartnerFor(null)}
+                              />
+                            ) : (
+                              <>
+                                <select
+                                  value={classification.partnerId}
+                                  onChange={(event) => {
+                                    if (event.target.value === ADD_PARTNER) {
+                                      setAddingPartnerFor(meeting.id);
+                                      return;
+                                    }
+                                    onChange(meeting.id, {
+                                      ...classification,
+                                      partnerId: event.target.value,
+                                    });
+                                  }}
+                                  aria-label={`Partner for ${formatTime(meeting.occurredAt)} meeting`}
+                                  className="w-full rounded border border-ash bg-canvas px-1.5 py-1 text-xs text-bone focus:border-signal focus:outline-none"
+                                >
+                                  {roster
+                                    .slice()
+                                    .sort((a, b) => a.name.localeCompare(b.name))
+                                    .map((partner) => (
+                                      <option key={partner.id} value={partner.id}>
+                                        {partner.name}
+                                      </option>
+                                    ))}
+                                  <option value={ADD_PARTNER}>＋ Add partner…</option>
+                                </select>
+                                <select
+                                  value={classification.type}
+                                  onChange={(event) =>
+                                    onChange(meeting.id, {
+                                      ...classification,
+                                      type: event.target.value as MeetingType,
+                                    })
+                                  }
+                                  aria-label={`Call type for ${formatTime(meeting.occurredAt)} meeting`}
+                                  className="w-full rounded border border-ash bg-canvas px-1.5 py-1 text-xs text-bone focus:border-signal focus:outline-none"
+                                >
+                                  {MEETING_TYPES.map((type) => (
+                                    <option key={type} value={type}>
+                                      {MEETING_TYPE_META[type].label}
                                     </option>
                                   ))}
-                                <option value={ADD_PARTNER}>＋ Add partner…</option>
-                              </select>
-                              <select
-                                value={classification.type}
-                                onChange={(event) =>
-                                  onChange(meeting.id, {
-                                    ...classification,
-                                    type: event.target.value as MeetingType,
-                                  })
-                                }
-                                aria-label={`Call type for ${formatTime(meeting.occurredAt)} meeting`}
-                                className="w-full rounded border border-ash bg-canvas px-1.5 py-1 text-xs text-bone focus:border-signal focus:outline-none"
-                              >
-                                {MEETING_TYPES.map((type) => (
-                                  <option key={type} value={type}>
-                                    {MEETING_TYPE_META[type].label}
-                                  </option>
-                                ))}
-                              </select>
-                            </>
-                          )}
+                                </select>
+                              </>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                  {dayMeetings.length === 0 && (
-                    <p className="pt-6 text-center font-mono text-[10px] uppercase tracking-[0.05em] text-graphite">
-                      —
-                    </p>
-                  )}
+                      );
+                    })}
+                    {dayMeetings.length === 0 && (
+                      <p className="pt-6 text-center font-mono text-[10px] uppercase tracking-[0.05em] text-graphite">
+                        —
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
 
-        {calendar?.hasMore && (
-          <div className="flex items-center justify-between gap-3 border-t border-carbon px-5 py-3">
-            <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-              Showing {meetings.length} meetings this week
-            </p>
-            <button
-              type="button"
-              onClick={calendar.loadMore}
-              disabled={calendar.loadingMore}
-              className="rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20 disabled:opacity-50"
-            >
-              {calendar.loadingMore ? 'Loading…' : 'Load more meetings'}
-            </button>
-          </div>
-        )}
+          {calendar !== undefined && meetings.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-carbon px-5 py-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+                Showing {meetings.length} meetings this week
+              </p>
+              {loadMoreFailed ? (
+                // The cursor was not advanced, so the failed page is still the
+                // next one: the retry repeats only that request, and the
+                // ordinary Load more stays hidden until the cursor recovers.
+                <QueryFailure
+                  text="The next page failed"
+                  retryLabel="meeting calendar"
+                  error={calendar.error ?? ''}
+                  onRetry={calendarRecovery.armRetry(calendar.retry)}
+                />
+              ) : (
+                calendar.hasMore && (
+                  <button
+                    type="button"
+                    onClick={calendar.loadMore}
+                    disabled={calendar.loadingMore}
+                    className="rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20 disabled:opacity-50"
+                  >
+                    {calendar.loadingMore ? 'Loading…' : 'Load more meetings'}
+                  </button>
+                )
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="flex flex-wrap items-center justify-end gap-3 border-t border-carbon px-5 py-4">
           {confirmingDiscard && (

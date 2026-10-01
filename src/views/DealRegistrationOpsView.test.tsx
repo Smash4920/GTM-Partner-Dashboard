@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import DealRegistrationOpsView from './DealRegistrationOpsView';
 import { REGISTRATION_SLA_BUSINESS_DAYS } from '../data/constants';
 import type { DataProvider } from '../data/DataProvider';
@@ -157,6 +157,53 @@ describe('DealRegistrationOpsView', () => {
     expect(
       within(queue).getByText(/1 of 2 pending registrations are already past the response SLA/),
     ).toBeInTheDocument();
+  });
+
+  it('keeps the cards interactive with id fallback when the roster fails, and retries only the roster', async () => {
+    // The regression this pins: the roster query's error used to be discarded
+    // into `?? []` — the tables silently degraded to raw ids with no named
+    // failure and no way to recover the roster on its own.
+    const user = userEvent.setup();
+    const inner = new MockDataProvider(boundaryBook());
+    const rosterSpy = vi.spyOn(inner, 'getPartnerRoster');
+    const opsSpy = vi.spyOn(inner, 'getRegistrationOpsSummary');
+    const queueSpy = vi.spyOn(inner, 'listPendingRegistrations');
+    renderView(
+      new SimulatedRemoteProvider(inner, {
+        latencyMs: 0,
+        failMethods: { getPartnerRoster: 1 },
+      }),
+    );
+
+    // The cards stay up: the queue rows render with the explicit partner-id
+    // fallback and the ops aggregate answers right through the roster failure.
+    const queue = cardWith('Registrations awaiting review');
+    await within(queue).findByText('partner-1');
+    expect(within(queue).getByText('partner-2')).toBeInTheDocument();
+    expect(within(queue).getByText(/1 of 2 pending registrations/)).toBeInTheDocument();
+
+    // The roster's own named failure surface.
+    const region = await screen.findByRole('group', { name: 'partner roster' });
+    expect(
+      within(region).getByText('Partner names unavailable — showing partner ids:'),
+    ).toBeInTheDocument();
+    expect(within(region).getByText('Failed to load the partner roster')).toBeInTheDocument();
+
+    // The retry repeats only the roster method: the planned failure never
+    // reached the inner provider, so the first inner roster call is the
+    // retry's, and the siblings are not re-asked.
+    const opsCalls = opsSpy.mock.calls.length;
+    const queueCalls = queueSpy.mock.calls.length;
+    expect(rosterSpy).not.toHaveBeenCalled();
+    await user.click(within(region).getByRole('button', { name: 'Retry partner roster' }));
+
+    await within(queue).findByText('Northwind Systems');
+    expect(rosterSpy).toHaveBeenCalledTimes(1);
+    expect(opsSpy.mock.calls.length).toBe(opsCalls);
+    expect(queueSpy.mock.calls.length).toBe(queueCalls);
+    expect(within(region).queryByText(/Partner names unavailable/)).not.toBeInTheDocument();
+    // The successful retry lands focus on the roster's named region.
+    expect(region).toHaveFocus();
   });
 
   it('pages the review queue a cursor at a time', async () => {
