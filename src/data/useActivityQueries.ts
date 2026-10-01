@@ -31,12 +31,17 @@ import type { ActivityMeeting, MeetingClassification, Partner, PartnerManager } 
  *   time — the raw classification input Log Meetings edits a draft against.
  *   Classifications are not an input here, so a commit never refetches it.
  *
- * `managerId: ''` means "follow the directory": the queries resolve to the
- * directory's first manager once it answers (an org-wide answer can be
- * visible for a beat while it loads), and a failed directory leaves them
- * answering org-wide, which is the no-directory fallback the view has always
- * had. The resolved id is returned as `managerId` so the view renders the
- * manager the data actually describes.
+ * `managerId: ''` means "follow the directory". While the directory is
+ * still answering there is no manager to attribute figures to, so the
+ * manager-scoped aggregates hold at initial loading and issue nothing — an
+ * org-wide placeholder asked now would resolve under a manager nobody
+ * selected. Once the directory answers, the aggregates commit to its first
+ * manager: the view's label and the figures arrive under one scope identity,
+ * never a frame that pairs the new manager's name with an org-wide answer.
+ * A failed or empty directory resolves to the org-wide fallback the view has
+ * always documented, rendered under its generic label. The resolved id is
+ * returned as `managerId` so the view renders the manager the data actually
+ * describes.
  *
  * A classification commit refetches `goal`, `goalWeek`, and `series` — the
  * three aggregates that read classifications — exactly once, and nothing
@@ -88,14 +93,24 @@ export function useActivityQueries({
   const managers = useManagerDirectory(provider, access);
   const roster = usePartnerRoster(provider, access, prospects);
 
-  // An explicit selection wins; '' follows the directory's first manager,
-  // and a failed or empty directory resolves to the org-wide fallback.
-  const resolvedManagerId = managerId !== '' ? managerId : (managers.data?.[0]?.id ?? '');
+  // An explicit selection wins. Otherwise the aggregates follow the
+  // directory — but only once it has settled: while it is still answering
+  // they stay disabled rather than issue an org-wide placeholder, and a
+  // failed or empty directory resolves to the org-wide fallback.
+  const directorySettled = managers.data !== null || managers.error !== null;
+  const aggregatesEnabled = managerId !== '' || directorySettled;
+  const resolvedManagerId =
+    managerId !== '' ? managerId : directorySettled ? (managers.data?.[0]?.id ?? '') : '';
   const partnerManagerId = resolvedManagerId === '' ? undefined : resolvedManagerId;
 
   const goal = useScopedQuery({
     provider,
     queryKey: `activity-goal|access:${accessKey}|manager:${resolvedManagerId}|cls:${clsKey}|prospects:${rosterKey}`,
+    // The scope identity an answer belongs to: this manager's goal. A
+    // manager change — the user's or the directory's late resolution — must
+    // never show the previous scope's figures under the new label.
+    scopeKey: `activity-goal|access:${accessKey}|manager:${resolvedManagerId}`,
+    enabled: aggregatesEnabled,
     run: (context) =>
       provider.getWeeklyGoalProgress(
         access,
@@ -108,6 +123,8 @@ export function useActivityQueries({
   const goalWeek = useScopedQuery({
     provider,
     queryKey: `activity-goal-week|access:${accessKey}|manager:${resolvedManagerId}|cls:${clsKey}|prospects:${rosterKey}`,
+    scopeKey: `activity-goal-week|access:${accessKey}|manager:${resolvedManagerId}`,
+    enabled: aggregatesEnabled,
     run: (context) =>
       provider.getWeeklyActivitySeries(
         access,
@@ -120,6 +137,10 @@ export function useActivityQueries({
   const series = useScopedQuery({
     provider,
     queryKey: `activity-series|access:${accessKey}|manager:${resolvedManagerId}|partner:${partnerId}|cls:${clsKey}|prospects:${rosterKey}`,
+    // The chart's scope identity includes the partner filter: one partner's
+    // series is not a stale stand-in for another's.
+    scopeKey: `activity-series|access:${accessKey}|manager:${resolvedManagerId}|partner:${partnerId}`,
+    enabled: aggregatesEnabled,
     run: (context) =>
       provider.getWeeklyActivitySeries(
         access,

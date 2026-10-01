@@ -21,6 +21,13 @@ import type { MeetingClassification, Partner } from './types';
  * - `error`: the last attempt failed. When data exists it stays visible and
  *   the error rides alongside it; when none does, the widget is unavailable
  *   and exposes `retry`, which repeats only this query.
+ * - Scope identity: an answer belongs to the scope that produced it. A
+ *   change to `scopeKey` (a different manager, a resolved directory) is a
+ *   different question — the previous scope's answer is dropped at read
+ *   time, not kept on screen as a stale "refresh", so one scope's figures
+ *   can never render under another scope's label. Stale-beats-blank applies
+ *   only within one scope identity: an edit-driven key change with the same
+ *   `scopeKey` keeps the previous answer while its replacement is in flight.
  * - Race safety: every settled value is tagged with the provider that
  *   produced it and is gated at read time, and each request carries an
  *   abort-tagged sequence guard, so a late answer from a superseded provider
@@ -102,9 +109,10 @@ export function prospectsKey(prospects: readonly Partner[]): string {
     .join('&');
 }
 
-/** A settled answer, tagged with the provider that produced it. */
+/** A settled answer, tagged with the provider and scope that produced it. */
 interface QueryEntry<T> {
   provider: DataProvider;
+  scopeKey: string | undefined;
   data: T | null;
   meta: QueryMeta | null;
   error: string | null;
@@ -125,6 +133,24 @@ export function useScopedQuery<T>(args: {
   provider: DataProvider;
   queryKey: string;
   /**
+   * Scope identity: which question the answer belongs to, as distinct from
+   * the invalidation key. `queryKey` also carries the session's edit maps,
+   * so it moves when an edit lands inside the same scope; `scopeKey` moves
+   * only when the scope itself does (a different manager, a directory that
+   * just resolved). An answer is readable only under the provider and scope
+   * identity that produced it — a scope change shows the new scope's loading
+   * state, never the previous scope's figures. Omit it and only the provider
+   * gates, which is the right default for queries with no scope to switch.
+   */
+  scopeKey?: string;
+  /**
+   * False issues no request and reports initial loading: the caller's
+   * prerequisite has not settled yet (a directory still resolving), so
+   * asking now could only produce a placeholder answer for a scope nobody
+   * selected. The first `true` render fires the query.
+   */
+  enabled?: boolean;
+  /**
    * One scoped provider call; the answer arrives in its metadata envelope.
    * The context carries the attempt's AbortSignal — forward it to the
    * provider so obsolete work is cancelled, not just ignored.
@@ -133,7 +159,7 @@ export function useScopedQuery<T>(args: {
   /** Fallback message when the rejection carries none. */
   errorFallback: string;
 }): QueryState<T> {
-  const { provider, queryKey, errorFallback } = args;
+  const { provider, queryKey, scopeKey, enabled = true, errorFallback } = args;
   const [entry, setEntry] = useState<QueryEntry<T> | null>(null);
   const [inFlight, setInFlight] = useState(true);
   const [attempt, setAttempt] = useState(0);
@@ -146,37 +172,54 @@ export function useScopedQuery<T>(args: {
   fallbackRef.current = errorFallback;
 
   useEffect(() => {
+    // Disabled: ask nothing. The state reports initial loading until the
+    // caller's prerequisite settles and flips this on.
+    if (!enabled) return undefined;
     const request = ++latest.current;
     const controller = new AbortController();
     setInFlight(true);
     runRef.current({ signal: controller.signal }).then(
       (result) => {
         if (controller.signal.aborted || request !== latest.current) return;
-        setEntry({ provider, data: result.data, meta: result.meta, error: null });
+        setEntry({ provider, scopeKey, data: result.data, meta: result.meta, error: null });
         setInFlight(false);
       },
       () => {
         if (controller.signal.aborted || request !== latest.current) return;
-        // Stale beats blank: a failed refresh keeps the same-provider figures
-        // already on screen and reports the error alongside them. Only an
-        // initial failure leaves the widget with no data at all.
+        // Stale beats blank, within one scope identity: a failed refresh
+        // keeps the same-provider, same-scope figures already on screen and
+        // reports the error alongside them. An initial failure — including
+        // the first fetch of a new scope — leaves the widget with no data
+        // at all rather than dressed in another scope's answer.
         setEntry((prev) => ({
           provider,
-          data: prev !== null && prev.provider === provider ? prev.data : null,
-          meta: prev !== null && prev.provider === provider ? prev.meta : null,
+          scopeKey,
+          data:
+            prev !== null && prev.provider === provider && prev.scopeKey === scopeKey
+              ? prev.data
+              : null,
+          meta:
+            prev !== null && prev.provider === provider && prev.scopeKey === scopeKey
+              ? prev.meta
+              : null,
           error: stableFailureCopy(fallbackRef.current),
         }));
         setInFlight(false);
       },
     );
     return () => controller.abort();
-  }, [provider, queryKey, attempt]);
+  }, [provider, queryKey, scopeKey, enabled, attempt]);
 
   const retry = useCallback(() => setAttempt((count) => count + 1), []);
 
-  // Read-time gating: a value only exists for the provider that produced it.
-  // Anything else is this provider's loading state, never stale data.
-  const current = entry !== null && entry.provider === provider ? entry : null;
+  // Read-time gating: a value only exists for the provider and scope that
+  // produced it. Anything else is this scope's loading state, never another
+  // scope's stale data.
+  if (!enabled) {
+    return { data: null, meta: null, loading: true, refreshing: false, error: null, retry };
+  }
+  const current =
+    entry !== null && entry.provider === provider && entry.scopeKey === scopeKey ? entry : null;
   const data = current?.data ?? null;
   const error = current?.error ?? null;
   return {

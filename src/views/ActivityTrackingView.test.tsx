@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ActivityTrackingView from './ActivityTrackingView';
 import { makeMeeting, makePartner, makeProviderBook } from '../test/fixtures';
@@ -115,6 +115,78 @@ const volumeCard = () => cardWith('Weekly meeting volume');
 /** Waits until the view has followed the directory to the first manager. */
 async function settleToFirstManager() {
   await within(goalCard()).findByText('2/10');
+}
+
+type GatedMethod = 'getManagerDirectory' | 'getWeeklyGoalProgress';
+
+interface GatedCall {
+  method: GatedMethod;
+  /** The business scope argument the method was called with. */
+  scope: unknown;
+  release: () => void;
+  reject: (reason: unknown) => void;
+}
+
+/**
+ * A provider whose named methods answer only when the test releases them —
+ * the deterministic clock for the frame-by-frame race assertions. A gated
+ * call resolves by delegating to the real mock with its original arguments,
+ * so every answer is the provider's true figure for its scope.
+ */
+function gatedProvider(book: ProviderBook, methods: GatedMethod[]) {
+  const inner = new MockDataProvider(book);
+  const calls: GatedCall[] = [];
+  const provider = new Proxy(inner, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (
+        typeof property !== 'string' ||
+        typeof value !== 'function' ||
+        !methods.includes(property as GatedMethod)
+      ) {
+        return value;
+      }
+      return (...args: unknown[]) => {
+        let release!: () => void;
+        let reject!: (reason: unknown) => void;
+        const gate = new Promise<void>((res, rej) => {
+          release = res;
+          reject = rej;
+        });
+        calls.push({ method: property as GatedMethod, scope: args[1], release, reject });
+        return gate.then(() => (value as (...rest: unknown[]) => unknown).apply(target, args));
+      };
+    },
+  }) as DataProvider;
+  return { provider, calls };
+}
+
+/**
+ * Records every committed DOM frame that pairs the resolved manager's name
+ * with org-wide figures — the mixed-scope attribution these tests exist to
+ * forbid. The fixture's org-wide answers differ from pm-1's: three meetings
+ * this week across both managers (two for pm-1), and four meetings across
+ * the eight-week chart (three for pm-1).
+ */
+function watchForMixedFrames() {
+  const frames: string[] = [];
+  const observer = new MutationObserver(() => {
+    const text = document.body.textContent ?? '';
+    const managerNamed = text.includes('J. Alvarez');
+    const orgWideFigures =
+      text.includes('3/10') ||
+      text.includes('3 total this week') ||
+      text.includes('30% of goal') ||
+      text.includes('4 meetings in scope');
+    if (managerNamed && orgWideFigures) frames.push(text.slice(0, 400));
+  });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  return { frames, stop: () => observer.disconnect() };
+}
+
+/** The heading block: kicker, h1, and weekly-goal line — no selectors. */
+function headerBlock() {
+  return screen.getByRole('heading', { name: 'Activity Tracking' }).parentElement as HTMLElement;
 }
 
 describe('ActivityTrackingView', () => {
@@ -492,5 +564,103 @@ describe('ActivityTrackingView', () => {
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), '__add_partner__');
     expect(screen.getByText('New prospective partner · this manager')).toBeInTheDocument();
+  });
+
+  it('never renders a resolved manager’s label over org-wide goal figures', async () => {
+    const { provider, calls } = gatedProvider(makeBook(), [
+      'getManagerDirectory',
+      'getWeeklyGoalProgress',
+    ]);
+    const trace = watchForMixedFrames();
+    renderView({ provider });
+
+    // While the directory is still answering there is no resolved manager,
+    // so the goal query is not issued at all: no org-wide placeholder can
+    // end up attributed to whoever the directory is about to name.
+    expect(calls.filter((call) => call.method === 'getWeeklyGoalProgress')).toHaveLength(0);
+    expect(within(goalCard()).getByText('Loading weekly goal')).toBeInTheDocument();
+    expect(within(goalCard()).queryByText('3/10')).not.toBeInTheDocument();
+    expect(within(headerBlock()).getByText('Partner manager')).toBeInTheDocument();
+
+    // The directory lands: the label commits, and the only goal request in
+    // flight already carries the resolved manager's scope.
+    await act(async () => {
+      calls.find((call) => call.method === 'getManagerDirectory')!.release();
+    });
+    await within(goalCard()).findByText(/· J\. Alvarez/);
+    const goalCalls = calls.filter((call) => call.method === 'getWeeklyGoalProgress');
+    expect(goalCalls).toHaveLength(1);
+    expect(goalCalls[0]!.scope).toMatchObject({ partnerManagerId: 'pm-1' });
+    // Its answer is still in flight: the manager's name stands over a
+    // loading state, never over figures another scope produced.
+    expect(within(goalCard()).getByText('Loading weekly goal')).toBeInTheDocument();
+    expect(within(goalCard()).queryByText('3/10')).not.toBeInTheDocument();
+
+    await act(async () => {
+      goalCalls[0]!.release();
+    });
+    await within(goalCard()).findByText('2/10');
+    expect(within(goalCard()).getByText('2 total this week')).toBeInTheDocument();
+
+    await act(async () => {}); // flush the observer's microtasks
+    trace.stop();
+    expect(trace.frames).toEqual([]);
+  });
+
+  it('keeps the org-wide fallback truthful on directory failure and commits the recovered manager under one scope', async () => {
+    const user = userEvent.setup();
+    const { provider, calls } = gatedProvider(makeBook(), [
+      'getManagerDirectory',
+      'getWeeklyGoalProgress',
+    ]);
+    const trace = watchForMixedFrames();
+    renderView({ provider });
+
+    // The directory's first attempt fails: the documented org-wide fallback.
+    await act(async () => {
+      calls.find((call) => call.method === 'getManagerDirectory')!.reject(new Error('down'));
+    });
+    const directoryError = await screen.findByText(/Failed to load the manager directory/);
+
+    // The fallback is explicit and truthful: org-wide figures under the
+    // generic label, with the failure named beside the disabled selector.
+    const fallbackGoal = calls.filter((call) => call.method === 'getWeeklyGoalProgress');
+    expect(fallbackGoal).toHaveLength(1);
+    expect(fallbackGoal[0]!.scope).toMatchObject({ partnerManagerId: undefined });
+    await act(async () => {
+      fallbackGoal[0]!.release();
+    });
+    await within(goalCard()).findByText('3/10');
+    expect(within(goalCard()).getByText('3 total this week')).toBeInTheDocument();
+    expect(within(headerBlock()).getByText('Partner manager')).toBeInTheDocument();
+    expect(screen.queryByText('J. Alvarez')).not.toBeInTheDocument();
+
+    // Retrying the directory succeeds: the resolved manager's label and the
+    // goal figures commit under one scope identity — the org-wide answer is
+    // never shown under the manager's name, not even for one frame.
+    await user.click(
+      within(directoryError.closest('p') as HTMLElement).getByRole('button', { name: 'Retry' }),
+    );
+    await act(async () => {
+      calls.filter((call) => call.method === 'getManagerDirectory')[1]!.release();
+    });
+    await within(goalCard()).findByText(/· J\. Alvarez/);
+    // The org-wide answer left the screen in the same commit that named the
+    // manager; the manager's own answer is still in flight.
+    expect(within(goalCard()).queryByText('3/10')).not.toBeInTheDocument();
+    expect(within(goalCard()).getByText('Loading weekly goal')).toBeInTheDocument();
+    const recoveredGoal = calls.filter((call) => call.method === 'getWeeklyGoalProgress');
+    expect(recoveredGoal).toHaveLength(2);
+    expect(recoveredGoal[1]!.scope).toMatchObject({ partnerManagerId: 'pm-1' });
+
+    await act(async () => {
+      recoveredGoal[1]!.release();
+    });
+    await within(goalCard()).findByText('2/10');
+    expect(screen.getByRole('combobox', { name: 'Partner manager' })).toBeEnabled();
+
+    await act(async () => {}); // flush the observer's microtasks
+    trace.stop();
+    expect(trace.frames).toEqual([]);
   });
 });

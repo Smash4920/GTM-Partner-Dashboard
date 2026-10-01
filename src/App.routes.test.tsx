@@ -36,13 +36,6 @@ interface RouteSpec {
     kind: 'unavailable' | 'refresh';
     text: string;
     retry: string;
-    /**
-     * When the same method legitimately fires for a placeholder scope first
-     * (a route that follows the directory's first manager), the failure
-     * waits for a call carrying the resolved scope — that is the call whose
-     * answer is on screen.
-     */
-    when?: (args: unknown[]) => boolean;
   };
 }
 
@@ -143,14 +136,13 @@ const ROUTES: RouteSpec[] = [
     ],
     failure: {
       method: 'getWeeklyGoalProgress',
-      // The goal fires org-wide while the directory resolves, so the armed
-      // failure meets the resolved manager's call: that is a refresh of data
-      // already on screen, and stale-beats-blank keeps the org-wide figures
-      // up with the failure named beside them.
-      kind: 'refresh',
-      text: 'Latest weekly goal refresh failed:',
+      // The goal waits for the directory, so its first call already carries
+      // the resolved manager's scope: the armed failure is an initial
+      // failure, and the widget is unavailable — no org-wide placeholder
+      // exists behind it to keep on screen.
+      kind: 'unavailable',
+      text: 'Weekly goal unavailable:',
       retry: 'Retry weekly goal',
-      when: (args) => (args[1] as { partnerManagerId?: string }).partnerManagerId !== undefined,
     },
   },
   {
@@ -203,7 +195,7 @@ const ROUTES: RouteSpec[] = [
 function instrumentedProvider(book = generateDashboardData()) {
   const inner = new MockDataProvider(book);
   const calls = new Map<string, number>();
-  const control: { armed: boolean; failMethod: string; when?: (args: unknown[]) => boolean } = {
+  const control: { armed: boolean; failMethod: string } = {
     armed: false,
     failMethod: '',
   };
@@ -213,11 +205,7 @@ function instrumentedProvider(book = generateDashboardData()) {
       if (typeof prop !== 'string' || typeof value !== 'function') return value;
       return (...args: unknown[]) => {
         calls.set(prop, (calls.get(prop) ?? 0) + 1);
-        if (
-          control.armed &&
-          prop === control.failMethod &&
-          (control.when === undefined || control.when(args))
-        ) {
+        if (control.armed && prop === control.failMethod) {
           // Spend the failure: the arm is one broken resource, once.
           control.armed = false;
           return Promise.reject(new Error(`${prop} failed in transit (simulated)`));
@@ -334,7 +322,6 @@ describe('App route matrix', () => {
       await user.click(nav().getByRole('button', { name: 'Production Requirements' }));
       await screen.findByRole('heading', { name: 'Production Requirements', level: 1 });
       control.failMethod = route.failure.method;
-      control.when = route.failure.when;
       control.armed = true;
 
       await user.click(nav().getByRole('button', { name: route.label }));

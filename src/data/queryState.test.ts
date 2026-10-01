@@ -279,6 +279,135 @@ describe('useScopedQuery', () => {
     expect(result.current.error).toBeNull();
   });
 
+  it('drops the previous scope’s answer the moment the scope identity changes', async () => {
+    const stableProvider = provider();
+    let impl: () => Promise<QueryResult<number>> = async () => answered(1);
+    const { result, rerender } = renderHook(
+      ({ queryKey, scopeKey }) =>
+        useScopedQuery({
+          provider: stableProvider,
+          queryKey,
+          scopeKey,
+          run: () => impl(),
+          errorFallback: 'x',
+        }),
+      { initialProps: { queryKey: 'q|scope:a|edit:1', scopeKey: 'scope:a' } },
+    );
+    await waitFor(() => expect(result.current.data).toBe(1));
+
+    // A new scope identity asks a different question: the previous answer
+    // belongs to scope a, so the widget returns to loading immediately —
+    // it is never shown under scope b, not even as a stale "refresh".
+    const gate = deferred<void>();
+    impl = async () => {
+      await gate.promise;
+      return answered(2);
+    };
+    rerender({ queryKey: 'q|scope:b|edit:1', scopeKey: 'scope:b' });
+    expect(result.current.data).toBeNull();
+    expect(result.current.loading).toBe(true);
+    expect(result.current.refreshing).toBe(false);
+
+    await act(async () => {
+      gate.resolve();
+    });
+    await waitFor(() => expect(result.current.data).toBe(2));
+    expect(result.current.refreshing).toBe(false);
+  });
+
+  it('treats a failed first fetch under a new scope identity as unavailable, never as stale data', async () => {
+    const stableProvider = provider();
+    let impl: () => Promise<QueryResult<number>> = async () => answered(1);
+    const { result, rerender } = renderHook(
+      ({ queryKey, scopeKey }) =>
+        useScopedQuery({
+          provider: stableProvider,
+          queryKey,
+          scopeKey,
+          run: () => impl(),
+          errorFallback: 'fallback',
+        }),
+      { initialProps: { queryKey: 'q|scope:a', scopeKey: 'scope:a' } },
+    );
+    await waitFor(() => expect(result.current.data).toBe(1));
+
+    impl = async () => {
+      throw new Error('RAW SENTINEL: internal detail');
+    };
+    rerender({ queryKey: 'q|scope:b', scopeKey: 'scope:b' });
+    await waitFor(() => expect(result.current.error).toBe('fallback'));
+    // No answer exists for scope b yet: the widget is unavailable, and
+    // scope a's figures do not stand in for it beside the error.
+    expect(result.current.data).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.refreshing).toBe(false);
+  });
+
+  it('keeps stale-beats-blank inside one scope identity while a refresh is in flight', async () => {
+    const stableProvider = provider();
+    let impl: () => Promise<QueryResult<number>> = async () => answered(1);
+    const { result, rerender } = renderHook(
+      ({ queryKey }) =>
+        useScopedQuery({
+          provider: stableProvider,
+          queryKey,
+          scopeKey: 'scope:a',
+          run: () => impl(),
+          errorFallback: 'x',
+        }),
+      { initialProps: { queryKey: 'q|scope:a|edit:1' } },
+    );
+    await waitFor(() => expect(result.current.data).toBe(1));
+
+    const gate = deferred<void>();
+    impl = async () => {
+      await gate.promise;
+      return answered(2);
+    };
+    // An edit inside the same scope identity: the previous answer stays on
+    // screen while its replacement is in flight.
+    rerender({ queryKey: 'q|scope:a|edit:2' });
+    await waitFor(() => expect(result.current.refreshing).toBe(true));
+    expect(result.current.data).toBe(1);
+
+    await act(async () => {
+      gate.resolve();
+    });
+    await waitFor(() => expect(result.current.data).toBe(2));
+  });
+
+  it('issues no request while disabled, and fires once when enabled', async () => {
+    const stableProvider = provider();
+    const run = vi.fn(async () => answered(7));
+    const { result, rerender } = renderHook(
+      ({ enabled }) =>
+        useScopedQuery({
+          provider: stableProvider,
+          queryKey: 'q',
+          scopeKey: 'scope:a',
+          enabled,
+          run,
+          errorFallback: 'x',
+        }),
+      { initialProps: { enabled: false } },
+    );
+
+    // Disabled: nothing is asked, and the state reads as initial loading —
+    // not data, not an error.
+    expect(run).not.toHaveBeenCalled();
+    expect(result.current).toMatchObject({
+      data: null,
+      meta: null,
+      loading: true,
+      refreshing: false,
+      error: null,
+    });
+
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.data).toBe(7));
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it('hands every attempt a live abort signal and aborts the one a key change supersedes', async () => {
     const stableProvider = provider();
     const contexts: QueryContext[] = [];

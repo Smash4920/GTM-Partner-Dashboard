@@ -396,4 +396,75 @@ describe('useActivityQueries (VAL-DATA-015)', () => {
       'meeting-tue',
     ]);
   });
+
+  it('issues no org-wide aggregate while the directory is still resolving', async () => {
+    // A deferred directory is the deterministic stand-in for resolution
+    // timing: the test decides exactly when the manager identity lands.
+    const inner = new MockDataProvider(makeBook());
+    let releaseDirectory!: () => void;
+    const directoryGate = new Promise<void>((resolve) => {
+      releaseDirectory = resolve;
+    });
+    const calls: string[] = [];
+    const provider = new Proxy(inner, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (typeof property !== 'string' || typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          calls.push(property);
+          if (property === 'getManagerDirectory') {
+            return directoryGate.then(() =>
+              (value as (...rest: unknown[]) => unknown).apply(target, args),
+            );
+          }
+          return (value as (...rest: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    }) as DataProvider;
+
+    const { result } = renderHook((input: ActivityQueryInput) => useActivityQueries(input), {
+      initialProps: inputFor(provider, { managerId: '' }),
+    });
+
+    // No manager is resolved yet, so nothing manager-attributed is asked:
+    // an org-wide placeholder issued now would be attributed to whoever the
+    // directory is about to name. The aggregates hold at initial loading.
+    expect(result.current.managerId).toBe('');
+    expect(result.current.goal).toMatchObject({ data: null, loading: true, error: null });
+    expect(result.current.series.data).toBeNull();
+    expect(calls).not.toContain('getWeeklyGoalProgress');
+    expect(calls).not.toContain('getWeeklyActivitySeries');
+    expect(calls).not.toContain('listWeeklyClassificationMeetings');
+
+    // Once the directory answers, the aggregates ask the manager's own
+    // question — label and data commit under one scope identity.
+    await act(async () => {
+      releaseDirectory();
+    });
+    await settle(result);
+    expect(result.current.managerId).toBe('pm-1');
+    expect(result.current.goal.data!.meetings).toBe(2);
+  });
+
+  it('shows loading, not the previous manager’s figures, while a manager switch refetches', async () => {
+    const { provider } = spyProvider(new MockDataProvider(makeBook()));
+    const { result, rerender } = renderHook(
+      (input: ActivityQueryInput) => useActivityQueries(input),
+      { initialProps: inputFor(provider) },
+    );
+    await settle(result);
+
+    rerender(inputFor(provider, { managerId: 'pm-2' }));
+    // The scope identity changed: pm-1's answer leaves in the same render,
+    // not kept on screen as a stale "refresh" under pm-2's label. Only an
+    // edit-driven refetch inside one scope may keep the previous figures.
+    expect(result.current.goal.data).toBeNull();
+    expect(result.current.goal.loading).toBe(true);
+    expect(result.current.goal.refreshing).toBe(false);
+    expect(result.current.series.data).toBeNull();
+    expect(result.current.meetings.rows).toEqual([]);
+
+    await waitFor(() => expect(result.current.goal.data!.meetings).toBe(1));
+    expect(result.current.series.data!.reduce((sum, row) => sum + row.total, 0)).toBe(1);
+  });
 });
