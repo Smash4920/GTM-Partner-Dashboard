@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import {
   CURRENT_FISCAL_QUARTER,
   FISCAL_QUARTERS,
@@ -8,7 +9,7 @@ import {
   REGISTRATION_SLA_WARNING_BUSINESS_DAYS,
   SNAPSHOT_DATE,
 } from '../constants';
-import { quarterWindow } from '../../lib/fiscal';
+import { fiscalQuarterOfDate, quarterWindow } from '../../lib/fiscal';
 import {
   approvedNotConverted,
   avgOpenDealSize,
@@ -31,6 +32,50 @@ describe('generateDashboardData', () => {
 
   it('is deterministic for the fixed seed', () => {
     expect(generateDashboardData()).toEqual(data);
+  });
+
+  it('pins the seeded book including the intentional recent close-slip cohort', () => {
+    const unchanged = {
+      ...data,
+      opportunities: data.opportunities.map((row) =>
+        Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'lastActivityAt')),
+      ),
+    };
+    expect(createHash('sha256').update(JSON.stringify(unchanged)).digest('hex')).toBe(
+      '2e8aa8b019bc2fbbaa6ee81c9282b09b160f8159e16281bb4e41d767ce009d64',
+    );
+  });
+
+  it('seeds varied meaningful activity for open deals and leaves a created-at baseline subset', () => {
+    const open = data.opportunities.filter((opportunity) => !opportunity.outcome);
+    const recorded = open.filter((opportunity) => opportunity.lastActivityAt !== undefined);
+    expect(recorded.length).toBeGreaterThan(0);
+    expect(recorded.length).toBeLessThan(open.length);
+    const elapsedDays = new Set<number>();
+    for (const opportunity of recorded) {
+      const activity = new Date(opportunity.lastActivityAt!).getTime();
+      expect(activity).toBeGreaterThanOrEqual(new Date(opportunity.createdAt).getTime());
+      expect(activity).toBeLessThanOrEqual(SNAPSHOT_DATE.getTime());
+      elapsedDays.add((SNAPSHOT_DATE.getTime() - activity) / 86_400_000);
+    }
+    expect(elapsedDays.size).toBeGreaterThan(10);
+    expect([...elapsedDays].some((days) => days < 14)).toBe(true);
+    expect([...elapsedDays].some((days) => days >= 14)).toBe(true);
+    expect(
+      recorded.some(
+        (opportunity) =>
+          new Date(opportunity.lastActivityAt!).getTime() >
+          new Date(opportunity.expectedCloseDate).getTime(),
+      ),
+    ).toBe(true);
+    expect(
+      data.opportunities
+        .filter((opportunity) => opportunity.outcome)
+        .every((opportunity) => opportunity.lastActivityAt === undefined),
+    ).toBe(true);
+    expect(
+      generateDashboardData().opportunities.map((opportunity) => opportunity.lastActivityAt),
+    ).toEqual(data.opportunities.map((opportunity) => opportunity.lastActivityAt));
   });
 
   it('keeps every cross-record reference intact', () => {
@@ -315,21 +360,33 @@ describe('generateDashboardData', () => {
     expect(pullIns.length).toBeGreaterThan(0);
   });
 
-  it('leaves the latest recording in step with the current book', () => {
-    // The most recent Monday is the handoff between recorded history and the
-    // live book, so the two must not disagree about a deal open in both.
+  it('keeps latest-recording values and quarter membership stable while seeding recent slips', () => {
+    // Recent seven-day slips supply action evidence without moving a deal
+    // across a quarter boundary or changing its recorded revenue/call/stage.
     const latest = data.snapshots
       .map((row) => row.takenAt)
       .reduce((max, takenAt) => (takenAt > max ? takenAt : max));
     expect(latest).toBe('2026-09-14T00:00:00.000Z');
     const oppById = new Map(data.opportunities.map((opportunity) => [opportunity.id, opportunity]));
+    let slips = 0;
     for (const row of data.snapshots.filter((candidate) => candidate.takenAt === latest)) {
       const opportunity = oppById.get(row.opportunityId)!;
       expect(row.forecastedRevenue).toBe(opportunity.forecastedRevenue);
       expect(row.forecastCategory).toBe(opportunity.forecastCategory);
-      expect(row.expectedCloseDate).toBe(opportunity.expectedCloseDate);
+      const delta =
+        (Date.parse(opportunity.expectedCloseDate) - Date.parse(row.expectedCloseDate)) /
+        86_400_000;
+      expect([0, 7]).toContain(delta);
+      expect(fiscalQuarterOfDate(row.expectedCloseDate)).toBe(
+        fiscalQuarterOfDate(opportunity.expectedCloseDate),
+      );
+      if (delta === 7) {
+        expect(opportunity.closedAt).toBeUndefined();
+        slips += 1;
+      }
       expect(row.stage).toBe(opportunity.stage);
     }
+    expect(slips).toBeGreaterThan(0);
   });
 
   it('seeds an internal partner-team roster with a manager alignment per manager', () => {

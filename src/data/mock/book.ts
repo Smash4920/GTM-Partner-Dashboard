@@ -25,8 +25,8 @@ import type { RecordedWeekTotals } from '../../lib/metrics';
  * contract: weekly pipeline history is ~87% of the payload at production
  * volume, and no screen wants it as rows — the week-over-week chart wants
  * fourteen buckets. So the rows live here, in the provider's own module,
- * and leave only as the bounded per-week totals `weeklyRecordingTotals`
- * computes and `getWeeklyForecastSeries()` serves. A provider that has no
+ * and leave only as bounded per-week totals or the minimum prior close date
+ * used to evaluate a current close slip. A provider that has no
  * history may hold an empty array; the series then falls back to what the
  * current book can say.
  */
@@ -78,7 +78,38 @@ export interface ProviderBook {
 }
 
 /**
- * Raw history's only way out: the quarter's recordings folded into one
+ * Minimum close-slip evidence: one expected-close date per opportunity from
+ * its latest recording strictly before asOf, never the raw recording.
+ * Conflicting duplicate instants choose the lexicographically greatest date
+ * so neither evidence nor iteration order depends on source row ordering.
+ */
+export function latestPriorCloseDates(
+  snapshots: readonly PipelineSnapshot[],
+  asOf: string,
+): ReadonlyMap<string, string> {
+  const cutoff = new Date(asOf).getTime();
+  const latest = new Map<string, { takenAt: number; closeDate: string }>();
+  for (const snapshot of snapshots) {
+    const takenAt = new Date(snapshot.takenAt).getTime();
+    if (!(takenAt < cutoff)) continue;
+    const prior = latest.get(snapshot.opportunityId);
+    if (
+      prior === undefined ||
+      takenAt > prior.takenAt ||
+      (takenAt === prior.takenAt && snapshot.expectedCloseDate > prior.closeDate)
+    ) {
+      latest.set(snapshot.opportunityId, { takenAt, closeDate: snapshot.expectedCloseDate });
+    }
+  }
+  return new Map(
+    [...latest.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([id, evidence]) => [id, evidence.closeDate]),
+  );
+}
+
+/**
+ * The quarter's recordings folded into one
  * per-category total per recording instant, sorted by instant. This is the
  * bounded input `weeklyForecastRows` consumes — a handful of buckets
  * however large the raw history — and the aggregation every provider

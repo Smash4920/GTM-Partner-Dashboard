@@ -94,6 +94,8 @@ export interface Opportunity {
   /** Row-level next action; a free-form field edited in-app. */
   nextStep?: string;
   createdAt: string; // ISO 8601
+  /** Last meaningful deal activity; absent means createdAt is the labeled baseline. */
+  lastActivityAt?: string; // ISO 8601
   expectedCloseDate: string; // ISO 8601
   closedAt?: string; // set once closed (won or lost)
   outcome?: OpportunityOutcome;
@@ -237,6 +239,92 @@ export interface DashboardNotification {
   status: NotificationStatus;
   /** The registration the notification is about, when it is about one. */
   registrationId?: string;
+}
+
+/** Session-configurable demo reporting policy, never a production control. */
+export interface ActionPolicy {
+  highValueAmount: number;
+  staleCalendarDays: number;
+  missingNextStepHorizonDays: number;
+  closeSlipCalendarDays: number;
+  healthWindowDays: number;
+  minimumDeterioratingDrivers: number;
+}
+
+export type ActionCategory =
+  | 'stale-high-value'
+  | 'missing-next-step'
+  | 'close-date-slip'
+  | 'registration-sla'
+  | 'partner-health';
+
+export type ActionSeverity = 'critical' | 'high' | 'medium';
+
+export type MissingNextStepCause = 'within-horizon' | 'high-value' | 'overdue';
+
+export interface HealthDriverEvidence {
+  driver:
+    'partner-meetings' | 'opportunities-created' | 'registrations-submitted' | 'closed-won-revenue';
+  prior: number;
+  current: number;
+  unit: 'meetings' | 'opportunities' | 'registrations' | 'USD';
+}
+
+interface ActionReasonBase {
+  severity: ActionSeverity;
+  dueAt?: string;
+  recommendedAction: string;
+}
+
+/** Each reason carries only its own minimum, displayable evidence. */
+export type ActionReason = ActionReasonBase &
+  (
+    | {
+        category: 'stale-high-value';
+        evidence: {
+          basis: 'lastActivityAt' | 'createdAt';
+          baselineAt: string;
+          elapsedCalendarDays: number;
+        };
+      }
+    | {
+        category: 'missing-next-step';
+        evidence: { causes: MissingNextStepCause[]; daysUntilClose: number };
+      }
+    | {
+        category: 'close-date-slip';
+        evidence: { priorCloseDate: string; currentCloseDate: string; deltaCalendarDays: number };
+      }
+    | {
+        category: 'registration-sla';
+        evidence: {
+          state: 'warning' | 'breach';
+          submittedAt: string;
+          dueAt: string;
+          businessDaysWaiting: number;
+          businessDaysRemaining: number;
+        };
+      }
+    | {
+        category: 'partner-health';
+        evidence: {
+          priorWindow: { startExclusive: string; endInclusive: string };
+          currentWindow: { startExclusive: string; endInclusive: string };
+          drivers: HealthDriverEvidence[];
+        };
+      }
+  );
+
+/** Pure projection; routing and query metadata are layered on at the provider seam. */
+export interface ActionItem {
+  id: string;
+  entityKind: 'opportunity' | 'registration' | 'partner';
+  entityId: string;
+  partnerId: string;
+  reasons: ActionReason[];
+  severity: ActionSeverity;
+  dueAt?: string;
+  exposure: number;
 }
 
 /**

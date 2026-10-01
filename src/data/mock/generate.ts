@@ -10,7 +10,12 @@ import {
   SNAPSHOT_DATE,
   STAGES,
 } from '../constants';
-import { businessDaysBefore, quarterWindow, startOfWeekUtc } from '../../lib/fiscal';
+import {
+  businessDaysBefore,
+  fiscalQuarterOfDate,
+  quarterWindow,
+  startOfWeekUtc,
+} from '../../lib/fiscal';
 import type {
   ActivityMeeting,
   DealRegistration,
@@ -613,6 +618,7 @@ function generateOpportunities(
     if (opportunity.outcome) continue;
     opportunity.nextStep = seededNextStep(opportunity.id);
     opportunity.forecastCategory = seededCategoryCall(opportunity.id, opportunity.stage);
+    opportunity.lastActivityAt = seededLastActivityAt(opportunity);
   }
 
   return opportunities;
@@ -691,6 +697,20 @@ function idHash(id: string, salt: number): number {
 }
 
 /**
+ * Meaningful deal activity, independent of calendar classifications and the
+ * expected-close date: an overdue deal can still have recent activity.
+ * Leave one fifth without a recording so createdAt remains the explicit
+ * fallback baseline. No PRNG consumed; all existing book metrics stay pinned.
+ */
+function seededLastActivityAt(opportunity: Opportunity): string | undefined {
+  const hash = idHash(opportunity.id, 17);
+  if (hash % 5 === 0) return undefined;
+  const createdAt = new Date(opportunity.createdAt).getTime();
+  const daysAgo = (hash >>> 8) % 43;
+  return iso(new Date(Math.max(createdAt, SNAPSHOT.getTime() - daysAgo * DAY)));
+}
+
+/**
  * Forecasted revenue as it stood `weeksAgo` weeks before the snapshot. Most
  * deals were never re-sized; of those that were, most grew as the scope firmed
  * up and a few were cut back.
@@ -733,6 +753,15 @@ function snapshotCall(
  * Six weeks is enough movement to cross a boundary either way.
  */
 function snapshotCloseDate(opportunity: Opportunity, weeksAgo: number): string {
+  // A small open-deal cohort slipped since the latest Monday recording.
+  // Keep both dates in the same quarter so weekly totals and goals do not
+  // change, while the latest prior evidence can support the Action Center.
+  if (weeksAgo === 0 && !opportunity.closedAt && idHash(opportunity.id, 19) % 7 === 0) {
+    const prior = iso(new Date(new Date(opportunity.expectedCloseDate).getTime() - WEEK));
+    if (fiscalQuarterOfDate(prior) === fiscalQuarterOfDate(opportunity.expectedCloseDate)) {
+      return prior;
+    }
+  }
   const hash = idHash(opportunity.id, 13);
   if (hash % 5 !== 0) return opportunity.expectedCloseDate;
   const movedWeeksAgo = 1 + (hash % 4);

@@ -757,6 +757,8 @@ written by a scheduled job.
   pinned volume shifts), and close-date-adjacent deals with no explicit call
   fall back to the stage heuristic. Open opportunities also carry a row-level
   next step (about half of them, seeded deterministically from the id)
+- Open opportunities have optional meaningful `lastActivityAt` timestamps
+  seeded from their IDs; missing activity uses `createdAt` as the stale-deal baseline.
 - 1,911 weekly pipeline snapshot rows: the open book recorded every Monday of
   FY27 through the snapshot date (33 recordings). Amounts, calls, stages, and
   expected close dates drift week to week — most deals never move, a minority
@@ -766,7 +768,9 @@ written by a scheduled job.
   a snapshot series is just today's numbers repeated and the week-over-week
   chart shows nothing but deals entering and closing. Drift is derived from the
   opportunity id and week index rather than the seeded PRNG, so history shifts
-  no existing volume or amount
+  no existing volume or amount. A small ID-stable cohort of open deals also
+  slipped seven days since the latest Monday recording, within the same fiscal
+  quarter, supplying minimum close-slip evidence without changing weekly totals
 - Every approved registration gets a 2–12 day document-handling dwell before
   its opportunity is created, so the submitted → approved → opportunity → win
   chain reads as real time; a fixed set of registrations deliberately shares a

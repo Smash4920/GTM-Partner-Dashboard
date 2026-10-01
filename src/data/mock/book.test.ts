@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { weeklyRecordingTotals } from './book';
+import { latestPriorCloseDates, weeklyRecordingTotals } from './book';
 import type { PipelineSnapshot } from './book';
 
 /**
@@ -20,6 +20,68 @@ function snapshot(
     ...fields,
   };
 }
+
+describe('latestPriorCloseDates', () => {
+  const asOf = '2026-09-18T00:00:00.000Z';
+
+  it('keeps only the latest strictly prior close date per opportunity, independent of order', () => {
+    const records = [
+      snapshot({
+        takenAt: '2026-08-10T00:00:00.000Z',
+        opportunityId: 'a',
+        expectedCloseDate: '2026-08-31T00:00:00.000Z',
+      }),
+      snapshot({
+        takenAt: '2026-09-14T00:00:00.000Z',
+        opportunityId: 'a',
+        expectedCloseDate: '2026-10-01T00:00:00.000Z',
+      }),
+      snapshot({
+        takenAt: '2026-09-07T00:00:00.000Z',
+        opportunityId: 'b',
+        expectedCloseDate: '2026-11-01T00:00:00.000Z',
+      }),
+      snapshot({ takenAt: asOf, opportunityId: 'a' }),
+      snapshot({ takenAt: '2026-09-21T00:00:00.000Z', opportunityId: 'a' }),
+      snapshot({ takenAt: asOf, opportunityId: 'equal-only' }),
+      snapshot({ takenAt: '2026-09-21T00:00:00.000Z', opportunityId: 'future-only' }),
+    ];
+    const expected = new Map([
+      ['a', '2026-10-01T00:00:00.000Z'],
+      ['b', '2026-11-01T00:00:00.000Z'],
+    ]);
+    expect(latestPriorCloseDates(records, asOf)).toEqual(expected);
+    expect(latestPriorCloseDates([...records].reverse(), asOf)).toEqual(expected);
+    // The projection retains no recording timestamps, revenue, stage, or older dates.
+    expect([...latestPriorCloseDates(records, asOf)]).toEqual([...expected]);
+  });
+
+  it('compares recording instants rather than timestamp spelling', () => {
+    const records = [
+      snapshot({ takenAt: '2026-09-17T20:00:00-04:00', opportunityId: 'equal' }),
+      snapshot({ takenAt: '2026-09-17T23:00:00.000Z', opportunityId: 'prior' }),
+    ];
+    expect([...latestPriorCloseDates(records, asOf).keys()]).toEqual(['prior']);
+  });
+
+  it('breaks conflicting duplicate instants by lexicographically greatest close date', () => {
+    const records = ['2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z'].map(
+      (expectedCloseDate) =>
+        snapshot({
+          takenAt: '2026-09-14T00:00:00.000Z',
+          opportunityId: 'a',
+          expectedCloseDate,
+        }),
+    );
+    const expected = new Map([['a', '2026-11-01T00:00:00.000Z']]);
+    expect(latestPriorCloseDates(records, asOf)).toEqual(expected);
+    expect(latestPriorCloseDates([...records].reverse(), asOf)).toEqual(expected);
+  });
+
+  it('returns no evidence without prior history', () => {
+    expect(latestPriorCloseDates([], asOf)).toEqual(new Map());
+  });
+});
 
 describe('weeklyRecordingTotals', () => {
   it('sums one instant across every deal recorded in it, per category', () => {
