@@ -9,6 +9,7 @@ import Leaderboard from '../components/Leaderboard';
 import LightCard from '../components/LightCard';
 import MetricBars, { type MetricBarRow } from '../components/MetricBars';
 import OpportunityTable from '../components/OpportunityTable';
+import PageFooter from '../components/PageFooter';
 import ProgressBar from '../components/ProgressBar';
 import { renderQueryState } from '../components/QueryState';
 import RegistrationsTable from '../components/RegistrationsTable';
@@ -40,7 +41,10 @@ import type {
   Opportunity,
   Partner,
 } from '../data/types';
-import { usePartnerPerformanceQueries } from '../data/usePartnerPerformanceQueries';
+import {
+  LEADERBOARD_PAGE_SIZE,
+  usePartnerPerformanceQueries,
+} from '../data/usePartnerPerformanceQueries';
 import { stageRows } from './performanceRows';
 import type {
   DuplicateRegistrationGroup,
@@ -291,36 +295,35 @@ function ReviewQueueCard({
   );
 }
 
-/** The leaderboard card: scoped ranking plus certification attainment below it. */
+/** The leaderboard card: the scoped ranking a page at a time, plus certification attainment. */
 function LeaderboardCard({
   leaderboard,
-  rosterLoaded,
-  uniquePartners,
   phaseLabel,
 }: {
-  leaderboard: QueryState<PartnerLeaderboardEntry[]>;
-  rosterLoaded: boolean;
-  uniquePartners: number;
+  leaderboard: PaginationState<PartnerLeaderboardEntry>;
   phaseLabel: string;
 }) {
   return (
     <Card
       title="Partner leaderboard & enablement"
       subtitle={
-        rosterLoaded
-          ? `${uniquePartners} partner${uniquePartners === 1 ? '' : 's'} in this scope · certification counts show attainment below`
-          : 'Certification counts show attainment below'
+        leaderboard.meta === null
+          ? 'Certification counts show attainment below'
+          : `${leaderboard.totalCount} partner${leaderboard.totalCount === 1 ? '' : 's'} in this scope · certification counts show attainment below`
       }
     >
-      {renderQueryState('partner leaderboard', leaderboard, (rows) => (
-        <Leaderboard
-          rows={rows}
-          limit={rows.length}
-          closedWonLabel={`Closed-won ${phaseLabel}`}
-          certifications={rows.flatMap((row) =>
-            row.certification === undefined ? [] : [row.certification],
-          )}
-        />
+      {renderQueryState('partner leaderboard', pageWindowAsQuery(leaderboard), (rows) => (
+        <>
+          <Leaderboard
+            rows={rows}
+            limit={rows.length}
+            closedWonLabel={`Closed-won ${phaseLabel}`}
+            certifications={rows.flatMap((row) =>
+              row.certification === undefined ? [] : [row.certification],
+            )}
+          />
+          <PageFooter state={leaderboard} noun="partners" pageSize={LEADERBOARD_PAGE_SIZE} />
+        </>
       ))}
     </Card>
   );
@@ -677,12 +680,7 @@ export default function PartnerPerformanceView({
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ReviewQueueCard pending={queries.pending} roster={roster} />
-        <LeaderboardCard
-          leaderboard={queries.leaderboard}
-          rosterLoaded={queries.roster.data !== null}
-          uniquePartners={uniquePartners}
-          phaseLabel={phaseLabel}
-        />
+        <LeaderboardCard leaderboard={queries.leaderboard} phaseLabel={phaseLabel} />
       </div>
 
       <ExclusivityCard ops={queries.ops} unconverted={queries.unconverted} roster={roster} />

@@ -161,12 +161,12 @@ describe('useHomeQueries (VAL-DATA-014)', () => {
     await settle(result);
 
     expect([...new Set(calls)].sort()).toEqual([
-      'getPartnerLeaderboard',
       'getPartnerRoster',
       'getPerformanceSummary',
       'getQuarterlyRevenueTrend',
       'getRegistrationFunnel',
       'getStageBreakdown',
+      'getTopPartnerLeaders',
       'getTypeBreakdown',
       'getWeeklyActivitySeries',
       'listPendingRegistrations',
@@ -215,10 +215,12 @@ describe('useHomeQueries (VAL-DATA-014)', () => {
     expect(result.current.pending.totalCount).toBe(1);
     expect(result.current.pending.hasMore).toBe(false);
 
-    // The leaderboard ranks the winning partner first and knows its roster.
+    // The fixed-cap top board ranks the winning partner first and counts
+    // the whole field it was drawn from.
     const leaderboard = result.current.leaderboard.data!;
-    expect(leaderboard.map((row) => row.partner.id)).toEqual(['partner-1', 'partner-2']);
-    expect(leaderboard[0].closedWonValue).toBe(120_000);
+    expect(leaderboard.leaders.map((row) => row.partner.id)).toEqual(['partner-1', 'partner-2']);
+    expect(leaderboard.leaders[0]!.closedWonValue).toBe(120_000);
+    expect(leaderboard.totalPartners).toBe(2);
     expect(result.current.roster.data!.map((partner) => partner.id)).toEqual([
       'partner-1',
       'partner-2',
@@ -268,7 +270,7 @@ describe('useHomeQueries (VAL-DATA-014)', () => {
     expect(count('getRegistrationFunnel')).toBe(2);
     expect(count('getStageBreakdown')).toBe(2);
     expect(count('getTypeBreakdown')).toBe(2);
-    expect(count('getPartnerLeaderboard')).toBe(2);
+    expect(count('getTopPartnerLeaders')).toBe(2);
     // The trend spans every quarter and the queue spans all history: neither
     // is re-asked for a phase change.
     expect(count('getQuarterlyRevenueTrend')).toBe(1);
@@ -292,7 +294,7 @@ describe('useHomeQueries (VAL-DATA-014)', () => {
     expect(count('getPerformanceSummary')).toBe(2);
     expect(count('getStageBreakdown')).toBe(2);
     expect(count('getQuarterlyRevenueTrend')).toBe(2);
-    expect(count('getPartnerLeaderboard')).toBe(2);
+    expect(count('getTopPartnerLeaders')).toBe(2);
     // The chart is the mix the lens selects from; registrations are untyped.
     expect(count('getTypeBreakdown')).toBe(1);
     expect(count('getRegistrationFunnel')).toBe(1);
@@ -317,7 +319,7 @@ describe('useHomeQueries (VAL-DATA-014)', () => {
     expect(count('getStageBreakdown')).toBe(2);
     expect(count('getTypeBreakdown')).toBe(2);
     expect(count('getQuarterlyRevenueTrend')).toBe(2);
-    expect(count('getPartnerLeaderboard')).toBe(2);
+    expect(count('getTopPartnerLeaders')).toBe(2);
     // Registrations, meetings, and the queue read no opportunity revenue.
     expect(count('getRegistrationFunnel')).toBe(1);
     expect(count('getWeeklyActivitySeries')).toBe(1);

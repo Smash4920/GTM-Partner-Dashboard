@@ -7,6 +7,7 @@ import {
 } from '../../lib/metrics';
 import { applyDemoAccessScope, INTERNAL_DEMO_SCOPE } from '../accessScope';
 import type { DemoAccessScope } from '../accessScope';
+import { MAX_SLA_ALERT_DIGEST } from '../DataProvider';
 import { MockDataProvider } from './MockDataProvider';
 import { generateDashboardData } from './generate';
 import { makeTeamUser } from '../../test/fixtures';
@@ -142,13 +143,15 @@ describe('Partner View and Data Connections scoped reads (VAL-CROSS-004)', () =>
     const { data } = await provider.getRegistrationSlaAlerts(
       INTERNAL_DEMO_SCOPE,
       { overrides: { [ownerId]: { status: 'suspended' } } },
-      50,
+      MAX_SLA_ALERT_DIGEST,
     );
     // The override is already visible in who owns what: the answer is the
-    // rule's answer over the overlaid roster, not the raw directory's.
+    // rule's answer over the overlaid roster, not the raw directory's —
+    // windowed at the digest's exported maximum, the only window the
+    // contract serves.
     expect(data.alerts.every((alert) => alert.owner?.id !== ownerId)).toBe(true);
     expect(data.totalCount).toBe(baseline.length);
-    expect(data.alerts).toEqual(expected);
+    expect(data.alerts).toEqual(expected.slice(0, MAX_SLA_ALERT_DIGEST));
     expect(data.ownedCount).toBe(expected.filter((alert) => alert.owner !== undefined).length);
   });
 
@@ -164,8 +167,8 @@ describe('Partner View and Data Connections scoped reads (VAL-CROSS-004)', () =>
     const scoped = scopedBookFor(partner.id);
     const expected = registrationSlaAlerts(scoped.registrations, scoped.partners, []);
 
-    const { data } = await provider.getRegistrationSlaAlerts(audience, {}, 50);
-    expect(data.alerts).toEqual(expected);
+    const { data } = await provider.getRegistrationSlaAlerts(audience, {}, MAX_SLA_ALERT_DIGEST);
+    expect(data.alerts).toEqual(expected.slice(0, MAX_SLA_ALERT_DIGEST));
     expect(data.totalCount).toBe(expected.length);
     expect(data.ownedCount).toBe(0);
     expect(data.alertCountByOwner).toEqual({});

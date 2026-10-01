@@ -1,7 +1,6 @@
 import type {
   DataProvider,
   PartnerCertificationProfile,
-  PartnerLeaderboardEntry,
   PerformanceSummary,
   RegistrationOpsSummary,
   StageBreakdown,
@@ -64,33 +63,6 @@ export interface PartnerPickerQueries {
   defaultPick: QueryState<string | null>;
 }
 
-/**
- * Merges the two portal-visible leaderboards into the legacy default-pick
- * ranking: one row per roster partner, closed-won then open-pipeline
- * descending. The two boards cover the same roster (they differ only in
- * their type lens), so every partner appears in both.
- */
-function mergedVisibleLeaderboard(
-  sellWith: PartnerLeaderboardEntry[],
-  allocate: PartnerLeaderboardEntry[],
-): PartnerLeaderboardEntry[] {
-  const allocateByPartner = new Map(allocate.map((row) => [row.partner.id, row]));
-  const merged = sellWith.map((row) => {
-    const other = allocateByPartner.get(row.partner.id);
-    return {
-      ...row,
-      closedWonValue: row.closedWonValue + (other?.closedWonValue ?? 0),
-      openPipelineValue: row.openPipelineValue + (other?.openPipelineValue ?? 0),
-    };
-  });
-  // The leaderboard's own comparator; the sort is stable, so ties keep the
-  // roster order exactly as the folded-book ranking did.
-  merged.sort(
-    (a, b) => b.closedWonValue - a.closedWonValue || b.openPipelineValue - a.openPipelineValue,
-  );
-  return merged;
-}
-
 export function usePartnerPickerQueries({
   provider,
   prospects,
@@ -112,20 +84,16 @@ export function usePartnerPickerQueries({
     provider,
     queryKey: `partner-view-default|access:${accessKey}|prospects:${rosterKey}`,
     run: async (context) => {
-      const [sellWith, allocate] = await Promise.all([
-        provider.getPartnerLeaderboard(
-          pickerAccess,
-          { phase: 'fy', oppType: 'sell-with', prospects },
-          context,
-        ),
-        provider.getPartnerLeaderboard(
-          pickerAccess,
-          { phase: 'fy', oppType: 'allocate', prospects },
-          context,
-        ),
-      ]);
-      const top = mergedVisibleLeaderboard(sellWith.data, allocate.data)[0];
-      return { data: top?.partner.id ?? null, meta: sellWith.meta };
+      // One provider-side ranking over the combined portal-visible motions.
+      // The old shape merged a Sell With board and an Allocate board that
+      // were each truncated at the cap, which could crown the wrong partner;
+      // summing the two motions in the provider is the correct ranking.
+      const top = await provider.getTopPartnerLeaders(
+        pickerAccess,
+        { phase: 'fy', oppTypes: ['sell-with', 'allocate'], prospects },
+        context,
+      );
+      return { data: top.data.leaders[0]?.partner.id ?? null, meta: top.meta };
     },
     errorFallback: 'Failed to rank the partners',
   });

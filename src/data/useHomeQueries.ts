@@ -1,8 +1,8 @@
 import type {
   DataProvider,
-  PartnerLeaderboardEntry,
   PerformanceSummary,
   StageBreakdown,
+  TopPartnerLeaders,
 } from './DataProvider';
 import { demoScopeKey } from './accessScope';
 import type { DemoAccessScope } from './accessScope';
@@ -76,7 +76,8 @@ export interface HomeQueries {
   trend: QueryState<QuarterRevenueRow[]>;
   activity: QueryState<WeeklyActivityRow[]>;
   pending: PaginationState<DealRegistration>;
-  leaderboard: QueryState<PartnerLeaderboardEntry[]>;
+  /** The fixed-cap top board: the leading partners plus the field's size. */
+  leaderboard: QueryState<TopPartnerLeaders>;
   roster: QueryState<Partner[]>;
 }
 
@@ -151,9 +152,9 @@ export function useHomeQueries({
 
   const leaderboard = useScopedQuery({
     provider,
-    queryKey: `partner-leaderboard|access:${accessKey}|${phase}|type:${oppType}|rev:${revKey}|prospects:${rosterKey}`,
+    queryKey: `top-partner-leaders|access:${accessKey}|${phase}|type:${oppType}|rev:${revKey}|prospects:${rosterKey}`,
     run: (context) =>
-      provider.getPartnerLeaderboard(access, { phase, oppType, edits, prospects }, context),
+      provider.getTopPartnerLeaders(access, { phase, oppType, edits, prospects }, context),
     errorFallback: 'Failed to load the partner leaderboard',
   });
 

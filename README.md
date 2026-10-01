@@ -51,7 +51,9 @@ High-level summary statistics for the whole partner ecosystem. Always scoped to
   applies to KPIs, stages, revenue, and the leaderboard)
 - Registrations awaiting review — the actionable queue
 - Weekly partner activity tracker, fed by Activity Tracking classifications
-- Partner leaderboard
+- Partner leaderboard — the fixed top ten by closed-won for the phase, with
+  the size of the field it led; the full ranking lives on Partner
+  Performance
 
 ### Partner Performance
 
@@ -66,10 +68,11 @@ Partners aligned to that manager, or a single partner, via Salesforce-style
 - Salesforce-shaped opportunity table: client, Factory Account Director, stage,
   forecasted revenue, and close date (actual close once closed, expected close
   while open)
-- Pending registrations, scoped leaderboard, and — for a single partner —
-  Partner Strategist / Partner Engineer certification against goal. When the
-  scope includes multiple partners, the leaderboard shows each partner's
-  certified counts and attainment beneath the count.
+- Pending registrations, the scoped leaderboard paged 25 partners at a time
+  (Load 25 more appends the next page of the ranking), and — for a single
+  partner — Partner Strategist / Partner Engineer certification against
+  goal. When the scope includes multiple partners, the leaderboard shows
+  each partner's certified counts and attainment beneath the count.
 - Registrations awaiting review are colored against the **5-business-day
   response SLA**, and the waiting counter is quoted in the same unit —
   business days, not calendar days. A Friday submission is one business day
@@ -633,7 +636,8 @@ carried at volume is measured in [`docs/migration-plan.md`](docs/migration-plan.
 | `getWeeklyActivitySeries()`          | `QueryResult<WeeklyActivityRow[]>` (8 weeks of meetings)           |
 | `getWeeklyGoalProgress()`            | `QueryResult<WeeklyGoalProgress>` (this week vs. goal)             |
 | `getRegistrationOpsSummary()`        | `QueryResult<RegistrationOpsSummary>` (leakage, SLA, conversion)   |
-| `getPartnerLeaderboard()`            | `QueryResult<PartnerLeaderboardEntry[]>` (one row per partner)     |
+| `getTopPartnerLeaders()`             | `QueryResult<TopPartnerLeaders>` (fixed top 10 + field size)       |
+| `listPartnerLeaderboard()`           | `QueryResult<Page<PartnerLeaderboardEntry>>` (cursor pages)        |
 | `getManagerDirectory()`              | `QueryResult<PartnerManager[]>` (internal audience only)           |
 | `getPartnerRoster()`                 | `QueryResult<Partner[]>` (the partners in scope)                   |
 | `getPartnerCertification()`          | `QueryResult<PartnerCertificationProfile \| null>`                 |
@@ -641,7 +645,7 @@ carried at volume is measured in [`docs/migration-plan.md`](docs/migration-plan.
 | `listPendingRegistrations()`         | `QueryResult<Page<DealRegistration>>` (oldest first, cursor pages) |
 | `listRecentRegistrations()`          | `QueryResult<Page<DealRegistration>>` (newest first, cursor pages) |
 | `getTeamRoster()`                    | `QueryResult<TeamUser[]>` (internal audience only)                 |
-| `getRegistrationSlaAlerts()`         | `QueryResult<RegistrationSlaAlertDigest>` (urgent window + counts) |
+| `getRegistrationSlaAlerts()`         | `QueryResult<RegistrationSlaAlertDigest>` (top ≤ 8 + counts)       |
 | `listUnconvertedRegistrations()`     | `QueryResult<Page<DealRegistration>>` (exclusivity watch)          |
 | `listDuplicateRegistrationGroups()`  | `QueryResult<Page<DuplicateRegistrationGroup>>` (internal only)    |
 | `listWeeklyClassificationMeetings()` | `QueryResult<Page<ActivityMeeting>>` (one week, cursor pages)      |

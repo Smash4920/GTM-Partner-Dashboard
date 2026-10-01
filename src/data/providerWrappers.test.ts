@@ -41,7 +41,9 @@ const CALLS: Record<string, (provider: DataProvider) => Promise<unknown>> = {
   getWeeklyActivitySeries: (p) => p.getWeeklyActivitySeries(INTERNAL_DEMO_SCOPE, {}),
   getWeeklyGoalProgress: (p) => p.getWeeklyGoalProgress(INTERNAL_DEMO_SCOPE, {}),
   getRegistrationOpsSummary: (p) => p.getRegistrationOpsSummary(INTERNAL_DEMO_SCOPE, {}),
-  getPartnerLeaderboard: (p) => p.getPartnerLeaderboard(INTERNAL_DEMO_SCOPE, { phase: 'q3' }),
+  getTopPartnerLeaders: (p) => p.getTopPartnerLeaders(INTERNAL_DEMO_SCOPE, { phase: 'q3' }),
+  listPartnerLeaderboard: (p) =>
+    p.listPartnerLeaderboard(INTERNAL_DEMO_SCOPE, { phase: 'q3' }, { limit: 5 }),
   getManagerDirectory: (p) => p.getManagerDirectory(INTERNAL_DEMO_SCOPE),
   getPartnerRoster: (p) => p.getPartnerRoster(INTERNAL_DEMO_SCOPE, {}),
   getPartnerCertification: (p) => p.getPartnerCertification(INTERNAL_DEMO_SCOPE, {}),

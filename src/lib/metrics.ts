@@ -56,8 +56,20 @@ export function openOpportunities(opps: Opportunity[]): Opportunity[] {
   return opps.filter(isOpen);
 }
 
-export function filterByType(opps: Opportunity[], oppType: OpportunityType | 'all'): Opportunity[] {
-  return oppType === 'all' ? opps : opps.filter((opp) => opp.oppType === oppType);
+/**
+ * The opportunity-type lens: 'all', one type, or several types summed
+ * together. The multi-type form is the leaderboard's combined ranking lens
+ * (Sell With plus Allocate ranked as one book, not two truncated boards
+ * merged afterward). An empty array matches nothing.
+ */
+export function filterByType(
+  opps: Opportunity[],
+  oppType: OpportunityType | 'all' | readonly OpportunityType[],
+): Opportunity[] {
+  if (oppType === 'all') return opps;
+  if (typeof oppType === 'string') return opps.filter((opp) => opp.oppType === oppType);
+  const wanted = new Set(oppType);
+  return opps.filter((opp) => wanted.has(opp.oppType));
 }
 
 export function openPipeline(opps: Opportunity[]): { value: number; count: number } {

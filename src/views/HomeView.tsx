@@ -354,13 +354,17 @@ export default function HomeView({
       <Card
         title="Partner leaderboard"
         subtitle={
-          queries.roster.data === null
+          queries.leaderboard.data === null
             ? `Top partners by closed-won ${phaseLabel}`
-            : `Top partners by closed-won ${phaseLabel} · ${queries.roster.data.length} aligned`
+            : `Top ${queries.leaderboard.data.leaders.length} of ${queries.leaderboard.data.totalPartners} partners by closed-won ${phaseLabel}`
         }
       >
-        {renderQueryState('partner leaderboard', queries.leaderboard, (rows) => (
-          <Leaderboard rows={rows} limit={10} closedWonLabel={`Closed-won ${phaseLabel}`} />
+        {renderQueryState('partner leaderboard', queries.leaderboard, (answer) => (
+          <Leaderboard
+            rows={answer.leaders}
+            limit={answer.leaders.length}
+            closedWonLabel={`Closed-won ${phaseLabel}`}
+          />
         ))}
       </Card>
     </div>

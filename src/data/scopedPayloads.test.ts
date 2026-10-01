@@ -3,6 +3,7 @@ import { CURRENT_FISCAL_QUARTER } from './constants';
 import { phaseForQuarter } from '../lib/metrics';
 import { INTERNAL_DEMO_SCOPE } from './accessScope';
 import type { DemoAccessScope } from './accessScope';
+import { MAX_SLA_ALERT_DIGEST, TOP_LEADERBOARD_LIMIT } from './DataProvider';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { ScaleDataProvider } from './mock/ScaleDataProvider';
@@ -60,6 +61,9 @@ const AGGREGATES: [
   ['getWeeklyActivitySeries', (p, a) => p.getWeeklyActivitySeries(a, {}).then((r) => r.data)],
   ['getWeeklyGoalProgress', (p, a) => p.getWeeklyGoalProgress(a, {}).then((r) => r.data)],
   ['getRegistrationOpsSummary', (p, a) => p.getRegistrationOpsSummary(a, {}).then((r) => r.data)],
+  // The fixed-cap top board: an aggregate, not a directory — its size is
+  // pinned by the contract while the field count alone scales.
+  ['getTopPartnerLeaders', (p, a) => p.getTopPartnerLeaders(a, { phase }).then((r) => r.data)],
   ['getManagerDirectory', (p, a) => p.getManagerDirectory(a).then((r) => r.data)],
   ['getTeamRoster', (p, a) => p.getTeamRoster(a, {}).then((r) => r.data)],
   ['getRegistrationSlaAlerts', (p, a) => p.getRegistrationSlaAlerts(a, {}, 8).then((r) => r.data)],
@@ -73,10 +77,6 @@ const AGGREGATES: [
 const DIRECTORIES: [string, (provider: DataProvider) => Promise<unknown[]>][] = [
   ['getPartnerDirectory', (p) => p.getPartnerDirectory(INTERNAL_DEMO_SCOPE).then((r) => r.data)],
   ['getPartnerRoster', (p) => p.getPartnerRoster(INTERNAL_DEMO_SCOPE, {}).then((r) => r.data)],
-  [
-    'getPartnerLeaderboard',
-    (p) => p.getPartnerLeaderboard(INTERNAL_DEMO_SCOPE, { phase }).then((r) => r.data),
-  ],
 ];
 
 /** Row collections: only ever a page, whatever the book weighs. */
@@ -117,6 +117,12 @@ const ROW_PAGES: [
   [
     'listRecentRegistrations',
     (p, page) => p.listRecentRegistrations(INTERNAL_DEMO_SCOPE, {}, page).then((r) => r.data),
+  ],
+  // The full leaderboard: a page at a time, never the roster-sized array
+  // the retired getPartnerLeaderboard returned.
+  [
+    'listPartnerLeaderboard',
+    (p, page) => p.listPartnerLeaderboard(INTERNAL_DEMO_SCOPE, { phase }, page).then((r) => r.data),
   ],
   [
     'listWeeklyClassificationMeetings',
@@ -221,8 +227,19 @@ describe('VAL-DATA-010: response bounds at 1× and 100×', () => {
     }
     if (method === 'getRegistrationSlaAlerts') {
       const alerts = (atHundred as { alerts: unknown[] }).alerts;
-      expect(alerts.length).toBeLessThanOrEqual(8);
-      expect((atOne as { alerts: unknown[] }).alerts.length).toBeLessThanOrEqual(8);
+      expect(alerts.length).toBeLessThanOrEqual(MAX_SLA_ALERT_DIGEST);
+      expect((atOne as { alerts: unknown[] }).alerts.length).toBeLessThanOrEqual(
+        MAX_SLA_ALERT_DIGEST,
+      );
+    }
+    if (method === 'getTopPartnerLeaders') {
+      // The fixed top-N answer: exactly the cap at both scales (both books
+      // outsize it), while the field count alone carries the 100×.
+      const topOne = atOne as { leaders: unknown[]; totalPartners: number };
+      const topHundred = atHundred as { leaders: unknown[]; totalPartners: number };
+      expect(topHundred.leaders.length, method).toBe(TOP_LEADERBOARD_LIMIT);
+      expect(topOne.leaders.length, method).toBe(TOP_LEADERBOARD_LIMIT);
+      expect(topHundred.totalPartners, method).toBe(topOne.totalPartners * 100);
     }
   });
 
@@ -280,6 +297,45 @@ describe('VAL-DATA-010: response bounds at 1× and 100×', () => {
     // One unique page: no overlap with what is already on screen.
     expect(second.data.rows.every((row) => !seen.has(row.id))).toBe(true);
     expect(new Set(second.data.rows.map((row) => row.id)).size).toBe(25);
+  });
+
+  it('pages the 100× leaderboard 25 partners at a time, each page unique', async () => {
+    // Partner Performance's Load 25 more, at the scale where the retired
+    // whole-board answer would have returned 2,500 rows at once.
+    const first = await hundred.listPartnerLeaderboard(
+      INTERNAL_DEMO_SCOPE,
+      { phase },
+      { limit: 25 },
+    );
+    expect(first.data.nextCursor).toBeDefined();
+    const second = await hundred.listPartnerLeaderboard(
+      INTERNAL_DEMO_SCOPE,
+      { phase },
+      { limit: 25, cursor: first.data.nextCursor },
+    );
+
+    expect(first.data.rows).toHaveLength(25);
+    expect(second.data.rows).toHaveLength(25);
+    expect(first.data.totalCount).toBe(base.partners.length * 100);
+    const seen = new Set(first.data.rows.map((row) => row.partner.id));
+    expect(second.data.rows.every((row) => !seen.has(row.partner.id))).toBe(true);
+    expect(new Set(second.data.rows.map((row) => row.partner.id)).size).toBe(25);
+  });
+
+  it('rejects an over-limit SLA digest window at both scales rather than clamping', async () => {
+    for (const provider of [one, hundred]) {
+      await expect(
+        provider.getRegistrationSlaAlerts(INTERNAL_DEMO_SCOPE, {}, MAX_SLA_ALERT_DIGEST + 1),
+      ).rejects.toMatchObject({ name: 'SlaAlertLimitError', code: 'invalid-max-alerts' });
+    }
+    // …and the exported maximum itself is honored at both scales.
+    const { data: digest } = await hundred.getRegistrationSlaAlerts(
+      INTERNAL_DEMO_SCOPE,
+      {},
+      MAX_SLA_ALERT_DIGEST,
+    );
+    expect(digest.alerts.length).toBeLessThanOrEqual(MAX_SLA_ALERT_DIGEST);
+    expect(digest.totalCount).toBeGreaterThanOrEqual(digest.alerts.length);
   });
 
   it('scales figures exactly 100× — different values, identical answer shape', async () => {

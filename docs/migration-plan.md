@@ -287,8 +287,13 @@ The weekly snapshot job must be **idempotent**: a unique key on
   The library stays optional — it is worth adopting when the hooks outgrow
   their shared helpers, not before.
 - Virtualize `OpportunityTable` and `ForecastTable`; give `Leaderboard` a real
-  limit instead of `limit={uniquePartners}`. _Not started_ — the scoped contract
-  now bounds what reaches the client, so this is comfort rather than survival.
+  limit instead of `limit={uniquePartners}`. _Leaderboard done at the seam:_
+  the roster-sized answer is gone — Home and the Partner View picker read the
+  fixed-cap `getTopPartnerLeaders` (top 10 plus the field's size), Partner
+  Performance walks `listPartnerLeaderboard` 25 rows per cursor page, and the
+  SLA digest enforces its exported window of 8 with a typed rejection rather
+  than a clamp. Table virtualization remains not started — comfort, not
+  survival, now that the contract bounds what reaches the client.
 - Route-level `React.lazy` so the ~485 KB Recharts chunk stops loading for users
   who only open Data Connections. _Not started._ Measured after Phase 1: 193 KB
   app + 484 KB Recharts + 63 KB charts vendor, raw.

@@ -263,6 +263,51 @@ describe('PartnerPerformanceView', () => {
     expect(within(leaderboardRows[0]).getByText('Northwind Systems')).toBeInTheDocument();
   });
 
+  it('pages the leaderboard 25 partners at a time, appending one unique page per Load more', async () => {
+    const user = userEvent.setup();
+    // Thirty roster partners with strictly decreasing wins, so the ranking
+    // order is the fixture's order and every page boundary is checkable.
+    const partners = Array.from({ length: 30 }, (_, index) =>
+      makePartner({
+        id: `partner-${String(index + 1).padStart(2, '0')}`,
+        name: `Partner ${String(index + 1).padStart(2, '0')}`,
+        partnerManagerId: 'pm-1',
+      }),
+    );
+    const opportunities = partners.map((partner, index) =>
+      makeOpportunity({
+        id: `opp-${partner.id}`,
+        partnerId: partner.id,
+        outcome: 'won',
+        forecastedRevenue: 1_000_000 - index * 1_000,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        expectedCloseDate: '2026-09-01T00:00:00.000Z',
+        closedAt: '2026-09-01T00:00:00.000Z',
+      }),
+    );
+    renderView(makeProviderBook({ ...makeBook(), partners, opportunities, registrations: [] }));
+
+    const card = cardWith('Partner leaderboard & enablement');
+    // One bounded page of the ranking, never the thirty-row roster answer.
+    await within(card).findByText('Showing 25 of 30 partners');
+    expect(
+      within(card).getByText(
+        '30 partners in this scope · certification counts show attainment below',
+      ),
+    ).toBeInTheDocument();
+    expect(within(card).getAllByRole('row')).toHaveLength(26); // header + 25
+    expect(within(card).getByText('Partner 01')).toBeInTheDocument();
+
+    await user.click(within(card).getByRole('button', { name: 'Load 25 more' }));
+
+    // The walk continues where the first page stopped: rows 26–30 append.
+    await within(card).findByText('Showing 30 of 30 partners');
+    expect(within(card).getAllByRole('row')).toHaveLength(31);
+    expect(within(card).getByText('Partner 26')).toBeInTheDocument();
+    expect(within(card).getByText('Partner 30')).toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'Load 25 more' })).not.toBeInTheDocument();
+  });
+
   it('describes the registration SLA breach boundary as inclusive (VAL-DATA-007)', async () => {
     renderView();
 

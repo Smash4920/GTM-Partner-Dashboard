@@ -104,6 +104,51 @@ export interface PartnerRef {
 // were minted under. See src/data/pagination.ts.
 export type { Page, PageRequest } from './pagination';
 
+/**
+ * The fixed size of the top-leader answer: Home and the Partner View picker
+ * render the leaders, never the roster, so the answer is the leading ten
+ * partners however large the book grows. The full ranking stays available
+ * through `listPartnerLeaderboard`, a page at a time.
+ */
+export const TOP_LEADERBOARD_LIMIT = 10;
+
+/**
+ * The most alerts the SLA digest ever carries. The panel works the queue
+ * from the top and renders its first page, so the answer is the urgent
+ * window plus the whole-queue counts — never the queue itself.
+ */
+export const MAX_SLA_ALERT_DIGEST = 8;
+
+/**
+ * The typed rejection an out-of-contract `maxAlerts` gets. Carries no alert
+ * data: a clamped window would claim to be the queue window the caller
+ * asked for, and quietly answering is how an unbounded read sneaks back in.
+ */
+export class SlaAlertLimitError extends Error {
+  readonly code = 'invalid-max-alerts' as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'SlaAlertLimitError';
+  }
+}
+
+/**
+ * Validates the requested SLA digest window. Anything that is not a
+ * positive integer within the exported maximum — non-finite, non-integer,
+ * non-positive, or over the limit — is a typed error, never a clamp.
+ */
+export function resolveSlaAlertLimit(maxAlerts: number): number {
+  if (!Number.isInteger(maxAlerts) || maxAlerts <= 0 || maxAlerts > MAX_SLA_ALERT_DIGEST) {
+    throw new SlaAlertLimitError(
+      `Invalid maxAlerts: expected a positive integer of at most ${MAX_SLA_ALERT_DIGEST}, received ${String(
+        maxAlerts,
+      )}`,
+    );
+  }
+  return maxAlerts;
+}
+
 /** The quarter's headline numbers. Fixed size, whatever the book weighs. */
 export interface ForecastSummary {
   openPipelineValue: number;
@@ -233,6 +278,14 @@ export interface RevenueTrendScope extends PartnerDrilldown {
 export interface PerformanceScope extends RevenueTrendScope {
   /** The fiscal phase the aggregates describe. */
   phase: FiscalPhase;
+  /**
+   * The leaderboard's combined-motion lens: rank partners on these
+   * opportunity types summed together — how the Partner View picker ranks
+   * Sell With plus Allocate in one provider-side answer instead of merging
+   * two independently truncated boards in the client. Wins over `oppType`
+   * when present and non-empty; only the leaderboard methods read it.
+   */
+  oppTypes?: readonly OpportunityType[];
 }
 
 /** The weekly activity and goal queries' scope: the drill-down plus the
@@ -277,7 +330,8 @@ export interface TeamRosterScope {
  * established: the full-set counts, plus the most urgent alerts up to
  * `maxAlerts` — the queue a human works from the top of. Returning every
  * alert would put an unbounded list back on the wire for a panel that
- * renders its first page.
+ * renders its first page, so `maxAlerts` itself is validated against
+ * `MAX_SLA_ALERT_DIGEST` and anything outside it is rejected, not clamped.
  */
 export interface RegistrationSlaAlertDigest {
   /** The most urgent alerts — due-soon warnings first, then most overdue. */
@@ -362,6 +416,18 @@ export interface RegistrationOpsSummary {
  * the enablement column never needs the certification collection. */
 export interface PartnerLeaderboardEntry extends LeaderboardRow {
   certification?: PartnerCertification;
+}
+
+/**
+ * The fixed-cap leaderboard answer: the leading `TOP_LEADERBOARD_LIMIT`
+ * partners of the scope's ranking, plus the size of the field they were
+ * drawn from. Its size never depends on the roster; the full ranking is
+ * `listPartnerLeaderboard`, a page at a time.
+ */
+export interface TopPartnerLeaders {
+  leaders: PartnerLeaderboardEntry[];
+  /** Every partner in the scope's selection, ranked or not. */
+  totalPartners: number;
 }
 
 /** A partner and its certification record, or the record's absence made explicit. */
@@ -504,15 +570,34 @@ interface ScopedQueryProvider {
     context?: QueryContext,
   ): Promise<QueryResult<RegistrationOpsSummary>>;
   /**
-   * Every partner in the scope's selection, ranked on the phase's closed-won:
-   * a bounded dimension row per partner, not a page, because the roster is
-   * bounded the way the manager directory is.
+   * The top of the scope's leaderboard as a fixed-cap answer: the leading
+   * `TOP_LEADERBOARD_LIMIT` partners by the phase's closed-won, plus the
+   * size of the field. Home and the Partner View picker render leaders,
+   * never the roster — and the picker's combined Sell With + Allocate
+   * ranking is computed here via `oppTypes`, because a client-side merge of
+   * two independently truncated boards can crown the wrong partner. The
+   * full ranking is `listPartnerLeaderboard`.
    */
-  getPartnerLeaderboard(
+  getTopPartnerLeaders(
     access: DemoAccessScope,
     scope: PerformanceScope,
     context?: QueryContext,
-  ): Promise<QueryResult<PartnerLeaderboardEntry[]>>;
+  ): Promise<QueryResult<TopPartnerLeaders>>;
+  /**
+   * The scope's full leaderboard, a page at a time. Pages follow the shared
+   * contract in src/data/pagination.ts: bounded limits, a stable total
+   * order (closed-won descending, then open pipeline descending, ties in
+   * roster order over the epoch-immutable book), and opaque cursors bound
+   * to this exact query — phase, type lens, drill-down, and prospect
+   * membership — and data epoch. Session edits re-rank rows; the hook
+   * restarts its loaded window on an edit rather than reusing a cursor.
+   */
+  listPartnerLeaderboard(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<PartnerLeaderboardEntry>>>;
   /**
    * The partner-manager directory, scoped like every other answer (a partner
    * audience receives none). A small dimension the drill-down selects from.
@@ -614,7 +699,10 @@ interface ScopedQueryProvider {
    * The notification rule's answer: pending registrations at or within one
    * business day of the response SLA, owners resolved against the overlaid
    * roster. Bounded like `getForecastQuality` — the full-set counts plus the
-   * most urgent `maxAlerts` alerts, never the whole queue.
+   * most urgent `maxAlerts` alerts, never the whole queue. `maxAlerts` must
+   * be a positive integer no greater than `MAX_SLA_ALERT_DIGEST`; anything
+   * else rejects with a typed `SlaAlertLimitError` rather than a clamped
+   * window.
    */
   getRegistrationSlaAlerts(
     access: DemoAccessScope,
@@ -681,7 +769,8 @@ const METHOD_INDEX: Record<keyof DataProvider, true> = {
   getWeeklyActivitySeries: true,
   getWeeklyGoalProgress: true,
   getRegistrationOpsSummary: true,
-  getPartnerLeaderboard: true,
+  getTopPartnerLeaders: true,
+  listPartnerLeaderboard: true,
   getManagerDirectory: true,
   getPartnerRoster: true,
   getPartnerCertification: true,

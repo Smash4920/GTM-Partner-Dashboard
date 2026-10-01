@@ -167,7 +167,7 @@ async function settle(result: { current: ReturnType<typeof usePartnerPerformance
     expect(result.current.activity.data).not.toBeNull();
     expect(result.current.goal.data).not.toBeNull();
     expect(result.current.ops.data).not.toBeNull();
-    expect(result.current.leaderboard.data).not.toBeNull();
+    expect(result.current.leaderboard.meta).not.toBeNull();
     expect(result.current.managers.data).not.toBeNull();
     expect(result.current.roster.data).not.toBeNull();
     expect(result.current.opportunities.meta).not.toBeNull();
@@ -189,7 +189,6 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
     expect([...new Set(calls)].sort()).toEqual([
       'getManagerDirectory',
       'getPartnerCertification',
-      'getPartnerLeaderboard',
       'getPartnerRoster',
       'getPerformanceSummary',
       'getQuarterlyRevenueTrend',
@@ -199,20 +198,25 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
       'getWeeklyActivitySeries',
       'getWeeklyGoalProgress',
       'listDuplicateRegistrationGroups',
+      'listPartnerLeaderboard',
       'listPendingRegistrations',
       'listScopedOpportunities',
       'listUnconvertedRegistrations',
     ]);
-    // Every row collection is one bounded page request.
+    // Every row collection is one bounded page request, the full leaderboard
+    // included.
     for (const pageQuery of [
       'listScopedOpportunities',
       'listPendingRegistrations',
       'listUnconvertedRegistrations',
       'listDuplicateRegistrationGroups',
+      'listPartnerLeaderboard',
     ]) {
       expect(calls.filter((method) => method === pageQuery)).toHaveLength(1);
     }
     expect(result.current.opportunities.rows.length).toBeLessThanOrEqual(25);
+    expect(result.current.leaderboard.rows.length).toBeLessThanOrEqual(25);
+    expect(result.current.leaderboard.totalCount).toBe(3);
   });
 
   it('answers with the same deterministic values the whole-book view computed', async () => {
@@ -275,7 +279,9 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
     expect(summary.closedWon).toBe(0);
     expect(summary.alignedPartners).toBe(1);
     expect(result.current.opportunities.rows.map((row) => row.id)).toEqual(['opp-pm2']);
-    expect(result.current.leaderboard.data!.map((row) => row.partner.id)).toEqual(['partner-3']);
+    await waitFor(() =>
+      expect(result.current.leaderboard.rows.map((row) => row.partner.id)).toEqual(['partner-3']),
+    );
   });
 
   it('scopes every aggregate to the selected partner and surfaces its certification', async () => {
@@ -328,6 +334,86 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
     expect(result.current.opportunities.hasMore).toBe(false);
     // Two bounded page requests, no more.
     expect(calls.filter((method) => method === 'listScopedOpportunities')).toHaveLength(2);
+  });
+
+  it('pages the full leaderboard 25 partners at a time, one unique page per Load more', async () => {
+    // Thirty roster partners with strictly decreasing wins, so the ranking
+    // order is the fixture's order and every page boundary is checkable.
+    const partners = Array.from({ length: 30 }, (_, index) =>
+      makePartner({
+        id: `partner-${String(index + 1).padStart(2, '0')}`,
+        name: `Partner ${index + 1}`,
+        partnerManagerId: 'pm-1',
+      }),
+    );
+    const opportunities = partners.map((partner, index) =>
+      makeOpportunity({
+        id: `opp-${partner.id}`,
+        partnerId: partner.id,
+        outcome: 'won',
+        forecastedRevenue: 1_000_000 - index * 1_000,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        expectedCloseDate: '2026-09-01T00:00:00.000Z',
+        closedAt: '2026-09-01T00:00:00.000Z',
+      }),
+    );
+    const { provider, calls } = spyProvider(
+      new MockDataProvider(makeProviderBook({ ...makeBook(), partners, opportunities })),
+    );
+    const { result } = renderHook(
+      (input: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(input),
+      { initialProps: inputFor(provider) },
+    );
+
+    // The card opens on one bounded page of the ranking, never the roster.
+    await waitFor(() => expect(result.current.leaderboard.meta).not.toBeNull());
+    expect(result.current.leaderboard.rows).toHaveLength(25);
+    expect(result.current.leaderboard.totalCount).toBe(30);
+    expect(result.current.leaderboard.hasMore).toBe(true);
+    expect(result.current.leaderboard.rows[0]!.partner.id).toBe('partner-01');
+
+    act(() => result.current.leaderboard.loadMore());
+    await waitFor(() => expect(result.current.leaderboard.rows).toHaveLength(30));
+    expect(result.current.leaderboard.hasMore).toBe(false);
+    // One unique appended page: no overlap with the twenty-five on screen,
+    // and the walk continues in ranking order.
+    const ids = result.current.leaderboard.rows.map((row) => row.partner.id);
+    expect(new Set(ids).size).toBe(30);
+    expect(ids[25]).toBe('partner-26');
+    // Two bounded page requests, no more.
+    expect(calls.filter((method) => method === 'listPartnerLeaderboard')).toHaveLength(2);
+  });
+
+  it('refreshes the leaderboard window in place on a revenue edit instead of resetting', async () => {
+    const { provider, calls } = spyProvider(new MockDataProvider(makeBook()));
+    const { result, rerender } = renderHook(
+      (input: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(input),
+      { initialProps: inputFor(provider) },
+    );
+    await settle(result);
+    expect(result.current.leaderboard.rows.map((row) => row.partner.id)).toEqual([
+      'partner-1',
+      'partner-3',
+      'partner-2',
+    ]);
+
+    rerender(
+      inputFor(provider, {
+        edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-open': 400_000 } },
+      }),
+    );
+    await waitFor(() =>
+      expect(calls.filter((method) => method === 'listPartnerLeaderboard')).toHaveLength(2),
+    );
+
+    // The loaded window refreshed in place: same membership, edit applied.
+    expect(result.current.leaderboard.rows.map((row) => row.partner.id)).toEqual([
+      'partner-1',
+      'partner-3',
+      'partner-2',
+    ]);
+    expect(result.current.leaderboard.rows[0]!.openPipelineValue).toBe(400_000);
+    expect(result.current.leaderboard.totalCount).toBe(3);
   });
 
   it('keeps a failed query independent: siblings stay settled, retry repeats only the failed call', async () => {

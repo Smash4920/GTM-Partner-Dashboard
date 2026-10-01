@@ -45,13 +45,21 @@ import type {
  * selection is part of every key, so a selection change refetches exactly
  * the answers it re-scopes. The registration-ops card is the documented
  * exception to the phase: exclusivity lapsing and conversion times span
- * quarters, so its keys omit the phase. The pipeline table is the one
- * collection that paginates; a revenue edit refreshes its loaded window in
- * place, and only when the edit touches a loaded row.
+ * quarters, so its keys omit the phase. The pipeline table and the
+ * leaderboard paginate a cursor at a time; a revenue edit refreshes their
+ * loaded windows in place — the pipeline's only when the edit touches a
+ * loaded row, the leaderboard's always, because an edit can re-rank any
+ * row.
  */
 
 /** Rows per page of the scoped pipeline table. */
 const PIPELINE_PAGE_SIZE = 25;
+/**
+ * Rows per page of the scoped leaderboard: the full ranking is a cursor
+ * walk, so the card loads one page and appends one unique page per Load
+ * more, never the roster.
+ */
+export const LEADERBOARD_PAGE_SIZE = 25;
 /** The queue, exclusivity, and duplicate cards render a single page each. */
 const QUEUE_PAGE_SIZE = 7;
 const UNCONVERTED_PAGE_SIZE = 8;
@@ -78,7 +86,8 @@ export interface PartnerPerformanceQueries {
   activity: QueryState<WeeklyActivityRow[]>;
   goal: QueryState<WeeklyGoalProgress>;
   ops: QueryState<RegistrationOpsSummary>;
-  leaderboard: QueryState<PartnerLeaderboardEntry[]>;
+  /** The scoped ranking, a page at a time: bounded rows plus the field's total. */
+  leaderboard: PaginationState<PartnerLeaderboardEntry>;
   managers: QueryState<PartnerManager[]>;
   roster: QueryState<Partner[]>;
   certification: QueryState<PartnerCertificationProfile | null>;
@@ -181,12 +190,23 @@ export function usePartnerPerformanceQueries({
     errorFallback: 'Failed to load the registration ops',
   });
 
-  const leaderboard = useScopedQuery({
+  const leaderboard = usePaginatedRows({
     provider,
-    queryKey: `partner-leaderboard|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}|rev:${revKey}|prospects:${rosterKey}`,
-    run: (context) =>
-      provider.getPartnerLeaderboard(access, { ...drilldown, phase, edits }, context),
+    enabled: true,
+    // Prospects are membership here — the ranking is one row per roster
+    // partner — so a new prospect resets the walk, exactly like a drill-down
+    // change does.
+    resetKey: `partner-leaderboard|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}|prospects:${rosterKey}|${LEADERBOARD_PAGE_SIZE}`,
+    // An edit re-ranks rows but changes no membership: refresh the loaded
+    // window in place. No rowEdits narrowing — the ranking's rows key on
+    // partner ids while edits key on opportunity ids, so every revenue edit
+    // must refresh.
+    refreshKey: `rev:${revKey}`,
+    pageSize: LEADERBOARD_PAGE_SIZE,
+    fetchPage: (page, context) =>
+      provider.listPartnerLeaderboard(access, { ...drilldown, phase, edits }, page, context),
     errorFallback: 'Failed to load the partner leaderboard',
+    loadMoreErrorFallback: 'Failed to load more of the leaderboard',
   });
 
   const managers = useManagerDirectory(provider, access);

@@ -38,7 +38,8 @@ function unscopedCalls(provider: DataProvider): (() => Promise<unknown>)[] {
     () => provider.getWeeklyActivitySeries(missing, {}),
     () => provider.getWeeklyGoalProgress(missing, {}),
     () => provider.getRegistrationOpsSummary(missing, {}),
-    () => provider.getPartnerLeaderboard(missing, { phase: 'q3' }),
+    () => provider.getTopPartnerLeaders(missing, { phase: 'q3' }),
+    () => provider.listPartnerLeaderboard(missing, { phase: 'q3' }, { limit: 5 }),
     () => provider.getManagerDirectory(missing),
     () => provider.getPartnerRoster(missing, {}),
     () => provider.getPartnerCertification(missing, {}),
@@ -59,7 +60,7 @@ function unscopedCalls(provider: DataProvider): (() => Promise<unknown>)[] {
 }
 
 describe('DataProvider demo access scope (VAL-DATA-003)', () => {
-  it('keeps a closed inventory: exactly these twenty-seven data-bearing methods exist', () => {
+  it('keeps a closed inventory: exactly these twenty-eight data-bearing methods exist', () => {
     expect([...DATA_PROVIDER_METHODS].sort()).toEqual([
       'getForecastQuality',
       'getForecastSummary',
@@ -67,7 +68,6 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       'getManagerForecastGroups',
       'getPartnerCertification',
       'getPartnerDirectory',
-      'getPartnerLeaderboard',
       'getPartnerRoster',
       'getPerformanceSummary',
       'getQuarterlyRevenueTrend',
@@ -76,12 +76,14 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       'getRegistrationSlaAlerts',
       'getStageBreakdown',
       'getTeamRoster',
+      'getTopPartnerLeaders',
       'getTypeBreakdown',
       'getWeeklyActivitySeries',
       'getWeeklyForecastSeries',
       'getWeeklyGoalProgress',
       'getWeightedForecast',
       'listDuplicateRegistrationGroups',
+      'listPartnerLeaderboard',
       'listPendingRegistrations',
       'listQuarterOpportunities',
       'listRecentRegistrations',
@@ -143,7 +145,8 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       provider.getWeeklyActivitySeries(scope, {}),
       provider.getWeeklyGoalProgress(scope, {}),
       provider.getRegistrationOpsSummary(scope, {}),
-      provider.getPartnerLeaderboard(scope, { phase: 'q3' }),
+      provider.getTopPartnerLeaders(scope, { phase: 'q3' }),
+      provider.listPartnerLeaderboard(scope, { phase: 'q3' }, { limit: 5 }),
       provider.getManagerDirectory(scope),
       provider.getPartnerRoster(scope, {}),
       provider.getPartnerCertification(scope, {}),
@@ -156,6 +159,6 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       provider.getRegistrationSlaAlerts(scope, {}, 8),
       provider.listWeeklyClassificationMeetings(scope, { partnerManagerId: 'pm-1' }, { limit: 5 }),
     ]);
-    expect(results).toHaveLength(27);
+    expect(results).toHaveLength(28);
   });
 });

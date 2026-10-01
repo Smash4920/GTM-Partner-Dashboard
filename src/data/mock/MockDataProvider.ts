@@ -21,10 +21,12 @@ import type {
   RevenueTrendScope,
   StageBreakdown,
   TeamRosterScope,
+  TopPartnerLeaders,
   WeeklyClassificationScope,
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from '../DataProvider';
+import { resolveSlaAlertLimit, TOP_LEADERBOARD_LIMIT } from '../DataProvider';
 import { throwIfAborted } from '../../lib/abort';
 import {
   demoScopeKey,
@@ -54,6 +56,7 @@ import type {
   ActivityMeeting,
   DealRegistration,
   Opportunity,
+  OpportunityType,
   Partner,
   PartnerManager,
   Target,
@@ -131,6 +134,42 @@ import { generateDashboardData } from './generate';
  * partner-audience answer is computed from that partner's rows alone. The
  * scope is demonstrative filtering, never an authorization claim.
  */
+
+/**
+ * The leaderboard's effective type lens: a non-empty `oppTypes` wins (the
+ * picker's combined Sell With + Allocate ranking), then the single-type
+ * lens, then the whole book. One definition, so the ranking and its cursor
+ * key can never disagree about which lens a board was ranked under. An
+ * empty `oppTypes` is no lens at all, not a silent zero board.
+ */
+function leaderboardLens(
+  scope: PerformanceScope,
+): 'all' | OpportunityType | readonly OpportunityType[] {
+  if (scope.oppTypes !== undefined && scope.oppTypes.length > 0) return scope.oppTypes;
+  return scope.oppType ?? 'all';
+}
+
+/** The lens as a cursor-key component: order-free, so the same set of
+ * types mints the same key however the caller listed them. */
+function leaderboardLensKey(scope: PerformanceScope): string {
+  const lens = leaderboardLens(scope);
+  if (lens === 'all') return 'all';
+  const types = typeof lens === 'string' ? [lens] : lens;
+  return [...types].sort().join('+');
+}
+
+/**
+ * Prospect membership for a cursor key: the ids, sorted, so array order
+ * cannot mint a different key for the same set. Prospects are roster rows,
+ * and the leaderboard is one row per roster partner, so they belong to the
+ * query's membership exactly like the drill-down does.
+ */
+function prospectIdsKey(prospects: Partner[] | undefined): string {
+  return (prospects ?? [])
+    .map((partner) => partner.id)
+    .sort()
+    .join(',');
+}
 
 /** Construction options for the mock provider. */
 export interface MockProviderOptions {
@@ -747,15 +786,21 @@ export class MockDataProvider implements DataProvider {
     );
   }
 
-  async getPartnerLeaderboard(
+  /**
+   * The scope's full leaderboard, ranked: one row per selected roster
+   * partner, closed-won descending, then open pipeline descending. The sort
+   * is stable over the epoch-immutable roster, so ties hold roster order
+   * and the result is a total order a cursor walk can exhaust. Both
+   * leaderboard answers are cut from this one ranking, so the fixed top
+   * board and the paged board can never disagree.
+   */
+  private rankPartnerLeaderboard(
     access: DemoAccessScope,
     scope: PerformanceScope,
-    context?: QueryContext,
-  ): Promise<QueryResult<PartnerLeaderboardEntry[]>> {
-    throwIfAborted(context?.signal);
+  ): PartnerLeaderboardEntry[] {
     const book = this.performanceBook(access, scope);
     const edited = applySessionEdits(book.opportunities, scope.edits ?? NO_SESSION_EDITS);
-    const phaseOpps = filterByType(filterByPhase(edited, scope.phase), scope.oppType ?? 'all');
+    const phaseOpps = filterByType(filterByPhase(edited, scope.phase), leaderboardLens(scope));
     const certifications = scopeCertifications(
       this.data.certifications,
       this.data.partners,
@@ -790,7 +835,49 @@ export class MockDataProvider implements DataProvider {
     rows.sort(
       (a, b) => b.closedWonValue - a.closedWonValue || b.openPipelineValue - a.openPipelineValue,
     );
-    return queryResult(rows, this.meta(scope.edits));
+    return rows;
+  }
+
+  async getTopPartnerLeaders(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<TopPartnerLeaders>> {
+    throwIfAborted(context?.signal);
+    const ranked = this.rankPartnerLeaderboard(access, scope);
+    // The cap is the contract: leaders, never the roster, plus the size of
+    // the field they led.
+    return queryResult(
+      { leaders: ranked.slice(0, TOP_LEADERBOARD_LIMIT), totalPartners: ranked.length },
+      this.meta(scope.edits),
+    );
+  }
+
+  async listPartnerLeaderboard(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<PartnerLeaderboardEntry>>> {
+    throwIfAborted(context?.signal);
+    const ranked = this.rankPartnerLeaderboard(access, scope);
+    return queryResult(
+      paginateRows({
+        rows: ranked,
+        // Membership and order both belong to the cursor's identity: the
+        // phase and the type lens reorder the ranking, and the drill-down
+        // and the prospects decide which rows belong at all. Edits stay
+        // out — they change what a row says, and the hook restarts its
+        // loaded window on an edit rather than reusing a cursor, exactly
+        // like the pipeline table.
+        queryKey: `listPartnerLeaderboard|access:${demoScopeKey(access)}|phase:${scope.phase}|types:${leaderboardLensKey(scope)}|${this.drilldownKey(scope)}|prospects:${prospectIdsKey(scope.prospects)}`,
+        asOf: this.dataEpoch(),
+        issuer: this.cursorIssuer,
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
+      this.meta(scope.edits),
+    );
   }
 
   async getManagerDirectory(
@@ -995,6 +1082,10 @@ export class MockDataProvider implements DataProvider {
     context?: QueryContext,
   ): Promise<QueryResult<RegistrationSlaAlertDigest>> {
     throwIfAborted(context?.signal);
+    // The window is validated, never clamped: a caller asking for more than
+    // the digest's maximum gets a typed error, because quietly serving the
+    // clamped window would claim to be the answer it asked for.
+    const limit = resolveSlaAlertLimit(maxAlerts);
     // The rule reads the access-scoped registrations and partners — a partner
     // audience's queue is computed from its own conflict-free submissions —
     // and the overlaid roster, so a routing change this session is already
@@ -1013,7 +1104,7 @@ export class MockDataProvider implements DataProvider {
       {
         // The metric's order is the queue's order: due-soon warnings lead,
         // then most overdue. The window is the top of that queue.
-        alerts: alerts.slice(0, Math.max(0, maxAlerts)),
+        alerts: alerts.slice(0, limit),
         totalCount: alerts.length,
         approachingCount: alerts.filter((alert) => alert.state === 'approaching').length,
         ownedCount: alerts.filter((alert) => alert.owner !== undefined).length,

@@ -217,7 +217,7 @@ async function settle(result: { current: ReturnType<typeof usePartnerViewQueries
 }
 
 describe('usePartnerPickerQueries (VAL-CROSS-004)', () => {
-  it('requests only the roster and the two portal-visible leaderboards', async () => {
+  it('requests only the roster and the combined portal-visible top board', async () => {
     const { provider, calls } = spyProvider(new MockDataProvider(makeBook()));
     const { result } = renderHook(
       (input: PartnerPickerQueryInput) => usePartnerPickerQueries(input),
@@ -229,9 +229,12 @@ describe('usePartnerPickerQueries (VAL-CROSS-004)', () => {
     });
 
     expect([...new Set(calls.map((call) => call.method))].sort()).toEqual([
-      'getPartnerLeaderboard',
       'getPartnerRoster',
+      'getTopPartnerLeaders',
     ]);
+    // One provider-side ranking over Sell With + Allocate combined — not the
+    // old pair of independently truncated boards merged in the client.
+    expect(calls.filter((call) => call.method === 'getTopPartnerLeaders')).toHaveLength(1);
     // The picker is internal-facing demo furniture: every partner stays an
     // option, so the roster read is internal-scoped.
     expect(calls.every((call) => call.access.audience === 'internal')).toBe(true);

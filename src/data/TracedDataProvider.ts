@@ -21,6 +21,7 @@ import type {
   RevenueTrendScope,
   StageBreakdown,
   TeamRosterScope,
+  TopPartnerLeaders,
   WeeklyClassificationScope,
   WeeklySeriesRow,
   WeightedForecastSummary,
@@ -214,13 +215,24 @@ export class TracedDataProvider implements DataProvider {
     );
   }
 
-  getPartnerLeaderboard(
+  getTopPartnerLeaders(
     access: DemoAccessScope,
     scope: PerformanceScope,
     context?: QueryContext,
-  ): Promise<QueryResult<PartnerLeaderboardEntry[]>> {
-    return this.request('getPartnerLeaderboard', context, (withTrace) =>
-      this.inner.getPartnerLeaderboard(access, scope, withTrace),
+  ): Promise<QueryResult<TopPartnerLeaders>> {
+    return this.request('getTopPartnerLeaders', context, (withTrace) =>
+      this.inner.getTopPartnerLeaders(access, scope, withTrace),
+    );
+  }
+
+  listPartnerLeaderboard(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<PartnerLeaderboardEntry>>> {
+    return this.request('listPartnerLeaderboard', context, (withTrace) =>
+      this.inner.listPartnerLeaderboard(access, scope, page, withTrace),
     );
   }
 

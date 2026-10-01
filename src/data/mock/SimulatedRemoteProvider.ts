@@ -20,6 +20,7 @@ import type {
   RevenueTrendScope,
   StageBreakdown,
   TeamRosterScope,
+  TopPartnerLeaders,
   WeeklyClassificationScope,
   WeeklySeriesRow,
   WeightedForecastSummary,
@@ -423,14 +424,27 @@ export class SimulatedRemoteProvider implements DataProvider {
     );
   }
 
-  async getPartnerLeaderboard(
+  async getTopPartnerLeaders(
     access: DemoAccessScope,
     scope: PerformanceScope,
     context?: QueryContext,
-  ): Promise<QueryResult<PartnerLeaderboardEntry[]>> {
+  ): Promise<QueryResult<TopPartnerLeaders>> {
     return this.stamp(
-      this.roundTrip('getPartnerLeaderboard', context?.signal, () =>
-        this.inner.getPartnerLeaderboard(access, scope, context),
+      this.roundTrip('getTopPartnerLeaders', context?.signal, () =>
+        this.inner.getTopPartnerLeaders(access, scope, context),
+      ),
+    );
+  }
+
+  async listPartnerLeaderboard(
+    access: DemoAccessScope,
+    scope: PerformanceScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<PartnerLeaderboardEntry>>> {
+    return this.stamp(
+      this.roundTrip('listPartnerLeaderboard', context?.signal, () =>
+        this.inner.listPartnerLeaderboard(access, scope, page, context),
       ),
     );
   }

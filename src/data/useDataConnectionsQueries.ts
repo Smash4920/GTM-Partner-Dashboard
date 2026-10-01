@@ -1,3 +1,4 @@
+import { MAX_SLA_ALERT_DIGEST } from './DataProvider';
 import type { DataProvider, RegistrationSlaAlertDigest, TeamRosterScope } from './DataProvider';
 import { demoScopeKey } from './accessScope';
 import type { DemoAccessScope } from './accessScope';
@@ -25,8 +26,6 @@ import type { DealRegistration, Partner, PartnerManager, TeamUser } from './type
  * Access section renders.
  */
 
-/** The alert panel works the queue from the top: the eight most urgent. */
-const ALERT_WINDOW = 8;
 /** The composer's record picker lists the most recent registrations. */
 const COMPOSER_PAGE_SIZE = 25;
 
@@ -84,10 +83,14 @@ export function useDataConnectionsQueries({
 
   const managers = useManagerDirectory(provider, access);
 
+  // The alert panel works the queue from the top: the most urgent
+  // MAX_SLA_ALERT_DIGEST, a bound the contract exports and the provider
+  // enforces, so the window and the rule can never drift apart.
   const alerts = useScopedQuery({
     provider,
-    queryKey: `connections-alerts|access:${accessKey}|${overlayKey}|${ALERT_WINDOW}`,
-    run: (context) => provider.getRegistrationSlaAlerts(access, roster, ALERT_WINDOW, context),
+    queryKey: `connections-alerts|access:${accessKey}|${overlayKey}|${MAX_SLA_ALERT_DIGEST}`,
+    run: (context) =>
+      provider.getRegistrationSlaAlerts(access, roster, MAX_SLA_ALERT_DIGEST, context),
     errorFallback: 'Failed to load the registration SLA alerts',
   });
 

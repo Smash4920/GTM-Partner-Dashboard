@@ -90,7 +90,7 @@
     {
       "name": "Application chunk",
       "path": "dist/assets/index-*.js",
-      "limit": "69 kB"
+      "limit": "70 kB"
     },
     {
       "name": "Recharts chunk",
