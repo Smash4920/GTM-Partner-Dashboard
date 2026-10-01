@@ -47,6 +47,7 @@ import type { FiscalPhase, Partner } from '../data/types';
 import { formatCoverage } from '../lib/metrics';
 import type { QuarterRevenueRow, TypeRow } from '../lib/metrics';
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
+import { conversionRows } from './performanceRows';
 
 const SLICE_OPTIONS: ChipOption<PartnerSlice>[] = [
   { id: 'all', label: 'Total pipeline', title: 'Sell With and Allocate combined' },
@@ -181,43 +182,6 @@ function PartnerKpis({
       )}
     </div>
   );
-}
-
-/** The conversion-time bars from the ops answer's own times. */
-function timelineRows(times: RegistrationOpsSummary['times']): MetricBarRow[] {
-  const fmtDays = (days: number | null) => (days === null ? '—' : `${days.toFixed(1)}d`);
-  return [
-    {
-      label: 'Submitted → Approved',
-      value: times.submittedToApprovedBusinessDays ?? 0,
-      displayValue: fmtDays(times.submittedToApprovedBusinessDays),
-      // The approval hop is measured in the SLA's own unit, so the bar reads
-      // directly against the response SLA.
-      secondary: 'avg business days · 5-business-day SLA',
-      color: '#7e7b78',
-    },
-    {
-      label: 'Approved → Opportunity',
-      value: times.approvedToOpportunityCalendarDays ?? 0,
-      displayValue: fmtDays(times.approvedToOpportunityCalendarDays),
-      secondary: 'avg elapsed calendar days · converted registrations',
-      color: '#9a9693',
-    },
-    {
-      label: 'Opportunity → Win',
-      value: times.opportunityToWinCalendarDays ?? 0,
-      displayValue: fmtDays(times.opportunityToWinCalendarDays),
-      secondary: 'avg elapsed calendar days · converted & won',
-      color: '#a0ca92',
-    },
-    {
-      label: 'Submitted → Win',
-      value: times.submittedToWinCalendarDays ?? 0,
-      displayValue: fmtDays(times.submittedToWinCalendarDays),
-      secondary: 'avg elapsed calendar days · converted & won',
-      color: '#b8b3b0',
-    },
-  ];
 }
 
 function stageRows(stages: StageBreakdown): MetricBarRow[] {
@@ -382,7 +346,9 @@ function PartnerViewBody({
           subtitle="Average conversion time across your registrations · submitted → approved → opportunity → win"
         >
           {renderQueryState('registration timeline', queries.ops, (ops) => (
-            <MetricBars rows={timelineRows(ops.times)} />
+            <MetricBars
+              rows={conversionRows(ops.times, 'avg business days · 5-business-day SLA')}
+            />
           ))}
         </Card>
         <Card

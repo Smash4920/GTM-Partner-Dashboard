@@ -235,16 +235,12 @@ export class MockDataProvider implements DataProvider {
       SNAPSHOT_DATE.toISOString(),
       context,
     );
-    return queryResult(
-      paginateRows({
-        rows: items,
-        queryKey: `listActionItems|access:${demoScopeKey(access)}|scope:${actionCenterScopeKey(scope)}`,
-        asOf: this.dataEpoch(),
-        issuer: this.cursorIssuer,
-        cursor: page.cursor,
-        limit: page.limit,
-      }),
-      this.meta(edits, { lineage }),
+    return this.pageAnswer(
+      items,
+      `listActionItems|access:${demoScopeKey(access)}|scope:${actionCenterScopeKey(scope)}`,
+      page,
+      edits,
+      { lineage },
     );
   }
 
@@ -326,6 +322,60 @@ export class MockDataProvider implements DataProvider {
     });
   }
 
+  private pageAnswer<T>(
+    rows: T[],
+    queryKey: string,
+    page: PageRequest,
+    edits?: SessionEdits,
+    extra: { lineage?: DataLineage[]; warnings?: DataWarning[] } = {},
+  ): QueryResult<Page<T>> {
+    return queryResult(
+      paginateRows({
+        rows,
+        queryKey,
+        asOf: this.dataEpoch(),
+        issuer: this.cursorIssuer,
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
+      this.meta(edits, extra),
+    );
+  }
+
+  /** Inputs are already access- and selection-scoped, with the phase applied. */
+  private pipelineSummary(
+    opportunities: Opportunity[],
+    targets: Target[],
+    phase: PerformanceScope['phase'],
+  ): Pick<
+    ForecastSummary,
+    | 'openPipelineValue'
+    | 'openCount'
+    | 'closedWon'
+    | 'target'
+    | 'attainment'
+    | 'coverage'
+    | 'remainingQuota'
+    | 'avgOpenDealSize'
+  > {
+    const open = openPipeline(opportunities);
+    const closedWon = closedWonForPhase(opportunities, phase);
+    const target = targetsForPhase(targets, phase).reduce(
+      (sum, item) => sum + item.revenueTarget,
+      0,
+    );
+    return {
+      openPipelineValue: open.value,
+      openCount: open.count,
+      closedWon,
+      target,
+      coverage: coverageState(opportunities, targets, phase),
+      remainingQuota: remainingQuota(opportunities, targets, phase),
+      avgOpenDealSize: avgOpenDealSize(opportunities),
+      attainment: target > 0 ? closedWon / target : 0,
+    };
+  }
+
   /**
    * In-quarter opportunities whose partner is missing from the partner
    * dimension. They still count toward the quarter totals, but no manager
@@ -345,22 +395,9 @@ export class MockDataProvider implements DataProvider {
     const { inQuarter } = this.scopedBook(access, scope);
     const phase = phaseForQuarter(scope.quarter);
     const targets = this.scopedTargets(access, scope);
-    const open = openPipeline(inQuarter);
-    const closedWon = closedWonForPhase(inQuarter, phase);
-    const target = targetsForPhase(targets, phase).reduce(
-      (sum, item) => sum + item.revenueTarget,
-      0,
-    );
     return queryResult(
       {
-        openPipelineValue: open.value,
-        openCount: open.count,
-        closedWon,
-        target,
-        coverage: coverageState(inQuarter, targets, phase),
-        remainingQuota: remainingQuota(inQuarter, targets, phase),
-        avgOpenDealSize: avgOpenDealSize(inQuarter),
-        attainment: target > 0 ? closedWon / target : 0,
+        ...this.pipelineSummary(inQuarter, targets, phase),
         daysLeftInQuarter: daysLeftInQuarter(scope.quarter),
       },
       this.meta(scope.edits),
@@ -550,22 +587,17 @@ export class MockDataProvider implements DataProvider {
         ? a.id.localeCompare(b.id)
         : a.expectedCloseDate.localeCompare(b.expectedCloseDate),
     );
-    return queryResult(
-      paginateRows({
-        rows: ordered,
-        // The cursor is bound to the query's membership: the access scope,
-        // the quarter, and the manager decide WHICH rows belong, so a
-        // cursor minted under any other combination is foreign here. Edits
-        // are deliberately absent — they change what a row says, never
-        // which rows the book holds or how they are ordered, so a cursor
-        // survives the edit-driven window refresh.
-        queryKey: `listQuarterOpportunities|access:${demoScopeKey(access)}|quarter:${scope.quarter}|manager:${scope.partnerManagerId ?? 'all'}`,
-        asOf: this.dataEpoch(),
-        issuer: this.cursorIssuer,
-        cursor: page.cursor,
-        limit: page.limit,
-      }),
-      this.meta(scope.edits),
+    return this.pageAnswer(
+      ordered,
+      // The cursor is bound to the query's membership: the access scope,
+      // the quarter, and the manager decide WHICH rows belong, so a
+      // cursor minted under any other combination is foreign here. Edits
+      // are deliberately absent — they change what a row says, never
+      // which rows the book holds or how they are ordered, so a cursor
+      // survives the edit-driven window refresh.
+      `listQuarterOpportunities|access:${demoScopeKey(access)}|quarter:${scope.quarter}|manager:${scope.partnerManagerId ?? 'all'}`,
+      page,
+      scope.edits,
     );
   }
 
@@ -676,23 +708,10 @@ export class MockDataProvider implements DataProvider {
     const phaseOpps = filterByPhase(typed, scope.phase);
     const phaseRegistrations = filterRegistrationsByPhase(book.registrations, scope.phase);
     const funnel = registrationFunnel(phaseRegistrations);
-    const open = openPipeline(phaseOpps);
-    const closedWon = closedWonForPhase(phaseOpps, scope.phase);
-    const target = targetsForPhase(book.targets, scope.phase).reduce(
-      (sum, item) => sum + item.revenueTarget,
-      0,
-    );
     return queryResult(
       {
-        openPipelineValue: open.value,
-        openCount: open.count,
-        closedWon,
+        ...this.pipelineSummary(phaseOpps, book.targets, scope.phase),
         priorClosedWon: closedWonPriorYearForPhase(typed, scope.phase),
-        target,
-        attainment: target > 0 ? closedWon / target : 0,
-        coverage: coverageState(phaseOpps, book.targets, scope.phase),
-        remainingQuota: remainingQuota(phaseOpps, book.targets, scope.phase),
-        avgOpenDealSize: avgOpenDealSize(phaseOpps),
         winRate: winRateForPhase(phaseOpps, scope.phase),
         approvalRate: approvalRate(phaseRegistrations),
         decidedRegistrations: funnel.approved + funnel.rejected,
@@ -897,25 +916,20 @@ export class MockDataProvider implements DataProvider {
   ): Promise<QueryResult<Page<PartnerLeaderboardEntry>>> {
     throwIfAborted(context?.signal);
     const ranked = this.rankPartnerLeaderboard(access, scope);
-    return queryResult(
-      paginateRows({
-        rows: ranked,
-        // Membership and order both belong to the cursor's identity: the
-        // phase and the type lens reorder the ranking, the drill-down and
-        // the prospects decide which rows belong at all, and the revenue
-        // overrides are order-affecting edit state — unlike the pipeline
-        // table, whose expected-close ordering no session edit can move, a
-        // revenue edit can re-rank this board, so a cursor minted before it
-        // must be foreign rather than a position in the new order. The hook
-        // still restarts its loaded window on an edit rather than reusing a
-        // cursor; this is the provider-side half of the same guarantee.
-        queryKey: `listPartnerLeaderboard|access:${demoScopeKey(access)}|phase:${scope.phase}|types:${leaderboardLensKey(scope)}|${this.drilldownKey(scope)}|prospects:${prospectIdsKey(scope.prospects)}|rev:${revenueEditsKey(scope.edits)}`,
-        asOf: this.dataEpoch(),
-        issuer: this.cursorIssuer,
-        cursor: page.cursor,
-        limit: page.limit,
-      }),
-      this.meta(scope.edits),
+    return this.pageAnswer(
+      ranked,
+      // Membership and order both belong to the cursor's identity: the
+      // phase and the type lens reorder the ranking, the drill-down and
+      // the prospects decide which rows belong at all, and the revenue
+      // overrides are order-affecting edit state — unlike the pipeline
+      // table, whose expected-close ordering no session edit can move, a
+      // revenue edit can re-rank this board, so a cursor minted before it
+      // must be foreign rather than a position in the new order. The hook
+      // still restarts its loaded window on an edit rather than reusing a
+      // cursor; this is the provider-side half of the same guarantee.
+      `listPartnerLeaderboard|access:${demoScopeKey(access)}|phase:${scope.phase}|types:${leaderboardLensKey(scope)}|${this.drilldownKey(scope)}|prospects:${prospectIdsKey(scope.prospects)}|rev:${revenueEditsKey(scope.edits)}`,
+      page,
+      scope.edits,
     );
   }
 
@@ -978,16 +992,11 @@ export class MockDataProvider implements DataProvider {
         ? a.id.localeCompare(b.id)
         : a.expectedCloseDate.localeCompare(b.expectedCloseDate),
     );
-    return queryResult(
-      paginateRows({
-        rows: ordered,
-        queryKey: `listScopedOpportunities|access:${demoScopeKey(access)}|phase:${scope.phase}|type:${scope.oppType ?? 'all'}|${this.drilldownKey(scope)}`,
-        asOf: this.dataEpoch(),
-        issuer: this.cursorIssuer,
-        cursor: page.cursor,
-        limit: page.limit,
-      }),
-      this.meta(scope.edits),
+    return this.pageAnswer(
+      ordered,
+      `listScopedOpportunities|access:${demoScopeKey(access)}|phase:${scope.phase}|type:${scope.oppType ?? 'all'}|${this.drilldownKey(scope)}`,
+      page,
+      scope.edits,
     );
   }
 
@@ -1006,16 +1015,11 @@ export class MockDataProvider implements DataProvider {
     // Oldest first — the metric's stable order over an immutable book, so a
     // cursor walk over unchanged data visits every row exactly once.
     const ordered = pendingRegistrations(registrations);
-    return queryResult(
-      paginateRows({
-        rows: ordered,
-        queryKey: `listPendingRegistrations|access:${demoScopeKey(access)}|phase:${scope.phase ?? 'all'}|${this.drilldownKey(scope)}`,
-        asOf: this.dataEpoch(),
-        issuer: this.cursorIssuer,
-        cursor: page.cursor,
-        limit: page.limit,
-      }),
-      this.meta(undefined),
+    return this.pageAnswer(
+      ordered,
+      `listPendingRegistrations|access:${demoScopeKey(access)}|phase:${scope.phase ?? 'all'}|${this.drilldownKey(scope)}`,
+      page,
+      undefined,
     );
   }
 
@@ -1030,16 +1034,11 @@ export class MockDataProvider implements DataProvider {
     // Oldest decision first, exactly the order the exclusivity watch has
     // always rendered.
     const ordered = approvedNotConverted(book.registrations);
-    return queryResult(
-      paginateRows({
-        rows: ordered,
-        queryKey: `listUnconvertedRegistrations|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
-        asOf: this.dataEpoch(),
-        issuer: this.cursorIssuer,
-        cursor: page.cursor,
-        limit: page.limit,
-      }),
-      this.meta(undefined),
+    return this.pageAnswer(
+      ordered,
+      `listUnconvertedRegistrations|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
+      page,
+      undefined,
     );
   }
 
@@ -1053,16 +1052,11 @@ export class MockDataProvider implements DataProvider {
     const book = this.performanceBook(access, scope);
     // Sorted by earliest submission — the metric's own stable order.
     const ordered = duplicateRegistrationGroups(book.registrations, book.roster);
-    return queryResult(
-      paginateRows({
-        rows: ordered,
-        queryKey: `listDuplicateRegistrationGroups|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
-        asOf: this.dataEpoch(),
-        issuer: this.cursorIssuer,
-        cursor: page.cursor,
-        limit: page.limit,
-      }),
-      this.meta(undefined),
+    return this.pageAnswer(
+      ordered,
+      `listDuplicateRegistrationGroups|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
+      page,
+      undefined,
     );
   }
 
@@ -1077,16 +1071,11 @@ export class MockDataProvider implements DataProvider {
     // Newest submission first — the metric's stable total order, so a cursor
     // walk over an unchanged book visits every row exactly once.
     const ordered = registrationsNewestFirst(book.registrations);
-    return queryResult(
-      paginateRows({
-        rows: ordered,
-        queryKey: `listRecentRegistrations|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
-        asOf: this.dataEpoch(),
-        issuer: this.cursorIssuer,
-        cursor: page.cursor,
-        limit: page.limit,
-      }),
-      this.meta(undefined),
+    return this.pageAnswer(
+      ordered,
+      `listRecentRegistrations|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
+      page,
+      undefined,
     );
   }
 
@@ -1168,16 +1157,11 @@ export class MockDataProvider implements DataProvider {
     // Oldest first — the metric's stable order, so a cursor walk over an
     // unchanged week visits every meeting exactly once.
     const ordered = currentWeekMeetings(activities, scope.partnerManagerId);
-    return queryResult(
-      paginateRows({
-        rows: ordered,
-        queryKey: `listWeeklyClassificationMeetings|access:${demoScopeKey(access)}|manager:${scope.partnerManagerId}`,
-        asOf: this.dataEpoch(),
-        issuer: this.cursorIssuer,
-        cursor: page.cursor,
-        limit: page.limit,
-      }),
-      this.meta(undefined),
+    return this.pageAnswer(
+      ordered,
+      `listWeeklyClassificationMeetings|access:${demoScopeKey(access)}|manager:${scope.partnerManagerId}`,
+      page,
+      undefined,
     );
   }
 }

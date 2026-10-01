@@ -45,12 +45,8 @@ import {
   LEADERBOARD_PAGE_SIZE,
   usePartnerPerformanceQueries,
 } from '../data/usePartnerPerformanceQueries';
-import { stageRows } from './performanceRows';
-import type {
-  DuplicateRegistrationGroup,
-  RegistrationConversionTimes,
-  RegistrationFunnel,
-} from '../lib/metrics';
+import { conversionRows, funnelRows, stageRows } from './performanceRows';
+import type { DuplicateRegistrationGroup } from '../lib/metrics';
 import { formatCoverage } from '../lib/metrics';
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 
@@ -59,84 +55,6 @@ const PHASE_OPTIONS: ChipOption<FiscalPhase>[] = FISCAL_PHASES.map((phase) => ({
   label: FISCAL_PHASE_META[phase].label,
   title: FISCAL_PHASE_META[phase].description,
 }));
-
-function funnelRows(funnel: RegistrationFunnel): MetricBarRow[] {
-  return [
-    {
-      label: 'Submitted',
-      value: funnel.submitted,
-      displayValue: `${funnel.submitted}`,
-      secondary: formatUsdCompact(funnel.submittedValue),
-      color: '#8a8380',
-    },
-    {
-      label: 'Approved',
-      value: funnel.approved,
-      displayValue: `${funnel.approved}`,
-      secondary: formatUsdCompact(funnel.approvedValue),
-      color: '#b8b3b0',
-    },
-    {
-      label: 'Converted to opp',
-      value: funnel.converted,
-      displayValue: `${funnel.converted}`,
-      secondary: formatUsdCompact(funnel.convertedValue),
-      color: '#a0ca92',
-    },
-    {
-      label: 'Rejected',
-      value: funnel.rejected,
-      displayValue: `${funnel.rejected}`,
-      secondary: formatUsdCompact(funnel.rejectedValue),
-      color: '#4d4947',
-      dimmed: true,
-    },
-    {
-      label: 'Pending review',
-      value: funnel.pending,
-      displayValue: `${funnel.pending}`,
-      secondary: formatUsdCompact(funnel.pendingValue),
-      color: '#ee6018',
-    },
-  ];
-}
-
-const fmtDays = (days: number | null) => (days === null ? '—' : `${days.toFixed(1)}d`);
-
-function conversionRows(times: RegistrationConversionTimes): MetricBarRow[] {
-  return [
-    {
-      label: 'Submitted → Approved',
-      value: times.submittedToApprovedBusinessDays ?? 0,
-      displayValue: fmtDays(times.submittedToApprovedBusinessDays),
-      // The approval hop is measured in the SLA's own unit, so the bar reads
-      // directly against the response SLA.
-      secondary: `avg business days · ${REGISTRATION_SLA_BUSINESS_DAYS}-business-day SLA`,
-      color: '#7e7b78',
-    },
-    {
-      label: 'Approved → Opportunity',
-      value: times.approvedToOpportunityCalendarDays ?? 0,
-      displayValue: fmtDays(times.approvedToOpportunityCalendarDays),
-      secondary: 'avg elapsed calendar days · converted registrations',
-      color: '#9a9693',
-    },
-    {
-      label: 'Opportunity → Win',
-      value: times.opportunityToWinCalendarDays ?? 0,
-      displayValue: fmtDays(times.opportunityToWinCalendarDays),
-      secondary: 'avg elapsed calendar days · converted & won',
-      color: '#a0ca92',
-    },
-    {
-      label: 'Submitted → Win',
-      value: times.submittedToWinCalendarDays ?? 0,
-      displayValue: fmtDays(times.submittedToWinCalendarDays),
-      secondary: 'avg elapsed calendar days · converted & won',
-      color: '#b8b3b0',
-    },
-  ];
-}
 
 function leakageRows(ops: RegistrationOpsSummary): MetricBarRow[] {
   return [
@@ -614,7 +532,7 @@ export default function PartnerPerformanceView({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="Deal registration funnel" subtitle={`Registrations · ${phaseLabel}`}>
           {renderQueryState('registration funnel', queries.funnel, (funnel) => (
-            <MetricBars rows={funnelRows(funnel)} />
+            <MetricBars rows={funnelRows(funnel, 'count')} />
           ))}
         </Card>
         <Card
@@ -693,7 +611,12 @@ export default function PartnerPerformanceView({
           subtitle="Average days between each step for this scope · submitted → approved → opportunity → win"
         >
           {renderQueryState('registration conversion times', queries.ops, (ops) => (
-            <MetricBars rows={conversionRows(ops.times)} />
+            <MetricBars
+              rows={conversionRows(
+                ops.times,
+                `avg business days · ${REGISTRATION_SLA_BUSINESS_DAYS}-business-day SLA`,
+              )}
+            />
           ))}
         </Card>
         <Card

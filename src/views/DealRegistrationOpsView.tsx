@@ -2,7 +2,7 @@ import Card from '../components/Card';
 import DuplicateRegistrationsTable from '../components/DuplicateRegistrationsTable';
 import ExclusivityTable from '../components/ExclusivityTable';
 import KpiTile from '../components/KpiTile';
-import MetricBars, { type MetricBarRow } from '../components/MetricBars';
+import MetricBars from '../components/MetricBars';
 import { QueryFailure, renderQueryState, useRetryRecovery } from '../components/QueryState';
 import PageFooter from '../components/PageFooter';
 import RegistrationsTable from '../components/RegistrationsTable';
@@ -19,45 +19,9 @@ import type { QueryState } from '../data/queryState';
 import { useRegistrationOpsQueries } from '../data/useRegistrationOpsQueries';
 import type { DealRegistration, Partner } from '../data/types';
 import type { WorkflowActions } from '../data/workflows';
-import { formatDate } from '../lib/format';
-import type { DuplicateRegistrationGroup, RegistrationConversionTimes } from '../lib/metrics';
-
-const fmtDays = (days: number | null) => (days === null ? '—' : `${days.toFixed(1)}d`);
-
-function conversionRows(times: RegistrationConversionTimes): MetricBarRow[] {
-  return [
-    {
-      label: 'Submitted → Approved',
-      value: times.submittedToApprovedBusinessDays ?? 0,
-      displayValue: fmtDays(times.submittedToApprovedBusinessDays),
-      // The approval hop is measured in the SLA's own unit, so the bar reads
-      // directly against the response SLA.
-      secondary: 'avg business days · vs 5-business-day SLA',
-      color: '#7e7b78',
-    },
-    {
-      label: 'Approved → Opportunity',
-      value: times.approvedToOpportunityCalendarDays ?? 0,
-      displayValue: fmtDays(times.approvedToOpportunityCalendarDays),
-      secondary: 'avg elapsed calendar days · converted registrations',
-      color: '#9a9693',
-    },
-    {
-      label: 'Opportunity → Win',
-      value: times.opportunityToWinCalendarDays ?? 0,
-      displayValue: fmtDays(times.opportunityToWinCalendarDays),
-      secondary: 'avg elapsed calendar days · converted & won',
-      color: '#a0ca92',
-    },
-    {
-      label: 'Submitted → Win',
-      value: times.submittedToWinCalendarDays ?? 0,
-      displayValue: fmtDays(times.submittedToWinCalendarDays),
-      secondary: 'avg elapsed calendar days · converted & won',
-      color: '#b8b3b0',
-    },
-  ];
-}
+import { formatDate, formatDays } from '../lib/format';
+import type { DuplicateRegistrationGroup } from '../lib/metrics';
+import { conversionRows } from './performanceRows';
 
 /** The review queue: pending registrations, oldest first, a page at a time. */
 function ReviewQueueCard({
@@ -226,22 +190,22 @@ export default function DealRegistrationOpsView({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <KpiTile
             label="Submitted → approved"
-            value={fmtDays(ops.times.submittedToApprovedBusinessDays)}
+            value={formatDays(ops.times.submittedToApprovedBusinessDays)}
             sub={`avg business days · ${REGISTRATION_SLA_BUSINESS_DAYS}-business-day SLA`}
           />
           <KpiTile
             label="Approved → opportunity"
-            value={fmtDays(ops.times.approvedToOpportunityCalendarDays)}
+            value={formatDays(ops.times.approvedToOpportunityCalendarDays)}
             sub="avg elapsed calendar days · converted regs"
           />
           <KpiTile
             label="Opportunity → win"
-            value={fmtDays(ops.times.opportunityToWinCalendarDays)}
+            value={formatDays(ops.times.opportunityToWinCalendarDays)}
             sub="avg elapsed calendar days · converted & won"
           />
           <KpiTile
             label="Submitted → win"
-            value={fmtDays(ops.times.submittedToWinCalendarDays)}
+            value={formatDays(ops.times.submittedToWinCalendarDays)}
             sub="avg elapsed calendar days · converted & won"
           />
           <KpiTile
@@ -262,7 +226,9 @@ export default function DealRegistrationOpsView({
         subtitle="Average days between each step of the chain: submitted → approved → opportunity created → win"
       >
         {renderQueryState('registration conversion times', queries.ops, (ops) => (
-          <MetricBars rows={conversionRows(ops.times)} />
+          <MetricBars
+            rows={conversionRows(ops.times, 'avg business days · vs 5-business-day SLA')}
+          />
         ))}
         <p className="mt-4 text-xs text-granite">
           Each hop averages only the registrations that reached it. The approval hop is measured in

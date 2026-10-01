@@ -24,8 +24,8 @@ import { pageWindowAsQuery } from '../data/paginationState';
 import type { SessionEdits } from '../data/sessionEdits';
 import type { FiscalPhase, MeetingClassification, OpportunityType, Partner } from '../data/types';
 import { useHomeQueries } from '../data/useHomeQueries';
-import { stageRows } from './performanceRows';
-import type { RegistrationFunnel, TypeRow } from '../lib/metrics';
+import { funnelRows, stageRows } from './performanceRows';
+import type { TypeRow } from '../lib/metrics';
 import { formatCoverage } from '../lib/metrics';
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 
@@ -51,45 +51,6 @@ const FUNNEL_MEASURE_OPTIONS: ChipOption<FunnelMeasure>[] = [
   { id: 'value', label: 'Registered $', title: 'Partner-estimated deal value at submission' },
   { id: 'count', label: 'Count', title: 'Number of registrations' },
 ];
-
-function funnelRows(funnel: RegistrationFunnel, measure: FunnelMeasure): MetricBarRow[] {
-  const stages = [
-    {
-      label: 'Submitted',
-      count: funnel.submitted,
-      amount: funnel.submittedValue,
-      color: '#8a8380',
-    },
-    { label: 'Approved', count: funnel.approved, amount: funnel.approvedValue, color: '#b8b3b0' },
-    {
-      label: 'Converted to opp',
-      count: funnel.converted,
-      amount: funnel.convertedValue,
-      color: '#a0ca92',
-    },
-    {
-      label: 'Rejected',
-      count: funnel.rejected,
-      amount: funnel.rejectedValue,
-      color: '#4d4947',
-      dimmed: true,
-    },
-    {
-      label: 'Pending review',
-      count: funnel.pending,
-      amount: funnel.pendingValue,
-      color: '#ee6018',
-    },
-  ];
-  return stages.map((stage) => ({
-    label: stage.label,
-    value: measure === 'value' ? stage.amount : stage.count,
-    displayValue: measure === 'value' ? formatUsdCompact(stage.amount) : `${stage.count}`,
-    secondary: measure === 'value' ? `${stage.count} regs` : formatUsdCompact(stage.amount),
-    color: stage.color,
-    dimmed: stage.dimmed,
-  }));
-}
 
 function typeRows(types: TypeRow[]): MetricBarRow[] {
   return types.map((row) => ({
