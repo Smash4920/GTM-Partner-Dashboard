@@ -27,7 +27,7 @@ function kpiTile(page: Page, label: string) {
   return page.getByText(label, { exact: true }).and(page.locator('p')).locator('..');
 }
 
-test('VAL-DATA-002: an unmet target shows a finite coverage ratio', async ({ page }) => {
+test('seeded target smoke: an unmet target shows a finite coverage ratio', async ({ page }) => {
   await openPartnerPerformance(page);
 
   // Northwind Solutions: $1.5M open in Q3 against a $168K target, nothing
@@ -43,7 +43,7 @@ test('VAL-DATA-002: an unmet target shows a finite coverage ratio', async ({ pag
   await expect(coverageTile).not.toContainText('No target');
 });
 
-test('VAL-DATA-002: a scope with no committed target says No target, never Target met', async ({
+test('seeded target smoke: a scope with no committed target says No target, never Target met', async ({
   page,
 }) => {
   await openPartnerPerformance(page);
@@ -65,7 +65,7 @@ test('VAL-DATA-002: a scope with no committed target says No target, never Targe
   await expect(page.getByText(/∞|NaN/)).toHaveCount(0);
 });
 
-test('VAL-DATA-002: a partner whose closed-won reached the target shows Target met', async ({
+test('seeded target smoke: a partner whose closed-won reached the target shows Target met', async ({
   page,
 }) => {
   await openPartnerPerformance(page);
@@ -84,7 +84,7 @@ test('VAL-DATA-002: a partner whose closed-won reached the target shows Target m
   await expect(closedWonTile).toContainText('290% of Q3 target');
 });
 
-test('VAL-DATA-002: the whole-org home tile shows Target met, not a ratio over a zero gap', async ({
+test('seeded target smoke: the whole-org home tile shows Target met, not a ratio over a zero gap', async ({
   page,
 }) => {
   await page.goto('/');

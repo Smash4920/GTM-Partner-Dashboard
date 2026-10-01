@@ -37,7 +37,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:coverage:ci": "vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=test-results/vitest-junit.xml",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/run-e2e.mjs",
+    "test:e2e:fixture-preview": "node scripts/target-state-preview.mjs",
     "test:list": "vitest list",
     "preview": "vite preview"
   },

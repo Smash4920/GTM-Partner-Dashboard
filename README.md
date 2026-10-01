@@ -332,6 +332,12 @@ npm run bundle:check    # build, enforce compressed JS budgets, and create a tre
 npm run preview
 ```
 
+For the complete four-route, three-state target matrix, run
+`npm run test:e2e -- --grep VAL-DATA-002`. See
+[target-state browser evidence](docs/testing-target-states.md) for isolated
+production-built fixtures, serial preview teardown, and screenshot/report paths.
+These test entries never ship in the ordinary production build.
+
 ### Test performance
 
 CI records the duration of every Vitest test and suite in
