@@ -134,7 +134,7 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
   each carry a pencil. An edited revenue forecast overrides the Salesforce
   figure and immediately updates every metric across the app, so a manager's
   number can differ from the CRM's. Notes never render inline — they are stored
-  as comments and appear on hover over the comment icon. Next Step is an
+  as comments and open through the comment disclosure. Next Step is an
   inline editable text field per row
 - **Forecast Category is an editable call, not a derived badge.** The deal's
   stage supplies a starting point (Discovery → Long Shot, Scope → Pipeline,
@@ -179,6 +179,17 @@ and provider lineage/as-of through a keyboard/touch disclosure. Internal links
 open an explicit entity context in Forecasting, Deal Reg Ops, or the selected
 partner's Partner Performance view. The destination retains its reporting window,
 so an out-of-window entity may not be in its table.
+
+Once visited, Forecasting and Action Center retain their loaded pages and
+filters during the current provider session. Returning from an internal
+context restores focus to its exact action link, or the heading if the action
+was resolved. Editors restore focus to the
+row control after Save or Escape. Revenue and category edits refresh only their
+dependent forecast queries; notes and next steps refresh Action Center without
+refetching forecast aggregates. Membership-changing revenue/next-step edits
+restart Action Center paging; note-only changes retain its loaded window.
+Overlays replace source values once, and customer prose never enters logs or
+telemetry. A committed provider change clears these retained views and edits.
 
 Registration decisions are available from registration actions and Deal Reg Ops.
 Conflict dispositions name all competing registration IDs. Revenue/category

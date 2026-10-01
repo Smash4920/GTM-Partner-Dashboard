@@ -108,8 +108,16 @@ export default function App({
   const [route, setRoute] = useState<Route>('home');
   const [actionContext, setActionContext] = useState<ActionItem | null>(null);
   const contextHeading = useRef<HTMLHeadingElement | null>(null);
+  const contextInvoker = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (actionContext) contextHeading.current?.focus();
+    else if (contextInvoker.current) {
+      (contextInvoker.current.isConnected
+        ? contextInvoker.current
+        : document.querySelector<HTMLElement>('h1')
+      )?.focus();
+      contextInvoker.current = null;
+    }
   }, [actionContext]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -156,6 +164,7 @@ export default function App({
   // every piece of session state resets in the same batch, because an edit
   // recorded against one provider's ids is meaningless to another's.
   const resetSessionState = useCallback(() => {
+    contextInvoker.current = null;
     setActionContext(null);
     setRevenueOverrides({});
     setNotes({});
@@ -538,6 +547,7 @@ export default function App({
           route={route}
           hiddenRoutes={hiddenRoutes(productionRequirementsEnabled)}
           onNavigate={(nextRoute) => {
+            contextInvoker.current = null;
             setActionContext(null);
             setRoute(nextRoute);
             setMobileNavOpen(false);
@@ -578,11 +588,7 @@ export default function App({
                 Partner: {actionContext.partnerId} · reporting snapshot{' '}
                 {formatDate(SNAPSHOT_DATE.toISOString())}
               </p>
-              <p>
-                This is the internal context for the selected entity. The route below keeps its own
-                scoped filters; an entity outside its current reporting window may not appear in its
-                table.
-              </p>
+              <p>An entity outside this route's reporting window may not appear in its table.</p>
               <button
                 type="button"
                 className="rounded border border-ash px-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-bone"
@@ -596,6 +602,7 @@ export default function App({
             </section>
           )}
           <RouteContent
+            key={`${providerId}:${committed.generation}`}
             route={route}
             providerId={providerId}
             generation={committed.generation}
@@ -620,6 +627,7 @@ export default function App({
             onRemoveTeamUser={removeTeamUser}
             onSendNotification={sendNotification}
             onOpenActionContext={(item) => {
+              contextInvoker.current = document.activeElement as HTMLElement;
               setActionContext(item);
               setRoute(actionDestination(item).route);
             }}
@@ -722,6 +730,14 @@ function RouteContent({
   contextPartnerId,
   onWorkflow,
 }: RouteContentProps) {
+  // Keep only the two edit/action surfaces once visited. Hidden routes retain
+  // loaded windows and filters; provider commits remount this coordinator.
+  const [retained, setRetained] = useState<Route[]>([]);
+  useEffect(() => {
+    if (route === 'forecasting' || route === 'action-center') {
+      setRetained((previous) => (previous.includes(route) ? previous : [...previous, route]));
+    }
+  }, [route]);
   // The key is the selection-reconciliation rule: a new committed provider
   // generation remounts the route, so view-local selections — a manager
   // filter, an expanded group, a picked partner — reset to their defaults
@@ -735,22 +751,24 @@ function RouteContent({
   // provider transition notice stay put while the chunk downloads.
   return (
     <Suspense fallback={<QueryLoading label={ROUTE_LOADING_LABEL[route]} />}>
-      {route === 'action-center' && (
-        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:action-center`}>
-          <ActionCenterView
-            provider={provider}
-            policy={actionPolicy}
-            onPolicyChange={onPolicyChange}
-            edits={forecastEdits}
-            classifications={classifications}
-            prospects={prospects}
-            roster={{ overrides: teamUserOverrides, added: addedTeamUsers }}
-            onSendNotification={onSendNotification}
-            notifications={notifications}
-            onOpenContext={onOpenActionContext}
-            onWorkflow={onWorkflow}
-          />
-        </ErrorBoundary>
+      {(route === 'action-center' || retained.includes('action-center')) && (
+        <div hidden={route !== 'action-center'}>
+          <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:action-center`}>
+            <ActionCenterView
+              provider={provider}
+              policy={actionPolicy}
+              onPolicyChange={onPolicyChange}
+              edits={forecastEdits}
+              classifications={classifications}
+              prospects={prospects}
+              roster={{ overrides: teamUserOverrides, added: addedTeamUsers }}
+              onSendNotification={onSendNotification}
+              notifications={notifications}
+              onOpenContext={onOpenActionContext}
+              onWorkflow={onWorkflow}
+            />
+          </ErrorBoundary>
+        </div>
       )}
       {route === 'production-requirements' && (
         <FlaggedContent enabled={productionRequirementsEnabled}>
@@ -773,17 +791,20 @@ function RouteContent({
           />
         </ErrorBoundary>
       )}
-      {route === 'forecasting' && (
-        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:forecasting`}>
-          <ForecastingView
-            provider={provider}
-            edits={forecastEdits}
-            onSetRevenue={onSetRevenue}
-            onSetNote={onSetNote}
-            onSetNextStep={onSetNextStep}
-            onSetForecastCall={onSetForecastCall}
-          />
-        </ErrorBoundary>
+      {(route === 'forecasting' || retained.includes('forecasting')) && (
+        <div hidden={route !== 'forecasting'}>
+          <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:forecasting`}>
+            <ForecastingView
+              active={route === 'forecasting'}
+              provider={provider}
+              edits={forecastEdits}
+              onSetRevenue={onSetRevenue}
+              onSetNote={onSetNote}
+              onSetNextStep={onSetNextStep}
+              onSetForecastCall={onSetForecastCall}
+            />
+          </ErrorBoundary>
+        </div>
       )}
       {route === 'home' && (
         <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:home`}>

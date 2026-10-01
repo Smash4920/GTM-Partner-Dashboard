@@ -72,6 +72,9 @@ describe('App', () => {
   });
 
   it('mounts every route against real generated data', async () => {
+    // Cold chunk fetches are covered by the production-preview browser suite.
+    // Avoid timing Vitest's coverage transformation as route readiness here.
+    await import('./views/system');
     const user = await renderApp();
 
     for (const [label, heading] of ROUTES) {

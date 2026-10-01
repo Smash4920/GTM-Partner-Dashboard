@@ -59,8 +59,11 @@ test('VAL-ACT-016: all five categories create selected-channel simulated local r
   const nav = page.getByRole('navigation', { name: 'Primary' });
   await nav.getByRole('button', { name: 'Data Connections', exact: true }).click();
   await expect(page.getByText('Sent this session · 5')).toBeVisible();
+  const notificationLog = page
+    .getByRole('heading', { name: 'Deal-registration SLA alerts' })
+    .locator('xpath=ancestor::section[1]');
   for (const [, label] of categories)
-    await expect(page.getByText(new RegExp(`^${label}:`)).first()).toBeVisible();
+    await expect(notificationLog.getByText(new RegExp(`^${label}:`)).first()).toBeVisible();
   expect(
     await page.evaluate(() => [Object.entries(localStorage), Object.entries(sessionStorage)]),
   ).toEqual(before);

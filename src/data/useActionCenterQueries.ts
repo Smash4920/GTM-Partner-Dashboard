@@ -3,7 +3,7 @@ import type { DemoAccessScope } from './accessScope';
 import { actionCenterScopeKey } from './actionCenter';
 import type { ActionCenterScope } from './actionCenter';
 import type { DataProvider } from './DataProvider';
-import { useScopedQuery } from './queryState';
+import { editMapKey, useScopedQuery } from './queryState';
 import { usePaginatedRows } from './paginationState';
 
 export function useActionCenterQueries({
@@ -18,12 +18,7 @@ export function useActionCenterQueries({
   const key = `action-center|${demoScopeKey(access)}|${actionCenterScopeKey(scope)}`;
   // Notes invalidate the Action Center projection without changing membership
   // or order. Keep its cursor and loaded window; never emit this local key.
-  const notes = scope.edits?.notes ?? {};
-  const noteKey = JSON.stringify(
-    Object.keys(notes)
-      .sort()
-      .map((id) => [id, notes[id]]),
-  );
+  const noteKey = editMapKey(scope.edits?.notes ?? {});
   const summary = useScopedQuery({
     provider,
     queryKey: `${key}|${noteKey}`,

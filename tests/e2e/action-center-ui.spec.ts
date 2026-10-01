@@ -69,6 +69,7 @@ test('VAL-ACT-012: all five evidence disclosures support keyboard and touch with
   ];
   for (const [index, [category]] of CATEGORIES.entries()) {
     await nav.getByRole('button', { name: 'Action Center', exact: true }).click();
+    await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
     await page.getByRole('checkbox', { name: category, exact: true }).check();
     const row = page.getByTestId('action-item').first();
     await expect(row).toContainText(category);
@@ -109,6 +110,7 @@ test('VAL-ACT-012: all five evidence disclosures support keyboard and touch with
     await context.getByRole('button', { name: 'Back to Action Center', exact: true }).click();
   }
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Registration SLA', exact: true }).check();
   const row = page.getByTestId('action-item').first();
   await row.getByRole('button', { name: /Show evidence/ }).tap();

@@ -63,6 +63,21 @@ describe('Action Center scoped queries', () => {
     });
     await waitFor(() => expect(summary).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    const edits = {
+      ...NO_SESSION_EDITS,
+      nextSteps: { 'opp-1': 'Confirm' },
+      revenueOverrides: { 'opp-1': 400_000 },
+    };
+    rerender({ ...initialScope, edits });
+    await waitFor(() => expect(summary).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+    expect(list.mock.calls[2]?.[2]).toEqual({ limit: 25 });
+    rerender({
+      ...initialScope,
+      edits: { ...edits, revenueOverrides: { ...edits.revenueOverrides } },
+    });
+    expect(summary).toHaveBeenCalledTimes(3);
+    expect(list).toHaveBeenCalledTimes(3);
   });
 
   it('refreshes note-only changes without resetting loaded pages or cursor identity', async () => {

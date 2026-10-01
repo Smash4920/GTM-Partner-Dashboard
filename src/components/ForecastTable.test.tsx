@@ -37,6 +37,26 @@ function renderTable(
 }
 
 describe('ForecastTable', () => {
+  it.each([
+    ['note', 'Enter'],
+    ['note', 'Escape'],
+    ['next step', 'Enter'],
+    ['next step', 'Escape'],
+    ['revenue forecast', 'Enter'],
+    ['revenue forecast', 'Escape'],
+  ])(
+    'restores the %s invoker after keyboard %s without reopening its editor',
+    async (field, key) => {
+      const user = userEvent.setup();
+      renderTable();
+      const name = new RegExp(`^(Add|Edit) ${field} for`);
+      await user.click(screen.getByRole('button', { name }));
+      await user.keyboard(`{${key}}`);
+      expect(screen.getByRole('button', { name })).toHaveFocus();
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    },
+  );
+
   describe('revenue editing', () => {
     it('commits a valid figure on Enter', async () => {
       const user = userEvent.setup();

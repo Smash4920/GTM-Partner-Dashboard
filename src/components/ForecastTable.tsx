@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   FORECAST_CATEGORIES,
   FORECAST_CATEGORY_FOR_STAGE,
@@ -286,6 +286,20 @@ export default function ForecastTable({
   const [noteDraft, setNoteDraft] = useState('');
   const [nextStepDraft, setNextStepDraft] = useState('');
   const [revenueError, setRevenueError] = useState<string | null>(null);
+  const invoker = useRef<Element | null>(null);
+  useEffect(() => {
+    if (editingRevenue || editingNotes || editingNextStep || editingCategory) return;
+    const saved = invoker.current;
+    invoker.current = null;
+    if (
+      !saved ||
+      !(document.activeElement === document.body || saved.contains(document.activeElement))
+    )
+      return;
+    // The editor invoker is the final button in each editable cell, including
+    // notes where a disclosure precedes it. Its label may change Add → Edit.
+    Array.from(saved.querySelectorAll('button')).at(-1)?.focus();
+  }, [editingRevenue, editingNotes, editingNextStep, editingCategory]);
 
   const startRevenueEdit = (opportunityId: string) => {
     setEditingNotes(null);
@@ -387,6 +401,17 @@ export default function ForecastTable({
       tabIndex={0}
       role="region"
       aria-label="In-quarter opportunities, scrollable"
+      onKeyDownCapture={(event) => {
+        if (event.key === 'Enter' && (event.target as Element).tagName === 'INPUT') {
+          event.preventDefault();
+        }
+      }}
+      onClickCapture={(event) => {
+        if (editingRevenue || editingNotes || editingNextStep || editingCategory) return;
+        const button = (event.target as Element).closest('button');
+        const cell = button?.closest('td');
+        if (cell) invoker.current = cell;
+      }}
     >
       <table className="w-full min-w-[1180px] text-sm">
         <thead className="sticky top-0 z-[1] bg-canvas">

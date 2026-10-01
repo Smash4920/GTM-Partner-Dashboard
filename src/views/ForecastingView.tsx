@@ -49,6 +49,7 @@ interface ForecastEditHandlers {
 interface ForecastingViewProps extends ForecastEditHandlers {
   provider: DataProvider;
   edits: SessionEdits;
+  active?: boolean;
 }
 
 /**
@@ -82,6 +83,7 @@ export default function ForecastingView({
   onSetNote,
   onSetNextStep,
   onSetForecastCall,
+  active = true,
 }: ForecastingViewProps) {
   const [filterManagerId, setFilterManagerId] = useState('all');
   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
@@ -284,17 +286,17 @@ export default function ForecastingView({
                 While a manager filter is active the line sits out entirely:
                 the bars are organization-level history, so a manager-scoped
                 goal drawn across them would mix two scopes in one picture. */}
-            <WeeklyForecastChart
-              rows={rows}
-              goal={filterManagerId === 'all' ? summary.data?.target : undefined}
-            />
+            {active && (
+              <WeeklyForecastChart
+                rows={rows}
+                goal={filterManagerId === 'all' ? summary.data?.target : undefined}
+              />
+            )}
             <p className="mt-4 text-xs text-granite">
-              {recordedWeeks} closed weeks are read from the weekly pipeline snapshot, each one the
-              open book as it stood that Friday, so they never move: re-call a deal or correct its
-              revenue today and only the live week changes. The live week is as of the snapshot
-              date, which is why it matches the tiles above. A bar falling week-over-week is
-              pipeline that closed, was lost, or slipped out of the quarter — the amount a deal was
-              called at, and the week it moved, are both recorded, so the table below says which.
+              {recordedWeeks} closed weeks use recorded snapshots and never change with session
+              edits. Revenue and category edits affect only the live week, as of the reporting
+              snapshot. Reconstructed weeks are labeled separately. Pipeline can fall when deals
+              close, are lost, or slip out of the quarter.
             </p>
           </>
         ))}
@@ -367,10 +369,8 @@ export default function ForecastingView({
           );
         })}
         <p className="mt-4 text-xs text-granite">
-          Stage is a fact about process; the forecast category is a judgment about whether the deal
-          lands. Where they agree the category adds nothing, so these disagreements are the forecast
-          conversation. Change any row's category in the table below and every number on this page
-          moves with it.
+          Stage describes process; forecast category is the manager's call. Category edits update
+          weighted forecast, quality and the live week, not pipeline totals or targets.
         </p>
       </Card>
 
@@ -466,13 +466,11 @@ export default function ForecastingView({
           </div>
         ))}
         <p className="mt-4 text-xs text-granite">
-          Columns per manager: open pipeline, then closed-won. Pencil = edit. Revenue edits update
-          every metric above and across the app immediately; the forecast category pencil opens the
-          dropdown of probability buckets (Commit 90%, Best Case 50%, Pipeline 25%, Long Shot 10%)
-          and re-calls the deal, which re-weights the forecast tiles above — closed rows have no
-          call left to make; notes are saved as comments and appear on hover over the comment icon;
-          next step is the row-level editable action that feeds the roadmap's missing-next-step
-          alerts. One page of 25 rows is fetched per expanded manager, not the whole book.
+          Manager totals: open pipeline, closed-won. Pencil = session-only edit. Revenue and
+          category edits update dependent forecasts; next steps feed Action Center alerts. Notes
+          open through the comment disclosure, not hover. Closed deals have no forecast-category
+          edit. Each expanded manager loads 25 rows at a time; loaded pages survive edits and
+          navigation to Action Center.
         </p>
       </Card>
     </div>

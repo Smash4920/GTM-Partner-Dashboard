@@ -40,7 +40,9 @@ export default function ActionCenterView({
   });
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-medium text-bone">Action Center</h1>
+      <h1 tabIndex={-1} className="text-2xl font-medium text-bone">
+        Action Center
+      </h1>
       <p className="max-w-3xl text-sm text-granite">
         Internal demo · policy, routing and notifications are session-only. Refresh loses this
         state. Notifications are simulated/local-only, with no external delivery, persistence or

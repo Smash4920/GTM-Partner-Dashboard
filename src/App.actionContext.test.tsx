@@ -1,10 +1,94 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import App from './App';
 import { MockDataProvider } from './data/mock/MockDataProvider';
+import { makeOpportunity, makePartner, makeProviderBook } from './test/fixtures';
 
 describe('Action Center contextual navigation', () => {
+  it('VAL-CROSS-003 retains edited forecast pages and Action Center filters, pages and return focus', async () => {
+    // Component fixtures exercise retention, not cold chunk transformation.
+    // The production-preview test covers the real lazy-loading boundary.
+    await import('./views/ActionCenterView');
+    const user = userEvent.setup();
+    const provider = new MockDataProvider(
+      makeProviderBook({
+        partnerManagers: [{ id: 'pm-1', name: 'Demo manager' }],
+        partners: [makePartner({ partnerManagerId: 'pm-1' })],
+        registrations: [],
+        opportunities: Array.from({ length: 30 }, (_, index) =>
+          makeOpportunity({
+            id: `context-${index}`,
+            accountName: `Context ${index}`,
+            forecastedRevenue: 400_000,
+            createdAt: '2026-08-01T00:00:00.000Z',
+            expectedCloseDate: '2026-09-25T00:00:00.000Z',
+            nextStep: '',
+          }),
+        ),
+      }),
+    );
+    render(<App providerFactory={() => provider} />);
+    const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
+    await user.click(nav.getByRole('button', { name: 'Forecasting' }));
+    await screen.findByText('Showing 25 of 30');
+    await user.click(screen.getByRole('button', { name: 'Load 25 more' }));
+    await screen.findByText('Showing 30 of 30');
+    const edit = screen.getByRole('button', { name: 'Edit revenue forecast for Context 0' });
+    await user.click(edit);
+    await user.clear(screen.getByRole('textbox', { name: 'Revenue forecast for Context 0' }));
+    await user.type(
+      screen.getByRole('textbox', { name: 'Revenue forecast for Context 0' }),
+      '500000{Enter}',
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Edit revenue forecast for Context 0' }),
+      ).toHaveFocus(),
+    );
+    await user.click(nav.getByRole('button', { name: 'Action Center' }));
+    await screen.findByText('30 unique items');
+    await user.click(screen.getByRole('checkbox', { name: 'Missing next step' }));
+    await user.click(screen.getByRole('button', { name: 'Load 25 more' }));
+    await screen.findByText('Showing 30 of 30 action items');
+    const row = screen
+      .getAllByTestId('action-item')
+      .find((item) => item.dataset.actionId === 'opportunity:context-0')!;
+    expect(row).toHaveTextContent('$500,000');
+    const link = within(row).getByRole('link', { name: 'Open Forecasting context' });
+    await user.click(link);
+    expect(screen.getByText('Showing 30 of 30')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Back to Action Center' }));
+    expect(screen.getByText('Showing 30 of 30 action items')).toBeVisible();
+    expect(screen.getByRole('checkbox', { name: 'Missing next step' })).toBeChecked();
+    expect(link).toHaveFocus();
+  });
+
+  it('returns focus to the Action Center heading if an edited next step resolves the selected action', async () => {
+    const user = userEvent.setup();
+    const provider = new MockDataProvider(
+      makeProviderBook({
+        registrations: [],
+        opportunities: [
+          makeOpportunity({ nextStep: '', lastActivityAt: '2026-09-18T00:00:00.000Z' }),
+        ],
+      }),
+    );
+    render(<App providerFactory={() => provider} />);
+    const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
+    await user.click(nav.getByRole('button', { name: 'Action Center' }));
+    await screen.findByText('1 unique items');
+    await user.click(screen.getByRole('link', { name: 'Open Forecasting context' }));
+    await user.click(await screen.findByRole('button', { name: 'Add next step for Acme Freight' }));
+    await user.type(
+      screen.getByRole('textbox', { name: 'Next step for Acme Freight' }),
+      'Follow up{Enter}',
+    );
+    await user.click(screen.getByRole('button', { name: 'Back to Action Center' }));
+    await screen.findByText('0 unique items');
+    expect(screen.getByRole('heading', { name: 'Action Center', level: 1 })).toHaveFocus();
+  });
+
   it.each([
     ['Missing next step', 'Open Forecasting context', 'Forecasting'],
     ['Registration SLA', 'Open Deal Reg Ops context', 'Deal Registration Operations'],
@@ -32,7 +116,8 @@ describe('Action Center contextual navigation', () => {
         expect(screen.getByLabelText('Partner')).toHaveValue(id?.split(':')[1]);
       }
       await user.click(within(context).getByRole('button', { name: 'Back to Action Center' }));
-      await screen.findByText('85 unique items');
+      expect(screen.getByRole('checkbox', { name: category })).toBeChecked();
+      expect(action).toHaveFocus();
       expect(screen.queryByRole('region', { name: 'Action context' })).not.toBeInTheDocument();
       await user.click(nav.getByRole('button', { name: 'Home' }));
       expect(screen.queryByRole('region', { name: 'Action context' })).not.toBeInTheDocument();
