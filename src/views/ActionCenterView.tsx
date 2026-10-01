@@ -12,6 +12,7 @@ import { pageWindowAsQuery } from '../data/paginationState';
 import { useActionCenterQueries } from '../data/useActionCenterQueries';
 import type { ActionItem, ActionPolicy, DashboardNotification } from '../data/types';
 import type { NotificationDraft } from '../lib/notifications';
+import type { WorkflowActions } from '../data/workflows';
 
 export default function ActionCenterView({
   provider,
@@ -20,6 +21,7 @@ export default function ActionCenterView({
   onSendNotification,
   notifications = [],
   onOpenContext,
+  onWorkflow,
   ...sessionScope
 }: {
   provider: DataProvider;
@@ -28,7 +30,8 @@ export default function ActionCenterView({
   onSendNotification?: (draft: NotificationDraft) => void;
   notifications?: DashboardNotification[];
   onOpenContext?: (item: ActionItem) => void;
-} & Pick<ActionCenterScope, 'edits' | 'roster' | 'classifications' | 'prospects'>) {
+} & WorkflowActions &
+  Pick<ActionCenterScope, 'edits' | 'roster' | 'classifications' | 'prospects'>) {
   const [filters, setFilters] = useState<NonNullable<ActionCenterScope['filters']>>({});
   const { summary, items } = useActionCenterQueries({
     provider,
@@ -153,6 +156,7 @@ export default function ActionCenterView({
                   onSendNotification={onSendNotification}
                   notifications={notifications}
                   onOpenContext={onOpenContext}
+                  onWorkflow={onWorkflow}
                 />
               ))}
             </ul>

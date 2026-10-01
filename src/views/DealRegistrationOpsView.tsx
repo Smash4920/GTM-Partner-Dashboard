@@ -18,6 +18,7 @@ import type { PaginationState } from '../data/paginationState';
 import type { QueryState } from '../data/queryState';
 import { useRegistrationOpsQueries } from '../data/useRegistrationOpsQueries';
 import type { DealRegistration, Partner } from '../data/types';
+import type { WorkflowActions } from '../data/workflows';
 import { formatDate } from '../lib/format';
 import type { DuplicateRegistrationGroup, RegistrationConversionTimes } from '../lib/metrics';
 
@@ -63,11 +64,12 @@ function ReviewQueueCard({
   pending,
   ops,
   roster,
+  onWorkflow,
 }: {
   pending: PaginationState<DealRegistration>;
   ops: QueryState<RegistrationOpsSummary>;
   roster: Partner[];
-}) {
+} & WorkflowActions) {
   return (
     <Card
       title="Registrations awaiting review"
@@ -84,6 +86,7 @@ function ReviewQueueCard({
             partners={roster}
             variant="queue"
             limit={rows.length}
+            onWorkflow={onWorkflow}
           />
           {ops.data !== null && (
             <p className="mt-4 text-xs text-granite">
@@ -137,10 +140,11 @@ function ExclusivityCard({
 function DuplicatesCard({
   duplicates,
   roster,
+  onWorkflow,
 }: {
   duplicates: PaginationState<DuplicateRegistrationGroup>;
   roster: Partner[];
-}) {
+} & WorkflowActions) {
   return (
     <Card
       title="Duplicate & conflicting registrations"
@@ -152,7 +156,12 @@ function DuplicatesCard({
     >
       {renderQueryState('duplicate registrations', pageWindowAsQuery(duplicates), (groups) => (
         <>
-          <DuplicateRegistrationsTable groups={groups} partners={roster} limit={groups.length} />
+          <DuplicateRegistrationsTable
+            groups={groups}
+            partners={roster}
+            limit={groups.length}
+            onWorkflow={onWorkflow}
+          />
           <PageFooter state={duplicates} noun="duplicate groups" pageSize={8} />
         </>
       ))}
@@ -180,10 +189,11 @@ function DuplicatesCard({
 export default function DealRegistrationOpsView({
   provider,
   prospects,
+  onWorkflow,
 }: {
   provider: DataProvider;
   prospects: Partner[];
-}) {
+} & WorkflowActions) {
   const queries = useRegistrationOpsQueries({
     provider,
     access: INTERNAL_DEMO_SCOPE,
@@ -277,11 +287,16 @@ export default function DealRegistrationOpsView({
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ReviewQueueCard pending={queries.pending} ops={queries.ops} roster={roster} />
+        <ReviewQueueCard
+          pending={queries.pending}
+          ops={queries.ops}
+          roster={roster}
+          onWorkflow={onWorkflow}
+        />
         <ExclusivityCard unconverted={queries.unconverted} ops={queries.ops} roster={roster} />
       </div>
 
-      <DuplicatesCard duplicates={queries.duplicates} roster={roster} />
+      <DuplicatesCard duplicates={queries.duplicates} roster={roster} onWorkflow={onWorkflow} />
     </div>
   );
 }

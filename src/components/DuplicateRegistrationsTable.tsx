@@ -1,8 +1,9 @@
 import type { Partner } from '../data/types';
 import { formatDate } from '../lib/format';
 import type { DuplicateRegistrationGroup } from '../lib/metrics';
+import type { WorkflowActions } from '../data/workflows';
 
-interface DuplicateRegistrationsTableProps {
+interface DuplicateRegistrationsTableProps extends WorkflowActions {
   groups: DuplicateRegistrationGroup[];
   partners: Partner[];
   limit?: number;
@@ -18,6 +19,7 @@ export default function DuplicateRegistrationsTable({
   groups,
   partners,
   limit = 6,
+  onWorkflow,
 }: DuplicateRegistrationsTableProps) {
   const partnerById = new Map(partners.map((partner) => [partner.id, partner]));
   const rows = groups.slice(0, limit);
@@ -45,6 +47,24 @@ export default function DuplicateRegistrationsTable({
                   rowSpan={group.registrations.length}
                 >
                   {group.accountName}
+                  {onWorkflow && (
+                    <button
+                      type="button"
+                      className="mt-2 block rounded border border-ash px-3 py-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-bone"
+                      aria-label={`Disposition ${group.registrations
+                        .map((reg) => reg.id)
+                        .sort()
+                        .join(', ')}`}
+                      onClick={() =>
+                        onWorkflow({
+                          kind: 'conflict',
+                          entityIds: group.registrations.map((reg) => reg.id).sort(),
+                        })
+                      }
+                    >
+                      Record conflict disposition
+                    </button>
+                  )}
                 </td>
               )}
               <td className="py-2.5 pr-3 align-top text-granite">

@@ -18,6 +18,7 @@ import type { DataProvider } from './data/DataProvider';
 import { PROVIDER_OPTIONS, providerOption } from './data/providers';
 import type { ProviderId } from './data/providers';
 import type { SessionEdits } from './data/sessionEdits';
+import type { ForecastChange, WorkflowRecord, WorkflowTarget } from './data/workflows';
 import { useCommittedProvider } from './data/useCommittedProvider';
 import type { CommittedProvider } from './data/useCommittedProvider';
 import type {
@@ -43,13 +44,7 @@ import type { HealthArtifact } from './lib/health';
 import { logger } from './lib/logging';
 import { telemetry } from './lib/telemetry/telemetry';
 
-// The two heaviest views — the operational system routes — are one lazily
-// loaded chunk: the entry chunk carries the shell, the provider seam, the
-// telemetry boundary, and the six daily-workflow views, and a first visit to
-// Data Connections or Production Requirements downloads that chunk on
-// demand. It is a single dynamic import (the barrel in views/system.ts), so
-// Rollup co-locates every component and hook only those two views use
-// instead of emitting a tail of micro shared chunks.
+// Operational routes share one lazy chunk; daily views stay in the entry.
 import ActivityTrackingView from './views/ActivityTrackingView';
 import DealRegistrationOpsView from './views/DealRegistrationOpsView';
 import ForecastingView from './views/ForecastingView';
@@ -63,6 +58,7 @@ const ProductionRequirementsView = lazy(() =>
   import('./views/system').then((module) => ({ default: module.ProductionRequirementsView })),
 );
 const ActionCenterView = lazy(() => import('./views/ActionCenterView'));
+const WorkflowPanel = lazy(() => import('./components/WorkflowPanel'));
 
 // Every session action leaves one structured record (see lib/logging.ts), so a
 // session can be replayed from the console; opportunity notes and next steps
@@ -144,6 +140,10 @@ export default function App({
   const [addedTeamUsers, setAddedTeamUsers] = useState<TeamUser[]>([]);
   const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
   const [actionPolicy, setActionPolicy] = useState<Readonly<ActionPolicy>>(DEFAULT_ACTION_POLICY);
+  const [workflowTarget, setWorkflowTarget] = useState<WorkflowTarget | null>(null);
+  const [workflowRecords, setWorkflowRecords] = useState<WorkflowRecord[]>([]);
+  const [forecastChanges, setForecastChanges] = useState<ForecastChange[]>([]);
+  const changeSeq = useRef(0);
   const teamUserSeq = useRef(0);
   const notificationSeq = useRef(0);
 
@@ -169,6 +169,10 @@ export default function App({
     teamUserSeq.current = 0;
     setNotifications([]);
     setActionPolicy(DEFAULT_ACTION_POLICY);
+    setWorkflowTarget(null);
+    setWorkflowRecords([]);
+    setForecastChanges([]);
+    changeSeq.current = 0;
     notificationSeq.current = 0;
   }, []);
 
@@ -349,6 +353,14 @@ export default function App({
     log.debug('Revenue forecast edited', { opportunityId, revenue: value });
     telemetry.track('forecast_revenue_edited', { opportunityId });
     setRevenueOverrides((prev) => ({ ...prev, [opportunityId]: value }));
+    changeSeq.current += 1;
+    const change: ForecastChange = {
+      id: `change-${changeSeq.current}`,
+      opportunityId,
+      field: 'revenue',
+      value,
+    };
+    setForecastChanges((prev) => [change, ...prev]);
   };
 
   // An emptied field is stored as '' rather than deleted. Deleting the key
@@ -367,6 +379,14 @@ export default function App({
     log.debug('Forecast call changed', { opportunityId, category });
     telemetry.track('forecast_call_changed', { opportunityId, category });
     setForecastCalls((prev) => ({ ...prev, [opportunityId]: category }));
+    changeSeq.current += 1;
+    const change: ForecastChange = {
+      id: `change-${changeSeq.current}`,
+      opportunityId,
+      field: 'category',
+      value: category,
+    };
+    setForecastChanges((prev) => [change, ...prev]);
   };
 
   const commitClassifications = (next: Record<string, MeetingClassification>) => {
@@ -604,7 +624,25 @@ export default function App({
               setRoute(actionDestination(item).route);
             }}
             contextPartnerId={actionContext?.partnerId}
+            onWorkflow={setWorkflowTarget}
           />
+          {(['action-center', 'forecasting', 'registration-ops'] as Route[]).includes(route) && (
+            <Suspense fallback={<QueryLoading label="Session workflows" />}>
+              <div className="mt-6">
+                <WorkflowPanel
+                  key={`${providerId}:${committed.generation}`}
+                  provider={provider}
+                  roster={{ overrides: teamUserOverrides, added: addedTeamUsers }}
+                  records={workflowRecords}
+                  changes={forecastChanges}
+                  target={workflowTarget}
+                  onWorkflow={setWorkflowTarget}
+                  onRecord={(record) => setWorkflowRecords((prev) => [record, ...prev])}
+                  onClose={() => setWorkflowTarget(null)}
+                />
+              </div>
+            </Suspense>
+          )}
         </main>
       </div>
 
@@ -645,6 +683,7 @@ interface RouteContentProps {
   onSendNotification: (draft: NotificationDraft) => void;
   onOpenActionContext: (item: ActionItem) => void;
   contextPartnerId?: string;
+  onWorkflow: (target: WorkflowTarget) => void;
 }
 
 /**
@@ -681,6 +720,7 @@ function RouteContent({
   onSendNotification,
   onOpenActionContext,
   contextPartnerId,
+  onWorkflow,
 }: RouteContentProps) {
   // The key is the selection-reconciliation rule: a new committed provider
   // generation remounts the route, so view-local selections — a manager
@@ -708,6 +748,7 @@ function RouteContent({
             onSendNotification={onSendNotification}
             notifications={notifications}
             onOpenContext={onOpenActionContext}
+            onWorkflow={onWorkflow}
           />
         </ErrorBoundary>
       )}
@@ -768,7 +809,11 @@ function RouteContent({
       )}
       {route === 'registration-ops' && (
         <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:registration-ops`}>
-          <DealRegistrationOpsView provider={provider} prospects={prospects} />
+          <DealRegistrationOpsView
+            provider={provider}
+            prospects={prospects}
+            onWorkflow={onWorkflow}
+          />
         </ErrorBoundary>
       )}
       {route === 'activity' && (

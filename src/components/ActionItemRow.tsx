@@ -9,6 +9,7 @@ import type { ActionItem, DashboardNotification } from '../data/types';
 import { actionEvidence } from '../lib/actionEvidence';
 import { formatDate, formatUsd } from '../lib/format';
 import type { NotificationDraft } from '../lib/notifications';
+import type { WorkflowActions } from '../data/workflows';
 
 const CONTROL_CLASS =
   'rounded border border-ash px-3 py-2 text-xs text-stone hover:bg-ash/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bone disabled:opacity-40';
@@ -21,6 +22,7 @@ export default function ActionItemRow({
   notifications,
   onSendNotification,
   onOpenContext,
+  onWorkflow,
 }: {
   item: ActionItem;
   meta: QueryMeta;
@@ -29,7 +31,7 @@ export default function ActionItemRow({
   notifications: DashboardNotification[];
   onSendNotification?: (draft: NotificationDraft) => void;
   onOpenContext?: (item: ActionItem) => void;
-}) {
+} & WorkflowActions) {
   const [expanded, setExpanded] = useState(false);
   const [composing, setComposing] = useState(false);
   const destination = actionDestination(item);
@@ -105,6 +107,15 @@ export default function ActionItemRow({
             onClick={() => setComposing(!composing)}
           >
             {composing ? 'Close notification' : 'Notify owner'}
+          </button>
+        )}
+        {item.entityKind === 'registration' && onWorkflow && (
+          <button
+            type="button"
+            className={CONTROL_CLASS}
+            onClick={() => onWorkflow({ kind: 'registration', entityIds: [item.entityId] })}
+          >
+            Record registration decision
           </button>
         )}
       </div>

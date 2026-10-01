@@ -2,8 +2,9 @@ import type { DealRegistration, Partner } from '../data/types';
 import { formatDate, formatUsd } from '../lib/format';
 import { businessDaysWaiting, registrationSlaState } from '../lib/metrics';
 import { StatusBadge } from './Badge';
+import type { WorkflowActions } from '../data/workflows';
 
-interface RegistrationsTableProps {
+interface RegistrationsTableProps extends WorkflowActions {
   registrations: DealRegistration[];
   partners: Partner[];
   variant: 'queue' | 'history';
@@ -20,6 +21,7 @@ export default function RegistrationsTable({
   tone = 'dark',
   limit = 8,
   showPartner = true,
+  onWorkflow,
 }: RegistrationsTableProps) {
   const partnerById = new Map(partners.map((partner) => [partner.id, partner]));
   const isQueue = variant === 'queue';
@@ -104,6 +106,16 @@ export default function RegistrationsTable({
               </td>
               <td className="py-2.5 text-right">
                 <StatusBadge status={reg.status} tone={tone} />
+                {reg.status === 'pending' && onWorkflow && (
+                  <button
+                    type="button"
+                    className="mt-2 rounded border border-ash px-3 py-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-bone"
+                    aria-label={`Decide ${reg.id}`}
+                    onClick={() => onWorkflow({ kind: 'registration', entityIds: [reg.id] })}
+                  >
+                    Decide
+                  </button>
+                )}
               </td>
             </tr>
           );

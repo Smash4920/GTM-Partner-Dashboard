@@ -178,8 +178,16 @@ evidence, per-reason recommendation, due date, exposure, routed owner or Unowned
 and provider lineage/as-of through a keyboard/touch disclosure. Internal links
 open an explicit entity context in Forecasting, Deal Reg Ops, or the selected
 partner's Partner Performance view. The destination retains its reporting window,
-so an out-of-window entity may not be in its table. Workflow decisions remain
-separate in-progress work.
+so an out-of-window entity may not be in its table.
+
+Registration decisions are available from registration actions and Deal Reg Ops.
+Conflict dispositions name all competing registration IDs. Revenue/category
+edits create current-session change IDs for forecast reviews. Each workflow
+requires an active selected demo actor (not authenticated), outcome, and trimmed
+reason, and records runtime time. The session projection is simulated/local-only:
+source queues and metrics stay unchanged, no approver enforcement or write-back
+occurs, and refresh or provider commit clears every workflow record and change.
+Reviews are not source history or the deferred Forecast Quality trend.
 
 ### Deal Reg Ops
 
