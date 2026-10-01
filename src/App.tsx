@@ -1,6 +1,16 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import ProviderTransitionNotice from './components/ProviderTransitionNotice';
+import { QueryLoading } from './components/QueryState';
 import Sidebar, { type Route } from './components/Sidebar';
 import { MenuIcon } from './components/icons';
 import { SNAPSHOT_DATE } from './data/constants';
@@ -26,14 +36,26 @@ import { assessHealth, publishHealthArtifact, shellHealthArtifact } from './lib/
 import type { HealthArtifact } from './lib/health';
 import { logger } from './lib/logging';
 import { telemetry } from './lib/telemetry/telemetry';
+
+// The two heaviest views — the operational system routes — are one lazily
+// loaded chunk: the entry chunk carries the shell, the provider seam, the
+// telemetry boundary, and the six daily-workflow views, and a first visit to
+// Data Connections or Production Requirements downloads that chunk on
+// demand. It is a single dynamic import (the barrel in views/system.ts), so
+// Rollup co-locates every component and hook only those two views use
+// instead of emitting a tail of micro shared chunks.
 import ActivityTrackingView from './views/ActivityTrackingView';
-import DataConnectionsView from './views/DataConnectionsView';
 import DealRegistrationOpsView from './views/DealRegistrationOpsView';
 import ForecastingView from './views/ForecastingView';
 import HomeView from './views/HomeView';
 import PartnerPerformanceView from './views/PartnerPerformanceView';
 import PartnerView from './views/PartnerView';
-import ProductionRequirementsView from './views/ProductionRequirementsView';
+const DataConnectionsView = lazy(() =>
+  import('./views/system').then((module) => ({ default: module.DataConnectionsView })),
+);
+const ProductionRequirementsView = lazy(() =>
+  import('./views/system').then((module) => ({ default: module.ProductionRequirementsView })),
+);
 
 // Every session action leaves one structured record (see lib/logging.ts), so a
 // session can be replayed from the console; opportunity notes and next steps
@@ -41,6 +63,18 @@ import ProductionRequirementsView from './views/ProductionRequirementsView';
 const log = logger.child({ component: 'App' });
 const PRODUCTION_REQUIREMENTS_ROUTE: readonly Route[] = ['production-requirements'];
 const NO_HIDDEN_ROUTES: readonly Route[] = [];
+
+/** Route names for the chunk-loading fallback, matching the navigation labels. */
+const ROUTE_LOADING_LABEL: Record<Route, string> = {
+  home: 'Home',
+  partners: 'Partner Performance',
+  forecasting: 'Forecasting',
+  'registration-ops': 'Deal Reg Ops',
+  activity: 'Activity Tracking',
+  'partner-view': 'Partner View',
+  'production-requirements': 'Production Requirements',
+  'data-connections': 'Data Connections',
+};
 
 interface AppProps {
   flagClient?: FeatureFlagClient;
@@ -560,8 +594,13 @@ function RouteContent({
   // instead of pointing at ids another provider's directory may not even
   // contain.
   const boundaryKey = `${providerId}:${generation}`;
+  // One Suspense boundary for the lazily loaded route chunks. The fallback is
+  // the same named loading surface the scoped queries render, so a chunk
+  // fetch reads exactly like a query's initial load and announces itself the
+  // same way. It replaces only the route area — header, navigation, and the
+  // provider transition notice stay put while the chunk downloads.
   return (
-    <>
+    <Suspense fallback={<QueryLoading label={ROUTE_LOADING_LABEL[route]} />}>
       {route === 'production-requirements' && (
         <FlaggedContent enabled={productionRequirementsEnabled}>
           <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:production-requirements`}>
@@ -636,6 +675,6 @@ function RouteContent({
           <PartnerView provider={provider} edits={forecastEdits} prospects={prospects} />
         </ErrorBoundary>
       )}
-    </>
+    </Suspense>
   );
 }

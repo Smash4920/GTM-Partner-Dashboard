@@ -5,7 +5,7 @@ import type { DemoAccessScope } from './accessScope';
 import { DATA_PROVIDER_METHODS } from './DataProvider';
 import type { ActivityScope, DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
-import { SimulatedRemoteProvider } from './mock/SimulatedRemoteProvider';
+import { createSimulatedRemoteProvider } from './mock/createSimulatedRemoteProvider';
 import { NO_SESSION_EDITS } from './sessionEdits';
 import { usePartnerPerformanceQueries } from './usePartnerPerformanceQueries';
 import type { PartnerPerformanceQueryInput } from './usePartnerPerformanceQueries';
@@ -418,7 +418,7 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
   });
 
   it('keeps a failed query independent: siblings stay settled, retry repeats only the failed call', async () => {
-    const remote = new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+    const remote = createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
       latencyMs: 0,
       failMethods: { getPerformanceSummary: 1 },
     });
@@ -712,7 +712,7 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
     });
 
     it('fails the certification query independently, with a retry that repeats only that call', async () => {
-      const remote = new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+      const remote = createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
         latencyMs: 0,
         failMethods: { getPartnerCertification: 1 },
       });

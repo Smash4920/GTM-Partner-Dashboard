@@ -5,7 +5,7 @@ import DealRegistrationOpsView from './DealRegistrationOpsView';
 import { REGISTRATION_SLA_BUSINESS_DAYS } from '../data/constants';
 import type { DataProvider } from '../data/DataProvider';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
-import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
+import { createSimulatedRemoteProvider } from '../data/mock/createSimulatedRemoteProvider';
 import { makePartner, makeProviderBook, makeRegistration } from '../test/fixtures';
 import type { DealRegistration } from '../data/types';
 import type { ProviderBook } from '../data/mock/book';
@@ -133,7 +133,7 @@ describe('DealRegistrationOpsView', () => {
   it('keeps the tiles standing when the review queue fails, and retries only it', async () => {
     const user = userEvent.setup();
     renderView(
-      new SimulatedRemoteProvider(new MockDataProvider(boundaryBook()), {
+      createSimulatedRemoteProvider(new MockDataProvider(boundaryBook()), {
         latencyMs: 0,
         failMethods: { listPendingRegistrations: 1 },
       }),
@@ -169,7 +169,7 @@ describe('DealRegistrationOpsView', () => {
     const opsSpy = vi.spyOn(inner, 'getRegistrationOpsSummary');
     const queueSpy = vi.spyOn(inner, 'listPendingRegistrations');
     renderView(
-      new SimulatedRemoteProvider(inner, {
+      createSimulatedRemoteProvider(inner, {
         latencyMs: 0,
         failMethods: { getPartnerRoster: 1 },
       }),

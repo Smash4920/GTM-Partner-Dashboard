@@ -10,7 +10,7 @@ import {
 import { REGISTRATION_SLA_BUSINESS_DAYS, SNAPSHOT_DATE } from '../data/constants';
 import type { DataProvider } from '../data/DataProvider';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
-import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
+import { createSimulatedRemoteProvider } from '../data/mock/createSimulatedRemoteProvider';
 import type { DashboardNotification, DealRegistration, Partner, TeamUser } from '../data/types';
 import type { ProviderBook } from '../data/mock/book';
 import { businessDaysBefore } from '../lib/fiscal';
@@ -166,7 +166,7 @@ function setup(options: SetupOptions = {}) {
   });
   let provider: DataProvider = new MockDataProvider(book);
   if (options.failMethods !== undefined || options.latencyMs !== undefined) {
-    provider = new SimulatedRemoteProvider(provider, {
+    provider = createSimulatedRemoteProvider(provider, {
       latencyMs: options.latencyMs ?? 0,
       failMethods: options.failMethods,
     });

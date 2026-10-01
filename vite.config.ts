@@ -68,20 +68,54 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
+        // Vendor chunks contain exactly the packages matched below. Without
+        // this, a manual chunk silently drags its whole dependency closure
+        // in, so unrelated modules could land in a budgeted vendor chunk (or
+        // a lazy route chunk) and distort what each budget measures.
+        onlyExplicitManualChunks: true,
         // Recharts and its d3/victory deps form ~2/3 of the bundle. Split them
         // into cached vendor chunks so the app shell loads without pulling
         // the whole charting stack, and no single chunk trips the size
         // warning that would bury real regressions in CI output.
         //
-        // Recharts 3 reaches its redux/immer runtime only from its own entry,
-        // so Rollup co-locates those in this chunk without an explicit rule.
+        // The recharts chunk must carry every runtime that only Recharts
+        // imports (redux toolkit, immer, es-toolkit, decimal.js-light, and
+        // friends). Rollup used to co-locate them automatically, but route
+        // code splitting gives it reason to hoist them into the shared core
+        // chunk — which would quietly halve the measured "Recharts chunk"
+        // while shipping the same bytes under an unbudgeted name. Pinning
+        // them here keeps the VAL-QUAL-003 Recharts budget honest.
         manualChunks(id) {
-          if (id.includes('node_modules/recharts')) {
+          if (
+            id.includes('node_modules/recharts') ||
+            /node_modules\/(@reduxjs\/toolkit|immer|redux|redux-thunk|reselect|react-redux|react-is|use-sync-external-store|tiny-invariant|es-toolkit|decimal\.js-light|eventemitter3|clsx)\//.test(
+              id,
+            )
+          ) {
             return 'recharts';
           }
-          if (id.includes('node_modules/victory-vendor') || /node_modules\/d3[-/]/.test(id)) {
+          if (
+            id.includes('node_modules/victory-vendor') ||
+            id.includes('node_modules/internmap') ||
+            /node_modules\/d3[-/]/.test(id)
+          ) {
             return 'charts-vendor';
           }
+          // The React framework gets its own plainly named chunk: it is
+          // shared by the entry and the lazy route chunk, and naming it keeps
+          // the Application chunk budget (dist/assets/index-*.js) measuring
+          // application code only, as its reason states. Merging it into the
+          // recharts chunk measured worse: the cross-chunk export wiring cost
+          // more than the boundary it removed.
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) {
+            return 'react-core';
+          }
+          // Route-level code splitting is expressed in source, not here:
+          // App.tsx lazily imports one view barrel (views/system.ts — Data
+          // Connections and Production Requirements), and Rollup's default
+          // placement co-locates the components only those views use with the
+          // barrel chunk while keeping everything the eager shell needs in
+          // the entry.
         },
       },
     },

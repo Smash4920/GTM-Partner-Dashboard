@@ -6,7 +6,7 @@ import type { DataProvider } from './data/DataProvider';
 import { DATA_PROVIDER_METHODS } from './data/DataProvider';
 import { MockDataProvider } from './data/mock/MockDataProvider';
 import { generateDashboardData } from './data/mock/generate';
-import { SimulatedRemoteProvider } from './data/mock/SimulatedRemoteProvider';
+import { createSimulatedRemoteProvider } from './data/mock/createSimulatedRemoteProvider';
 import { createProvider } from './data/providers';
 import type { ProviderId } from './data/providers';
 import type { ProviderBook } from './data/mock/book';
@@ -77,9 +77,11 @@ describe('App', () => {
       await user.click(nav().getByRole('button', { name: label }));
 
       if (heading) {
-        expect(screen.getByRole('heading', { name: heading, level: 1 })).toBeInTheDocument();
+        // findBy*: the lazily loaded system routes suspend for a tick while
+        // their chunk resolves.
+        expect(await screen.findByRole('heading', { name: heading, level: 1 })).toBeInTheDocument();
       } else {
-        expect(screen.getAllByRole('heading', { level: 1 })).not.toHaveLength(0);
+        expect(await screen.findAllByRole('heading', { level: 1 })).not.toHaveLength(0);
       }
       // The boundary renders this in place of a view that threw.
       expect(screen.queryByText('Something went wrong here')).not.toBeInTheDocument();
@@ -116,9 +118,11 @@ describe('App', () => {
     const user = await renderApp();
     await user.click(nav().getByRole('button', { name: 'Production Requirements' }));
 
-    expect(screen.getByRole('heading', { name: 'Migration Path' })).toBeInTheDocument();
-    expect(screen.getByText(/Phase 0 · Test infrastructure/)).toBeInTheDocument();
-    expect(screen.getByText(/Phase 1 · Contract rewrite against the mock/)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Migration Path' })).toBeInTheDocument();
+    expect(await screen.findByText(/Phase 0 · Test infrastructure/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Phase 1 · Contract rewrite against the mock/),
+    ).toBeInTheDocument();
   }, 20_000);
 
   it('removes a disabled feature from navigation', async () => {
@@ -139,7 +143,7 @@ describe('App', () => {
     // seeded 15% failure rate would make the first probe here fail).
     const steadyFactory = (id: ProviderId): DataProvider =>
       id === 'remote'
-        ? new SimulatedRemoteProvider(new MockDataProvider(), { failureRate: 0, latencyMs: 0 })
+        ? createSimulatedRemoteProvider(new MockDataProvider(), { failureRate: 0, latencyMs: 0 })
         : createProvider(id);
     const user = await renderApp(undefined, { providerFactory: steadyFactory });
     const selector = screen.getByLabelText('Data provider');
@@ -533,16 +537,20 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     await screen.findByText('Performance summary unavailable:');
 
     await user.click(nav().getByRole('button', { name: 'Production Requirements' }));
+    // findBy*: the system routes are a lazily loaded chunk now, so the view
+    // lands a tick after the click.
     expect(
-      screen.getByRole('heading', { name: 'Production Requirements', level: 1 }),
+      await screen.findByRole('heading', { name: 'Production Requirements', level: 1 }),
     ).toBeInTheDocument();
 
     await user.click(nav().getByRole('button', { name: 'Data Connections' }));
-    expect(screen.getByRole('heading', { name: 'Data Connections', level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Data connection map' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Data Connections', level: 1 }),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole('group', { name: 'Data connection map' })).toBeInTheDocument();
     // The business sections name their failure; the catalog never did fail.
-    expect(screen.getByText('The team roster unavailable:')).toBeInTheDocument();
-    expect(screen.getByText('The SLA alert queue unavailable:')).toBeInTheDocument();
+    expect(await screen.findByText('The team roster unavailable:')).toBeInTheDocument();
+    expect(await screen.findByText('The SLA alert queue unavailable:')).toBeInTheDocument();
   }, 30_000);
 
   it('a focused retry recovers only the failed work', async () => {

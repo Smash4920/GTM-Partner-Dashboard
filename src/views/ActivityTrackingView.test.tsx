@@ -6,7 +6,7 @@ import { makeMeeting, makePartner, makeProviderBook } from '../test/fixtures';
 import { SNAPSHOT_DATE } from '../data/constants';
 import type { DataProvider } from '../data/DataProvider';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
-import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
+import { createSimulatedRemoteProvider } from '../data/mock/createSimulatedRemoteProvider';
 import { startOfWeekUtc } from '../lib/fiscal';
 import { formatDate } from '../lib/format';
 import type { MeetingClassification } from '../data/types';
@@ -358,7 +358,7 @@ describe('ActivityTrackingView', () => {
   it('keeps the goal standing when the calendar fails, and retries only the calendar', async () => {
     const user = userEvent.setup();
     renderView({
-      provider: new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+      provider: createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
         latencyMs: 0,
         failMethods: { listWeeklyClassificationMeetings: 1 },
       }),
@@ -388,7 +388,7 @@ describe('ActivityTrackingView', () => {
   it('degrades the selectors when the directory fails, but keeps the aggregates', async () => {
     const user = userEvent.setup();
     renderView({
-      provider: new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+      provider: createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
         latencyMs: 0,
         failMethods: { getManagerDirectory: 1 },
       }),
@@ -416,7 +416,7 @@ describe('ActivityTrackingView', () => {
   it('degrades the partner selector when the roster fails, but keeps the goal', async () => {
     const user = userEvent.setup();
     renderView({
-      provider: new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+      provider: createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
         latencyMs: 0,
         failMethods: { getPartnerRoster: 1 },
       }),

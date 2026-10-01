@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PartnerView from './PartnerView';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
-import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
+import { createSimulatedRemoteProvider } from '../data/mock/createSimulatedRemoteProvider';
 import type { DataProvider } from '../data/DataProvider';
 import { NO_SESSION_EDITS } from '../data/sessionEdits';
 import {
@@ -237,7 +237,7 @@ describe('PartnerView partner isolation (VAL-DATA-003, VAL-CROSS-004)', () => {
 
 describe('PartnerView per-widget resilience (VAL-CROSS-004)', () => {
   it('fails one card on one rejected call and retries only that call', async () => {
-    const provider = new SimulatedRemoteProvider(mockProvider(), {
+    const provider = createSimulatedRemoteProvider(mockProvider(), {
       latencyMs: 0,
       failMethods: { getStageBreakdown: 1 },
     });
@@ -263,7 +263,7 @@ describe('PartnerView per-widget resilience (VAL-CROSS-004)', () => {
   });
 
   it('reports a picker-side failure as the partner list, with its own retry', async () => {
-    const provider = new SimulatedRemoteProvider(mockProvider(), {
+    const provider = createSimulatedRemoteProvider(mockProvider(), {
       latencyMs: 0,
       failMethods: { getPartnerRoster: 1 },
     });

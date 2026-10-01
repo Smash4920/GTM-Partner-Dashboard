@@ -1,9 +1,12 @@
 import type { DataProvider } from './DataProvider';
-import { TracedDataProvider } from './TracedDataProvider';
+import { traceDataProvider } from './traceDataProvider';
 import { instrumentProvider } from '../lib/telemetry/instrumentProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { ScaleDataProvider } from './mock/ScaleDataProvider';
-import { SimulatedRemoteProvider, type FailurePlanEntry } from './mock/SimulatedRemoteProvider';
+import {
+  createSimulatedRemoteProvider,
+  type FailurePlanEntry,
+} from './mock/createSimulatedRemoteProvider';
 
 /**
  * The provider the app is wired to, switchable from the header.
@@ -103,7 +106,7 @@ export function createProvider(id: ProviderId): DataProvider {
       // The answers crossing the simulated wire are the remote provider's:
       // their metadata is stamped accordingly, so a figure on screen can
       // never read as local data that arrived over the remote wire.
-      base = new SimulatedRemoteProvider(new MockDataProvider(), {
+      base = createSimulatedRemoteProvider(new MockDataProvider(), {
         ...(plan ?? {}),
         providerId: 'remote',
       });
@@ -117,7 +120,7 @@ export function createProvider(id: ProviderId): DataProvider {
       break;
   }
   // Every provider the header can select crosses the seam through both
-  // wrappers. TracedDataProvider creates the W3C trace context the underlying
+  // wrappers. traceDataProvider creates the W3C trace context the underlying
   // provider receives — correlating the call in the log, and, for a real HTTP
   // provider, in its request headers — and instrumentProvider measures the
   // whole seam: one telemetry span, one counter, and one duration per call,
@@ -125,5 +128,5 @@ export function createProvider(id: ProviderId): DataProvider {
   // wrapper is identity-safe — it delegates through a Proxy and adds nothing
   // to the contract — and the telemetry master flag can switch the
   // measurement off at runtime without unwiring the trace context.
-  return instrumentProvider(new TracedDataProvider(base), id);
+  return instrumentProvider(traceDataProvider(base), id);
 }

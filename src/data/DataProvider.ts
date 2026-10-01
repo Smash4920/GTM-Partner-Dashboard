@@ -787,3 +787,48 @@ const METHOD_INDEX: Record<keyof DataProvider, true> = {
 };
 
 export const DATA_PROVIDER_METHODS = Object.keys(METHOD_INDEX) as (keyof DataProvider)[];
+
+/**
+ * How many arguments each contract method takes before its trailing
+ * `QueryContext`, keyed by the interface's own method names so a method
+ * added without an entry here is a compile error. The seam wrappers forward
+ * calls through a Proxy instead of re-declaring every method (see
+ * traceDataProvider.ts and mock/createSimulatedRemoteProvider.ts), and a Proxy
+ * needs this table to rebuild the argument list with the context in the
+ * correct slot — padding it in when the caller omitted it, exactly as the
+ * hand-written forwarding methods did.
+ */
+export const DATA_PROVIDER_CONTEXT_SLOTS: Record<keyof DataProvider, number> = {
+  // Forecasting
+  getForecastSummary: 2,
+  getWeightedForecast: 2,
+  getForecastQuality: 3,
+  getManagerForecastGroups: 2,
+  getWeeklyForecastSeries: 2,
+  listQuarterOpportunities: 3,
+  getPartnerDirectory: 1,
+  // Home and Partner Performance
+  getPerformanceSummary: 2,
+  getRegistrationFunnel: 2,
+  getStageBreakdown: 2,
+  getTypeBreakdown: 2,
+  getQuarterlyRevenueTrend: 2,
+  getWeeklyActivitySeries: 2,
+  getWeeklyGoalProgress: 2,
+  getRegistrationOpsSummary: 2,
+  getTopPartnerLeaders: 2,
+  listPartnerLeaderboard: 3,
+  getManagerDirectory: 1,
+  getPartnerRoster: 2,
+  getPartnerCertification: 2,
+  listScopedOpportunities: 3,
+  listPendingRegistrations: 3,
+  listUnconvertedRegistrations: 3,
+  listDuplicateRegistrationGroups: 3,
+  listRecentRegistrations: 3,
+  // Data Connections
+  getTeamRoster: 2,
+  getRegistrationSlaAlerts: 3,
+  // Activity Tracking
+  listWeeklyClassificationMeetings: 3,
+};

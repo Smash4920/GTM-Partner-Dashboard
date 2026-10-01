@@ -5,7 +5,7 @@ import type { DemoAccessScope } from './accessScope';
 import { DATA_PROVIDER_METHODS } from './DataProvider';
 import type { DataProvider, TeamRosterScope } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
-import { SimulatedRemoteProvider } from './mock/SimulatedRemoteProvider';
+import { createSimulatedRemoteProvider } from './mock/createSimulatedRemoteProvider';
 import { useDataConnectionsQueries } from './useDataConnectionsQueries';
 import type { DataConnectionsQueryInput } from './useDataConnectionsQueries';
 import {
@@ -233,7 +233,7 @@ describe('useDataConnectionsQueries (VAL-CROSS-004)', () => {
   });
 
   it('keeps a failed section independent: siblings stay settled, retry repeats only the failed call', async () => {
-    const remote = new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+    const remote = createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
       latencyMs: 0,
       failMethods: { getRegistrationSlaAlerts: 1 },
     });

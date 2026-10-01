@@ -4,8 +4,8 @@ import { CURRENT_FISCAL_QUARTER } from './constants';
 import type { DataProvider } from './DataProvider';
 import { DATA_PROVIDER_METHODS } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
-import { SimulatedRemoteProvider } from './mock/SimulatedRemoteProvider';
-import { TracedDataProvider } from './TracedDataProvider';
+import { createSimulatedRemoteProvider } from './mock/createSimulatedRemoteProvider';
+import { traceDataProvider } from './traceDataProvider';
 import { INTERNAL_DEMO_SCOPE } from './accessScope';
 
 /**
@@ -83,10 +83,10 @@ async function referenceAnswers(inner: DataProvider): Promise<Record<string, unk
 }
 
 describe('provider wrappers forward the whole contract untouched', () => {
-  it('TracedDataProvider returns every method’s answer unchanged', async () => {
+  it('traceDataProvider returns every method’s answer unchanged', async () => {
     const inner = new MockDataProvider(makeProviderBook());
     const expected = await referenceAnswers(inner);
-    const traced = new TracedDataProvider(inner);
+    const traced = traceDataProvider(inner);
 
     for (const [method, call] of Object.entries(CALLS)) {
       const result = (await call(traced)) as { data: unknown };
@@ -94,10 +94,10 @@ describe('provider wrappers forward the whole contract untouched', () => {
     }
   });
 
-  it('SimulatedRemoteProvider returns every method’s answer data unchanged', async () => {
+  it('createSimulatedRemoteProvider returns every method’s answer data unchanged', async () => {
     const inner = new MockDataProvider(makeProviderBook());
     const expected = await referenceAnswers(inner);
-    const remote = new SimulatedRemoteProvider(inner, {
+    const remote = createSimulatedRemoteProvider(inner, {
       latencyMs: 0,
       failureRate: 0,
       providerId: 'remote',

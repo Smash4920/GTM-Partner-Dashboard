@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MockDataProvider } from './MockDataProvider';
 import { ScaleDataProvider } from './ScaleDataProvider';
-import { SimulatedRemoteProvider } from './SimulatedRemoteProvider';
+import { createSimulatedRemoteProvider } from './createSimulatedRemoteProvider';
 import { CURRENT_FISCAL_QUARTER } from '../constants';
 import { INTERNAL_DEMO_SCOPE } from '../accessScope';
 
@@ -9,9 +9,9 @@ const quarter = CURRENT_FISCAL_QUARTER;
 /** Fast and reliable: no waiting on a fake network in a unit test. */
 const instant = { latencyMs: 0, failureRate: 0 };
 
-describe('SimulatedRemoteProvider', () => {
+describe('createSimulatedRemoteProvider', () => {
   it('passes the answer through when the wire is clear, under its own identity', async () => {
-    const provider = new SimulatedRemoteProvider(new MockDataProvider(), instant);
+    const provider = createSimulatedRemoteProvider(new MockDataProvider(), instant);
     const { data: partners } = await provider.getPartnerRoster(INTERNAL_DEMO_SCOPE, {});
     expect(partners).toHaveLength(25);
     // The envelope survives the hop, re-labelled: the committed provider is
@@ -25,7 +25,7 @@ describe('SimulatedRemoteProvider', () => {
   });
 
   it('fails a call with the method named, so the UI message is legible', async () => {
-    const provider = new SimulatedRemoteProvider(new MockDataProvider(), {
+    const provider = createSimulatedRemoteProvider(new MockDataProvider(), {
       latencyMs: 0,
       failureRate: 1,
     });
@@ -39,7 +39,7 @@ describe('SimulatedRemoteProvider', () => {
 
   it('is deterministic for a seed, so a failing demo run can be replayed', async () => {
     const outcomes = async (seed: number) => {
-      const provider = new SimulatedRemoteProvider(new MockDataProvider(), {
+      const provider = createSimulatedRemoteProvider(new MockDataProvider(), {
         latencyMs: 0,
         failureRate: 0.5,
         seed,
@@ -61,7 +61,7 @@ describe('SimulatedRemoteProvider', () => {
   });
 
   it('actually waits, within the jitter band', async () => {
-    const provider = new SimulatedRemoteProvider(new MockDataProvider(), {
+    const provider = createSimulatedRemoteProvider(new MockDataProvider(), {
       latencyMs: 40,
       failureRate: 0,
       seed: 1,
@@ -76,7 +76,7 @@ describe('SimulatedRemoteProvider', () => {
   it('fails exactly the planned first calls, whatever order the rest arrive in', async () => {
     const inner = new MockDataProvider();
     const call = vi.spyOn(inner, 'getForecastSummary');
-    const provider = new SimulatedRemoteProvider(inner, {
+    const provider = createSimulatedRemoteProvider(inner, {
       latencyMs: 0,
       // A high random rate that must be ignored while the plan runs: the
       // plan, not the draw, decides.
@@ -103,7 +103,7 @@ describe('SimulatedRemoteProvider', () => {
 
   it('replays a named failure plan identically across instances', async () => {
     const outcomes = async () => {
-      const provider = new SimulatedRemoteProvider(new MockDataProvider(), {
+      const provider = createSimulatedRemoteProvider(new MockDataProvider(), {
         latencyMs: 0,
         failFirstCalls: 1,
       });
@@ -126,7 +126,7 @@ describe('SimulatedRemoteProvider', () => {
   it('a per-method plan fails only the named method, however unrelated calls interleave', async () => {
     const inner = new MockDataProvider();
     const summaryCalls = vi.spyOn(inner, 'getForecastSummary');
-    const provider = new SimulatedRemoteProvider(inner, {
+    const provider = createSimulatedRemoteProvider(inner, {
       latencyMs: 0,
       // A rate that must be ignored while the plan runs: the plan, not the
       // draw, decides — including for methods the plan never names.
@@ -159,7 +159,7 @@ describe('SimulatedRemoteProvider', () => {
 
   it('replays a per-method plan identically across instances and interleavings', async () => {
     const run = async (interleave: boolean) => {
-      const provider = new SimulatedRemoteProvider(new MockDataProvider(), {
+      const provider = createSimulatedRemoteProvider(new MockDataProvider(), {
         latencyMs: 0,
         failMethods: { getForecastSummary: 2 },
       });
@@ -184,7 +184,7 @@ describe('SimulatedRemoteProvider', () => {
   it('a skip plan lets the first calls succeed, then fails exactly the named count', async () => {
     const inner = new MockDataProvider();
     const summaryCalls = vi.spyOn(inner, 'getForecastSummary');
-    const provider = new SimulatedRemoteProvider(inner, {
+    const provider = createSimulatedRemoteProvider(inner, {
       latencyMs: 0,
       // A rate that must be ignored while the plan runs: the plan, not the
       // draw, decides.
@@ -210,7 +210,7 @@ describe('SimulatedRemoteProvider', () => {
 
   it('a method’s seeded failure pattern is independent of unrelated calls', async () => {
     const outcomesOf = async (interleave: boolean) => {
-      const provider = new SimulatedRemoteProvider(new MockDataProvider(), {
+      const provider = createSimulatedRemoteProvider(new MockDataProvider(), {
         latencyMs: 0,
         failureRate: 0.5,
         seed: 11,
@@ -249,7 +249,7 @@ describe('SimulatedRemoteProvider', () => {
     try {
       const inner = new MockDataProvider();
       const spy = vi.spyOn(inner, 'getPartnerDirectory');
-      const provider = new SimulatedRemoteProvider(inner, {
+      const provider = createSimulatedRemoteProvider(inner, {
         latencyMs: 100,
         failureRate: 0,
         seed: 5,
@@ -272,7 +272,7 @@ describe('SimulatedRemoteProvider', () => {
       expect(vi.getTimerCount()).toBe(0);
 
       // The failure path is the same shape: one delay, no inner invocation.
-      const failing = new SimulatedRemoteProvider(inner, {
+      const failing = createSimulatedRemoteProvider(inner, {
         latencyMs: 100,
         failureRate: 1,
         seed: 5,
@@ -293,7 +293,7 @@ describe('SimulatedRemoteProvider', () => {
   });
 
   it('wraps any provider, including the scaled book', async () => {
-    const provider = new SimulatedRemoteProvider(new ScaleDataProvider(3), instant);
+    const provider = createSimulatedRemoteProvider(new ScaleDataProvider(3), instant);
     const { data: page } = await provider.listQuarterOpportunities(
       INTERNAL_DEMO_SCOPE,
       { quarter },
@@ -310,7 +310,7 @@ describe('SimulatedRemoteProvider', () => {
     try {
       const inner = new MockDataProvider();
       const spy = vi.spyOn(inner, 'getForecastSummary');
-      const provider = new SimulatedRemoteProvider(inner, {
+      const provider = createSimulatedRemoteProvider(inner, {
         latencyMs: 100,
         failureRate: 0,
         seed: 5,
@@ -345,7 +345,7 @@ describe('SimulatedRemoteProvider', () => {
     try {
       const inner = new MockDataProvider();
       const spy = vi.spyOn(inner, 'getPartnerDirectory');
-      const provider = new SimulatedRemoteProvider(inner, {
+      const provider = createSimulatedRemoteProvider(inner, {
         latencyMs: 100,
         failureRate: 0,
       });
@@ -367,7 +367,7 @@ describe('SimulatedRemoteProvider', () => {
   it('an aborted call consumes no failure-plan slot and no failure draw', async () => {
     vi.useFakeTimers();
     try {
-      const provider = new SimulatedRemoteProvider(new MockDataProvider(), {
+      const provider = createSimulatedRemoteProvider(new MockDataProvider(), {
         latencyMs: 100,
         failMethods: { getManagerDirectory: 1 },
       });
@@ -401,7 +401,7 @@ describe('SimulatedRemoteProvider', () => {
   it('forwards the caller’s signal to the inner provider once the wait completes', async () => {
     const inner = new MockDataProvider();
     const spy = vi.spyOn(inner, 'getPartnerDirectory');
-    const provider = new SimulatedRemoteProvider(inner, instant);
+    const provider = createSimulatedRemoteProvider(inner, instant);
     const controller = new AbortController();
 
     await provider.getPartnerDirectory(INTERNAL_DEMO_SCOPE, { signal: controller.signal });
@@ -413,7 +413,7 @@ describe('SimulatedRemoteProvider', () => {
   it('preserves trace context across the simulated network boundary', async () => {
     const inner = new MockDataProvider();
     const call = vi.spyOn(inner, 'getPartnerDirectory');
-    const provider = new SimulatedRemoteProvider(inner, instant);
+    const provider = createSimulatedRemoteProvider(inner, instant);
     const trace = {
       traceId: 'a'.repeat(32),
       spanId: 'b'.repeat(16),

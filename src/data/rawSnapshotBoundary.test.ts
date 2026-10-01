@@ -11,7 +11,7 @@ import type { PageQueryError } from './pagination';
 import { useWeeklySeries } from './useForecastQueries';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { ScaleDataProvider } from './mock/ScaleDataProvider';
-import { SimulatedRemoteProvider } from './mock/SimulatedRemoteProvider';
+import { createSimulatedRemoteProvider } from './mock/createSimulatedRemoteProvider';
 import { generateDashboardData } from './mock/generate';
 
 /**
@@ -348,7 +348,7 @@ describe('failure paths', () => {
   });
 
   it('simulated transport failures carry no provider data either', async () => {
-    const remote = new SimulatedRemoteProvider(new MockDataProvider(book), {
+    const remote = createSimulatedRemoteProvider(new MockDataProvider(book), {
       latencyMs: 0,
       failFirstCalls: 1,
     });

@@ -4,7 +4,7 @@ import { INTERNAL_DEMO_SCOPE } from './accessScope';
 import { DATA_PROVIDER_METHODS } from './DataProvider';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
-import { SimulatedRemoteProvider } from './mock/SimulatedRemoteProvider';
+import { createSimulatedRemoteProvider } from './mock/createSimulatedRemoteProvider';
 import { NO_SESSION_EDITS } from './sessionEdits';
 import type { SessionEdits } from './sessionEdits';
 import { useHomeQueries } from './useHomeQueries';
@@ -228,7 +228,7 @@ describe('useHomeQueries (VAL-DATA-014)', () => {
   });
 
   it('keeps a failed query independent: siblings stay settled, retry repeats only the failed call', async () => {
-    const remote = new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+    const remote = createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
       latencyMs: 0,
       failMethods: { getRegistrationFunnel: 1 },
     });

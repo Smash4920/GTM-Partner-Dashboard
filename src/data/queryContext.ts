@@ -16,7 +16,7 @@ import type { TraceContext } from '../lib/tracing';
  *   a late answer is dropped either way. An abort is a cancellation, not a
  *   failure — it is never rendered as an error, logged as one, or captured
  *   by telemetry.
- * - `trace` correlates the call across the seam. `TracedDataProvider`
+ * - `trace` correlates the call across the seam. `traceDataProvider`
  *   creates it per call and merges it into the context the underlying
  *   provider receives, so a real HTTP implementation can put the headers on
  *   the wire.

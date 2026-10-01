@@ -4,7 +4,7 @@ import { INTERNAL_DEMO_SCOPE } from './accessScope';
 import { DATA_PROVIDER_METHODS } from './DataProvider';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
-import { SimulatedRemoteProvider } from './mock/SimulatedRemoteProvider';
+import { createSimulatedRemoteProvider } from './mock/createSimulatedRemoteProvider';
 import { useActivityQueries } from './useActivityQueries';
 import { EMPTY_DIRECTORY_COPY } from './useActivityQueries';
 import type { ActivityQueryInput } from './useActivityQueries';
@@ -328,7 +328,7 @@ describe('useActivityQueries (VAL-DATA-015)', () => {
   });
 
   it('keeps a failed query independent: siblings stay settled, retry repeats only the failed call', async () => {
-    const remote = new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+    const remote = createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
       latencyMs: 0,
       failMethods: { getWeeklyGoalProgress: 1 },
     });
@@ -359,7 +359,7 @@ describe('useActivityQueries (VAL-DATA-015)', () => {
 
   it('falls back to org-wide aggregates and no calendar when the directory fails', async () => {
     const book = makeBook();
-    const remote = new SimulatedRemoteProvider(new MockDataProvider(book), {
+    const remote = createSimulatedRemoteProvider(new MockDataProvider(book), {
       latencyMs: 0,
       failMethods: { getManagerDirectory: 1 },
     });

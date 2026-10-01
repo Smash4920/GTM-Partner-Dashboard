@@ -2,18 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeProviderBook } from '../test/fixtures';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
-import { TracedDataProvider } from './TracedDataProvider';
+import { traceDataProvider } from './traceDataProvider';
 import { INTERNAL_DEMO_SCOPE } from './accessScope';
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('TracedDataProvider', () => {
+describe('traceDataProvider', () => {
   it('propagates W3C and request-id context across the provider seam', async () => {
     const inner: DataProvider = new MockDataProvider(makeProviderBook());
     const call = vi.spyOn(inner, 'getPartnerRoster');
-    const provider = new TracedDataProvider(inner);
+    const provider = traceDataProvider(inner);
 
     await provider.getPartnerRoster(INTERNAL_DEMO_SCOPE, {});
 
@@ -34,7 +34,7 @@ describe('TracedDataProvider', () => {
   it('passes the caller’s abort signal through untouched alongside the created trace', async () => {
     const inner: DataProvider = new MockDataProvider(makeProviderBook());
     const call = vi.spyOn(inner, 'getForecastSummary');
-    const provider = new TracedDataProvider(inner);
+    const provider = traceDataProvider(inner);
     const controller = new AbortController();
 
     await provider.getForecastSummary(
@@ -49,7 +49,7 @@ describe('TracedDataProvider', () => {
   });
 
   it('returns the underlying answer unchanged', async () => {
-    const provider = new TracedDataProvider(new MockDataProvider(makeProviderBook()));
+    const provider = traceDataProvider(new MockDataProvider(makeProviderBook()));
     const { data, meta } = await provider.getPartnerDirectory(INTERNAL_DEMO_SCOPE);
     expect(data).toEqual([{ id: 'partner-1', name: 'Northwind Systems' }]);
     expect(meta.providerId).toBe('local');
@@ -60,7 +60,7 @@ describe('TracedDataProvider', () => {
     const failure = new Error('CRM timed out');
     const inner = new MockDataProvider(makeProviderBook());
     vi.spyOn(inner, 'getManagerDirectory').mockRejectedValue(failure);
-    const provider = new TracedDataProvider(inner);
+    const provider = traceDataProvider(inner);
 
     await expect(provider.getManagerDirectory(INTERNAL_DEMO_SCOPE)).rejects.toBe(failure);
   });

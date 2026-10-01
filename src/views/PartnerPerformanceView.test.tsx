@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PartnerPerformanceView from './PartnerPerformanceView';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
-import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
+import { createSimulatedRemoteProvider } from '../data/mock/createSimulatedRemoteProvider';
 import { NO_SESSION_EDITS } from '../data/sessionEdits';
 import {
   makeCertification,
@@ -378,11 +378,9 @@ describe('PartnerPerformanceView', () => {
     // One broken certification fetch, then recovery.
     render(
       <PartnerPerformanceView
-        provider={
-          new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
-            failMethods: { getPartnerCertification: 1 },
-          })
-        }
+        provider={createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+          failMethods: { getPartnerCertification: 1 },
+        })}
         edits={NO_SESSION_EDITS}
         classifications={NO_CLASSIFICATIONS}
         prospects={[]}
