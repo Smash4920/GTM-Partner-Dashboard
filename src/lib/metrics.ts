@@ -493,6 +493,28 @@ export interface WeeklyActivityRow {
   byType: Record<MeetingType, number>;
 }
 
+/**
+ * Whether a meeting belongs to the requested manager/partner scope. The
+ * session's classification, when one exists, reassigns the meeting, so
+ * effective ownership is resolved FIRST: with a partner set in scope, the
+ * classified-or-original partner alone decides inclusion. Applying the raw
+ * calendar attribution on top would drop a cross-manager reclassification
+ * from BOTH scopes — the old manager's partner set rejects it and the new
+ * manager's raw manager rejects it — instead of moving it exactly once.
+ * With no partner set, the raw manager decides, exactly as before.
+ */
+function inActivityScope(
+  activity: ActivityMeeting,
+  partnerManagerId: string | undefined,
+  partnerIds: Set<string> | undefined,
+  classification: MeetingClassification | undefined,
+): boolean {
+  if (partnerIds !== undefined) {
+    return partnerIds.has(classification?.partnerId ?? activity.partnerId);
+  }
+  return partnerManagerId === undefined || activity.partnerManagerId === partnerManagerId;
+}
+
 export function weeklyActivity(
   activities: ActivityMeeting[],
   partnerManagerId?: string,
@@ -510,12 +532,10 @@ export function weeklyActivity(
     const filtered = activities.filter((activity) => {
       const occurredAt = new Date(activity.occurredAt).getTime();
       const inWeek = occurredAt >= start.getTime() && occurredAt < end.getTime();
-      const inManager = !partnerManagerId || activity.partnerManagerId === partnerManagerId;
-      // Classified meetings count toward the partner scope of the override.
-      const classification = classifications?.[activity.id];
-      const partnerId = classification?.partnerId ?? activity.partnerId;
-      const inPartner = !partnerIds || partnerIds.has(partnerId);
-      return inWeek && inManager && inPartner;
+      return (
+        inWeek &&
+        inActivityScope(activity, partnerManagerId, partnerIds, classifications?.[activity.id])
+      );
     });
     for (const activity of filtered) {
       const type = classifications?.[activity.id]?.type ?? activity.type;
@@ -548,6 +568,9 @@ export function daysLeftInQuarter(quarter: string): number {
  * Current-week meeting volume toward the weekly goal, optionally scoped to a
  * partner manager and partner. Classified meetings use the manual override for
  * both partner and call type; unclassified meetings keep their snapshot values.
+ * Membership resolves the classified partner before the manager filter — see
+ * `inActivityScope` — so a cross-manager reclassification moves the meeting
+ * exactly once.
  */
 export function weeklyGoalProgress(
   activities: ActivityMeeting[],
@@ -562,10 +585,8 @@ export function weeklyGoalProgress(
   for (const activity of activities) {
     const occurredAt = new Date(activity.occurredAt).getTime();
     if (occurredAt < weekStart || occurredAt >= weekEnd) continue;
-    if (partnerManagerId && activity.partnerManagerId !== partnerManagerId) continue;
     const classification = classifications?.[activity.id];
-    const partnerId = classification?.partnerId ?? activity.partnerId;
-    if (partnerIds && !partnerIds.has(partnerId)) continue;
+    if (!inActivityScope(activity, partnerManagerId, partnerIds, classification)) continue;
     meetings += 1;
     if ((classification?.type ?? activity.type) === 'pio-interlock') pioMeetings += 1;
   }

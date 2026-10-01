@@ -295,6 +295,49 @@ describe('useActivityQueries (VAL-DATA-015)', () => {
     );
   });
 
+  it('counts a cross-manager prospect classification in the prospect’s manager scope exactly once', async () => {
+    // pm-1's Monday call, re-pointed at a prospect on pm-2's roster. The
+    // classification owns the meeting now: pm-1's goal and week lose it and
+    // pm-2's gain it, so across the two managers it is counted exactly once
+    // rather than dropped from both by the raw calendar attribution.
+    const book = makeBook();
+    const { provider } = spyProvider(new MockDataProvider(book));
+    const prospects = [
+      makePartner({ id: 'prospect-1', name: 'Prospect Co', partnerManagerId: 'pm-2' }),
+    ];
+    const classifications: Record<string, MeetingClassification> = {
+      'meeting-mon': { partnerId: 'prospect-1', type: 'discovery' },
+    };
+    const a = renderHook((input: ActivityQueryInput) => useActivityQueries(input), {
+      initialProps: inputFor(provider, { classifications, prospects }),
+    });
+    await settle(a.result);
+
+    // Manager A keeps only Tuesday's interlock; the moved call is gone.
+    expect(a.result.current.goal.data!.meetings).toBe(1);
+    expect(a.result.current.goal.data!.pioMeetings).toBe(1);
+    const aWeek = a.result.current.goalWeek.data!;
+    expect(aWeek[aWeek.length - 1]!.total).toBe(1);
+
+    // Manager B gains it next to his own call — zero times for A, once for B.
+    const b = renderHook((input: ActivityQueryInput) => useActivityQueries(input), {
+      initialProps: inputFor(provider, {
+        managerId: 'pm-2',
+        classifications,
+        prospects,
+      }),
+    });
+    await settle(b.result);
+    expect(b.result.current.goal.data!.meetings).toBe(2);
+    const bWeek = b.result.current.goalWeek.data!;
+    expect(bWeek[bWeek.length - 1]!.total).toBe(2);
+    expect(bWeek[bWeek.length - 1]!.byType.discovery).toBe(2);
+
+    // The two scopes still sum to the book's three in-week calls: the moved
+    // meeting is counted exactly once — dropped by neither, doubled by none.
+    expect(a.result.current.goal.data!.meetings + b.result.current.goal.data!.meetings).toBe(3);
+  });
+
   it('pages the classification calendar a cursor at a time', async () => {
     // Thirty calls in the snapshot week force a second 25-row page.
     const week = Array.from({ length: 30 }, (_, index) =>

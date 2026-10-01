@@ -652,6 +652,62 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
       expect(result.current.goal.data!.pioMeetings).toBe(1);
     });
 
+    it('moves a cross-manager prospect reclassification exactly once — out of A’s scope, into B’s', async () => {
+      // The raw meeting belongs to pm-1's partner-1; the session prospect
+      // belongs to pm-2. Once the classification re-points the meeting at
+      // the prospect, effective ownership — not the raw calendar
+      // attribution — decides membership: pm-1's activity series and goal
+      // lose the meeting and pm-2's gain it, so the two managers' totals
+      // sum to exactly one instead of dropping it from both.
+      const prospect = makePartner({
+        id: 'prospect-1',
+        name: 'Prospect Co',
+        partnerManagerId: 'pm-2',
+      });
+      const book = makeProviderBook({
+        ...makeBook(),
+        activities: [
+          makeMeeting({ id: 'meeting-1', partnerId: 'partner-1', partnerManagerId: 'pm-1' }),
+        ],
+      });
+      const classifications = {
+        'meeting-1': { type: 'pio-interlock', partnerId: 'prospect-1' },
+      } as const;
+      const provider = new MockDataProvider(book);
+      const input = (managerId: string): PartnerPerformanceQueryInput =>
+        inputFor(provider, {
+          managerId,
+          classifications: { ...classifications },
+          prospects: [prospect],
+        });
+      const a = renderHook(
+        (props: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(props),
+        {
+          initialProps: input('pm-1'),
+        },
+      );
+      const b = renderHook(
+        (props: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(props),
+        {
+          initialProps: input('pm-2'),
+        },
+      );
+      await settle(a.result);
+      await settle(b.result);
+
+      const aWeek = a.result.current.activity.data![a.result.current.activity.data!.length - 1]!;
+      const bWeek = b.result.current.activity.data![b.result.current.activity.data!.length - 1]!;
+      expect(aWeek.total).toBe(0);
+      expect(bWeek.total).toBe(1);
+      expect(bWeek.byType['pio-interlock']).toBe(1);
+      expect(a.result.current.goal.data!.meetings).toBe(0);
+      expect(b.result.current.goal.data!.meetings).toBe(1);
+      expect(b.result.current.goal.data!.pioMeetings).toBe(1);
+      // Exactly once across the two manager scopes, on both surfaces.
+      expect(aWeek.total + bWeek.total).toBe(1);
+      expect(a.result.current.goal.data!.meetings + b.result.current.goal.data!.meetings).toBe(1);
+    });
+
     it('refetches the activity and goal aggregates when a prospect is added', async () => {
       const { provider, calls } = spyProvider(new MockDataProvider(makeBook()));
       const { result, rerender } = renderHook(

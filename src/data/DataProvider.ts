@@ -290,7 +290,11 @@ export interface PerformanceScope extends RevenueTrendScope {
 
 /** The weekly activity and goal queries' scope: the drill-down plus the
  * session's meeting classifications, which the aggregates apply the same way
- * the views used to apply them client-side. */
+ * the views used to apply them client-side. A classification that re-points
+ * a meeting at another partner — including a session prospect on another
+ * manager's roster — reassigns the meeting's ownership BEFORE the
+ * drill-down's partner set is applied, so the meeting leaves the old
+ * manager's scope and joins the new one exactly once. */
 export interface ActivityScope extends PartnerDrilldown {
   classifications?: Record<string, MeetingClassification>;
 }

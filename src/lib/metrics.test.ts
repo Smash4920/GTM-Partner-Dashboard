@@ -4,6 +4,7 @@ import type {
   ActivityMeeting,
   DealRegistration,
   ForecastCategory,
+  MeetingClassification,
   Opportunity,
   Target,
   TeamUser,
@@ -27,6 +28,7 @@ import {
   quarterlyClosedWonAndTarget,
   registrationsNewestFirst,
   remainingQuota,
+  weeklyActivity,
   weeklyForecastRows,
   weeklyGoalProgress,
   weightedForecast,
@@ -464,6 +466,88 @@ describe('weeklyGoalProgress', () => {
         new Set(['p-02']),
       ).meetings,
     ).toBe(1);
+  });
+
+  it('resolves classified ownership before manager filtering — once across both managers', () => {
+    // pm-01's call, reclassified onto a prospect in pm-02's book. The
+    // classification owns the meeting now: the old manager's partner set
+    // rejects it and the new manager's set counts it. Applying the raw
+    // calendar attribution on top of the partner set would drop it from
+    // BOTH scopes — the sum over the two managers must be exactly one.
+    const call = activity({ id: 'mx', occurredAt: '2026-09-15T09:00:00Z' });
+    const moved: Record<string, MeetingClassification> = {
+      mx: { partnerId: 'prospect-b', type: 'pio-interlock' },
+    };
+    const a = weeklyGoalProgress([call], moved, 'pm-01', new Set(['p-01']));
+    const b = weeklyGoalProgress([call], moved, 'pm-02', new Set(['p-02', 'prospect-b']));
+    expect(a.meetings).toBe(0);
+    expect(a.pioMeetings).toBe(0);
+    expect(b.meetings).toBe(1);
+    expect(b.pioMeetings).toBe(1);
+    expect(a.meetings + b.meetings).toBe(1);
+  });
+
+  it('keeps an unclassified call in its raw manager’s partner scope alone', () => {
+    const call = activity({ id: 'mx', occurredAt: '2026-09-15T09:00:00Z' });
+    const a = weeklyGoalProgress([call], {}, 'pm-01', new Set(['p-01']));
+    const b = weeklyGoalProgress([call], {}, 'pm-02', new Set(['p-02', 'prospect-b']));
+    expect(a.meetings).toBe(1);
+    expect(b.meetings).toBe(0);
+    expect(a.meetings + b.meetings).toBe(1);
+  });
+
+  it('keeps raw-manager inclusion when no partner set scopes the query', () => {
+    // Without a partner set the classification still retypes the call, but
+    // membership follows the raw calendar attribution, unchanged.
+    const call = activity({ id: 'mx', occurredAt: '2026-09-15T09:00:00Z' });
+    const moved: Record<string, MeetingClassification> = {
+      mx: { partnerId: 'p-02', type: 'pio-interlock' },
+    };
+    const a = weeklyGoalProgress([call], moved, 'pm-01');
+    expect(a.meetings).toBe(1);
+    expect(a.pioMeetings).toBe(1);
+    expect(weeklyGoalProgress([call], moved, 'pm-02').meetings).toBe(0);
+  });
+});
+
+describe('weeklyActivity', () => {
+  // One call on pm-01's partner p-01, mid snapshot week (the last bucket).
+  const call = activity({ id: 'mx', occurredAt: '2026-09-15T09:00:00Z', type: 'discovery' });
+  const movedToProspectB: Record<string, MeetingClassification> = {
+    mx: { partnerId: 'prospect-b', type: 'pio-interlock' },
+  };
+
+  it('scopes the week to the raw manager when no partner set is given', () => {
+    const rows = weeklyActivity([call], 'pm-01');
+    expect(rows[rows.length - 1].total).toBe(1);
+    expect(weeklyActivity([call], 'pm-02')[rows.length - 1].total).toBe(0);
+  });
+
+  it('resolves classified ownership before manager filtering — once across both managers', () => {
+    // The same cross-manager reclassification as the goal: zero buckets for
+    // the old manager's scope, the call and its new type in the new one.
+    const a = weeklyActivity([call], 'pm-01', new Set(['p-01']), movedToProspectB);
+    const b = weeklyActivity([call], 'pm-02', new Set(['p-02', 'prospect-b']), movedToProspectB);
+    expect(a[a.length - 1].total).toBe(0);
+    expect(b[b.length - 1].total).toBe(1);
+    expect(b[b.length - 1].byType['pio-interlock']).toBe(1);
+    expect(a[a.length - 1].total + b[b.length - 1].total).toBe(1);
+  });
+
+  it('keeps an unclassified call in its raw manager’s partner scope alone', () => {
+    const a = weeklyActivity([call], 'pm-01', new Set(['p-01']));
+    const b = weeklyActivity([call], 'pm-02', new Set(['p-02', 'prospect-b']));
+    expect(a[a.length - 1].total).toBe(1);
+    expect(b[b.length - 1].total).toBe(0);
+  });
+
+  it('retypes the split without moving membership when no partner set is given', () => {
+    const a = weeklyActivity([call], 'pm-01', undefined, movedToProspectB);
+    expect(a[a.length - 1].total).toBe(1);
+    expect(a[a.length - 1].byType['pio-interlock']).toBe(1);
+    expect(weeklyActivity([call], 'pm-02', undefined, movedToProspectB)[a.length - 1].total).toBe(
+      0,
+    );
   });
 });
 
