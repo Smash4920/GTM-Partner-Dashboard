@@ -16,7 +16,7 @@ import {
   registrationsPastSla,
 } from '../lib/metrics';
 import { makeOpportunity, makePartner, makeProviderBook, makeRegistration } from '../test/fixtures';
-import type { ProviderBook } from './types';
+import type { ProviderBook } from './mock/book';
 
 /**
  * VAL-DATA-015 (Deal Reg Ops): the route requests exactly the bounded

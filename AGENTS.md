@@ -95,9 +95,9 @@ survivable.
 - `src/components/`: reusable UI and domain components.
 - `src/lib/`: pure formatting, fiscal-calendar, structured logging,
   notification, and metric helpers. Unit tests are colocated as `*.test.ts`.
-- `src/data/types.ts`: shared domain types and `ProviderBook`, the provider-only
-  book (collections plus weekly snapshot history) that never crosses the seam
-  whole.
+- `src/data/types.ts`: shared domain types that cross the provider seam. The
+  provider-only book (collections plus weekly snapshot history) lives in
+  `src/data/mock/book.ts` and never crosses it whole.
 - `src/data/constants.ts`: fiscal dates, service levels, labels, and other
   shared domain constants.
 - `src/data/DataProvider.ts`: the read-side integration boundary used by the UI —
@@ -139,8 +139,8 @@ survivable.
 - **Weekly pipeline history never crosses the seam whole.** It is ~87% of the
   payload at production volume, so `listPipelineSnapshots()` is gone from the
   client contract and history leaves only through `getWeeklyForecastSeries()` as
-  a handful of buckets. `ProviderBook` holds the snapshot rows; no client-facing
-  type does.
+  a handful of buckets. `ProviderBook` in `src/data/mock/book.ts` holds the
+  snapshot rows; no client-facing type does.
 - `src/lib/metrics.ts` is the _specification_ a server implementation has to
   match, not just the current implementation. Its suite plus
   `src/data/mock/MockDataProvider.test.ts` are the conformance check.

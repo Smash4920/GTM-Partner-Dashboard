@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createCursorIssuer,
   DEFAULT_PAGE_LIMIT,
   isPageQueryError,
   MAX_PAGE_LIMIT,
@@ -7,12 +8,13 @@ import {
   PageQueryError,
   resolvePageLimit,
 } from './pagination';
-import type { Page } from './pagination';
+import type { CursorIssuer, Page } from './pagination';
 
 /**
  * VAL-DATA-009, at the primitive every row query shares: bounded validated
- * limits, opaque query-bound cursors, stable ordering, exhaustive walks,
- * and typed failures for every invalid limit or cursor class.
+ * limits, sealed provider-instance-bound cursors, stable ordering,
+ * exhaustive walks, and typed failures for every invalid limit or cursor
+ * class.
  */
 
 interface Row {
@@ -27,20 +29,43 @@ const ROWS: Row[] = Array.from({ length: 60 }, (_, index) => ({
 const QUERY_KEY = 'listQuarterOpportunities|access:internal:org|quarter:FY27-Q3|manager:all';
 const AS_OF = '2026-09-18T00:00:00.000Z';
 
+/**
+ * The tests' provider instance. The secret is pinned so a cursor minted in
+ * one assertion opens in another — determinism matters and the instance is
+ * the shared fact. A second issuer, named or random, is another instance.
+ */
+const ISSUER = createCursorIssuer('pagination-test-issuer');
+
 function page(args: {
   cursor?: string;
   limit?: number;
   rows?: Row[];
   queryKey?: string;
   asOf?: string;
+  issuer?: CursorIssuer;
 }): Page<Row> {
   return paginateRows({
     rows: args.rows ?? ROWS,
     queryKey: args.queryKey ?? QUERY_KEY,
     asOf: args.asOf ?? AS_OF,
+    issuer: args.issuer ?? ISSUER,
     cursor: args.cursor,
     limit: args.limit,
   });
+}
+
+/** Decodes a token without checking its seal: everything an attacker sees. */
+function readPayload(cursor: string): Record<string, unknown> {
+  const base64 = cursor.replaceAll('-', '+').replaceAll('_', '/');
+  return JSON.parse(atob(base64 + '='.repeat((4 - (base64.length % 4)) % 4))) as Record<
+    string,
+    unknown
+  >;
+}
+
+/** Re-encodes a payload verbatim: the forgery the seal exists to catch. */
+function forge(payload: Record<string, unknown>): string {
+  return btoa(JSON.stringify(payload)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
 }
 
 /** The rejection a call produces, or a failure of the test itself. */
@@ -149,6 +174,59 @@ describe('cursor validation', () => {
   });
 });
 
+describe('cursor authenticity', () => {
+  it('rejects a re-encoded cursor: the readable payload is not a writable one', () => {
+    const { nextCursor } = page({ limit: 7 });
+    if (nextCursor === undefined) throw new Error('expected a continuation');
+
+    // The payload decodes — opacity is not the defense, the seal is — but
+    // an edited offset cannot be re-sealed. The forgery is invalid, whether
+    // it keeps the stale seal or drops the field entirely.
+    const bumped = { ...readPayload(nextCursor), o: 14 };
+    for (const cursor of [forge(bumped), forge({ ...bumped, s: undefined })]) {
+      const error = rejectionOf(() => page({ cursor, limit: 7 }));
+      expect(isPageQueryError(error)).toBe(true);
+      expect((error as PageQueryError).code).toBe('invalid-cursor');
+    }
+  });
+
+  it('classifies a rewritten epoch as invalid, never expired', () => {
+    const { nextCursor } = page({ limit: 7 });
+    if (nextCursor === undefined) throw new Error('expected a continuation');
+
+    // Expired is a classification for an intact cursor whose data moved on;
+    // a re-encoded epoch broke the seal first, so this is a forgery.
+    const moved = forge({ ...readPayload(nextCursor), at: '2026-09-11T00:00:00.000Z' });
+    const error = rejectionOf(() => page({ cursor: moved, limit: 7 }));
+    expect(isPageQueryError(error)).toBe(true);
+    expect((error as PageQueryError).code).toBe('invalid-cursor');
+  });
+
+  it('rejects a cursor minted by another issuer for the identical query and epoch', () => {
+    // Same rows, same query key, same epoch — only the instance differs.
+    const other = createCursorIssuer('another-issuer');
+    const { nextCursor } = page({ limit: 7, issuer: other });
+    if (nextCursor === undefined) throw new Error('expected a continuation');
+
+    const error = rejectionOf(() => page({ cursor: nextCursor, limit: 7 }));
+    expect(isPageQueryError(error)).toBe(true);
+    expect((error as PageQueryError).code).toBe('invalid-cursor');
+  });
+
+  it('shares nothing between two default issuers: each is its own instance', () => {
+    const one = createCursorIssuer();
+    const two = createCursorIssuer();
+    const cursor = one.mint({ queryKey: QUERY_KEY, asOf: AS_OF, offset: 7 });
+    expect(one.open(cursor)).toMatchObject({ at: AS_OF, o: 7 });
+    expect(two.open(cursor)).toBeNull();
+  });
+
+  it('mints exactly the five opaque fields: fingerprint, epoch, offset, seal, version', () => {
+    const cursor = ISSUER.mint({ queryKey: QUERY_KEY, asOf: AS_OF, offset: 7 });
+    expect(Object.keys(readPayload(cursor)).sort()).toEqual(['at', 'o', 'q', 's', 'v']);
+  });
+});
+
 describe('page walks', () => {
   it('walks the collection exactly once: stable, exhaustive, no duplicates', () => {
     const ids = new Set<string>();
@@ -192,15 +270,12 @@ describe('page walks', () => {
     if (nextCursor === undefined) throw new Error('expected a continuation');
 
     // Not the retired `offset:N` shape, and no legible query: the payload
-    // decodes to a fingerprint, an epoch, and a number only.
+    // decodes to a fingerprint, an epoch, a number, and a seal — nothing
+    // to compute with, and nothing re-encodable (see cursor authenticity).
     expect(nextCursor).not.toMatch(/^offset:/);
     expect(nextCursor).not.toContain('FY27-Q3');
-    const base64 = nextCursor.replaceAll('-', '+').replaceAll('_', '/');
-    const payload = JSON.parse(atob(base64 + '='.repeat((4 - (base64.length % 4)) % 4))) as Record<
-      string,
-      unknown
-    >;
-    expect(Object.keys(payload).sort()).toEqual(['at', 'o', 'q', 'v']);
+    const payload = readPayload(nextCursor);
+    expect(Object.keys(payload).sort()).toEqual(['at', 'o', 'q', 's', 'v']);
     expect(payload.o).toBe(7);
     expect(payload.q).not.toContain('quarter');
     expect(payload.q).not.toContain('FY27-Q3');

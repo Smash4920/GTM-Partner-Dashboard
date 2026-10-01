@@ -28,7 +28,6 @@ import type {
   OpportunityStage,
   OpportunityType,
   Partner,
-  PipelineSnapshot,
   Target,
   TeamUser,
 } from '../data/types';
@@ -692,6 +691,22 @@ export interface WeeklyForecastRow {
 }
 
 /**
+ * One recording instant of the quarter, folded to per-category open-pipeline
+ * totals. This is the most history the metrics layer ever sees: the raw
+ * snapshot rows are provider-private (they are ~87% of the payload at
+ * production volume), and the provider folds them behind its seam — the
+ * mock's `weeklyRecordingTotals` in `src/data/mock/book.ts`, a warehouse's
+ * weekly fact query in production. One entry per recording instant, sorted
+ * oldest first; the count is the quarter's week count, not the book's size.
+ */
+export interface RecordedWeekTotals {
+  /** When the recording was taken (ISO 8601, UTC). */
+  takenAt: string;
+  /** Open in-quarter pipeline per forecast category, as recorded. */
+  raw: Record<ForecastCategory, number>;
+}
+
+/**
  * Week-over-week state of one quarter's partner-sourced pipeline, one bucket
  * per week of the quarter: Monday-aligned, clipped at the quarter end, and
  * spanning the entire quarter so a new bucket lights up as each week begins.
@@ -703,21 +718,23 @@ export interface WeeklyForecastRow {
  *
  * A bucket's values are the open book as it stood at the week's close,
  * counting only deals expected to close inside the quarter. Closed weeks come
- * from recorded snapshots, so they are immutable: an amount raised, a deal
- * re-called, or a close date slipped this week moves this week's bar and
- * leaves the earlier ones alone. Without history — a provider that supplies
- * none — a week is reconstructed from the current book instead, which is only
- * faithful about deals entering and leaving, and silently backdates every
- * other change. `recordedAt` says which kind of week a caller is looking at.
+ * from the recorded weekly totals, so they are immutable: an amount raised,
+ * a deal re-called, or a close date slipped this week moves this week's bar
+ * and leaves the earlier ones alone. Without history — a provider that
+ * supplies none — a week is reconstructed from the current book instead,
+ * which is only faithful about deals entering and leaving, and silently
+ * backdates every other change. `recordedAt` says which kind of week a
+ * caller is looking at.
  *
- * The in-progress week is always reconstructed from the live book (no snapshot
- * exists yet), so it equals the forecasting tiles and moves with in-app edits.
+ * The in-progress week is always reconstructed from the live book (no
+ * recording exists yet), so it equals the forecasting tiles and moves with
+ * in-app edits.
  */
 export function weeklyForecastRows(
   opps: Opportunity[],
   quarter: string,
   asOf: Date = SNAPSHOT_DATE,
-  snapshots: PipelineSnapshot[] = [],
+  recorded: RecordedWeekTotals[] = [],
 ): WeeklyForecastRow[] {
   const { start, end } = quarterWindow(quarter);
   const qStart = start.getTime();
@@ -734,12 +751,9 @@ export function weeklyForecastRows(
     cursor += 7 * DAY;
   }
 
-  const byInstant = new Map<number, PipelineSnapshot[]>();
-  for (const snapshot of snapshots) {
-    const takenAt = new Date(snapshot.takenAt).getTime();
-    const group = byInstant.get(takenAt);
-    if (group) group.push(snapshot);
-    else byInstant.set(takenAt, [snapshot]);
+  const byInstant = new Map<number, RecordedWeekTotals>();
+  for (const recording of recorded) {
+    byInstant.set(new Date(recording.takenAt).getTime(), recording);
   }
   const instants = [...byInstant.keys()].sort((a, b) => a - b);
 
@@ -749,7 +763,7 @@ export function weeklyForecastRows(
     // State at the week's close; the in-progress week freezes at the as-of date.
     const at = Math.min(weekEnd, asOfTs);
     // The latest recording inside this bucket. Requiring it past weekStart is
-    // what keeps the in-progress week from reusing last week's snapshot.
+    // what keeps the in-progress week from reusing last week's recording.
     const recordedAt = instants.reduce<number | undefined>(
       (latest, instant) => (instant > weekStart && instant <= at ? instant : latest),
       undefined,
@@ -766,10 +780,9 @@ export function weeklyForecastRows(
     };
 
     if (hasStarted && recordedAt !== undefined) {
-      for (const snapshot of byInstant.get(recordedAt)!) {
-        const expectedClose = new Date(snapshot.expectedCloseDate).getTime();
-        if (expectedClose < qStart || expectedClose >= qEnd) continue;
-        add(snapshot.forecastCategory, snapshot.forecastedRevenue);
+      const totals = byInstant.get(recordedAt)!.raw;
+      for (const category of FORECAST_CATEGORIES) {
+        add(category, totals[category]);
       }
     } else if (hasStarted) {
       for (const opp of opps) {

@@ -7,7 +7,8 @@ import type { DataProvider } from '../data/DataProvider';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
 import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
 import { makePartner, makeProviderBook, makeRegistration } from '../test/fixtures';
-import type { DealRegistration, ProviderBook } from '../data/types';
+import type { DealRegistration } from '../data/types';
+import type { ProviderBook } from '../data/mock/book';
 
 /**
  * Deal Registration Ops over the scoped contract (VAL-DATA-015): the tiles,

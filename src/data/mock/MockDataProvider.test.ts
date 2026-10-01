@@ -18,6 +18,7 @@ import type { DemoAccessScope } from '../accessScope';
 import { isPageQueryError, MAX_PAGE_LIMIT } from '../pagination';
 import type { PageQueryError } from '../pagination';
 import { MockDataProvider } from './MockDataProvider';
+import { weeklyRecordingTotals } from './book';
 import { generateDashboardData } from './generate';
 import { NO_SESSION_EDITS } from '../sessionEdits';
 import {
@@ -129,7 +130,12 @@ describe('MockDataProvider scoped contract', () => {
       quarter,
     });
     expect(weeks).toEqual(
-      weeklyForecastRows(book.opportunities, quarter, SNAPSHOT_DATE, book.snapshots),
+      weeklyForecastRows(
+        book.opportunities,
+        quarter,
+        SNAPSHOT_DATE,
+        weeklyRecordingTotals(book.snapshots, quarter),
+      ),
     );
     expect(weeks.length).toBeLessThan(20);
     expect(book.snapshots.length).toBeGreaterThan(1_000);
@@ -355,10 +361,15 @@ describe('cursor pagination contract (VAL-DATA-009)', () => {
   });
 
   it('expires cursors when the data epoch moves on', async () => {
-    /** A provider whose book advanced: same rows, newer epoch. */
+    /**
+     * A provider whose book advanced: same rows, newer epoch. The shared
+     * cursor secret makes the two instances ONE logical provider — the
+     * before/after of a re-sync — so the old cursor is this issuer's own
+     * and its staleness classifies as expired, not forged.
+     */
     class EpochProvider extends MockDataProvider {
       constructor(private readonly epoch: string) {
-        super(book);
+        super(book, { cursorSecret: 'epoch-test-provider' });
       }
       protected override dataEpoch(): string {
         return this.epoch;

@@ -13,7 +13,7 @@ import {
   makeRegistration,
   makeTarget,
 } from '../test/fixtures';
-import type { ProviderBook } from '../data/types';
+import type { ProviderBook } from '../data/mock/book';
 
 /**
  * The Partner View over the scoped contract. These are the same behavioral

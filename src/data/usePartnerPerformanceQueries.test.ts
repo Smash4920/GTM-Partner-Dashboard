@@ -16,7 +16,7 @@ import {
   makeRegistration,
   makeTarget,
 } from '../test/fixtures';
-import type { ProviderBook } from './types';
+import type { ProviderBook } from './mock/book';
 
 /**
  * VAL-DATA-014 (Partner Performance): the route requests exactly the scoped

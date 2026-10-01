@@ -151,7 +151,7 @@ tests rather than by thinking about it:
 `getWeeklyForecastSeries()` returning ~13 rows instead of millions — the one
 line in this plan that pays for itself immediately, since the client no longer
 receives the collection that is 87% of the payload. `ProviderBook` in
-`types.ts` is the provider-side shape that still holds it.
+`src/data/mock/book.ts` is the provider-private shape that still holds it.
 
 **Known blast radius.** `src/data/connections.ts` records the DataProvider
 methods each integration node fills, and `connections.test.ts` asserts every

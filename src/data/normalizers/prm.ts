@@ -59,10 +59,22 @@ export interface PrmNormalized {
 }
 
 /**
- * A decision is one fact with three parts: the state, the instant, and the
- * decider. Any subset is a contradiction the source must fix — an approved
- * registration with no decision time is not "approved recently". Returns
- * undefined (with an issue recorded) when the combination is contradictory.
+ * A decision is one fact the status pronounces: the instant, the decider,
+ * and — for a rejection — the reason. The complete truth table, because
+ * any other combination is a contradiction the source must fix rather than
+ * a state the adapter may round into something plausible:
+ *
+ * | status   | decided_at | decided_by | rejection_reason |
+ * |----------|------------|------------|------------------|
+ * | pending  | absent     | absent     | absent           |
+ * | approved | required   | required   | absent           |
+ * | rejected | required   | required   | required         |
+ *
+ * An approved registration with no decision time is not "approved
+ * recently"; a pending one carrying a decider is not "almost decided";
+ * and an approval carrying a rejection reason is two facts fighting.
+ * Returns undefined (with an issue recorded) for any other combination,
+ * and likewise when a present decision field failed its own read.
  */
 function readDecision(
   source: Record<string, unknown>,
@@ -70,24 +82,41 @@ function readDecision(
   issues: NormalizationIssue[],
   path: (field: string) => string,
 ): Pick<DealRegistration, 'decisionAt' | 'decidedBy' | 'reason'> | undefined {
+  const issuesBeforeReads = issues.length;
   const decisionAt = readOptionalIsoTimestamp(source, 'decided_at', issues, path('decided_at'));
   const decidedBy = readOptionalString(source, 'decided_by', issues, path('decided_by'));
   const reason = readOptionalString(source, 'rejection_reason', issues, path('rejection_reason'));
-  if (status === 'pending' && decisionAt !== undefined) {
-    issue(
-      issues,
-      'inconsistent-state',
-      path('decided_at'),
-      'a pending registration cannot carry a decision time',
-    );
-    return undefined;
+  // A malformed present decision field already failed its read above; the
+  // row cannot be built from the survivors, so the truth table below only
+  // ever judges values that validated.
+  if (issues.length > issuesBeforeReads) return undefined;
+  if (status === 'pending') {
+    if (decisionAt !== undefined || decidedBy !== undefined || reason !== undefined) {
+      issue(
+        issues,
+        'inconsistent-state',
+        path('decided_at'),
+        'a pending registration carries no decision fields at all',
+      );
+      return undefined;
+    }
+    return {};
   }
-  if (status !== 'pending' && (decisionAt === undefined || decidedBy === undefined)) {
+  if (decisionAt === undefined || decidedBy === undefined) {
     issue(
       issues,
       'inconsistent-state',
       path('decided_at'),
       'a decided registration must carry decided_at and decided_by',
+    );
+    return undefined;
+  }
+  if (status === 'approved' && reason !== undefined) {
+    issue(
+      issues,
+      'inconsistent-state',
+      path('rejection_reason'),
+      'an approved registration cannot carry a rejection reason',
     );
     return undefined;
   }
@@ -100,9 +129,10 @@ function readDecision(
     );
     return undefined;
   }
-  const decision: Pick<DealRegistration, 'decisionAt' | 'decidedBy' | 'reason'> = {};
-  if (decisionAt !== undefined) decision.decisionAt = decisionAt;
-  if (decidedBy !== undefined) decision.decidedBy = decidedBy;
+  const decision: Pick<DealRegistration, 'decisionAt' | 'decidedBy' | 'reason'> = {
+    decisionAt,
+    decidedBy,
+  };
   if (reason !== undefined) decision.reason = reason;
   return decision;
 }

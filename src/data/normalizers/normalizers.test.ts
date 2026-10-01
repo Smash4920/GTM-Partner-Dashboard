@@ -249,6 +249,55 @@ describe('normalizeCrmExport', () => {
     ]);
   });
 
+  it.each([
+    ['Forecast_Category__c', 'Maybe', 'unknown-enum-value'],
+    ['Forecast_Category__c', 42, 'unknown-enum-value'],
+    ['Deal_Registration_Id__c', 17, 'invalid-identifier'],
+    ['Deal_Registration_Id__c', 'not a slug!!', 'invalid-identifier'],
+    ['Closed_Date__c', 'yesterday', 'invalid-date'],
+    ['Outcome__c', 'Maybe', 'unknown-enum-value'],
+  ])(
+    'rejects the whole row when the present optional field %s is malformed',
+    (field, value, code) => {
+      const result = normalizeCrmExport(
+        {
+          accounts: crmExport.accounts,
+          opportunities: [{ ...crmExport.opportunities[0]!, [field]: value }],
+        },
+        context,
+      );
+      // The row is out, not partially normalized: a record missing a field
+      // the source DID send is not a clean record, and exactly one issue
+      // names the field that killed it — no invented follow-on failures.
+      expect(result.opportunities).toEqual([]);
+      expect(result.issues).toEqual([
+        expect.objectContaining({ code, path: `opportunities[0].${field}` }),
+      ]);
+    },
+  );
+
+  it('keeps absent optional fields a legitimate "not set"', () => {
+    const result = normalizeCrmExport(
+      {
+        accounts: crmExport.accounts,
+        opportunities: [
+          {
+            ...crmExport.opportunities[0]!,
+            Forecast_Category__c: null,
+            Deal_Registration_Id__c: null,
+            Closed_Date__c: null,
+            Outcome__c: null,
+          },
+        ],
+      },
+      context,
+    );
+    expect(result.issues).toEqual([]);
+    expect(result.opportunities).toHaveLength(1);
+    expect(result.opportunities[0]!.record.forecastCategory).toBeUndefined();
+    expect(result.opportunities[0]!.record.closedAt).toBeUndefined();
+  });
+
   it('rejects duplicate account ids deterministically', () => {
     const result = normalizeCrmExport(
       {
@@ -375,6 +424,112 @@ describe('normalizePrmRegistrations', () => {
     expect(result.issues).toEqual([
       expect.objectContaining({ code: 'inconsistent-state', path: 'rows[0].decided_at' }),
     ]);
+  });
+
+  it('rejects a pending registration that carries any partial decision field', () => {
+    // Pending means NO decision fields at all: a decider with no decision
+    // time, or a rejection reason on an undecided row, is still a decision
+    // fact the status contradicts.
+    for (const partial of [
+      { decided_by: 'Dana Iyer' },
+      { rejection_reason: 'duplicate of reg-501' },
+    ]) {
+      const result = normalizePrmRegistrations([{ ...prmRegistrations[1]!, ...partial }], context);
+      expect(result.records, JSON.stringify(partial)).toEqual([]);
+      expect(result.issues, JSON.stringify(partial)).toEqual([
+        expect.objectContaining({ code: 'inconsistent-state' }),
+      ]);
+    }
+  });
+
+  it('rejects an approved registration that carries a rejection reason', () => {
+    const result = normalizePrmRegistrations(
+      [{ ...prmRegistrations[0]!, rejection_reason: 'wait, no' }],
+      context,
+    );
+    expect(result.records).toEqual([]);
+    expect(result.issues).toEqual([
+      expect.objectContaining({ code: 'inconsistent-state', path: 'rows[0].rejection_reason' }),
+    ]);
+  });
+
+  it('rejects a decided registration that is missing its decider', () => {
+    const result = normalizePrmRegistrations(
+      [{ ...prmRegistrations[0]!, decided_by: null }],
+      context,
+    );
+    expect(result.records).toEqual([]);
+    expect(result.issues).toEqual([
+      expect.objectContaining({ code: 'inconsistent-state', path: 'rows[0].decided_at' }),
+    ]);
+  });
+
+  it('rejects a row whose present decision field fails its own read', () => {
+    const result = normalizePrmRegistrations(
+      [{ ...prmRegistrations[0]!, decided_at: 'last Tuesday' }],
+      context,
+    );
+    expect(result.records).toEqual([]);
+    expect(result.issues).toEqual([
+      expect.objectContaining({ code: 'invalid-date', path: 'rows[0].decided_at' }),
+    ]);
+  });
+
+  it('accepts the complete rejected combination: instant, decider, and reason', () => {
+    const result = normalizePrmRegistrations(
+      [
+        {
+          ...prmRegistrations[0]!,
+          registration_id: 'reg-503',
+          status: 'rejected' as const,
+          rejection_reason: 'account already registered',
+          opportunity_id: null,
+        },
+      ],
+      context,
+    );
+    expect(result.issues).toEqual([]);
+    expect(result.records[0]!.record).toMatchObject({
+      status: 'rejected',
+      decisionAt: '2026-02-03T17:00:00.000Z',
+      decidedBy: 'Dana Iyer',
+      reason: 'account already registered',
+    });
+  });
+
+  it('preserves 1–3 digit timestamp fractions as milliseconds', () => {
+    const cases: Array<[string, string]> = [
+      ['2026-02-01T08:00:00.1Z', '2026-02-01T08:00:00.100Z'],
+      ['2026-02-01T08:00:00.12Z', '2026-02-01T08:00:00.120Z'],
+      ['2026-02-01T08:00:00.123Z', '2026-02-01T08:00:00.123Z'],
+    ];
+    for (const [submittedAt, expected] of cases) {
+      const result = normalizePrmRegistrations(
+        [{ ...prmRegistrations[1]!, submitted_at: submittedAt }],
+        context,
+      );
+      expect(result.issues, submittedAt).toEqual([]);
+      expect(result.records[0]!.record.submittedAt, submittedAt).toBe(expected);
+    }
+    // A fourth fraction digit is not accepted and silently trimmed: the
+    // whole value fails, because `.1234` is not `.123`.
+    const result = normalizePrmRegistrations(
+      [{ ...prmRegistrations[1]!, submitted_at: '2026-02-01T08:00:00.1234Z' }],
+      context,
+    );
+    expect(result.records).toEqual([]);
+    expect(result.issues).toEqual([
+      expect.objectContaining({ code: 'invalid-date', path: 'rows[0].submitted_at' }),
+    ]);
+  });
+
+  it('keeps the fraction on an optional decision timestamp too', () => {
+    const result = normalizePrmRegistrations(
+      [{ ...prmRegistrations[0]!, decided_at: '2026-02-03T17:00:00.5Z' }],
+      context,
+    );
+    expect(result.issues).toEqual([]);
+    expect(result.records[0]!.record.decisionAt).toBe('2026-02-03T17:00:00.500Z');
   });
 
   it('rejects a rejected registration with no reason', () => {

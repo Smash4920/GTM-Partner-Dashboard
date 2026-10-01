@@ -254,6 +254,11 @@ function normalizeOpportunity(
     issues,
     path('Forecasted_Revenue__c'),
   );
+  // The four optional reads below may push issues for a malformed PRESENT
+  // value; the guard after the required fields rejects the row when one
+  // did. Counting from here keeps required-field failures (already fatal
+  // on their own) out of the comparison.
+  const issuesBeforeOptionalReads = issues.length;
   const forecastCategory = readOptionalEnum(
     source,
     'Forecast_Category__c',
@@ -294,6 +299,14 @@ function normalizeOpportunity(
     createdAt === undefined ||
     expectedCloseDate === undefined
   ) {
+    return undefined;
+  }
+  // Any malformed present optional field fails the whole row: emitting the
+  // record without the field would present a partially-normalized row as a
+  // clean one — a dropped Close Date or a shrugged-off Forecast Category
+  // is not the same deal the CRM described. Absent or null stays a
+  // legitimate "not set".
+  if (issues.length > issuesBeforeOptionalReads) {
     return undefined;
   }
   // A closed deal carries both facts or neither: an outcome with no close

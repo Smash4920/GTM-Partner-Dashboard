@@ -38,10 +38,14 @@ import type { ActivityMeeting, MeetingClassification, Partner, PartnerManager } 
  * selected. Once the directory answers, the aggregates commit to its first
  * manager: the view's label and the figures arrive under one scope identity,
  * never a frame that pairs the new manager's name with an org-wide answer.
- * A failed or empty directory resolves to the org-wide fallback the view has
- * always documented, rendered under its generic label. The resolved id is
- * returned as `managerId` so the view renders the manager the data actually
- * describes.
+ * A FAILED directory resolves to the org-wide fallback the view has always
+ * documented, rendered under its generic label. An answered-EMPTY directory
+ * is neither pending nor failed: there is no manager whose goal these cards
+ * could describe, so the goal and series queries are never issued and the
+ * surfaces say the directory holds no partner managers — an org-wide answer
+ * would attribute the crowd's work to a selection nobody made. The resolved
+ * id is returned as `managerId` so the view renders the manager the data
+ * actually describes.
  *
  * A classification commit refetches `goal`, `goalWeek`, and `series` — the
  * three aggregates that read classifications — exactly once, and nothing
@@ -52,12 +56,33 @@ import type { ActivityMeeting, MeetingClassification, Partner, PartnerManager } 
 /** Rows per page of the Log Meetings calendar. */
 const CLASSIFICATION_PAGE_SIZE = 25;
 
+/**
+ * The goal surfaces' answer when the manager directory answered with nobody
+ * on it. The aggregate queries were never issued, so this is not a failure
+ * of those queries — it is the truthful state of the directory, and the
+ * directory's retry is the only way the answer can change.
+ */
+export const EMPTY_DIRECTORY_COPY = 'No partner managers on the directory';
+
+/** The explicit unavailable state for a card whose scope does not exist. */
+function emptyDirectoryState<T>(retry: () => void): QueryState<T> {
+  return {
+    data: null,
+    meta: null,
+    loading: false,
+    refreshing: false,
+    error: EMPTY_DIRECTORY_COPY,
+    retry,
+  };
+}
+
 export interface ActivityQueryInput {
   provider: DataProvider;
   access: DemoAccessScope;
   /**
-   * The selected partner manager; '' follows the directory's first manager,
-   * and falls back to org-wide answers while the directory is unavailable.
+   * The selected partner manager; '' follows the directory's first manager.
+   * Org-wide answers happen only when the directory FAILS — a directory
+   * that answered empty is an explicit unavailable state, not a scope.
    */
   managerId: string;
   /** 'all' or one partner id — re-scopes the volume chart only. */
@@ -67,7 +92,11 @@ export interface ActivityQueryInput {
 }
 
 export interface ActivityQueries {
-  /** The manager the aggregate queries resolved to; '' for the org-wide fallback. */
+  /**
+   * The manager the aggregate queries resolved to; '' when following the
+   * directory produced none — the org-wide failure fallback, or an empty
+   * directory (the goal and series states say which).
+   */
   managerId: string;
   managers: QueryState<PartnerManager[]>;
   roster: QueryState<Partner[]>;
@@ -94,13 +123,16 @@ export function useActivityQueries({
   const roster = usePartnerRoster(provider, access, prospects);
 
   // An explicit selection wins. Otherwise the aggregates follow the
-  // directory — but only once it has settled: while it is still answering
-  // they stay disabled rather than issue an org-wide placeholder, and a
-  // failed or empty directory resolves to the org-wide fallback.
-  const directorySettled = managers.data !== null || managers.error !== null;
-  const aggregatesEnabled = managerId !== '' || directorySettled;
-  const resolvedManagerId =
-    managerId !== '' ? managerId : directorySettled ? (managers.data?.[0]?.id ?? '') : '';
+  // directory — but only once it has answered: while it is still answering
+  // they stay disabled rather than issue an org-wide placeholder, and only
+  // a FAILED directory resolves to the org-wide fallback. A directory that
+  // answered empty is a truthful "no partner managers" state, so no
+  // aggregate fires at all — there is nobody whose goal an org-wide number
+  // could describe.
+  const directoryFailed = managers.error !== null && managers.data === null;
+  const directoryEmpty = managers.data !== null && managers.data.length === 0;
+  const resolvedManagerId = managerId !== '' ? managerId : (managers.data?.[0]?.id ?? '');
+  const aggregatesEnabled = managerId !== '' || resolvedManagerId !== '' || directoryFailed;
   const partnerManagerId = resolvedManagerId === '' ? undefined : resolvedManagerId;
 
   const goal = useScopedQuery({
@@ -175,5 +207,16 @@ export function useActivityQueries({
     loadMoreErrorFallback: 'Failed to load more meetings',
   });
 
-  return { managerId: resolvedManagerId, managers, roster, goal, goalWeek, series, meetings };
+  // The empty-directory state overrides the (never-issued) aggregates only
+  // in follow-the-directory mode; an explicit selection always stands.
+  const noManagers = managerId === '' && directoryEmpty;
+  return {
+    managerId: resolvedManagerId,
+    managers,
+    roster,
+    goal: noManagers ? emptyDirectoryState<WeeklyGoalProgress>(managers.retry) : goal,
+    goalWeek: noManagers ? emptyDirectoryState<WeeklyActivityRow[]>(managers.retry) : goalWeek,
+    series: noManagers ? emptyDirectoryState<WeeklyActivityRow[]>(managers.retry) : series,
+    meetings,
+  };
 }

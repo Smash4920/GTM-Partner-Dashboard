@@ -3,8 +3,8 @@ import { CURRENT_FISCAL_QUARTER, FISCAL_PHASE_META, SNAPSHOT_DATE } from '../dat
 import type {
   ActivityMeeting,
   DealRegistration,
+  ForecastCategory,
   Opportunity,
-  PipelineSnapshot,
   Target,
   TeamUser,
 } from '../data/types';
@@ -32,6 +32,7 @@ import {
   weightedForecast,
   winRateForPhase,
 } from './metrics';
+import type { RecordedWeekTotals } from './metrics';
 
 // ---- fixtures --------------------------------------------------------------
 
@@ -65,15 +66,19 @@ function registration(submittedAt: string): DealRegistration {
   };
 }
 
-function snapshot(
-  fields: Partial<PipelineSnapshot> & Pick<PipelineSnapshot, 'takenAt' | 'opportunityId'>,
-): PipelineSnapshot {
+/**
+ * One recording instant's totals, zero-filled the way the provider's
+ * aggregation emits them (see `src/data/mock/book.ts`). The metrics layer
+ * never touches raw snapshot rows — even its tests receive history in this
+ * folded shape.
+ */
+function recorded(
+  takenAt: string,
+  raw: Partial<Record<ForecastCategory, number>>,
+): RecordedWeekTotals {
   return {
-    forecastedRevenue: 10_000,
-    forecastCategory: 'pipeline',
-    stage: 'scope',
-    expectedCloseDate: '2026-09-30T00:00:00Z',
-    ...fields,
+    takenAt,
+    raw: { 'long-shot': 0, pipeline: 0, 'best-case': 0, commit: 0, ...raw },
   };
 }
 
@@ -656,7 +661,9 @@ describe('weeklyForecastRows', () => {
 });
 
 describe('weeklyForecastRows with recorded history', () => {
-  // One deal, recorded at every Monday of Q3 through the snapshot week.
+  // One deal's worth of history: a recording at every Monday of Q3 through
+  // the snapshot week, already folded to per-category totals the way the
+  // provider's aggregation emits them (the raw rows are provider-private).
   const mondays = [
     '2026-08-10',
     '2026-08-17',
@@ -668,17 +675,10 @@ describe('weeklyForecastRows with recorded history', () => {
 
   const book = [opp({ id: 'a', expectedCloseDate: '2026-09-30T00:00:00Z' })];
 
-  it('reads closed weeks from the snapshot rather than the current book', () => {
+  it('reads closed weeks from the recording rather than the current book', () => {
     // The deal was called Pipeline at $100k all quarter, and today reads
     // Commit at $500k. History must show what was recorded, not today.
-    const history = mondays.map((takenAt) =>
-      snapshot({
-        takenAt,
-        opportunityId: 'a',
-        forecastedRevenue: 100_000,
-        forecastCategory: 'pipeline',
-      }),
-    );
+    const history = mondays.map((takenAt) => recorded(takenAt, { pipeline: 100_000 }));
     const edited = [
       opp({
         id: 'a',
@@ -688,9 +688,9 @@ describe('weeklyForecastRows with recorded history', () => {
       }),
     ];
     const rows = weeklyForecastRows(edited, 'FY27-Q3', SNAPSHOT_DATE, history);
-    const recorded = rows.filter((row) => row.recordedAt !== undefined);
-    expect(recorded).toHaveLength(6);
-    for (const row of recorded) {
+    const recordedWeeks = rows.filter((row) => row.recordedAt !== undefined);
+    expect(recordedWeeks).toHaveLength(6);
+    for (const row of recordedWeeks) {
       expect(row.total).toBe(100_000);
       expect(row.raw.pipeline).toBe(100_000);
       expect(row.weightedTotal).toBe(25_000); // 100k × 25%, the call of the day
@@ -698,9 +698,7 @@ describe('weeklyForecastRows with recorded history', () => {
   });
 
   it('keeps the in-progress week live, so it still matches the tiles', () => {
-    const history = mondays.map((takenAt) =>
-      snapshot({ takenAt, opportunityId: 'a', forecastedRevenue: 100_000 }),
-    );
+    const history = mondays.map((takenAt) => recorded(takenAt, { pipeline: 100_000 }));
     const rows = weeklyForecastRows(book, 'FY27-Q3', SNAPSHOT_DATE, history);
     // Snapshot Sep 18 sits inside the week of Sep 14, whose own recording is
     // its opening boundary, not a state inside it: that week stays live.
@@ -712,17 +710,14 @@ describe('weeklyForecastRows with recorded history', () => {
     expect(live[0].weightedTotal).toBe(weightedForecast(open).total);
   });
 
-  it('shows a slip out of the quarter as a drop instead of erasing it', () => {
-    // Recorded in Q3 for the first three weeks, then pushed into Q4. Today the
-    // deal is a Q4 deal, so deriving from the current book would hide it from
-    // every week and leave no drop behind.
+  it('draws a recorded zero as a drop, not as a week to reconstruct', () => {
+    // The aggregation reports 100k of pipeline for the first three Mondays
+    // and zero after — the deal's recorded close slid into Q4, so it clipped
+    // out of the later recordings (the raw-side clip is pinned in
+    // mock/book.test.ts). Today the deal is a Q4 deal, so deriving from the
+    // current book would hide it from every week and leave no drop behind.
     const history = mondays.map((takenAt, index) =>
-      snapshot({
-        takenAt,
-        opportunityId: 'a',
-        forecastedRevenue: 100_000,
-        expectedCloseDate: index < 3 ? '2026-09-30T00:00:00Z' : '2026-11-20T00:00:00Z',
-      }),
+      recorded(takenAt, index < 3 ? { pipeline: 100_000 } : {}),
     );
     const slipped = [opp({ id: 'a', expectedCloseDate: '2026-11-20T00:00:00Z' })];
     const totals = weeklyForecastRows(slipped, 'FY27-Q3', SNAPSHOT_DATE, history)
@@ -733,9 +728,7 @@ describe('weeklyForecastRows with recorded history', () => {
 
   it('falls back to the current book for weeks history does not cover', () => {
     // History starts in September, so August weeks have nothing recorded.
-    const history = mondays
-      .slice(4)
-      .map((takenAt) => snapshot({ takenAt, opportunityId: 'a', forecastedRevenue: 100_000 }));
+    const history = mondays.slice(4).map((takenAt) => recorded(takenAt, { pipeline: 100_000 }));
     const rows = weeklyForecastRows(book, 'FY27-Q3', SNAPSHOT_DATE, history);
     const august = rows.filter(
       (row) => row.hasStarted && new Date(row.weekStart) < new Date('2026-08-31T00:00:00Z'),
@@ -750,8 +743,8 @@ describe('weeklyForecastRows with recorded history', () => {
 
   it('ignores recordings outside the quarter being charted', () => {
     const history = [
-      snapshot({ takenAt: '2026-07-06T00:00:00.000Z', opportunityId: 'a' }),
-      snapshot({ takenAt: '2026-11-09T00:00:00.000Z', opportunityId: 'a' }),
+      recorded('2026-07-06T00:00:00.000Z', { pipeline: 100_000 }),
+      recorded('2026-11-09T00:00:00.000Z', { pipeline: 100_000 }),
     ];
     const rows = weeklyForecastRows(book, 'FY27-Q3', SNAPSHOT_DATE, history);
     expect(rows.every((row) => row.recordedAt === undefined)).toBe(true);

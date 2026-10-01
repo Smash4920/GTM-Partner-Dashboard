@@ -9,7 +9,9 @@ import { MockDataProvider } from '../data/mock/MockDataProvider';
 import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
 import { startOfWeekUtc } from '../lib/fiscal';
 import { formatDate } from '../lib/format';
-import type { MeetingClassification, ProviderBook } from '../data/types';
+import type { MeetingClassification } from '../data/types';
+import type { ProviderBook } from '../data/mock/book';
+import { EMPTY_DIRECTORY_COPY } from '../data/useActivityQueries';
 
 /**
  * Activity Tracking over the scoped contract (VAL-DATA-015): the weekly goal
@@ -533,10 +535,10 @@ describe('ActivityTrackingView', () => {
     expect(partnerFor).toHaveValue('partner-1');
   });
 
-  it('falls back to unnamed copy when the directory holds no partner managers', async () => {
+  it('reports an answered-empty directory explicitly instead of rendering org-wide zeroes', async () => {
     const user = userEvent.setup();
-    renderView({
-      book: makeProviderBook({
+    const inner = new MockDataProvider(
+      makeProviderBook({
         partnerManagers: [],
         partners: [],
         activities: [],
@@ -545,17 +547,51 @@ describe('ActivityTrackingView', () => {
         targets: [],
         certifications: [],
       }),
-    });
+    );
+    // Record every provider call: the whole point is the requests the view
+    // must NOT issue once the directory has answered with nobody on it.
+    const calls: string[] = [];
+    const provider = new Proxy(inner, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (typeof property !== 'string' || typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          calls.push(property);
+          return (value as (...rest: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    }) as DataProvider;
+    renderView({ provider });
 
+    // The generic header and the (empty) roster still answer; neither is
+    // manager-attributed.
     const heading = screen.getByRole('heading', { name: 'Activity Tracking' });
     expect(
       within(heading.parentElement as HTMLElement).getByText('Partner manager'),
     ).toBeInTheDocument();
     expect(await screen.findByRole('option', { name: 'All Partners (0)' })).toBeInTheDocument();
-    // Both progress bars — meetings and PIO interlocks — sit at zero.
-    await within(goalCard()).findByText('0/10');
-    expect(within(goalCard()).getAllByText('0% of goal')).toHaveLength(2);
-    expect(screen.getByText(/registered account under/)).toBeInTheDocument();
+
+    // The goal surfaces name the truthful state. Org-wide zero bars would
+    // attribute the crowd's work to a manager nobody has — so no goal or
+    // series request was ever issued, and the cards say why.
+    expect(await within(goalCard()).findByText('Weekly goal unavailable:')).toBeInTheDocument();
+    expect(within(goalCard()).getByText('Weekly meeting types unavailable:')).toBeInTheDocument();
+    // Both goal widgets and the volume card carry the same truthful reason.
+    expect(within(goalCard()).getAllByText(EMPTY_DIRECTORY_COPY)).toHaveLength(2);
+    expect(within(goalCard()).queryByText('0/10')).not.toBeInTheDocument();
+    expect(within(volumeCard()).getByText('Weekly activity unavailable:')).toBeInTheDocument();
+    expect(within(volumeCard()).getByText(EMPTY_DIRECTORY_COPY)).toBeInTheDocument();
+    expect(calls).not.toContain('getWeeklyGoalProgress');
+    expect(calls).not.toContain('getWeeklyActivitySeries');
+    expect(calls).not.toContain('listWeeklyClassificationMeetings');
+
+    // Retrying the goal card re-asks the directory — the only answer that
+    // can change this state.
+    await user.click(screen.getByRole('button', { name: 'Retry weekly goal' }));
+    await waitFor(() =>
+      expect(calls.filter((method) => method === 'getManagerDirectory')).toHaveLength(2),
+    );
+    expect(calls).not.toContain('getWeeklyGoalProgress');
 
     // Nobody to log against, so the calendar never opens.
     expect(screen.getByRole('button', { name: 'Log Meetings' })).toBeDisabled();

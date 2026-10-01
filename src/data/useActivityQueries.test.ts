@@ -6,12 +6,14 @@ import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { SimulatedRemoteProvider } from './mock/SimulatedRemoteProvider';
 import { useActivityQueries } from './useActivityQueries';
+import { EMPTY_DIRECTORY_COPY } from './useActivityQueries';
 import type { ActivityQueryInput } from './useActivityQueries';
 import { SNAPSHOT_DATE } from './constants';
 import { startOfWeekUtc } from '../lib/fiscal';
 import { weeklyActivity, weeklyGoalProgress } from '../lib/metrics';
 import { makeMeeting, makePartner, makeProviderBook } from '../test/fixtures';
-import type { MeetingClassification, ProviderBook } from './types';
+import type { MeetingClassification } from './types';
+import type { ProviderBook } from './mock/book';
 
 /**
  * VAL-DATA-015 (Activity Tracking): the route requests exactly the scoped
@@ -380,6 +382,49 @@ describe('useActivityQueries (VAL-DATA-015)', () => {
     expect(result.current.meetings.rows).toEqual([]);
     expect(result.current.meetings.loading).toBe(false);
     expect(calls).not.toContain('listWeeklyClassificationMeetings');
+  });
+
+  it('issues no aggregate and says so when the directory answers with nobody on it', async () => {
+    const book = makeProviderBook({
+      partnerManagers: [],
+      partners: [],
+      activities: [],
+      registrations: [],
+      opportunities: [],
+      targets: [],
+      certifications: [],
+    });
+    const { provider, calls } = spyProvider(new MockDataProvider(book));
+    const { result } = renderHook((input: ActivityQueryInput) => useActivityQueries(input), {
+      initialProps: inputFor(provider, { managerId: '' }),
+    });
+
+    await waitFor(() => expect(result.current.managers.data).toEqual([]));
+
+    // An answered-empty directory is not a failure and not a scope: no goal
+    // or series query fires, because there is no manager an org-wide figure
+    // could describe. The surfaces report the empty directory explicitly.
+    expect(calls).not.toContain('getWeeklyGoalProgress');
+    expect(calls).not.toContain('getWeeklyActivitySeries');
+    expect(calls).not.toContain('listWeeklyClassificationMeetings');
+    expect(result.current.managerId).toBe('');
+    for (const state of [result.current.goal, result.current.goalWeek, result.current.series]) {
+      expect(state).toMatchObject({
+        data: null,
+        loading: false,
+        refreshing: false,
+        error: EMPTY_DIRECTORY_COPY,
+      });
+    }
+    // The roster is not manager-attributed, so it still answered.
+    expect(result.current.roster.data).toEqual([]);
+
+    // Retry re-asks the directory — the only answer that can change this.
+    act(() => result.current.goal.retry());
+    await waitFor(() =>
+      expect(calls.filter((method) => method === 'getManagerDirectory')).toHaveLength(2),
+    );
+    expect(calls).not.toContain('getWeeklyGoalProgress');
   });
 
   it('follows the directory to its first manager when none is selected', async () => {

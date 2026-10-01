@@ -24,9 +24,9 @@ failed requests.
      `src/data/constants.ts`.
 3. Read the view's tests before editing it. Add characterization coverage first
    if a business rule or interaction is not already pinned.
-4. Search for every consumer of the legacy fields and methods under change. Do
-   not remove a field from `DashboardData` or a method from
-   `LegacyBookProvider` while another view still uses it.
+4. Search for every consumer of the fields and methods under change. Do
+   not remove a field from a shared DTO or a method from `DataProvider`
+   while another view still uses it.
 
 ## Design a bounded contract
 
@@ -46,8 +46,8 @@ Add the smallest set of queries the view needs to `ScopedQueryProvider` in
   arithmetic. Do not fetch an aggregate and reapply edits in the view.
 - Never reintroduce raw weekly pipeline snapshots. Weekly history may cross the
   seam only as bounded buckets such as `getWeeklyForecastSeries()`.
-- Prefer rejecting an unsupported scope to returning a plausible but incorrect
-  number.
+- Document non-obvious scope exceptions next to the contract. Prefer rejecting
+  an unsupported scope to returning a plausible but incorrect number.
 
 For each new method:
 
@@ -65,7 +65,8 @@ For each new method:
 2. Implement the query in `src/data/mock/MockDataProvider.ts` by delegating to
    those calculations. Filter before aggregating or paging.
 3. Update every provider and wrapper affected by the contract, including
-   simulated latency and failure dispatch.
+   simulated latency/failure dispatch. Confirm whether a provider inherits the
+   implementation before adding duplicate code.
 4. Keep mock output deterministic:
    - use `SNAPSHOT_DATE` for reporting calculations;
    - prefer identifier-derived variation over sequence-dependent randomness;
@@ -74,22 +75,26 @@ For each new method:
 5. Validate pages as a complete sequence, not only the first page. Assert stable
    ordering, no duplicate or missing rows, accurate `totalCount`, and no
    `nextCursor` on the final page.
-6. Validate scoped and edit-aware results against the pure calculation,
+6. Validate scoped results and edit-aware results against the pure calculation,
    including zero-data and invalid-scope cases.
 
 ## Build the query hook
 
-Create a focused hook under `src/data/` rather than fetching in the view.
+Create a focused hook under `src/data/` rather than fetching directly in the
+view.
 
-- Give independently useful widgets independent data or failure state.
-- Distinguish the initial load from a refresh and keep the previous valid answer
+- Give independently useful widgets independent data or failure state when one
+  slow query should not blank the whole page.
+- Distinguish the initial load from a refresh. Keep the previous valid answer
   visible while edits trigger a replacement request.
-- Prevent stale responses from overwriting newer ones with a cleanup or a
+- Prevent stale responses from overwriting newer ones. Use an effect cleanup or
   monotonically increasing request identifier.
 - Make effect dependencies the primitive values and edit maps the request
-  needs, never a scope object rebuilt during render.
-- Reset paginated state when the scope changes and make load-more failures
+  needs. Never depend on a scope object rebuilt during render.
+- Reset paginated state when the scope changes. Make load-more failures
   retryable without discarding rows already shown.
+- Treat small display dimensions as degradable when an identifier remains a
+  safe, legible fallback.
 
 ## Migrate the view
 
@@ -97,27 +102,41 @@ Create a focused hook under `src/data/` rather than fetching in the view.
    untouched view on its existing hook.
 2. Keep session-only writes in `src/App.tsx`; do not imply persistence or add
    browser storage.
-3. Preserve accessible labels, native controls, responsive behavior, and
-   Tailwind design tokens.
-4. For Partner View, test that Sell To opportunities, conflicting
+3. Preserve existing accessible labels, native controls, responsive behavior,
+   and Tailwind design tokens.
+4. Represent initial loading, background refresh, empty results, partial
+   failure, retry, and pagination explicitly.
+5. For Partner View, test that Sell To opportunities, conflicting
    registrations, and other partners' records cannot appear.
-5. Remove a prop, field, method, or loader call only after a repository
+6. Remove a prop, field, method, or loader call only after a repository
    search proves it has no remaining consumer.
 
 ## Prove the migration
 
+Add or update the narrowest tests that cover:
+
+- pure aggregate and fiscal-calendar rules;
+- mock-provider conformance, scopes, edits, and pagination;
+- hook loading, refresh, stale-response, error, retry, and load-more behavior;
+- view behavior and accessibility;
+- the connection catalog when the contract changes;
+- deterministic scale-provider behavior when payload shape or volume matters.
+
+Mutation-check new regression tests by briefly reverting the production
+condition they protect and confirming that the test fails, then restore the
+correct implementation.
+
 Run a focused test while iterating, then run the repository checks in CI order:
 
 ```bash
-npm run agents:check
 npm run check:file-limits
 npm run format:check
 npm run test:debt
+npm run test:build-metrics
 npm run debt:check
 npm run lint
 npm run dead-code
 npm run lint:duplicates
-npm run docs:check
 npm run test:coverage
 npm run test:e2e
 npm run bundle:check

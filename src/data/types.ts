@@ -5,6 +5,11 @@
  * interface (src/data/DataProvider.ts). A seeded mock generator fills them
  * today; a CRM-backed provider can fill the exact same shapes tomorrow
  * without any view code changing. See README "Data contract".
+ *
+ * Two shapes are deliberately NOT here: the whole-book container a
+ * provider holds and the raw weekly snapshot history rows live in
+ * `src/data/mock/book.ts`, provider-private, so no shared import can leak
+ * raw history toward the client (the boundary test scans for their names).
  */
 
 export type PartnerType = 'reseller' | 'agency' | 'msp' | 'integrator' | 'referral';
@@ -94,33 +99,6 @@ export interface Opportunity {
   outcome?: OpportunityOutcome;
   /** Free-form note left by a partner manager; edited in-app, shown on hover. */
   notes?: string;
-}
-
-/**
- * One opportunity's state as it stood at a weekly recording of the open book.
- *
- * This is append-only history, and it exists because current state cannot
- * answer a question about the past. An opportunity row carries one amount, one
- * call, and one expected close date, so reading last week's pipeline off
- * today's book silently backdates every later change: an amount raised this
- * week rewrites the weeks before it, a re-call re-colors them, and a deal that
- * slipped out of the quarter disappears from the weeks it was in rather than
- * showing the drop. A snapshot already written must never change.
- *
- * Salesforce keeps the equivalent in OpportunityHistory and
- * OpportunityFieldHistory; a warehouse would model it as a weekly fact table.
- */
-export interface PipelineSnapshot {
-  /** UTC Monday midnight the book was recorded at — the close of the prior week. */
-  takenAt: string; // ISO 8601
-  opportunityId: string;
-  /** Forecasted revenue as it stood, not today's figure. */
-  forecastedRevenue: number;
-  /** The manager's call as it stood. */
-  forecastCategory: ForecastCategory;
-  stage: OpportunityStage;
-  /** Expected close as it stood, so slips in and out of a quarter are visible. */
-  expectedCloseDate: string; // ISO 8601
 }
 
 /** Revenue target for one partner for one quarter. */
@@ -259,33 +237,6 @@ export interface DashboardNotification {
   status: NotificationStatus;
   /** The registration the notification is about, when it is about one. */
   registrationId?: string;
-}
-
-/**
- * What a provider holds. None of it crosses the seam as a collection: the
- * client receives scoped aggregates and cursor pages (see
- * `src/data/DataProvider.ts`), never the book.
- *
- * `snapshots` is the sharpest case, and the whole argument for the scoped
- * contract: weekly pipeline history is ~87% of the payload at production
- * volume, and no screen wants it as rows — the week-over-week chart wants
- * fourteen buckets. So it stays behind the seam, and
- * `DataProvider.getWeeklyForecastSeries()` is the only way out. A provider
- * that has no history may hold an empty array; the series then falls back to
- * what the current book can say.
- */
-export interface ProviderBook {
-  partnerManagers: PartnerManager[];
-  partners: Partner[];
-  registrations: DealRegistration[];
-  opportunities: Opportunity[];
-  targets: Target[];
-  activities: ActivityMeeting[];
-  certifications: PartnerCertification[];
-  /** Internal partner-team roster projected from the identity provider. */
-  teamUsers: TeamUser[];
-  /** Append-only weekly recordings of the open book. Never corrected. */
-  snapshots: PipelineSnapshot[];
 }
 
 /**

@@ -38,7 +38,8 @@ import {
   scopeTeamUsers,
 } from '../accessScope';
 import type { DemoAccessScope } from '../accessScope';
-import { paginateRows } from '../pagination';
+import { createCursorIssuer, paginateRows } from '../pagination';
+import type { CursorIssuer } from '../pagination';
 import type { QueryContext } from '../queryContext';
 import {
   buildQueryMeta,
@@ -55,10 +56,11 @@ import type {
   Opportunity,
   Partner,
   PartnerManager,
-  ProviderBook,
   Target,
   TeamUser,
 } from '../types';
+import type { ProviderBook } from './book';
+import { weeklyRecordingTotals } from './book';
 import { SNAPSHOT_DATE } from '../constants';
 import {
   activePartnerCount,
@@ -129,6 +131,21 @@ import { generateDashboardData } from './generate';
  * partner-audience answer is computed from that partner's rows alone. The
  * scope is demonstrative filtering, never an authorization claim.
  */
+
+/** Construction options for the mock provider. */
+export interface MockProviderOptions {
+  providerId?: string;
+  /**
+   * The secret behind this instance's cursors. Random per instance by
+   * default — two providers over the same book still cannot read each
+   * other's tokens. Pinned only by tests that model ONE logical provider
+   * whose data moved on: the new epoch's instance must share the old
+   * instance's secret for its cursors to classify as expired rather than
+   * forged.
+   */
+  cursorSecret?: string;
+}
+
 export class MockDataProvider implements DataProvider {
   protected readonly data: ProviderBook;
   /** Partner → owning partner manager, built once for scoping filters. */
@@ -138,13 +155,20 @@ export class MockDataProvider implements DataProvider {
    * assigns the app-level id; a bare instance is the local mock.
    */
   private readonly providerId: string;
+  /**
+   * This instance's cursor capability. Random per construction, so a cursor
+   * minted here is a typed rejection everywhere else — a second mock over
+   * the same book and the scaled provider included.
+   */
+  private readonly cursorIssuer: CursorIssuer;
 
-  constructor(data: ProviderBook = generateDashboardData(), options?: { providerId?: string }) {
+  constructor(data: ProviderBook = generateDashboardData(), options?: MockProviderOptions) {
     this.data = data;
     this.managerByPartner = new Map(
       data.partners.map((partner) => [partner.id, partner.partnerManagerId]),
     );
     this.providerId = options?.providerId ?? 'local';
+    this.cursorIssuer = createCursorIssuer(options?.cursorSecret);
   }
 
   // ---- scoped queries ------------------------------------------------------
@@ -371,25 +395,34 @@ export class MockDataProvider implements DataProvider {
     // book the deal was in, so filtering the live weeks by manager would
     // leave the recorded weeks unfiltered and draw a cliff into the chart
     // that never happened. The contract states that as the one documented
-    // exception to the query scope. The *access* scope is not an exception:
-    // a partner audience's series is computed from its own opportunities and
-    // their snapshot rows alone, and a snapshot row always names its
-    // opportunity, so the recorded weeks filter by the same visibility as
-    // the live ones. The visible ids are collected once: history is by far
-    // the largest collection at production volume, so a per-row lookup into
-    // the opportunities array would turn this query quadratic.
+    // exception to the query scope — a business scope alone never invents
+    // historical ownership. The *access* scope is not an exception: EVERY
+    // narrowed audience's series is computed from its own opportunities and
+    // their snapshot rows alone — a partner's portal view or one partner
+    // manager's internal book. A snapshot row always names its opportunity,
+    // so the recorded weeks filter by the same visibility as the live ones,
+    // and the visible ids are collected once: history is by far the largest
+    // collection at production volume, so a per-row lookup into the
+    // opportunities array would turn this query quadratic.
     const snapshots =
-      access.audience === 'partner'
-        ? (() => {
+      access.audience === 'internal' && access.partnerManagerId === undefined
+        ? this.data.snapshots
+        : (() => {
             const visibleIds = new Set(
               scopeOpportunities(this.data.opportunities, this.data.partners, access).map(
                 (opp) => opp.id,
               ),
             );
             return this.data.snapshots.filter((row) => visibleIds.has(row.opportunityId));
-          })()
-        : this.data.snapshots;
-    const weeks = weeklyForecastRows(edited, scope.quarter, SNAPSHOT_DATE, snapshots);
+          })();
+    const weeks = weeklyForecastRows(
+      edited,
+      scope.quarter,
+      SNAPSHOT_DATE,
+      // Raw rows never leave the provider: history crosses the aggregation
+      // into bounded per-week totals here, behind the seam.
+      weeklyRecordingTotals(snapshots, scope.quarter),
+    );
     // A closed week with no recording is reconstructed from today's book,
     // which backdates every later change into it. That is usable but partial
     // history, and the envelope says so rather than drawing it as recorded
@@ -453,6 +486,7 @@ export class MockDataProvider implements DataProvider {
         // survives the edit-driven window refresh.
         queryKey: `listQuarterOpportunities|access:${demoScopeKey(access)}|quarter:${scope.quarter}|manager:${scope.partnerManagerId ?? 'all'}`,
         asOf: this.dataEpoch(),
+        issuer: this.cursorIssuer,
         cursor: page.cursor,
         limit: page.limit,
       }),
@@ -823,6 +857,7 @@ export class MockDataProvider implements DataProvider {
         rows: ordered,
         queryKey: `listScopedOpportunities|access:${demoScopeKey(access)}|phase:${scope.phase}|type:${scope.oppType ?? 'all'}|${this.drilldownKey(scope)}`,
         asOf: this.dataEpoch(),
+        issuer: this.cursorIssuer,
         cursor: page.cursor,
         limit: page.limit,
       }),
@@ -850,6 +885,7 @@ export class MockDataProvider implements DataProvider {
         rows: ordered,
         queryKey: `listPendingRegistrations|access:${demoScopeKey(access)}|phase:${scope.phase ?? 'all'}|${this.drilldownKey(scope)}`,
         asOf: this.dataEpoch(),
+        issuer: this.cursorIssuer,
         cursor: page.cursor,
         limit: page.limit,
       }),
@@ -873,6 +909,7 @@ export class MockDataProvider implements DataProvider {
         rows: ordered,
         queryKey: `listUnconvertedRegistrations|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
         asOf: this.dataEpoch(),
+        issuer: this.cursorIssuer,
         cursor: page.cursor,
         limit: page.limit,
       }),
@@ -895,6 +932,7 @@ export class MockDataProvider implements DataProvider {
         rows: ordered,
         queryKey: `listDuplicateRegistrationGroups|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
         asOf: this.dataEpoch(),
+        issuer: this.cursorIssuer,
         cursor: page.cursor,
         limit: page.limit,
       }),
@@ -918,6 +956,7 @@ export class MockDataProvider implements DataProvider {
         rows: ordered,
         queryKey: `listRecentRegistrations|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
         asOf: this.dataEpoch(),
+        issuer: this.cursorIssuer,
         cursor: page.cursor,
         limit: page.limit,
       }),
@@ -1004,6 +1043,7 @@ export class MockDataProvider implements DataProvider {
         rows: ordered,
         queryKey: `listWeeklyClassificationMeetings|access:${demoScopeKey(access)}|manager:${scope.partnerManagerId}`,
         asOf: this.dataEpoch(),
+        issuer: this.cursorIssuer,
         cursor: page.cursor,
         limit: page.limit,
       }),

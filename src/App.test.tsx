@@ -9,7 +9,7 @@ import { generateDashboardData } from './data/mock/generate';
 import { SimulatedRemoteProvider } from './data/mock/SimulatedRemoteProvider';
 import { createProvider } from './data/providers';
 import type { ProviderId } from './data/providers';
-import type { ProviderBook } from './data/types';
+import type { ProviderBook } from './data/mock/book';
 import { createFeatureFlagClient, type FeatureFlagClient } from './lib/featureFlags';
 
 /**

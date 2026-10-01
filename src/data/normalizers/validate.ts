@@ -19,8 +19,12 @@ const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;
 /** `2026-09-14` — date-only, no timezone to misread. */
 const ISO_DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-/** `2026-09-14T15:30:00Z` or with milliseconds — UTC, and only UTC. */
-const ISO_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?Z$/;
+/**
+ * `2026-09-14T15:30:00Z` or with a 1–3 digit fraction — UTC, and only UTC.
+ * The fraction is captured, not just permitted: it is the millisecond part
+ * of the instant (`.5` is 500ms), and dropping it would move the record.
+ */
+const ISO_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/;
 
 /** The input of every record-level adapter, or null when it is not one. */
 export function asRecord(input: unknown): Record<string, unknown> | null {
@@ -173,10 +177,11 @@ function isoFromParts(
   hours: number,
   minutes: number,
   seconds: number,
+  milliseconds: number = 0,
 ): string | null {
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   if (hours > 23 || minutes > 59 || seconds > 59) return null;
-  const instant = new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds));
+  const instant = new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds, milliseconds));
   // Date.UTC rolls impossible days over (Feb 30 → Mar 2): a round-trip that
   // disagrees with the input is the only honest answer.
   if (
@@ -193,7 +198,8 @@ function isoFromParts(
  * A required ISO 8601 UTC timestamp, canonicalized to millisecond form.
  * Date.parse alone accepts prose dates and offset-less local times; both are
  * rejected here so the same source record normalizes identically in every
- * timezone.
+ * timezone. An accepted 1–3 digit fraction is milliseconds and is
+ * preserved: `.1` canonicalizes to `.100`, not to a dropped fraction.
  */
 export function readIsoTimestamp(
   source: Record<string, unknown>,
@@ -217,6 +223,9 @@ export function readIsoTimestamp(
           Number(match[4]),
           Number(match[5]),
           Number(match[6]),
+          // The captured fraction is a decimal of one second: pad it right
+          // to three digits so `.5` is 500ms, `.05` is 50ms.
+          match[7] === undefined ? 0 : Number(match[7].padEnd(3, '0')),
         );
   if (iso === null) {
     issue(

@@ -30,10 +30,13 @@ import { generateDashboardData } from './mock/generate';
  * Three kinds of proof live here:
  *
  * 1. A static scan: the snapshot row type may be named only where history
- *    legitimately lives — the domain model, the metrics specification that
- *    consumes it, the mock generators that fabricate it, and this test. A
- *    view, component, hook, contract, or telemetry module that names it
- *    fails the suite.
+ *    legitimately lives — the provider-private book module that defines it
+ *    and folds it into bounded totals, the mock generators that fabricate
+ *    it, and the tests of those modules. A view, component, hook, contract,
+ *    shared-type, or metrics module that names it fails the suite — the
+ *    metrics specification included, which consumes only folded totals.
+ *    The whole-book container type gets the same treatment in production
+ *    code: only provider modules and the test fixture factory may name it.
  * 2. A runtime walk: every provider method's answer — both audiences, full
  *    page walks, metadata envelopes included — is recursively inspected for
  *    the snapshot shape, and the weekly series is checked for per-deal
@@ -149,19 +152,33 @@ describe('static boundary', () => {
   const SRC_ROOT = path.join(process.cwd(), 'src');
 
   /**
-   * Where the snapshot row type may be named, relative to src/: the domain
-   * model that defines it, the metrics specification that consumes it, the
-   * mock generators that fabricate it, and this suite. Everything else —
-   * views, components, hooks, contracts, telemetry — proves the boundary by
-   * never naming it at all.
+   * Where the snapshot row type may be named, relative to src/: the
+   * provider-private book module that defines it and folds it into bounded
+   * totals, the mock generators that fabricate it, this suite, and the book
+   * module's own tests. Everything else — views, components, hooks, the
+   * contract, shared types, the metrics specification, telemetry — proves
+   * the boundary by never naming it at all.
    */
-  const ALLOWED_REFERENCES = new Set([
-    'data/types.ts',
-    'lib/metrics.ts',
-    'lib/metrics.test.ts',
+  const ALLOWED_SNAPSHOT_REFERENCES = new Set([
+    'data/mock/book.ts',
+    'data/mock/book.test.ts',
     'data/mock/generate.ts',
     'data/mock/ScaleDataProvider.ts',
     'data/rawSnapshotBoundary.test.ts',
+  ]);
+
+  /**
+   * Where the whole-book container type may be named in PRODUCTION code
+   * (tests build books as fixtures, so the seam's own suites are exempt):
+   * the provider modules only. A shared type, contract, hook, view, or
+   * metrics module naming it would be raw history's way back across the
+   * seam.
+   */
+  const ALLOWED_BOOK_PRODUCTION_REFERENCES = new Set([
+    'data/mock/book.ts',
+    'data/mock/generate.ts',
+    'data/mock/MockDataProvider.ts',
+    'data/mock/ScaleDataProvider.ts',
   ]);
 
   function collectSourceFiles(dir: string): string[] {
@@ -180,7 +197,23 @@ describe('static boundary', () => {
       const relative = path.relative(SRC_ROOT, file);
       if (
         /\bPipelineSnapshot\b/.test(readFileSync(file, 'utf8')) &&
-        !ALLOWED_REFERENCES.has(relative)
+        !ALLOWED_SNAPSHOT_REFERENCES.has(relative)
+      ) {
+        offenders.push(relative);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps the whole-book type provider-private in production code', () => {
+    const offenders: string[] = [];
+    for (const file of collectSourceFiles(SRC_ROOT)) {
+      const relative = path.relative(SRC_ROOT, file);
+      // Tests and the fixture factory legitimately hold a book.
+      if (/\.(test|spec)\.(ts|tsx)$/.test(relative) || relative.startsWith('test/')) continue;
+      if (
+        /\bProviderBook\b/.test(readFileSync(file, 'utf8')) &&
+        !ALLOWED_BOOK_PRODUCTION_REFERENCES.has(relative)
       ) {
         offenders.push(relative);
       }

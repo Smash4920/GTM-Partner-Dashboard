@@ -12,7 +12,7 @@ import type { DataProvider } from '../data/DataProvider';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
 import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
 import type { DashboardNotification, DealRegistration, Partner, TeamUser } from '../data/types';
-import type { ProviderBook } from '../data/types';
+import type { ProviderBook } from '../data/mock/book';
 import { businessDaysBefore } from '../lib/fiscal';
 import { formatDate } from '../lib/format';
 import { registrationSlaAlerts, type RegistrationSlaAlert } from '../lib/metrics';

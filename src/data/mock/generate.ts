@@ -23,12 +23,11 @@ import type {
   PartnerManager,
   PartnerTier,
   PartnerType,
-  PipelineSnapshot,
-  ProviderBook,
   Region,
   Target,
   TeamUser,
 } from '../types';
+import type { PipelineSnapshot, ProviderBook } from './book';
 import { chance, mulberry32, pick, randInt, skewAmount, weightedPick } from './rng';
 
 /**

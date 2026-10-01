@@ -13,7 +13,8 @@ import {
   makeRegistration,
   makeTarget,
 } from '../test/fixtures';
-import type { MeetingClassification, ProviderBook } from '../data/types';
+import type { MeetingClassification } from '../data/types';
+import type { ProviderBook } from '../data/mock/book';
 
 /**
  * Partner Performance: the manager → partner → phase drill-down, the guarded

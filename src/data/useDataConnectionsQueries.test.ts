@@ -14,7 +14,7 @@ import {
   registrationsNewestFirst,
 } from '../lib/metrics';
 import { makePartner, makeProviderBook, makeRegistration, makeTeamUser } from '../test/fixtures';
-import type { ProviderBook } from './types';
+import type { ProviderBook } from './mock/book';
 
 /**
  * VAL-CROSS-004 (Data Connections): the route's data-backed sections request

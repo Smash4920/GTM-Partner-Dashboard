@@ -4,7 +4,7 @@ import HomeView from './HomeView';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
 import { NO_SESSION_EDITS } from '../data/sessionEdits';
 import { makeOpportunity, makeProviderBook, makeTarget } from '../test/fixtures';
-import type { ProviderBook } from '../data/types';
+import type { ProviderBook } from '../data/mock/book';
 import type { MeetingClassification } from '../data/types';
 
 /**

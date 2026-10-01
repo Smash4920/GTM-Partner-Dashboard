@@ -5,10 +5,10 @@ import type {
   Opportunity,
   Partner,
   PartnerCertification,
-  ProviderBook,
   Target,
   TeamUser,
 } from '../data/types';
+import type { ProviderBook } from '../data/mock/book';
 
 /**
  * Hand-built records for component tests.

@@ -16,7 +16,8 @@ import {
   makeRegistration,
   makeTarget,
 } from '../test/fixtures';
-import type { MeetingClassification, ProviderBook } from './types';
+import type { MeetingClassification } from './types';
+import type { ProviderBook } from './mock/book';
 
 /**
  * VAL-DATA-014 (Home): the route requests exactly the scoped aggregates and

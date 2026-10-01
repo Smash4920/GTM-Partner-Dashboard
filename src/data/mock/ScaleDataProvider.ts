@@ -4,10 +4,9 @@ import type {
   Opportunity,
   Partner,
   PartnerCertification,
-  PipelineSnapshot,
-  ProviderBook,
   Target,
 } from '../types';
+import type { PipelineSnapshot, ProviderBook } from './book';
 import { MockDataProvider } from './MockDataProvider';
 import { generateDashboardData } from './generate';
 

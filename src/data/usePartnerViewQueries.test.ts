@@ -21,7 +21,7 @@ import {
   makeRegistration,
   makeTarget,
 } from '../test/fixtures';
-import type { ProviderBook } from './types';
+import type { ProviderBook } from './mock/book';
 
 /**
  * VAL-CROSS-004 (Partner View): the route requests exactly the scoped
