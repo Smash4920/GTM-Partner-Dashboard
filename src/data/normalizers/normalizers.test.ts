@@ -548,6 +548,85 @@ describe('normalizePrmRegistrations', () => {
     ]);
   });
 
+  it.each([
+    {
+      label: 'an approved row whose decider is whitespace-only',
+      row: { ...prmRegistrations[0]!, decided_by: '   ' },
+      issue: { code: 'inconsistent-state', path: 'rows[0].decided_at' },
+      absent: undefined,
+    },
+    {
+      label: 'a rejected row whose decider is whitespace-only',
+      row: {
+        ...prmRegistrations[0]!,
+        status: 'rejected' as const,
+        decided_by: '\n\t ',
+        rejection_reason: 'duplicate of reg-501',
+        opportunity_id: null,
+      },
+      issue: { code: 'inconsistent-state', path: 'rows[0].decided_at' },
+      absent: undefined,
+    },
+    {
+      label: 'a rejected row whose reason is whitespace-only',
+      row: {
+        ...prmRegistrations[0]!,
+        status: 'rejected' as const,
+        rejection_reason: '   ',
+        opportunity_id: null,
+      },
+      issue: { code: 'inconsistent-state', path: 'rows[0].rejection_reason' },
+      absent: undefined,
+    },
+    {
+      label: 'a pending row whose decider is whitespace-only',
+      row: { ...prmRegistrations[1]!, decided_by: '  ' },
+      issue: undefined,
+      absent: 'decidedBy' as const,
+    },
+    {
+      label: 'a pending row whose rejection reason is whitespace-only',
+      row: { ...prmRegistrations[1]!, rejection_reason: ' \t' },
+      issue: undefined,
+      absent: 'reason' as const,
+    },
+    {
+      label: 'an approved row whose rejection reason is whitespace-only',
+      row: { ...prmRegistrations[0]!, rejection_reason: ' \n ' },
+      issue: undefined,
+      absent: 'reason' as const,
+    },
+  ])('treats a whitespace-only decision string as absent: $label', ({ row, issue, absent }) => {
+    const before = snapshot(row);
+    const result = normalizePrmRegistrations([row], context);
+    // However the row was judged, the input was not mutated to judge it.
+    expect(snapshot(row)).toBe(before);
+    if (issue !== undefined) {
+      // A status that requires the fact rejects the row exactly as if the
+      // field were null — same code, same stable path.
+      expect(result.records).toEqual([]);
+      expect(result.issues).toEqual([expect.objectContaining(issue)]);
+      return;
+    }
+    // Absent is not present: the status's own rules decide, so pending and
+    // approved rows accept the blank, and the canonical record carries no
+    // decision fact for the blanked field.
+    expect(result.issues).toEqual([]);
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0]!.record[absent]).toBeUndefined();
+  });
+
+  it('trims a decision string for the presence check but stores a present value verbatim', () => {
+    const result = normalizePrmRegistrations(
+      [{ ...prmRegistrations[0]!, decided_by: '  Dana Iyer  ' }],
+      context,
+    );
+    expect(result.issues).toEqual([]);
+    // The trim decides presence only; the adapter never rewrites the value
+    // the source sent (the same convention readString follows).
+    expect(result.records[0]!.record.decidedBy).toBe('  Dana Iyer  ');
+  });
+
   it('rejects an unknown status instead of guessing pending', () => {
     const result = normalizePrmRegistrations(
       [{ ...prmRegistrations[0]!, status: 'under-review' }],

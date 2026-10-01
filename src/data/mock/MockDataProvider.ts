@@ -171,6 +171,25 @@ function prospectIdsKey(prospects: Partner[] | undefined): string {
     .join(',');
 }
 
+/**
+ * The session's revenue overrides as a cursor-key component: content-based
+ * and order-free, so a rebuilt but equal edits map mints the same key. A
+ * revenue override can re-rank the leaderboard — closed-won and open
+ * pipeline are the ranking — so the whole override map is order-affecting
+ * state and belongs to the cursor's identity: a cursor minted before an
+ * edit is foreign after it, never a silent position in the new order.
+ * Notes, next steps, and forecast calls change what a row says, never
+ * where it ranks, so they stay out — the hook does not refresh the board
+ * for them, and their cursors keep meaning what they meant.
+ */
+function revenueEditsKey(edits: SessionEdits | undefined): string {
+  const overrides = edits?.revenueOverrides ?? {};
+  return Object.keys(overrides)
+    .sort()
+    .map((id) => `${id}=${String(overrides[id])}`)
+    .join(',');
+}
+
 /** Construction options for the mock provider. */
 export interface MockProviderOptions {
   providerId?: string;
@@ -865,12 +884,15 @@ export class MockDataProvider implements DataProvider {
       paginateRows({
         rows: ranked,
         // Membership and order both belong to the cursor's identity: the
-        // phase and the type lens reorder the ranking, and the drill-down
-        // and the prospects decide which rows belong at all. Edits stay
-        // out — they change what a row says, and the hook restarts its
-        // loaded window on an edit rather than reusing a cursor, exactly
-        // like the pipeline table.
-        queryKey: `listPartnerLeaderboard|access:${demoScopeKey(access)}|phase:${scope.phase}|types:${leaderboardLensKey(scope)}|${this.drilldownKey(scope)}|prospects:${prospectIdsKey(scope.prospects)}`,
+        // phase and the type lens reorder the ranking, the drill-down and
+        // the prospects decide which rows belong at all, and the revenue
+        // overrides are order-affecting edit state — unlike the pipeline
+        // table, whose expected-close ordering no session edit can move, a
+        // revenue edit can re-rank this board, so a cursor minted before it
+        // must be foreign rather than a position in the new order. The hook
+        // still restarts its loaded window on an edit rather than reusing a
+        // cursor; this is the provider-side half of the same guarantee.
+        queryKey: `listPartnerLeaderboard|access:${demoScopeKey(access)}|phase:${scope.phase}|types:${leaderboardLensKey(scope)}|${this.drilldownKey(scope)}|prospects:${prospectIdsKey(scope.prospects)}|rev:${revenueEditsKey(scope.edits)}`,
         asOf: this.dataEpoch(),
         issuer: this.cursorIssuer,
         cursor: page.cursor,

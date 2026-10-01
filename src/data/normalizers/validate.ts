@@ -302,7 +302,14 @@ export function readForeignKey(
   return value;
 }
 
-/** An optional string: null/absent/blank means "not set". */
+/**
+ * An optional string: null/absent/blank means "not set". Blankness is judged
+ * on the trimmed value — a whitespace-only string carries no fact, so a
+ * status that requires the field rejects it exactly as if the key were
+ * missing, and a status that forbids it sees nothing carried. A present
+ * value is returned verbatim (the trim decides presence, it does not
+ * rewrite the source's value — the same convention `readString` follows).
+ */
 export function readOptionalString(
   source: Record<string, unknown>,
   field: string,
@@ -310,10 +317,11 @@ export function readOptionalString(
   path: string = field,
 ): string | undefined {
   const value = source[field];
-  if (value === undefined || value === null || value === '') return undefined;
+  if (value === undefined || value === null) return undefined;
   if (typeof value !== 'string') {
     issue(issues, 'invalid-string', path, 'expected a string when set');
     return undefined;
   }
+  if (value.trim() === '') return undefined;
   return value;
 }

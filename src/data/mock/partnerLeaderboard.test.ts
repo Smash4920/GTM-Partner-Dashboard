@@ -222,6 +222,185 @@ describe('the bounded leaderboard answers', () => {
   });
 });
 
+describe('leaderboard cursor identity across revenue edits', () => {
+  /**
+   * Three partners, one closed-won deal apiece, distinct values: at a
+   * one-row page size a single revenue override can flip the ranking, and
+   * every replayed cursor has a visible consequence.
+   */
+  const rankedProvider = () =>
+    new MockDataProvider(
+      makeProviderBook({
+        partners: [
+          makePartner({ id: 'partner-1', name: 'Northwind Systems' }),
+          makePartner({ id: 'partner-2', name: 'Beacon Consulting' }),
+          makePartner({ id: 'partner-3', name: 'Cascade Analytics' }),
+        ],
+        opportunities: [
+          makeOpportunity({
+            id: 'opp-p1-won',
+            partnerId: 'partner-1',
+            outcome: 'won',
+            forecastedRevenue: 300_000,
+            closedAt: '2026-08-12T00:00:00.000Z',
+          }),
+          makeOpportunity({
+            id: 'opp-p2-won',
+            partnerId: 'partner-2',
+            outcome: 'won',
+            forecastedRevenue: 200_000,
+            closedAt: '2026-08-14T00:00:00.000Z',
+          }),
+          makeOpportunity({
+            id: 'opp-p3-won',
+            partnerId: 'partner-3',
+            outcome: 'won',
+            forecastedRevenue: 100_000,
+            closedAt: '2026-08-16T00:00:00.000Z',
+          }),
+        ],
+      }),
+    );
+
+  it('rejects a pre-edit cursor once a revenue edit re-ranks the board', async () => {
+    const local = rankedProvider();
+    const { data: first } = await local.listPartnerLeaderboard(
+      INTERNAL_DEMO_SCOPE,
+      { phase: 'fy' },
+      { limit: 1 },
+    );
+    expect(first.rows.map((row) => row.partner.id)).toEqual(['partner-1']);
+    expect(first.nextCursor).toBeDefined();
+
+    // The override moves partner-3 from last to first...
+    const edits = { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-p3-won': 900_000 } };
+    const { data: reranked } = await local.listPartnerLeaderboard(
+      INTERNAL_DEMO_SCOPE,
+      { phase: 'fy', edits },
+      { limit: 1 },
+    );
+    expect(reranked.rows.map((row) => row.partner.id)).toEqual(['partner-3']);
+
+    // ...so the cursor minted before it is foreign, not a position in the
+    // new order: replayed, it would serve the reranked page two — partner-3
+    // twice, partner-1 never.
+    await expect(
+      local.listPartnerLeaderboard(
+        INTERNAL_DEMO_SCOPE,
+        { phase: 'fy', edits },
+        { limit: 1, cursor: first.nextCursor },
+      ),
+    ).rejects.toMatchObject({ name: 'PageQueryError', code: 'foreign-cursor' });
+
+    // A fresh post-edit walk is still exhaustive and unique, in the new
+    // order.
+    const walked = await walkLeaderboard(local, { phase: 'fy', edits }, 1);
+    const ids = walked.map((row) => row.partner.id);
+    expect(ids).toEqual(['partner-3', 'partner-1', 'partner-2']);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('stales the cursor on any revenue edit, rank change or not', async () => {
+    const local = rankedProvider();
+    const { data: first } = await local.listPartnerLeaderboard(
+      INTERNAL_DEMO_SCOPE,
+      { phase: 'fy' },
+      { limit: 1 },
+    );
+    // +10k to the leader changes no order — but the cursor's identity is the
+    // order-affecting edit STATE, not the diff one edit happened to produce,
+    // so the pre-edit token is still foreign.
+    const edits = { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-p1-won': 310_000 } };
+    await expect(
+      local.listPartnerLeaderboard(
+        INTERNAL_DEMO_SCOPE,
+        { phase: 'fy', edits },
+        { limit: 1, cursor: first.nextCursor },
+      ),
+    ).rejects.toMatchObject({ name: 'PageQueryError', code: 'foreign-cursor' });
+  });
+
+  it('keys the cursor on edit content, not object identity', async () => {
+    const local = rankedProvider();
+    const edits = {
+      ...NO_SESSION_EDITS,
+      revenueOverrides: { 'opp-p2-won': 250_000, 'opp-p3-won': 150_000 },
+    };
+    const { data: first } = await local.listPartnerLeaderboard(
+      INTERNAL_DEMO_SCOPE,
+      { phase: 'fy', edits },
+      { limit: 1 },
+    );
+    expect(first.nextCursor).toBeDefined();
+    // A rebuilt map with the same entries in another insertion order is the
+    // same session state: it accepts the cursor the first spelling minted.
+    const rebuilt = {
+      ...NO_SESSION_EDITS,
+      revenueOverrides: { 'opp-p3-won': 150_000, 'opp-p2-won': 250_000 },
+    };
+    const { data: replayed } = await local.listPartnerLeaderboard(
+      INTERNAL_DEMO_SCOPE,
+      { phase: 'fy', edits: rebuilt },
+      { limit: 1, cursor: first.nextCursor },
+    );
+    expect(replayed.rows.map((row) => row.partner.id)).toEqual(['partner-2']);
+  });
+
+  it('keeps the cursor valid across content-only edits the ranking cannot feel', async () => {
+    const local = rankedProvider();
+    const { data: first } = await local.listPartnerLeaderboard(
+      INTERNAL_DEMO_SCOPE,
+      { phase: 'fy' },
+      { limit: 1 },
+    );
+    expect(first.nextCursor).toBeDefined();
+    // Notes, next steps, and forecast calls change what a row says, never
+    // where it ranks — the hook does not refresh the board for them, so the
+    // provider must not stale the cursor for them either.
+    const { data: replayed } = await local.listPartnerLeaderboard(
+      INTERNAL_DEMO_SCOPE,
+      {
+        phase: 'fy',
+        edits: {
+          ...NO_SESSION_EDITS,
+          notes: { 'opp-p1-won': 'called twice' },
+          nextSteps: { 'opp-p2-won': 'send the contract' },
+          forecastCalls: { 'opp-p3-won': 'commit' },
+        },
+      },
+      { limit: 1, cursor: first.nextCursor },
+    );
+    expect(replayed.rows.map((row) => row.partner.id)).toEqual(['partner-2']);
+  });
+
+  it('serves identical pages for identical edit state', async () => {
+    const local = rankedProvider();
+    const scope: PerformanceScope = {
+      phase: 'fy',
+      edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-p3-won': 900_000 } },
+    };
+    const { data: first } = await local.listPartnerLeaderboard(INTERNAL_DEMO_SCOPE, scope, {
+      limit: 1,
+    });
+    const { data: again } = await local.listPartnerLeaderboard(INTERNAL_DEMO_SCOPE, scope, {
+      limit: 1,
+    });
+    // The request is deterministic: same rows, same minted continuation.
+    expect(again).toEqual(first);
+
+    const pageTwo = () =>
+      local.listPartnerLeaderboard(INTERNAL_DEMO_SCOPE, scope, {
+        limit: 1,
+        cursor: first.nextCursor,
+      });
+    const { data: replayedOnce } = await pageTwo();
+    const { data: replayedTwice } = await pageTwo();
+    // And a same-state cursor replay returns the same page both times.
+    expect(replayedTwice).toEqual(replayedOnce);
+    expect(replayedOnce.rows.map((row) => row.partner.id)).toEqual(['partner-1']);
+  });
+});
+
 describe('the combined Sell With + Allocate ranking the picker used to merge client-side', () => {
   // Ten partners with a 100k Sell With win each, ten with a 100k Allocate
   // win each, and one with a 60k win of each. Every single-motion board
