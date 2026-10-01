@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_ACTION_POLICY } from '../../lib/actionRules';
+import { ACTION_CATEGORIES } from '../actionCenter';
 import { CURRENT_FISCAL_QUARTER } from '../constants';
 import { filterByPhase, phaseForQuarter } from '../../lib/metrics';
 import { MockDataProvider } from './MockDataProvider';
@@ -33,6 +35,44 @@ const scaled = new Inspectable(SCALE, base);
 const flat = new MockDataProvider(base);
 
 describe('ScaleDataProvider', () => {
+  it('serves bounded scoped Action Center results at 100× (VAL-ACT-011)', async () => {
+    const hundred = new ScaleDataProvider(100, base);
+    const scope = { policy: DEFAULT_ACTION_POLICY };
+    const localSummary = await flat.getActionCenterSummary(INTERNAL_DEMO_SCOPE, scope);
+    const summary = await hundred.getActionCenterSummary(INTERNAL_DEMO_SCOPE, scope);
+    const localPage = await flat.listActionItems(INTERNAL_DEMO_SCOPE, scope, {});
+    const page = await hundred.listActionItems(INTERNAL_DEMO_SCOPE, scope, {});
+    expect(summary.data.totalCount).toBe(localSummary.data.totalCount * 100);
+    for (const category of ACTION_CATEGORIES) {
+      expect(summary.data.categoryCounts[category]).toBe(
+        localSummary.data.categoryCounts[category] * 100,
+      );
+    }
+    expect(Object.keys(summary.data)).toEqual(Object.keys(localSummary.data));
+    expect(page.data.rows).toHaveLength(25);
+    expect(page.data.totalCount).toBe(summary.data.totalCount);
+    expect(new Set(page.data.rows.map((row) => row.id)).size).toBe(25);
+    expect(summary.meta).toEqual({ ...localSummary.meta, providerId: 'scaled' });
+    expect(page.meta).toEqual(summary.meta);
+    const bytes = {
+      localSummary: new TextEncoder().encode(JSON.stringify(localSummary)).length,
+      scaledSummary: new TextEncoder().encode(JSON.stringify(summary)).length,
+      localPage: new TextEncoder().encode(JSON.stringify(localPage)).length,
+      scaledPage: new TextEncoder().encode(JSON.stringify(page)).length,
+    };
+    expect(bytes.localSummary).toBe(486);
+    expect(bytes.scaledSummary).toBe(499);
+    expect(bytes.scaledSummary).toBeLessThan(1024);
+    expect(bytes.scaledPage).toBeLessThan(30_000);
+    expect(bytes.scaledPage).toBeLessThan(bytes.localPage * 2);
+    expect(JSON.stringify([summary, page])).not.toMatch(/takenAt|"snapshots":|forecastCategory/);
+    const partner = { audience: 'partner' as const, partnerId: base.partners[0]!.id };
+    const own = await hundred.listActionItems(partner, scope, {});
+    const localOwn = await flat.listActionItems(partner, scope, {});
+    expect(own.data).toEqual(localOwn.data);
+    expect(own.data.rows.every((row) => row.owner === undefined)).toBe(true);
+  });
+
   it('multiplies the book and leaves the roster alone', () => {
     expect(scaled.size.partners).toBe(base.partners.length * SCALE);
     expect(scaled.size.opportunities).toBe(base.opportunities.length * SCALE);

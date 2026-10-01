@@ -6,6 +6,7 @@ import type { DemoAccessScope } from './accessScope';
 import { DATA_PROVIDER_METHODS } from './DataProvider';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
+import { DEFAULT_ACTION_POLICY } from '../lib/actionPolicy';
 
 /**
  * VAL-DATA-003: the demo access scope is a required, first parameter of every
@@ -56,12 +57,15 @@ function unscopedCalls(provider: DataProvider): (() => Promise<unknown>)[] {
         { partnerManagerId: 'pm-1' },
         { limit: 5 },
       ),
+    () => provider.getActionCenterSummary(missing, { policy: DEFAULT_ACTION_POLICY }),
+    () => provider.listActionItems(missing, { policy: DEFAULT_ACTION_POLICY }, {}),
   ];
 }
 
 describe('DataProvider demo access scope (VAL-DATA-003)', () => {
-  it('keeps a closed inventory: exactly these twenty-eight data-bearing methods exist', () => {
+  it('keeps a closed inventory: exactly these thirty data-bearing methods exist', () => {
     expect([...DATA_PROVIDER_METHODS].sort()).toEqual([
+      'getActionCenterSummary',
       'getForecastQuality',
       'getForecastSummary',
       'getManagerDirectory',
@@ -82,6 +86,7 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       'getWeeklyForecastSeries',
       'getWeeklyGoalProgress',
       'getWeightedForecast',
+      'listActionItems',
       'listDuplicateRegistrationGroups',
       'listPartnerLeaderboard',
       'listPendingRegistrations',
@@ -105,6 +110,11 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
     void (() => provider.getForecastSummary({ quarter }));
     // @ts-expect-error the access scope is required, not optional
     void (() => provider.getPartnerDirectory());
+    // @ts-expect-error Action Center requires the access scope first
+    void (() => provider.getActionCenterSummary({ policy: DEFAULT_ACTION_POLICY }));
+    // @ts-expect-error a partner scope must name the selected partner
+    const missingPartner: DemoAccessScope = { audience: 'partner' };
+    void (() => provider.listActionItems(missingPartner, { policy: DEFAULT_ACTION_POLICY }, {}));
     // @ts-expect-error the audience is a closed set; there is no guest audience
     void (() => provider.getPartnerRoster({ audience: 'guest' }, {}));
     // @ts-expect-error a partner-audience scope must name its partner
@@ -158,7 +168,9 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       provider.getTeamRoster(scope, {}),
       provider.getRegistrationSlaAlerts(scope, {}, 8),
       provider.listWeeklyClassificationMeetings(scope, { partnerManagerId: 'pm-1' }, { limit: 5 }),
+      provider.getActionCenterSummary(scope, { policy: DEFAULT_ACTION_POLICY }),
+      provider.listActionItems(scope, { policy: DEFAULT_ACTION_POLICY }, {}),
     ]);
-    expect(results).toHaveLength(28);
+    expect(results).toHaveLength(DATA_PROVIDER_METHODS.length);
   });
 });

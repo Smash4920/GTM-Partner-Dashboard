@@ -1,4 +1,5 @@
 import type { DemoAccessScope } from './accessScope';
+import type { ActionCenterScope, ActionCenterSummary } from './actionCenter';
 import type { Page, PageRequest } from './pagination';
 import type { QueryContext } from './queryContext';
 import type { QueryResult } from './queryMetadata';
@@ -18,6 +19,7 @@ import type {
   WeeklyGoalProgress,
 } from '../lib/metrics';
 import type {
+  ActionItem,
   ActivityMeeting,
   DealRegistration,
   FiscalPhase,
@@ -448,6 +450,19 @@ export interface PartnerCertificationProfile {
  * envelope says so. See src/data/queryMetadata.ts.
  */
 interface ScopedQueryProvider {
+  /** Fixed-size counts over all filtered scoped action items, not a page. */
+  getActionCenterSummary(
+    access: DemoAccessScope,
+    scope: ActionCenterScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<ActionCenterSummary>>;
+  /** Globally ordered unique entity actions, with every merged reason retained. */
+  listActionItems(
+    access: DemoAccessScope,
+    scope: ActionCenterScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<ActionItem>>>;
   getForecastSummary(
     access: DemoAccessScope,
     scope: ForecastScope,
@@ -756,6 +771,9 @@ export type DataProvider = ScopedQueryProvider;
  * it should not depend on anyone remembering to update two lists.
  */
 const METHOD_INDEX: Record<keyof DataProvider, true> = {
+  // Action Center
+  getActionCenterSummary: true,
+  listActionItems: true,
   // Forecasting
   getForecastSummary: true,
   getWeightedForecast: true,
@@ -803,6 +821,9 @@ export const DATA_PROVIDER_METHODS = Object.keys(METHOD_INDEX) as (keyof DataPro
  * hand-written forwarding methods did.
  */
 export const DATA_PROVIDER_CONTEXT_SLOTS: Record<keyof DataProvider, number> = {
+  // Action Center
+  getActionCenterSummary: 2,
+  listActionItems: 3,
   // Forecasting
   getForecastSummary: 2,
   getWeightedForecast: 2,

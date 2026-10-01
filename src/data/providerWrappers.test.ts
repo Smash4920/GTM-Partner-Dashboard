@@ -7,6 +7,7 @@ import { MockDataProvider } from './mock/MockDataProvider';
 import { createSimulatedRemoteProvider } from './mock/createSimulatedRemoteProvider';
 import { traceDataProvider } from './traceDataProvider';
 import { INTERNAL_DEMO_SCOPE } from './accessScope';
+import { DEFAULT_ACTION_POLICY } from '../lib/actionPolicy';
 
 /**
  * Wrapper conformance sweep: every method on the contract must cross both
@@ -25,6 +26,10 @@ const quarter = CURRENT_FISCAL_QUARTER;
 
 /** Every contract method, invoked with a valid minimal argument list. */
 const CALLS: Record<string, (provider: DataProvider) => Promise<unknown>> = {
+  getActionCenterSummary: (p) =>
+    p.getActionCenterSummary(INTERNAL_DEMO_SCOPE, { policy: DEFAULT_ACTION_POLICY }),
+  listActionItems: (p) =>
+    p.listActionItems(INTERNAL_DEMO_SCOPE, { policy: DEFAULT_ACTION_POLICY }, { limit: 5 }),
   getForecastSummary: (p) => p.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter }),
   getWeightedForecast: (p) => p.getWeightedForecast(INTERNAL_DEMO_SCOPE, { quarter }),
   getForecastQuality: (p) => p.getForecastQuality(INTERNAL_DEMO_SCOPE, { quarter }, 3),

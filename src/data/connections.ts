@@ -296,12 +296,15 @@ export const CONNECTION_NODES: ConnectionNode[] = [
     supplies: [
       'Screens, exports, and scheduled reporting',
       'Pre-aggregated forecast figures per scope',
+      'Scoped Action Center counts and cursor pages under session-only demo policy',
     ],
     methods: [
       'getForecastSummary()',
       'getWeightedForecast()',
       'getForecastQuality()',
       'getManagerForecastGroups()',
+      'getActionCenterSummary()',
+      'listActionItems()',
     ],
     blocker:
       'Writes are session-only in the demo: revenue overrides, forecast calls, notes, next steps, meeting classifications, and added prospects are not persisted (Architecture roadmap: persistence and operating workflows).',

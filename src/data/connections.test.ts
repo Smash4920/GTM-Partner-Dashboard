@@ -90,6 +90,17 @@ describe('connection catalog', () => {
     expect(mapped.size).toBe(CONNECTION_METHOD_COVERAGE.length);
   });
 
+  it('serves bounded scoped Action Center results with truthful method coverage (VAL-ACT-011)', () => {
+    const api = CONNECTION_NODES.find((node) => node.id === 'api');
+    for (const method of ['getActionCenterSummary', 'listActionItems']) {
+      expect(CONNECTION_METHOD_COVERAGE).toContain(`${method}()`);
+      expect(api?.methods).toContain(`${method}()`);
+    }
+    expect(api?.status).toBe('live');
+    expect(api?.summary).toContain('computed in-process');
+    expect(api?.supplies.join(' ')).toContain('session-only demo policy');
+  });
+
   it('places each tier in its own column, with no overlapping boxes', () => {
     const columns = new Set(CONNECTION_NODES.map((node) => CONNECTION_TIER_META[node.tier].x));
     expect(columns.size).toBe(3);

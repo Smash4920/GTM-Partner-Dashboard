@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_ACTION_POLICY } from '../../lib/actionRules';
 import { CURRENT_FISCAL_QUARTER, SNAPSHOT_DATE } from '../constants';
 import {
   categoryStageMismatches,
@@ -60,6 +61,44 @@ function openOf(rows: Opportunity[]): Opportunity {
 }
 
 describe('MockDataProvider scoped contract', () => {
+  it('serves bounded scoped Action Center results (VAL-ACT-010, VAL-ACT-011)', async () => {
+    const scope = { policy: DEFAULT_ACTION_POLICY };
+    const summary = await provider.getActionCenterSummary(INTERNAL_DEMO_SCOPE, scope);
+    const page = await provider.listActionItems(INTERNAL_DEMO_SCOPE, scope, {});
+    expect(summary.data).toEqual({
+      totalCount: 85,
+      categoryCounts: {
+        'stale-high-value': 17,
+        'missing-next-step': 42,
+        'close-date-slip': 18,
+        'registration-sla': 17,
+        'partner-health': 5,
+      },
+    });
+    expect(page.data.rows).toHaveLength(25);
+    expect(page.data.totalCount).toBe(summary.data.totalCount);
+    expect(page.meta).toEqual(summary.meta);
+    expect(page.meta).toMatchObject({
+      providerId: 'local',
+      asOf: SNAPSHOT_DATE.toISOString(),
+      completeness: 'complete',
+      warnings: [],
+    });
+    for (const limit of [0, -1, 1.5, NaN, Infinity, MAX_PAGE_LIMIT + 1]) {
+      await expect(
+        provider.listActionItems(INTERNAL_DEMO_SCOPE, scope, { limit }),
+      ).rejects.toMatchObject({ name: 'PageQueryError', code: 'invalid-page-limit' });
+    }
+    const access: DemoAccessScope = { audience: 'partner', partnerId: book.partners[0]!.id };
+    const own = await provider.listActionItems(access, scope, { limit: 100 });
+    expect(
+      own.data.rows.every(
+        (item) => item.partnerId === access.partnerId && item.owner === undefined,
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(own)).not.toMatch(/takenAt|"snapshots":|forecastCategory/);
+  });
+
   it('answers the quarter summary the metrics layer computes', async () => {
     const { data: summary } = await provider.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter });
     const open = openPipeline(inQuarter);

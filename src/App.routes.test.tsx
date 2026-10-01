@@ -11,7 +11,7 @@ import { generateDashboardData } from './data/mock/generate';
  * The provider-call matrix: what every route asks of the seam, and what one
  * failure costs it.
  *
- * - Every route that exists before Action Center renders independently —
+ * - Every registered route, including Action Center, renders independently —
  *   including under the 100× provider, which is the scale the retired
  *   whole-book contract could not survive.
  * - A route mounts with exactly its scoped queries and nothing else's; the
@@ -40,6 +40,17 @@ interface RouteSpec {
 }
 
 const ROUTES: RouteSpec[] = [
+  {
+    label: 'Action Center',
+    heading: 'Action Center',
+    methods: ['getActionCenterSummary', 'listActionItems'],
+    failure: {
+      method: 'getActionCenterSummary',
+      kind: 'unavailable',
+      text: 'Action Center summary unavailable:',
+      retry: 'Retry Action Center summary',
+    },
+  },
   {
     label: 'Home',
     heading: 'Partner Performance Overview',
@@ -264,7 +275,7 @@ async function visit(user: ReturnType<typeof userEvent.setup>, route: RouteSpec)
 }
 
 describe('App route matrix', () => {
-  it('renders all eight routes independently under the scaled provider', async () => {
+  it('renders all nine routes independently under the scaled provider', async () => {
     const book = generateDashboardData();
     const user = await renderApp(new ScaleDataProvider(2, book));
 

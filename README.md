@@ -1,7 +1,7 @@
 # GTM Partner Dashboard
 
 A client-only mockup of a partner revenue pipeline dashboard for the GTM team.
-Eight views over one deterministic mock data model, reached through a
+Nine views over one deterministic mock data model, reached through a
 collapsible left sidebar: **Home** (ecosystem
 summary), **Partner Performance** (per-manager / per-partner drill-down),
 **Forecasting** (the VP's in-quarter view with a weighted forecast),
@@ -9,7 +9,8 @@ summary), **Partner Performance** (per-manager / per-partner drill-down),
 conflicts), **Activity Tracking** (weekly meeting goals and calendar logging),
 **Partner View** (the partner-facing sharing surface), **Production
 Requirements** (the architecture + utility roadmap), and **Data Connections**
-(the integration map, partner-team access, and registration SLA notifications).
+(the integration map, partner-team access, and registration SLA notifications),
+and **Action Center** (bounded action summaries, filters, and session-only demo policy).
 
 ![Home view](docs/screenshots/home.png)
 ![Forecasting view](docs/screenshots/forecasting.png)
@@ -22,7 +23,7 @@ metric green for positive data.
 
 ## Navigation
 
-A collapsible sidebar on the left carries the eight pages; the icon in the upper
+A collapsible sidebar on the left carries the nine pages; the icon in the upper
 left expands and collapses it to an icon rail. The header also carries a
 **provider selector** — local mock, simulated remote, or a 100× book — which is
 the demo of the integration seam described under Data contract below.
@@ -150,6 +151,25 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
   agree, the category adds no information, so these disagreements are the
   forecast conversation. Individual rows are tagged "off stage". Forecast
   accuracy by partner, manager, motion, and quarter remains on the roadmap
+
+### Action Center
+
+Action Center queries derive five alert categories behind the provider seam,
+merge reasons by entity, and count unique items separately from category reasons.
+Rows use stable severity/due-date/exposure/ID ordering, category-OR plus
+owner/severity-AND filters, and opaque cursor pages of 25. Local defaults produce
+85 unique items; 100× produces 8,500 without enlarging summary or page bounds.
+Metadata identifies the provider and deterministic reporting as-of date.
+
+**Demo policy** defaults are $400,000 high value, 14 stale calendar days,
+60-day missing-step horizon, seven close-slip calendar days, adjacent 28-day
+health windows, and at least two deteriorating drivers. Controls reject invalid
+values before querying. Applying policy resets only Action Center paging.
+Policy is session-only, survives route navigation, and resets on reload or a
+committed provider change. It is never stored in browser storage. Evidence
+disclosures, contextual actions, generalized notification composition, and
+workflow decisions remain separate in-progress work; this page does not
+claim delivery, persistence, or write-back.
 
 ### Deal Reg Ops
 
@@ -625,36 +645,38 @@ that folded them into one `DashboardData` are deleted, so no caller — route,
 shell, or provider — can ask for the whole book any more. The cost those calls
 carried at volume is measured in [`docs/migration-plan.md`](docs/migration-plan.md).
 
-| Method                               | Returns                                                            |
-| ------------------------------------ | ------------------------------------------------------------------ |
-| `getForecastSummary()`               | `QueryResult<ForecastSummary>` (8 numbers + coverage state)        |
-| `getWeightedForecast()`              | `QueryResult<WeightedForecastSummary>`                             |
-| `getForecastQuality()`               | `QueryResult<ForecastQualitySummary>` (counts, exposure, sample)   |
-| `getManagerForecastGroups()`         | `QueryResult<ManagerForecastGroup[]>` (one row per manager)        |
-| `getWeeklyForecastSeries()`          | `QueryResult<WeeklySeriesRow[]>` (13 buckets)                      |
-| `listQuarterOpportunities()`         | `QueryResult<Page<Opportunity>>` (opaque cursor, 25-row pages)     |
-| `getPartnerDirectory()`              | `QueryResult<PartnerRef[]>` (id → name)                            |
-| `getPerformanceSummary()`            | `QueryResult<PerformanceSummary>` (the KPI tiles, one aggregate)   |
-| `getRegistrationFunnel()`            | `QueryResult<RegistrationFunnel>` (counts + registered value)      |
-| `getStageBreakdown()`                | `QueryResult<StageBreakdown>` (open stages + closed outcomes)      |
-| `getTypeBreakdown()`                 | `QueryResult<TypeRow[]>` (open pipeline by revenue motion)         |
-| `getQuarterlyRevenueTrend()`         | `QueryResult<QuarterlyPoint[]>` (all FY quarters, four points)     |
-| `getWeeklyActivitySeries()`          | `QueryResult<WeeklyActivityRow[]>` (8 weeks of meetings)           |
-| `getWeeklyGoalProgress()`            | `QueryResult<WeeklyGoalProgress>` (this week vs. goal)             |
-| `getRegistrationOpsSummary()`        | `QueryResult<RegistrationOpsSummary>` (leakage, SLA, conversion)   |
-| `getTopPartnerLeaders()`             | `QueryResult<TopPartnerLeaders>` (fixed top 10 + field size)       |
-| `listPartnerLeaderboard()`           | `QueryResult<Page<PartnerLeaderboardEntry>>` (cursor pages)        |
-| `getManagerDirectory()`              | `QueryResult<PartnerManager[]>` (internal audience only)           |
-| `getPartnerRoster()`                 | `QueryResult<Partner[]>` (the partners in scope)                   |
-| `getPartnerCertification()`          | `QueryResult<PartnerCertificationProfile \| null>`                 |
-| `listScopedOpportunities()`          | `QueryResult<Page<Opportunity>>` (opaque cursor, 25-row pages)     |
-| `listPendingRegistrations()`         | `QueryResult<Page<DealRegistration>>` (oldest first, cursor pages) |
-| `listRecentRegistrations()`          | `QueryResult<Page<DealRegistration>>` (newest first, cursor pages) |
-| `getTeamRoster()`                    | `QueryResult<TeamUser[]>` (internal audience only)                 |
-| `getRegistrationSlaAlerts()`         | `QueryResult<RegistrationSlaAlertDigest>` (top ≤ 8 + counts)       |
-| `listUnconvertedRegistrations()`     | `QueryResult<Page<DealRegistration>>` (exclusivity watch)          |
-| `listDuplicateRegistrationGroups()`  | `QueryResult<Page<DuplicateRegistrationGroup>>` (internal only)    |
-| `listWeeklyClassificationMeetings()` | `QueryResult<Page<ActivityMeeting>>` (one week, cursor pages)      |
+| Method                               | Returns                                                                |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| `getForecastSummary()`               | `QueryResult<ForecastSummary>` (8 numbers + coverage state)            |
+| `getWeightedForecast()`              | `QueryResult<WeightedForecastSummary>`                                 |
+| `getForecastQuality()`               | `QueryResult<ForecastQualitySummary>` (counts, exposure, sample)       |
+| `getManagerForecastGroups()`         | `QueryResult<ManagerForecastGroup[]>` (one row per manager)            |
+| `getWeeklyForecastSeries()`          | `QueryResult<WeeklySeriesRow[]>` (13 buckets)                          |
+| `listQuarterOpportunities()`         | `QueryResult<Page<Opportunity>>` (opaque cursor, 25-row pages)         |
+| `getPartnerDirectory()`              | `QueryResult<PartnerRef[]>` (id → name)                                |
+| `getPerformanceSummary()`            | `QueryResult<PerformanceSummary>` (the KPI tiles, one aggregate)       |
+| `getRegistrationFunnel()`            | `QueryResult<RegistrationFunnel>` (counts + registered value)          |
+| `getStageBreakdown()`                | `QueryResult<StageBreakdown>` (open stages + closed outcomes)          |
+| `getTypeBreakdown()`                 | `QueryResult<TypeRow[]>` (open pipeline by revenue motion)             |
+| `getQuarterlyRevenueTrend()`         | `QueryResult<QuarterlyPoint[]>` (all FY quarters, four points)         |
+| `getWeeklyActivitySeries()`          | `QueryResult<WeeklyActivityRow[]>` (8 weeks of meetings)               |
+| `getWeeklyGoalProgress()`            | `QueryResult<WeeklyGoalProgress>` (this week vs. goal)                 |
+| `getRegistrationOpsSummary()`        | `QueryResult<RegistrationOpsSummary>` (leakage, SLA, conversion)       |
+| `getTopPartnerLeaders()`             | `QueryResult<TopPartnerLeaders>` (fixed top 10 + field size)           |
+| `listPartnerLeaderboard()`           | `QueryResult<Page<PartnerLeaderboardEntry>>` (cursor pages)            |
+| `getManagerDirectory()`              | `QueryResult<PartnerManager[]>` (internal audience only)               |
+| `getPartnerRoster()`                 | `QueryResult<Partner[]>` (the partners in scope)                       |
+| `getPartnerCertification()`          | `QueryResult<PartnerCertificationProfile \| null>`                     |
+| `listScopedOpportunities()`          | `QueryResult<Page<Opportunity>>` (opaque cursor, 25-row pages)         |
+| `listPendingRegistrations()`         | `QueryResult<Page<DealRegistration>>` (oldest first, cursor pages)     |
+| `listRecentRegistrations()`          | `QueryResult<Page<DealRegistration>>` (newest first, cursor pages)     |
+| `getTeamRoster()`                    | `QueryResult<TeamUser[]>` (internal audience only)                     |
+| `getRegistrationSlaAlerts()`         | `QueryResult<RegistrationSlaAlertDigest>` (top ≤ 8 + counts)           |
+| `listUnconvertedRegistrations()`     | `QueryResult<Page<DealRegistration>>` (exclusivity watch)              |
+| `listDuplicateRegistrationGroups()`  | `QueryResult<Page<DuplicateRegistrationGroup>>` (internal only)        |
+| `listWeeklyClassificationMeetings()` | `QueryResult<Page<ActivityMeeting>>` (one week, cursor pages)          |
+| `getActionCenterSummary()`           | `QueryResult<ActionCenterSummary>` (unique count + five reason counts) |
+| `listActionItems()`                  | `QueryResult<Page<ActionItem>>` (globally ordered, default 25 rows)    |
 
 Every scoped answer arrives in a `QueryResult` envelope
 ([`src/data/queryMetadata.ts`](src/data/queryMetadata.ts)): the data plus

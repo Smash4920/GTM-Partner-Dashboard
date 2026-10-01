@@ -21,6 +21,7 @@ import type { SessionEdits } from './data/sessionEdits';
 import { useCommittedProvider } from './data/useCommittedProvider';
 import type { CommittedProvider } from './data/useCommittedProvider';
 import type {
+  ActionPolicy,
   DashboardNotification,
   ForecastCategory,
   MeetingClassification,
@@ -31,6 +32,7 @@ import type {
 } from './data/types';
 import type { NotificationDraft } from './lib/notifications';
 import { formatDate } from './lib/format';
+import { DEFAULT_ACTION_POLICY } from './lib/actionPolicy';
 import { isAbortError } from './lib/abort';
 import { featureFlags, getFeatureFlagSubject, type FeatureFlagClient } from './lib/featureFlags';
 import { assessHealth, publishHealthArtifact, shellHealthArtifact } from './lib/health';
@@ -57,6 +59,7 @@ const DataConnectionsView = lazy(() =>
 const ProductionRequirementsView = lazy(() =>
   import('./views/system').then((module) => ({ default: module.ProductionRequirementsView })),
 );
+const ActionCenterView = lazy(() => import('./views/ActionCenterView'));
 
 // Every session action leaves one structured record (see lib/logging.ts), so a
 // session can be replayed from the console; opportunity notes and next steps
@@ -75,6 +78,7 @@ const ROUTE_LOADING_LABEL: Record<Route, string> = {
   'partner-view': 'Partner View',
   'production-requirements': 'Production Requirements',
   'data-connections': 'Data Connections',
+  'action-center': 'Action Center',
 };
 
 interface AppProps {
@@ -131,6 +135,7 @@ export default function App({
   const [teamUserOverrides, setTeamUserOverrides] = useState<Record<string, Partial<TeamUser>>>({});
   const [addedTeamUsers, setAddedTeamUsers] = useState<TeamUser[]>([]);
   const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
+  const [actionPolicy, setActionPolicy] = useState<Readonly<ActionPolicy>>(DEFAULT_ACTION_POLICY);
   const teamUserSeq = useRef(0);
   const notificationSeq = useRef(0);
 
@@ -154,6 +159,7 @@ export default function App({
     setAddedTeamUsers([]);
     teamUserSeq.current = 0;
     setNotifications([]);
+    setActionPolicy(DEFAULT_ACTION_POLICY);
     notificationSeq.current = 0;
   }, []);
 
@@ -555,6 +561,8 @@ export default function App({
             teamUserOverrides={teamUserOverrides}
             addedTeamUsers={addedTeamUsers}
             notifications={notifications}
+            actionPolicy={actionPolicy}
+            onPolicyChange={setActionPolicy}
             onSetRevenue={setRevenue}
             onSetNote={setNote}
             onSetNextStep={setNextStep}
@@ -592,6 +600,8 @@ interface RouteContentProps {
   teamUserOverrides: Record<string, Partial<TeamUser>>;
   addedTeamUsers: TeamUser[];
   notifications: DashboardNotification[];
+  actionPolicy: Readonly<ActionPolicy>;
+  onPolicyChange: (policy: ActionPolicy) => void;
   onSetRevenue: (opportunityId: string, value: number) => void;
   onSetNote: (opportunityId: string, note: string) => void;
   onSetNextStep: (opportunityId: string, nextStep: string) => void;
@@ -624,6 +634,8 @@ function RouteContent({
   teamUserOverrides,
   addedTeamUsers,
   notifications,
+  actionPolicy,
+  onPolicyChange,
   onSetRevenue,
   onSetNote,
   onSetNextStep,
@@ -648,6 +660,19 @@ function RouteContent({
   // provider transition notice stay put while the chunk downloads.
   return (
     <Suspense fallback={<QueryLoading label={ROUTE_LOADING_LABEL[route]} />}>
+      {route === 'action-center' && (
+        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:action-center`}>
+          <ActionCenterView
+            provider={provider}
+            policy={actionPolicy}
+            onPolicyChange={onPolicyChange}
+            edits={forecastEdits}
+            classifications={classifications}
+            prospects={prospects}
+            roster={{ overrides: teamUserOverrides, added: addedTeamUsers }}
+          />
+        </ErrorBoundary>
+      )}
       {route === 'production-requirements' && (
         <FlaggedContent enabled={productionRequirementsEnabled}>
           <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:production-requirements`}>

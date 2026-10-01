@@ -16,14 +16,7 @@ import type {
 import { businessDaysAfter, businessDaysBetween } from './fiscal';
 import { derivePartnerHealthReasons } from './partnerHealthRules';
 
-export const DEFAULT_ACTION_POLICY: Readonly<ActionPolicy> = Object.freeze({
-  highValueAmount: 400_000,
-  staleCalendarDays: 14,
-  missingNextStepHorizonDays: 60,
-  closeSlipCalendarDays: 7,
-  healthWindowDays: 28,
-  minimumDeterioratingDrivers: 2,
-});
+export { DEFAULT_ACTION_POLICY } from './actionPolicy';
 
 const DAY = 86_400_000;
 const SEVERITY_ORDER: Record<ActionSeverity, number> = { critical: 3, high: 2, medium: 1 };

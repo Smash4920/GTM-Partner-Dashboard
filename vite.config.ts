@@ -60,6 +60,10 @@ export default defineConfig({
     },
   },
   build: {
+    // Safe two-pass compression keeps the full Action Center contract inside
+    // the existing budgets; no unsafe transforms or property mangling.
+    minify: 'terser',
+    terserOptions: { compress: { passes: 2 } },
     // No public source maps in production: a published .map hands anyone the
     // full original source and pairs with stack traces to expose internals.
     // This app ships nothing to an error collector, so maps would exist only
@@ -110,12 +114,26 @@ export default defineConfig({
           if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) {
             return 'react-core';
           }
-          // Route-level code splitting is expressed in source, not here:
-          // App.tsx lazily imports one view barrel (views/system.ts — Data
-          // Connections and Production Requirements), and Rollup's default
-          // placement co-locates the components only those views use with the
-          // barrel chunk while keeping everything the eager shell needs in
-          // the entry.
+          // These operational routes and their exclusive dependencies remain
+          // lazy, but share a compression dictionary rather than shipping
+          // several tiny chunks. Keep the provider's Action Center rules here
+          // too: its dynamic query import otherwise adds two more boundaries.
+          // Match only these modules, not their eager dependency closure;
+          // framework/vendor and shared app code retain their honest budgets.
+          if (
+            /\/src\/views\/(system|DataConnectionsView|ProductionRequirementsView|ActionCenterView)\.tsx?$/.test(
+              id,
+            ) ||
+            /\/src\/components\/(NotificationComposer|SlaAlertPanel|TeamAccessPanel|WireDiagram|ActionPolicyForm)\.tsx$/.test(
+              id,
+            ) ||
+            /\/src\/data\/(connections|useDataConnectionsQueries|actionCenter|useActionCenterQueries|mock\/actionCenterQueries)\.ts$/.test(
+              id,
+            ) ||
+            /\/src\/lib\/(notifications|partnerHealthRules|actionRules|actionRouting)\.ts$/.test(id)
+          ) {
+            return 'system';
+          }
         },
       },
     },

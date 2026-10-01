@@ -40,7 +40,8 @@ import {
   scopeTeamUsers,
 } from '../accessScope';
 import type { DemoAccessScope } from '../accessScope';
-import { createCursorIssuer, paginateRows } from '../pagination';
+import type { ActionCenterScope, ActionCenterSummary } from '../actionCenter';
+import { createCursorIssuer, paginateRows, resolvePageLimit } from '../pagination';
 import type { CursorIssuer } from '../pagination';
 import type { QueryContext } from '../queryContext';
 import {
@@ -53,6 +54,7 @@ import type { DataLineage, DataWarning, QueryMeta, QueryResult } from '../queryM
 import { applySessionEdits, NO_SESSION_EDITS } from '../sessionEdits';
 import type { SessionEdits } from '../sessionEdits';
 import type {
+  ActionItem,
   ActivityMeeting,
   DealRegistration,
   Opportunity,
@@ -113,6 +115,7 @@ import type {
   WeeklyGoalProgress,
 } from '../../lib/metrics';
 import { generateDashboardData } from './generate';
+import { prospectIdsKey, revenueEditsKey } from './providerCursorKeys';
 
 /**
  * Mock implementation of the DataProvider seam: deterministic, seeded data
@@ -158,38 +161,6 @@ function leaderboardLensKey(scope: PerformanceScope): string {
   return [...types].sort().join('+');
 }
 
-/**
- * Prospect membership for a cursor key: the ids, sorted, so array order
- * cannot mint a different key for the same set. Prospects are roster rows,
- * and the leaderboard is one row per roster partner, so they belong to the
- * query's membership exactly like the drill-down does.
- */
-function prospectIdsKey(prospects: Partner[] | undefined): string {
-  return (prospects ?? [])
-    .map((partner) => partner.id)
-    .sort()
-    .join(',');
-}
-
-/**
- * The session's revenue overrides as a cursor-key component: content-based
- * and order-free, so a rebuilt but equal edits map mints the same key. A
- * revenue override can re-rank the leaderboard — closed-won and open
- * pipeline are the ranking — so the whole override map is order-affecting
- * state and belongs to the cursor's identity: a cursor minted before an
- * edit is foreign after it, never a silent position in the new order.
- * Notes, next steps, and forecast calls change what a row says, never
- * where it ranks, so they stay out — the hook does not refresh the board
- * for them, and their cursors keep meaning what they meant.
- */
-function revenueEditsKey(edits: SessionEdits | undefined): string {
-  const overrides = edits?.revenueOverrides ?? {};
-  return Object.keys(overrides)
-    .sort()
-    .map((id) => `${id}=${String(overrides[id])}`)
-    .join(',');
-}
-
 /** Construction options for the mock provider. */
 export interface MockProviderOptions {
   providerId?: string;
@@ -230,6 +201,52 @@ export class MockDataProvider implements DataProvider {
   }
 
   // ---- scoped queries ------------------------------------------------------
+
+  async getActionCenterSummary(
+    access: DemoAccessScope,
+    scope: ActionCenterScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<ActionCenterSummary>> {
+    throwIfAborted(context?.signal);
+    const { scopedActionCenter, summarizeActionItems } = await import('./actionCenterQueries');
+    const { items, edits, lineage } = scopedActionCenter(
+      this.data,
+      access,
+      scope,
+      SNAPSHOT_DATE.toISOString(),
+      context,
+    );
+    return queryResult(summarizeActionItems(items), this.meta(edits, { lineage }));
+  }
+
+  async listActionItems(
+    access: DemoAccessScope,
+    scope: ActionCenterScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<ActionItem>>> {
+    throwIfAborted(context?.signal);
+    resolvePageLimit(page.limit);
+    const { scopedActionCenter, actionCenterScopeKey } = await import('./actionCenterQueries');
+    const { items, edits, lineage } = scopedActionCenter(
+      this.data,
+      access,
+      scope,
+      SNAPSHOT_DATE.toISOString(),
+      context,
+    );
+    return queryResult(
+      paginateRows({
+        rows: items,
+        queryKey: `listActionItems|access:${demoScopeKey(access)}|scope:${actionCenterScopeKey(scope)}`,
+        asOf: this.dataEpoch(),
+        issuer: this.cursorIssuer,
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
+      this.meta(edits, { lineage }),
+    );
+  }
 
   /**
    * The book the query describes: the demo access scope first (the rows the

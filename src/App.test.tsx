@@ -56,6 +56,7 @@ const nav = () => within(screen.getByRole('navigation', { name: 'Primary' }));
 const ROUTES: [label: string, heading: string | null][] = [
   ['Partner Performance', 'Partner Performance'],
   ['Forecasting', 'Forecasting'],
+  ['Action Center', 'Action Center'],
   ['Deal Reg Ops', 'Deal Registration Operations'],
   ['Activity Tracking', 'Activity Tracking'],
   ['Partner View', null],

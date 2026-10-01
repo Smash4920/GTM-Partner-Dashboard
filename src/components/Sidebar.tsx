@@ -18,7 +18,8 @@ export type Route =
   | 'activity'
   | 'partner-view'
   | 'production-requirements'
-  | 'data-connections';
+  | 'data-connections'
+  | 'action-center';
 
 const ROUTES: {
   id: Route;
@@ -28,6 +29,7 @@ const ROUTES: {
   { id: 'home', label: 'Home', icon: HomeIcon },
   { id: 'partners', label: 'Partner Performance', icon: PartnersIcon },
   { id: 'forecasting', label: 'Forecasting', icon: ForecastIcon },
+  { id: 'action-center', label: 'Action Center', icon: RegistrationIcon },
   { id: 'registration-ops', label: 'Deal Reg Ops', icon: RegistrationIcon },
   { id: 'activity', label: 'Activity Tracking', icon: ActivityIcon },
   { id: 'partner-view', label: 'Partner View', icon: PortalIcon },

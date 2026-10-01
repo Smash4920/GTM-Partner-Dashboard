@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { CURRENT_FISCAL_QUARTER } from './constants';
+import { DEFAULT_ACTION_POLICY } from '../lib/actionRules';
 import { INTERNAL_DEMO_SCOPE } from './accessScope';
 import type { DemoAccessScope } from './accessScope';
 import { DATA_PROVIDER_METHODS } from './DataProvider';
@@ -122,6 +123,7 @@ async function collectAllAnswers(access: DemoAccessScope): Promise<unknown[]> {
     await provider.listRecentRegistrations(access, {}, { limit: 50 }),
     await provider.getTeamRoster(access, {}),
     await provider.getRegistrationSlaAlerts(access, {}, 8),
+    await provider.getActionCenterSummary(access, { policy: DEFAULT_ACTION_POLICY }),
     await provider.listWeeklyClassificationMeetings(
       access,
       { partnerManagerId: book.partnerManagers[0]!.id },
@@ -142,6 +144,16 @@ async function collectAllAnswers(access: DemoAccessScope): Promise<unknown[]> {
     cursor = result.data.nextCursor;
     pages += 1;
     expect(pages).toBeLessThan(200);
+  } while (cursor !== undefined);
+  cursor = undefined;
+  do {
+    const result = await provider.listActionItems(
+      access,
+      { policy: DEFAULT_ACTION_POLICY },
+      { cursor, limit: 7 },
+    );
+    answers.push(result);
+    cursor = result.data.nextCursor;
   } while (cursor !== undefined);
   return answers;
 }
@@ -179,6 +191,7 @@ describe('static boundary', () => {
     'data/mock/book.ts',
     'data/mock/generate.ts',
     'data/mock/MockDataProvider.ts',
+    'data/mock/actionCenterQueries.ts',
     'data/mock/ScaleDataProvider.ts',
   ]);
 

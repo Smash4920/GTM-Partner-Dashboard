@@ -325,6 +325,11 @@ export interface ActionItem {
   severity: ActionSeverity;
   dueAt?: string;
   exposure: number;
+  /** Internal demo recommendation; omitted entirely for a partner audience. */
+  owner?: {
+    userId?: string;
+    basis: 'manager' | 'partnership-lead' | 'deal-desk' | 'unowned';
+  };
 }
 
 /**
