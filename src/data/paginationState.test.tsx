@@ -705,9 +705,12 @@ describe('usePaginatedRows rowEdits narrowing', () => {
     // The explicit retry still retries the owed failure, with the edits now
     // current.
     act(() => result.current.retry());
-    await waitFor(() => expect(result.current.error).toBeNull());
+    // Starting refresh clears the error before the replacement rows arrive.
+    await waitFor(() =>
+      expect(result.current.rows.find((row) => row.id === 'opp-1')?.forecastedRevenue).toBe(7),
+    );
+    expect(result.current.error).toBeNull();
     expect(spy).toHaveBeenCalledTimes(3);
     expect(spy.mock.calls[2]?.[2]).toEqual({ limit: 2 });
-    expect(result.current.rows.find((row) => row.id === 'opp-1')?.forecastedRevenue).toBe(7);
   });
 });

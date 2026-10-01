@@ -77,6 +77,32 @@ describe('session workflow dialog', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('prevents native Escape closure through repeated dirty dismissal', async () => {
+    const user = userEvent.setup();
+    const { onClose, onRecord } = mount();
+    await screen.findByLabelText('Reason');
+    await user.type(screen.getByLabelText('Reason'), 'unsaved');
+    for (const title of [
+      'Discard unsaved workflow?',
+      'Registration decision',
+      'Discard unsaved workflow?',
+    ]) {
+      const escape = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      });
+      fireEvent(screen.getByRole('dialog'), escape);
+      expect(escape.defaultPrevented).toBe(true);
+      expect(screen.getByRole('heading', { name: title })).toHaveFocus();
+      expect(screen.getByRole('dialog')).toHaveAttribute('open');
+    }
+    await user.click(screen.getByRole('button', { name: 'Keep editing' }));
+    expect(screen.getByLabelText('Reason')).toHaveValue('unsaved');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onRecord).not.toHaveBeenCalled();
+  });
+
   it('closes clean Escape and restores exact opener on unmount', async () => {
     const opener = document.createElement('button');
     document.body.append(opener);

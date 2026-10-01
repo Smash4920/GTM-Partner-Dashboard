@@ -128,7 +128,6 @@ function WorkflowDialog({
     const opener = document.activeElement;
     const modal = dialog.current!;
     modal.showModal();
-    heading.current?.focus();
     return () => {
       modal.close();
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
@@ -140,10 +139,11 @@ function WorkflowDialog({
     };
   }, []);
   useEffect(() => {
-    heading.current?.focus();
+    heading.current!.focus();
   }, [discard, saved]);
-  const requestClose = () => {
-    if (!saved && (draft.actorId || draft.outcome || draft.reason)) setDiscard(true);
+  const requestClose = (event: { preventDefault: () => void }) => {
+    event.preventDefault();
+    if (!saved && Object.values(draft).some(Boolean)) setDiscard(!discard);
     else onClose();
   };
   const update = (field: keyof WorkflowDraft, value: string) => {
@@ -156,28 +156,24 @@ function WorkflowDialog({
       aria-modal="true"
       aria-labelledby="workflow-title"
       onKeyDown={(event) => {
+        // Cancel alone can let repeated native Escape requests close Chromium's dialog.
+        if (event.key === 'Escape') return requestClose(event);
         if (event.key !== 'Tab') return;
         const controls = Array.from(
           dialog.current!.querySelectorAll<HTMLElement>('button:not(:disabled), select, textarea'),
         );
         const first = controls[0];
-        const last = controls[controls.length - 1];
+        const last = controls.at(-1);
         if (
-          event.shiftKey &&
-          (document.activeElement === first || document.activeElement === heading.current)
+          event.shiftKey
+            ? document.activeElement === first || document.activeElement === heading.current
+            : document.activeElement === last
         ) {
           event.preventDefault();
-          last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first?.focus();
+          (event.shiftKey ? last : first)?.focus();
         }
       }}
-      onCancel={(event) => {
-        event.preventDefault();
-        if (discard) setDiscard(false);
-        else requestClose();
-      }}
+      onCancel={requestClose}
       className="m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-card border border-ash bg-canvas p-5 text-bone backdrop:bg-canvas/80"
     >
       <h2 id="workflow-title" ref={heading} tabIndex={-1} className="text-lg">
@@ -221,10 +217,9 @@ function WorkflowDialog({
                   const result = recordWorkflow(target, draft, users, now());
                   if (!result.ok) {
                     setErrors(result.errors);
-                    const field = ['actorId', 'outcome', 'reason'].find(
-                      (key) => result.errors[key as keyof WorkflowDraft],
-                    );
-                    dialog.current?.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
+                    dialog.current
+                      ?.querySelector<HTMLElement>(`[name="${Object.keys(result.errors)[0]}"]`)
+                      ?.focus();
                     return;
                   }
                   onRecord(result.record);

@@ -1,10 +1,11 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 
 const PRIVACY_SENTINEL = 'PRIVATE-workflow-reason-VAL-ACT-019';
 const EMPTY_COUNTS = 'Registration decisions: 0 · Conflict dispositions: 0 · Forecast reviews: 0';
 const ACTOR_LABEL = 'Demo actor (not authenticated)';
 
-function observe(page: Page) {
+function observe(page: Page, expectedReadinessFailure = false) {
   const requests: { url: string; method: string; body: string | null }[] = [];
   const consoleMessages: string[] = [];
   const errors: string[] = [];
@@ -21,7 +22,11 @@ function observe(page: Page) {
   });
   page.on('pageerror', (error) => errors.push(error.message));
   return async () => {
-    expect(errors).toEqual([]);
+    const readinessErrors = errors.filter((text) =>
+      /component: DataProvider, operation: getForecastSummary/.test(text),
+    );
+    expect(readinessErrors).toHaveLength(expectedReadinessFailure ? 1 : 0);
+    expect(errors.filter((text) => !readinessErrors.includes(text))).toEqual([]);
     expect(consoleMessages.join('\n')).not.toContain(PRIVACY_SENTINEL);
     expect(JSON.stringify(requests)).not.toContain(PRIVACY_SENTINEL);
     expect(
@@ -89,7 +94,7 @@ function changes(page: Page) {
   return page.getByRole('list', { name: 'Current-session forecast changes', exact: true });
 }
 
-async function invalidBlankSubmission(dialog: Locator, options: string[]) {
+async function invalidBlankSubmission(page: Page, dialog: Locator, options: string[]) {
   const actor = dialog.getByLabel(ACTOR_LABEL, { exact: true });
   await expect(actor).toBeVisible();
   await expect(actor).toHaveValue('');
@@ -121,6 +126,7 @@ async function invalidBlankSubmission(dialog: Locator, options: string[]) {
     'aria-invalid',
     'true',
   );
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 }
 
 async function saveOutcome(
@@ -147,6 +153,7 @@ async function saveOutcome(
   expect(Date.parse(time!)).toBeLessThanOrEqual(after);
   const detail = `${kind}: ${ids.join(', ')}${changeId ? ` · ${changeId}` : ''} · outcome ${outcome} · actor user-01 (not authenticated) · reason: ${reason} · time ${time} · simulated/local-only`;
   await expect(saved.locator('p:has(time)')).toHaveText(detail);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await saved.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(records(page).getByRole('listitem').first()).toHaveText(detail);
@@ -213,11 +220,11 @@ test('VAL-ACT-017: required registration decisions are session projections from 
   const dialog = page.getByRole('dialog', { name: 'Registration decision', exact: true });
   const id = (await dialog.innerText()).match(/\breg-[\w-]+\b/)?.[0];
   expect(id).toBeTruthy();
-  await invalidBlankSubmission(dialog, ['approved', 'rejected']);
+  await invalidBlankSubmission(page, dialog, ['approved', 'rejected']);
   await expect(records(page).getByRole('listitem')).toHaveCount(0);
   await saveOutcome(page, dialog, 'registration', [id!], 'approved');
   await expect(opener).toBeFocused();
-  await expect(row).toHaveText(queueBefore);
+  await expect(row).toHaveText(queueBefore, { useInnerText: true });
   await expect(
     page.getByText(/Registration decisions: 1 · Conflict dispositions: 0/),
   ).toBeVisible();
@@ -236,7 +243,7 @@ test('VAL-ACT-017: required registration decisions are session projections from 
     'rejected',
   );
   await expect(pending.opener).toBeFocused();
-  await expect(queue).toHaveText(sourceBefore);
+  await expect(queue).toHaveText(sourceBefore, { useInnerText: true });
   await expect(records(page).getByRole('listitem')).toHaveCount(2);
   await expect(page.getByText('Pending past SLA', { exact: true }).locator('..')).toContainText(
     '14',
@@ -258,19 +265,20 @@ test('VAL-ACT-017: a validated conflict disposition records every contender with
   const target = await conflictTarget(page);
   await target.opener.click();
   const dialog = page.getByRole('dialog', { name: 'Partner-conflict disposition', exact: true });
-  await invalidBlankSubmission(dialog, ['uphold-first', 'share-credit', 'escalate']);
+  await invalidBlankSubmission(page, dialog, ['uphold-first', 'share-credit', 'escalate']);
   await saveOutcome(page, dialog, 'conflict', target.ids, 'share-credit');
   await expect(target.opener).toBeFocused();
-  await expect(duplicates).toHaveText(sourceBefore);
+  await expect(duplicates).toHaveText(sourceBefore, { useInnerText: true });
   await expect(
     page.getByText('Registration decisions: 0 · Conflict dispositions: 1 · Forecast reviews: 0'),
   ).toBeVisible();
   await audit();
 });
 
-test('VAL-ACT-018 VAL-ACT-019: all workflow, policy, notification and forecast effects stay private and reload away', async ({
+test('VAL-ACT-018 VAL-ACT-019 VAL-CROSS-005: all workflow, policy, notification and forecast effects stay private and reload away', async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   const audit = observe(page);
   await boot(page);
   await navigate(page, 'Action Center');
@@ -280,10 +288,15 @@ test('VAL-ACT-018 VAL-ACT-019: all workflow, policy, notification and forecast e
   await expect(page.getByText('85 unique items', { exact: true })).toHaveCount(0);
   const action = page.getByTestId('action-item').first();
   const actionId = await action.getAttribute('data-action-id');
+  const evidence = action.getByRole('button', { name: /^Show evidence for / });
+  await evidence.focus();
+  await page.keyboard.press('Enter');
+  await expect(evidence).toHaveAttribute('aria-expanded', 'true');
+  await expect(evidence).toBeFocused();
   await action.getByRole('button', { name: 'Notify owner', exact: true }).click();
   const composer = page.getByRole('region', { name: `Notification for ${actionId}` });
   await composer.getByLabel('Subject', { exact: true }).fill(PRIVACY_SENTINEL);
-  await composer.getByLabel('Message', { exact: true }).fill(PRIVACY_SENTINEL);
+  await composer.getByRole('textbox', { name: 'Message', exact: true }).fill(PRIVACY_SENTINEL);
   for (const checkbox of await composer.getByRole('checkbox').all()) await checkbox.uncheck();
   await composer.getByRole('checkbox', { name: 'Use Email', exact: true }).check();
   await composer.getByRole('button', { name: /Send to/ }).click();
@@ -333,7 +346,7 @@ test('VAL-ACT-018 VAL-ACT-019: all workflow, policy, notification and forecast e
   const review = page.getByRole('button', { name: 'Review change-1', exact: true });
   await review.click();
   const dialog = page.getByRole('dialog', { name: 'Forecast-change review', exact: true });
-  await invalidBlankSubmission(dialog, ['accepted', 'needs-revision']);
+  await invalidBlankSubmission(page, dialog, ['accepted', 'needs-revision']);
   await saveOutcome(
     page,
     dialog,
@@ -401,74 +414,85 @@ test('VAL-ACT-018 VAL-ACT-019: all workflow, policy, notification and forecast e
   await audit();
 });
 
-test('VAL-CROSS-005: mobile native workflows trap focus, guard dirty dismissal and restore the opener', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  const audit = observe(page);
-  await boot(page);
-  await navigate(page, 'Deal Reg Ops');
-  const pending = await pendingRegistration(page);
-  await pending.opener.focus();
-  await page.keyboard.press('Enter');
-  const dialog = page.getByRole('dialog', { name: 'Registration decision', exact: true });
-  await expect(
-    dialog.getByRole('heading', { name: 'Registration decision', exact: true }),
-  ).toBeFocused();
-  await expect(dialog.getByLabel(ACTOR_LABEL)).toBeVisible();
-  expect(await dialog.evaluate((element) => element.matches('dialog:modal'))).toBe(true);
-  const bounds = await dialog.boundingBox();
-  expect(bounds).not.toBeNull();
-  expect(bounds!.x).toBeGreaterThanOrEqual(0);
-  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
-  const actor = dialog.getByLabel(ACTOR_LABEL, { exact: true });
-  const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
-  await actor.focus();
-  await page.keyboard.press('Shift+Tab');
-  await expect(cancel).toBeFocused();
-  await page.keyboard.press('Tab');
-  await expect(actor).toBeFocused();
-  // A native modal makes even programmatic background focus ineffective.
-  await page.getByLabel('Data provider').evaluate((element: HTMLSelectElement) => element.focus());
-  await expect(actor).toBeFocused();
-  await actor.selectOption('user-01');
-  await dialog.getByLabel('Reason', { exact: true }).fill(PRIVACY_SENTINEL);
-  await cancel.click();
-  const discard = page.getByRole('dialog', { name: 'Discard unsaved workflow?', exact: true });
-  await expect(discard).toBeVisible();
-  await discard.getByRole('button', { name: 'Keep editing', exact: true }).click();
-  await expect(dialog.getByLabel('Reason', { exact: true })).toHaveValue(PRIVACY_SENTINEL);
-  await page.keyboard.press('Escape');
-  await expect(discard).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel(ACTOR_LABEL)).toHaveValue('user-01');
-  await page.keyboard.press('Escape');
-  await discard.getByRole('button', { name: 'Discard', exact: true }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(pending.opener).toBeFocused();
-  await expect(records(page).getByRole('listitem')).toHaveCount(0);
-  await expect(page.getByText(EMPTY_COUNTS, { exact: true })).toBeVisible();
-  await pending.opener.click();
-  await saveOutcome(
+for (const [surface, width, height] of [
+  ['desktop', 1280, 900],
+  ['mobile', 390, 844],
+] as const) {
+  test(`VAL-CROSS-005: ${surface} native workflows trap focus, guard dirty dismissal and restore the opener`, async ({
     page,
-    page.getByRole('dialog', { name: 'Registration decision', exact: true }),
-    'registration',
-    [pending.id],
-    'approved',
-  );
-  await expect(pending.opener).toBeFocused();
-  await audit();
-});
+  }) => {
+    await page.setViewportSize({ width, height });
+    const audit = observe(page);
+    await boot(page);
+    await navigate(page, 'Deal Reg Ops');
+    const pending = await pendingRegistration(page);
+    await pending.opener.focus();
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Registration decision', exact: true });
+    await expect(
+      dialog.getByRole('heading', { name: 'Registration decision', exact: true }),
+    ).toBeFocused();
+    await expect(dialog.getByLabel(ACTOR_LABEL)).toBeVisible();
+    expect(await dialog.evaluate((element) => element.matches('dialog:modal'))).toBe(true);
+    const bounds = await dialog.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(pending.opener).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(dialog).toBeVisible();
+    const actor = dialog.getByLabel(ACTOR_LABEL, { exact: true });
+    const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
+    await actor.focus();
+    await page.keyboard.press('Shift+Tab');
+    await expect(cancel).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(actor).toBeFocused();
+    // A native modal makes even programmatic background focus ineffective.
+    await page
+      .getByLabel('Data provider')
+      .evaluate((element: HTMLSelectElement) => element.focus());
+    await expect(actor).toBeFocused();
+    await actor.selectOption('user-01');
+    await dialog.getByLabel('Reason', { exact: true }).fill(PRIVACY_SENTINEL);
+    await cancel.click();
+    const discard = page.getByRole('dialog', { name: 'Discard unsaved workflow?', exact: true });
+    await expect(discard).toBeVisible();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await discard.getByRole('button', { name: 'Keep editing', exact: true }).click();
+    await expect(dialog.getByLabel('Reason', { exact: true })).toHaveValue(PRIVACY_SENTINEL);
+    await page.keyboard.press('Escape');
+    await expect(discard).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel(ACTOR_LABEL)).toHaveValue('user-01');
+    await page.keyboard.press('Escape');
+    await discard.getByRole('button', { name: 'Discard', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(pending.opener).toBeFocused();
+    await expect(records(page).getByRole('listitem')).toHaveCount(0);
+    await expect(page.getByText(EMPTY_COUNTS, { exact: true })).toBeVisible();
+    await pending.opener.click();
+    await saveOutcome(
+      page,
+      page.getByRole('dialog', { name: 'Registration decision', exact: true }),
+      'registration',
+      [pending.id],
+      'approved',
+    );
+    await expect(pending.opener).toBeFocused();
+    await audit();
+  });
+}
 
-test('VAL-CROSS-002: committed provider changes clear workflow history and forecast edits together', async ({
+test('VAL-CROSS-002 VAL-RES-003: failed readiness retains session state and retried disjoint commits clear it both ways', async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  const audit = observe(page);
-  // An explicitly empty named plan disables random failures without causing
-  // an expected console error; provider readiness and real commits still run.
-  await boot(page, '?remoteFailMethods=');
+  const audit = observe(page, true);
+  await boot(page, '?remoteFailFirst=1');
   await navigate(page, 'Deal Reg Ops');
   const pending = await pendingRegistration(page);
   await pending.opener.click();
@@ -505,9 +529,27 @@ test('VAL-CROSS-002: committed provider changes clear workflow history and forec
   );
   await expect(records(page).getByRole('listitem')).toHaveCount(3);
   await expect(pipeline).not.toHaveText(originalPipeline);
+  const editedPipeline = await pipeline.innerText();
+  const manager = page.getByRole('combobox', { name: 'Partner manager', exact: true });
+  await manager.selectOption({ index: 1 });
+  await expect(pipeline).not.toHaveText(editedPipeline);
+  const selectedManager = await manager.inputValue();
+  const selectedPipeline = await pipeline.innerText();
   await page.getByLabel('Data provider').selectOption('remote');
+  const failure = page.getByRole('alert');
+  await expect(failure).toContainText('Couldn’t switch to Simulated remote');
+  await expect(failure).toContainText('Still using Local mock');
+  await expect(page.getByText(/round trips with a 15% simulated failure rate/)).toHaveCount(0);
+  await expect(pipeline).toHaveText(selectedPipeline);
+  await expect(manager).toHaveValue(selectedManager);
+  await expect(records(page).getByRole('listitem')).toHaveCount(3);
+  await expect(changes(page).getByRole('listitem')).toHaveCount(1);
+  await expect(page.getByText('$987,654,321', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Retry switch to Simulated remote' }).click();
   await expect(page.getByText(/round trips with a 15% simulated failure rate/)).toBeVisible();
+  await expect(manager).toHaveValue('all');
   await expect(pipeline).toHaveText(originalPipeline);
+  await expect(pipeline).not.toHaveText(editedPipeline);
   await expect(page.getByText(EMPTY_COUNTS, { exact: true })).toBeVisible();
   await expect(records(page).getByRole('listitem')).toHaveCount(0);
   await expect(changes(page).getByRole('listitem')).toHaveCount(0);
@@ -526,8 +568,36 @@ test('VAL-CROSS-002: committed provider changes clear workflow history and forec
     PRIVACY_SENTINEL,
     'change-1',
   );
+  await page.getByLabel('Data provider').selectOption('scaled');
+  await expect(page.getByText(/100 copies of the book/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(EMPTY_COUNTS, { exact: true })).toBeVisible();
+  await expect(records(page).getByRole('listitem')).toHaveCount(0);
+  await expect(changes(page).getByRole('listitem')).toHaveCount(0);
+  await expect(page.getByText('$123,456,789', { exact: true })).toHaveCount(0);
+  const table = page.getByRole('region', { name: 'In-quarter opportunities, scrollable' });
+  await expect(table.getByRole('row')).toHaveCount(26);
+  await expect(table.getByText(/· copy \d+/).first()).toBeVisible();
+  await expect(page.getByText(/As of .* · provider (local|remote) ·/)).toHaveCount(0);
+  await expect(page.getByText(/As of .* · provider scaled ·/).first()).toBeVisible();
+  // A copied partner is absent from the local directory. Returning must reset
+  // that selection rather than silently matching a different provider's ID.
+  await navigate(page, 'Partner Performance');
+  const partner = page.getByRole('combobox', { name: 'Partner', exact: true });
+  const disjointPartner = await partner
+    .locator('option')
+    .evaluateAll((options) =>
+      options
+        .find((option) => (option as HTMLOptionElement).value.includes('~'))
+        ?.getAttribute('value'),
+    );
+  expect(disjointPartner).toBeTruthy();
+  await partner.selectOption(disjointPartner!);
   await page.getByLabel('Data provider').selectOption('local');
   await expect(page.getByLabel('Data provider')).toHaveValue('local');
+  await expect(partner).toHaveValue('all');
+  await expect(partner.locator(`option[value="${disjointPartner}"]`)).toHaveCount(0);
+  await navigate(page, 'Forecasting');
+  await expect(manager).toHaveValue('all');
   await expect(pipeline).toHaveText(originalPipeline);
   await expect(page.getByText(EMPTY_COUNTS, { exact: true })).toBeVisible();
   await expect(records(page).getByRole('listitem')).toHaveCount(0);
