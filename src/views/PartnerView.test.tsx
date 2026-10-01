@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PartnerView from './PartnerView';
@@ -273,5 +273,73 @@ describe('PartnerView per-widget resilience (VAL-CROSS-004)', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Retry The partner list' }));
     await screen.findByRole('heading', { name: 'Northwind Systems' });
+  });
+
+  it('a failed partner ranking opens the first roster partner and retries only the ranking', async () => {
+    // The regression this pins: the picker used to gate on the ranking query,
+    // so a ranking-only failure blanked the whole route even though the
+    // roster had answered and its first partner could open the portal. The
+    // roster leads with partner-1 while partner-2 tops the portal-visible
+    // leaderboard, so the fallback and the recovered default are distinct.
+    const user = userEvent.setup();
+    const inner = mockProvider({
+      partners: [
+        makePartner({ id: 'partner-1', name: 'Northwind Systems' }),
+        makePartner({ id: 'partner-2', name: 'Contoso Partners', partnerManagerId: 'pm-2' }),
+      ],
+      partnerManagers: [
+        { id: 'pm-1', name: 'J. Alvarez' },
+        { id: 'pm-2', name: 'R. Diaz' },
+      ],
+      opportunities: [
+        makeOpportunity({ id: 'opp-p1-open', partnerId: 'partner-1', accountName: 'Acme Freight' }),
+        makeOpportunity({
+          id: 'opp-p2-win',
+          partnerId: 'partner-2',
+          accountName: 'Contoso Win',
+          outcome: 'won',
+          forecastedRevenue: 300_000,
+          createdAt: '2026-08-01T00:00:00.000Z',
+          expectedCloseDate: '2026-09-01T00:00:00.000Z',
+          closedAt: '2026-09-01T00:00:00.000Z',
+        }),
+      ],
+    });
+    const rosterSpy = vi.spyOn(inner, 'getPartnerRoster');
+    const rankingSpy = vi.spyOn(inner, 'getTopPartnerLeaders');
+    renderView(
+      createSimulatedRemoteProvider(inner, {
+        latencyMs: 0,
+        failMethods: { getTopPartnerLeaders: 1 },
+      }),
+    );
+
+    // The portal did not blank: it opened on the roster's first partner, with
+    // the picker and the partner's own cards live.
+    await screen.findByRole('heading', { name: 'Northwind Systems', level: 1 });
+    expect(screen.getByLabelText(/viewing as/i)).toBeEnabled();
+    expect(await screen.findByText('Open pipeline')).toBeInTheDocument();
+
+    // The ranking failure is named with stable copy; the raw rejection prose
+    // never renders.
+    const region = await screen.findByRole('group', { name: 'partner ranking' });
+    expect(within(region).getByText('Partner ranking unavailable:')).toBeInTheDocument();
+    expect(within(region).getByText('Failed to rank the partners')).toBeInTheDocument();
+    expect(screen.queryByText(/failed in transit/)).not.toBeInTheDocument();
+
+    // The planned failure never reached the inner provider, so the retry's
+    // ranking call is the inner provider's first — and the roster, which
+    // already answered, is not re-asked.
+    expect(rankingSpy).not.toHaveBeenCalled();
+    const rosterCalls = rosterSpy.mock.calls.length;
+    await user.click(within(region).getByRole('button', { name: 'Retry partner ranking' }));
+
+    // Recovery applies the intended default — the portal switches to the
+    // portal-visible leader — and focus lands on the ranking's named region.
+    await screen.findByRole('heading', { name: 'Contoso Partners', level: 1 });
+    expect(rankingSpy).toHaveBeenCalledTimes(1);
+    expect(rosterSpy.mock.calls.length).toBe(rosterCalls);
+    expect(within(region).queryByText(/Partner ranking unavailable/)).not.toBeInTheDocument();
+    expect(region).toHaveFocus();
   });
 });

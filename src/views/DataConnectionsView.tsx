@@ -331,23 +331,22 @@ export default function DataConnectionsView({
         title="Deal-registration SLA alerts"
         subtitle="The rule the notification service runs, the registrations it fires on at snapshot, and what has been sent this session."
       >
-        {renderQueryStates(
-          'The SLA alert queue',
-          [
-            ['the registration SLA alerts', alerts],
-            ['the notification roster', teamUsers],
-          ],
-          () => (
-            <SlaAlertPanel
-              alerts={alertList}
-              totalCount={alerts.data?.totalCount ?? 0}
-              users={users}
-              notifications={notifications}
-              onNotify={(alert) => notifyAlert(alert.registration.id)}
-              onNotifyAll={notifyAllOwners}
-            />
-          ),
-        )}
+        {/* The queue answers from the alert digest alone: the provider
+            resolves each alert's owner into the digest, so the KPI tile, the
+            rows, and the notify actions stay live through a roster failure.
+            The roster only names this panel's sent-log entries — its failure
+            surfaces in the roster-driven sections above, and the log falls
+            back to explicit user ids here in the meantime. */}
+        {renderQueryStates('The SLA alert queue', [['the registration SLA alerts', alerts]], () => (
+          <SlaAlertPanel
+            alerts={alertList}
+            totalCount={alerts.data?.totalCount ?? 0}
+            users={users}
+            notifications={notifications}
+            onNotify={(alert) => notifyAlert(alert.registration.id)}
+            onNotifyAll={notifyAllOwners}
+          />
+        ))}
       </Card>
     </div>
   );

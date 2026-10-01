@@ -356,3 +356,167 @@ describe('App route matrix', () => {
     30_000,
   );
 });
+
+/**
+ * The optional-resource matrix: some queries are enhancements a route can
+ * degrade around — the Data Connections notification roster (the SLA digest
+ * carries its own resolved owners), the Partner View ranking (the portal can
+ * open on the roster's first partner), and the Home roster (the review queue
+ * falls back to explicit partner ids). A failure of one of these must leave
+ * the primary content live, name the failed resource, and offer a retry that
+ * repeats exactly that method.
+ */
+interface OptionalResourceSpec {
+  route: string;
+  method: string;
+  /** The retry button's accessible name. */
+  retry: string;
+  /** Waits for the named failure and proves the primary content stayed live. */
+  expectFailure: () => Promise<void>;
+  /** Optional interaction between the failure and the retry. */
+  beforeRetry?: (user: ReturnType<typeof userEvent.setup>) => Promise<void>;
+  /** Post-retry recovery evidence; must not issue calls beyond the retry. */
+  expectRecovered: () => Promise<void>;
+}
+
+/** The card whose heading carries this title. */
+function cardWithTitle(title: string) {
+  const heading = screen.getByRole('heading', { name: title });
+  const card = heading.closest('section');
+  if (!card) throw new Error(`no card titled "${title}"`);
+  return within(card);
+}
+
+const OPTIONAL_RESOURCE_FAILURES: OptionalResourceSpec[] = [
+  {
+    route: 'Home',
+    method: 'getPartnerRoster',
+    retry: 'Retry partner roster',
+    expectFailure: async () => {
+      // The roster failure is named with the explicit id fallback while the
+      // summary KPIs, leaderboard, and review queue keep rendering.
+      const region = await screen.findByRole('group', { name: 'partner roster' });
+      await within(region).findByText('Partner names unavailable — showing partner ids:');
+      expect(within(region).getByText('Failed to load the partner roster')).toBeInTheDocument();
+      expect(screen.queryByText('Performance summary unavailable:')).not.toBeInTheDocument();
+      expect(screen.getByText('Kestrel Networks')).toBeInTheDocument();
+      expect(
+        cardWithTitle('Registrations awaiting review').getAllByText(/^p-\d+$/).length,
+      ).toBeGreaterThan(0);
+      expect(screen.queryByText(/aligned partners/)).not.toBeInTheDocument();
+    },
+    expectRecovered: async () => {
+      await waitFor(() =>
+        expect(screen.queryByText(/Partner names unavailable/)).not.toBeInTheDocument(),
+      );
+      // The queue's partner column resolves to names and the header count
+      // returns.
+      expect(
+        cardWithTitle('Registrations awaiting review').queryByText(/^p-\d+$/),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText(/· 25 aligned partners/)).toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'partner roster' })).toHaveFocus();
+    },
+  },
+  {
+    route: 'Partner View',
+    method: 'getTopPartnerLeaders',
+    retry: 'Retry partner ranking',
+    expectFailure: async () => {
+      // The portal does not wait on the failed ranking: it opens on the
+      // roster's first partner, not the ranked leader, and names the failure.
+      const region = await screen.findByRole('group', { name: 'partner ranking' });
+      await within(region).findByText('Partner ranking unavailable:');
+      expect(within(region).getByText('Failed to rank the partners')).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Northwind Solutions', level: 1 }),
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText(/viewing as/i)).toBeEnabled();
+    },
+    // The picker keeps working through the ranking failure; pinning an
+    // explicit selection also keeps the recovered ranking from switching the
+    // portal under the retry, so the call-count proof below is exact.
+    beforeRetry: async (user) => {
+      await user.selectOptions(screen.getByLabelText(/viewing as/i), ['p-02']);
+      await screen.findByRole('heading', { name: 'BrightPath Consulting', level: 1 });
+      await settle();
+    },
+    expectRecovered: async () => {
+      await waitFor(() =>
+        expect(screen.queryByText(/Partner ranking unavailable/)).not.toBeInTheDocument(),
+      );
+      // The explicit selection owns the portal; the recovered ranking does
+      // not yank it back to the leader.
+      expect(
+        screen.getByRole('heading', { name: 'BrightPath Consulting', level: 1 }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'partner ranking' })).toHaveFocus();
+    },
+  },
+  {
+    route: 'Data Connections',
+    method: 'getTeamRoster',
+    retry: 'Retry The team roster',
+    expectFailure: async () => {
+      // The roster-driven sections name the roster failure…
+      await screen.findByText('The team roster unavailable:');
+      expect(screen.getByText('The notification composer unavailable:')).toBeInTheDocument();
+      // …while the SLA alert queue, which never needed the roster, stays
+      // live: KPI counts, rows, and owner actions included.
+      expect(screen.queryByText('The SLA alert queue unavailable:')).not.toBeInTheDocument();
+      const queue = screen.getByRole('group', { name: 'The SLA alert queue' });
+      await within(queue).findByText(/past the SLA/);
+      expect(within(queue).getAllByRole('button', { name: 'Notify owner' }).length).toBeGreaterThan(
+        0,
+      );
+      expect(within(queue).getByRole('button', { name: /^Notify all \d+ owners$/ })).toBeEnabled();
+      const tile = screen.getByText('SLA alerts due').parentElement;
+      if (!tile) throw new Error('no SLA alerts tile');
+      expect(within(tile).getByText('17')).toBeInTheDocument();
+    },
+    expectRecovered: async () => {
+      // The roster section recovers and the composer — which shares the
+      // roster query — comes back without its own retry.
+      const roster = screen.getByRole('group', { name: 'The team roster' });
+      await within(roster).findAllByText('Alex Morgan');
+      await waitFor(() => expect(screen.queryByText(/unavailable:/)).not.toBeInTheDocument());
+      const composer = screen.getByRole('group', { name: 'The notification composer' });
+      expect(within(composer).getByRole('button', { name: /^Send to / })).toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'The team roster' })).toHaveFocus();
+    },
+  },
+];
+
+describe('App route matrix: optional resource failures', () => {
+  it.each(OPTIONAL_RESOURCE_FAILURES)(
+    '$route: a failed $method keeps the primary content live and retries only that method',
+    async (spec) => {
+      const { provider, calls, control } = instrumentedProvider();
+      const user = await renderApp(provider);
+      await settle();
+
+      // Same arming discipline as the primary matrix: the failure belongs to
+      // the route under test, not the landing route's copies of the method.
+      await user.click(nav().getByRole('button', { name: 'Production Requirements' }));
+      await screen.findByRole('heading', { name: 'Production Requirements', level: 1 });
+      control.failMethod = spec.method;
+      control.armed = true;
+
+      await user.click(nav().getByRole('button', { name: spec.route }));
+      await spec.expectFailure();
+      await settle();
+      // The boundary never tripped: the route is alive around its failure.
+      expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
+
+      if (spec.beforeRetry !== undefined) await spec.beforeRetry(user);
+      const afterFailure = snapshot(calls);
+      await user.click(screen.getByRole('button', { name: spec.retry }));
+
+      await spec.expectRecovered();
+      // The focused retry repeated exactly the failed method — one call of
+      // it, and not one more call of anything else on the route.
+      expect(diff(afterFailure, calls)).toEqual([spec.method]);
+    },
+    30_000,
+  );
+});

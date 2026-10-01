@@ -6,7 +6,7 @@ import KpiTile from '../components/KpiTile';
 import Leaderboard from '../components/Leaderboard';
 import LightCard from '../components/LightCard';
 import MetricBars, { type MetricBarRow } from '../components/MetricBars';
-import { renderQueryState } from '../components/QueryState';
+import { QueryFailure, renderQueryState, useRetryRecovery } from '../components/QueryState';
 import RegistrationsTable from '../components/RegistrationsTable';
 import RevenueTrend from '../components/RevenueTrend';
 import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
@@ -139,6 +139,14 @@ export default function HomeView({
   const phaseLabel = FISCAL_PHASE_META[phase].label;
   const outcomeScope = phase === 'fy' ? `${FISCAL_YEAR} to date` : `${FISCAL_YEAR} ${phaseLabel}`;
   const phaseDescription = FISCAL_PHASE_META[phase].description;
+
+  // The roster names the review queue's partner column and the header's
+  // aligned-partner count. Its failure must not take the cards down with it:
+  // they keep rendering with the explicit partner-id fallback, the failure is
+  // named beside them, and the named retry repeats only the roster query. The
+  // region persists across the recovery so the successful retry has a stable
+  // focus target.
+  const rosterRecovery = useRetryRecovery('partner roster', queries.roster.error !== null);
 
   return (
     <div className="space-y-6">
@@ -306,6 +314,23 @@ export default function HomeView({
           </>
         ))}
       </Card>
+
+      {(queries.roster.data !== null || queries.roster.error !== null) && (
+        <div ref={rosterRecovery.regionRef} {...rosterRecovery.regionProps}>
+          {queries.roster.error !== null && (
+            <QueryFailure
+              text={
+                queries.roster.data === null
+                  ? 'Partner names unavailable — showing partner ids'
+                  : 'Latest partner roster refresh failed'
+              }
+              retryLabel="partner roster"
+              error={queries.roster.error}
+              onRetry={rosterRecovery.armRetry(queries.roster.retry)}
+            />
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card

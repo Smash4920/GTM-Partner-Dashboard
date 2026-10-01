@@ -282,6 +282,83 @@ describe('DataConnectionsView', () => {
     expect(screen.getByText('Failed to load the partner roster')).toBeInTheDocument();
   });
 
+  it('a roster-only failure leaves the SLA alert queue live and retries only the roster', async () => {
+    // The regression this pins: the SLA alert queue used to gate on the team
+    // roster, so a roster-only failure hid valid alerts behind the queue's
+    // unavailable state and made that queue's Retry call getTeamRoster. The
+    // digest carries its own resolved owners, so the queue never needed the
+    // roster to render.
+    const user = userEvent.setup();
+    const onSendNotification = vi.fn();
+    const inner = new MockDataProvider(
+      makeProviderBook({ partners: PARTNERS, registrations: REGISTRATIONS, teamUsers: TEAM_USERS }),
+    );
+    const rosterSpy = vi.spyOn(inner, 'getTeamRoster');
+    const alertsSpy = vi.spyOn(inner, 'getRegistrationSlaAlerts');
+    render(
+      <DataConnectionsView
+        provider={createSimulatedRemoteProvider(inner, {
+          latencyMs: 0,
+          failMethods: { getTeamRoster: 1 },
+        })}
+        teamUserOverrides={{}}
+        addedTeamUsers={[]}
+        notifications={[]}
+        onAddTeamUser={vi.fn()}
+        onSetTeamUserStatus={vi.fn()}
+        onRemoveTeamUser={vi.fn()}
+        onSendNotification={onSendNotification}
+      />,
+    );
+
+    // The roster-driven sections name the roster failure; the roster copy
+    // appears exactly in those two sections and nowhere else.
+    await screen.findByText('The team roster unavailable:');
+    expect(screen.getByText('The notification composer unavailable:')).toBeInTheDocument();
+    expect(screen.getAllByText('Failed to load the notification roster')).toHaveLength(2);
+    expect(
+      tile('Receiving notifications').getByText(/roster unavailable — the provider did not answer/),
+    ).toBeInTheDocument();
+
+    // The queue never gated on the roster: the KPI tile keeps the live
+    // counts, the rows render, and the owner actions work off the digest's
+    // resolved owners.
+    expect(screen.queryByText('The SLA alert queue unavailable:')).not.toBeInTheDocument();
+    expect(await tile('SLA alerts due').findByText('3')).toBeInTheDocument();
+    expect(
+      tile('SLA alerts due').getByText(
+        `1 due next business day · 2 past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`,
+      ),
+    ).toBeInTheDocument();
+    expect(queueRow('Acme Freight')).toBeInTheDocument();
+    expect(
+      within(queueRow('Contoso Retail')).getByRole('button', { name: 'Notify owner' }),
+    ).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Notify all 2 owners' }));
+    expect(onSendNotification).toHaveBeenCalledTimes(2);
+
+    // The planned failure never reached the inner provider, so the retry's
+    // roster call is the inner provider's first — and the alert query, which
+    // already answered, is not re-asked.
+    expect(rosterSpy).not.toHaveBeenCalled();
+    expect(alertsSpy).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Retry The team roster' }));
+
+    // The roster recovers — the composer rides the same query and comes back
+    // with it — the queue is undisturbed, and focus lands on the roster's
+    // named region.
+    const region = screen.getByRole('group', { name: 'The team roster' });
+    await waitFor(() =>
+      expect(within(region).getAllByText('J. Alvarez').length).toBeGreaterThan(0),
+    );
+    expect(rosterSpy).toHaveBeenCalledTimes(1);
+    expect(alertsSpy).toHaveBeenCalledTimes(1);
+    expect(region).toHaveFocus();
+    expect(queueRow('Acme Freight')).toBeInTheDocument();
+    expect(tile('SLA alerts due').getByText('3')).toBeInTheDocument();
+    expect(screen.queryByText(/unavailable:/)).not.toBeInTheDocument();
+  });
+
   it('keeps retained data visible with truthful tiles and focused retries when a same-scope refresh fails', async () => {
     // The regression this pins: a failed refresh with a retained answer used
     // to render exactly like a healthy panel — no failure copy, no retry,

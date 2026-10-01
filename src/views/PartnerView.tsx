@@ -8,7 +8,13 @@ import MetricBars, { type MetricBarRow } from '../components/MetricBars';
 import OpportunityTable from '../components/OpportunityTable';
 import PageFooter from '../components/PageFooter';
 import PartnerPicker from '../components/PartnerPicker';
-import { renderQueryState, renderQueryStates } from '../components/QueryState';
+import {
+  QueryFailure,
+  QueryLoading,
+  renderQueryState,
+  renderQueryStates,
+  useRetryRecovery,
+} from '../components/QueryState';
 import RegistrationsTable from '../components/RegistrationsTable';
 import RevenueTrend from '../components/RevenueTrend';
 import {
@@ -486,25 +492,50 @@ export default function PartnerView({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [slice, setSlice] = useState<PartnerSlice>('all');
   const [phase, setPhase] = useState<FiscalPhase>('q3');
+  // The ranking is the picker's optional enhancement: it only chooses which
+  // partner the portal opens on. Its failure must not blank the route — the
+  // portal opens on the first roster partner instead, the failure is named
+  // beside the portal, and its retry repeats only the ranking query. The
+  // region persists across the recovery so the successful retry has a stable
+  // focus target.
+  const rankingRecovery = useRetryRecovery('partner ranking', picker.defaultPick.error !== null);
 
   return (
     <div className="space-y-6">
-      {renderQueryStates(
-        'The partner list',
-        [
-          ['the partner list', picker.roster],
-          ['the partner ranking', picker.defaultPick],
-        ],
-        () => {
-          const roster = picker.roster.data ?? [];
-          // Default to the top-performing partner on portal-visible revenue
-          // so the first view is representative; the picker owns it after.
-          const partnerId = selectedId ?? picker.defaultPick.data ?? roster[0]?.id;
-          const partner = roster.find((candidate) => candidate.id === partnerId);
-          if (partner === undefined) {
-            return <p className="text-sm text-granite">No partners available.</p>;
-          }
-          return (
+      {renderQueryStates('The partner list', [['the partner list', picker.roster]], () => {
+        const roster = picker.roster.data ?? [];
+        if (roster.length === 0) {
+          return <p className="text-sm text-granite">No partners available.</p>;
+        }
+        // A healthy portal waits on the ranking so the default pick never
+        // jumps from under the user; only a *failed* ranking falls back to
+        // the roster's first partner.
+        if (picker.defaultPick.data === null && picker.defaultPick.error === null) {
+          return <QueryLoading label="the partner ranking" />;
+        }
+        // Default to the top-performing partner on portal-visible revenue
+        // so the first view is representative; the picker owns it after,
+        // and the roster's first partner stands in while the ranking is
+        // unavailable.
+        const partnerId = selectedId ?? picker.defaultPick.data ?? roster[0]?.id;
+        const partner = roster.find((candidate) => candidate.id === partnerId);
+        if (partner === undefined) {
+          return <p className="text-sm text-granite">No partners available.</p>;
+        }
+        return (
+          <>
+            {(picker.defaultPick.data !== null || picker.defaultPick.error !== null) && (
+              <div ref={rankingRecovery.regionRef} {...rankingRecovery.regionProps}>
+                {picker.defaultPick.error !== null && (
+                  <QueryFailure
+                    text="Partner ranking unavailable"
+                    retryLabel="partner ranking"
+                    error={picker.defaultPick.error}
+                    onRetry={rankingRecovery.armRetry(picker.defaultPick.retry)}
+                  />
+                )}
+              </div>
+            )}
             <PartnerViewBody
               key={partner.id}
               provider={provider}
@@ -518,9 +549,9 @@ export default function PartnerView({
               onPhaseChange={setPhase}
               onSliceChange={setSlice}
             />
-          );
-        },
-      )}
+          </>
+        );
+      })}
     </div>
   );
 }

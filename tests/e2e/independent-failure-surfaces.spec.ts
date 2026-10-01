@@ -15,9 +15,11 @@ import { expect, test, type Page } from '@playwright/test';
  *    partner-roster Retry repeats only that method, restores the names, and
  *    lands focus on the roster's region.
  * 2. Data Connections: three sections fail on different methods at once; the
- *    static catalog stays interactive, and one section Retry repeats every
- *    failed dependency of that section exactly once — recovering the shared
- *    roster dependency recovers every section that was waiting on it.
+ *    static catalog stays interactive, and each section Retry repeats exactly
+ *    its own failed dependencies — the alert queue's retry recovers only the
+ *    alerts, the roster section's only the roster (recovering the composer
+ *    section's shared dependency with it), and the composer's only the
+ *    registration records it is still owed.
  * 3. Data Connections again, with skip plans: a session roster edit refreshes
  *    the roster and alert queries and both refreshes fail — every section
  *    keeps its last good answers under a "Latest refresh failed" line, the
@@ -27,6 +29,12 @@ import { expect, test, type Page } from '@playwright/test';
  *    and volume cards never blink, and the Log Meetings modal names the
  *    failure with an armed Retry that recovers the week and lands focus
  *    inside the dialog.
+ * 5. The three optional resources, one method-specific failure each: a Data
+ *    Connections roster failure leaves the SLA alert queue fully live (the
+ *    digest carries its own owners); a Partner View ranking failure opens
+ *    the roster's first partner with the picker usable and applies the
+ *    recovered ranking on retry; a Home roster failure names the roster and
+ *    the explicit id fallback while every widget answers.
  *
  * The load-more failure of the calendar's second page is rehearsed in the
  * MeetingLogModal component tests: no seeded manager's week exceeds one
@@ -167,20 +175,29 @@ test('VAL-RES-009: Data Connections fails each section independently and retries
   await page.getByRole('button', { name: /^Salesforce/ }).click();
   await expect(page.getByRole('heading', { name: 'Salesforce', level: 3 })).toBeVisible();
 
-  // The alert queue's retry repeats every failed dependency of the section —
-  // the alerts and the shared roster — so the roster section recovers without
-  // its own retry, while the composer still waits on the registrations.
+  // The alert queue's retry repeats exactly its own failed dependency — the
+  // queue recovers while the roster-driven sections stay down, still owed
+  // their own retries.
   const alertQueue = page.getByRole('group', { name: 'The SLA alert queue' });
   const roster = page.getByRole('group', { name: 'The team roster' });
   await alertQueue.getByRole('button', { name: 'Retry The SLA alert queue' }).click();
   await expect(alertQueue.getByText(/past the SLA/)).toBeVisible();
-  await expect(roster.getByText('Alex Morgan').first()).toBeVisible();
-  await expect(page.getByText('The team roster unavailable:')).toHaveCount(0);
   await expect(page.getByText('The SLA alert queue unavailable:')).toHaveCount(0);
+  await expect(page.getByText('The team roster unavailable:')).toBeVisible();
   await expect(page.getByText('The notification composer unavailable:')).toBeVisible();
-  await expect(page.getByText('Failed to load the registration records')).toBeVisible();
   // Focus landed on the retried section's region, never the document body.
   await expect(alertQueue).toBeFocused();
+
+  // The roster section's retry repeats only getTeamRoster: the roster
+  // recovers, and the composer — which shares that dependency — moves on to
+  // the registration records it is still owed.
+  await roster.getByRole('button', { name: 'Retry The team roster' }).click();
+  await expect(roster.getByText('Alex Morgan').first()).toBeVisible();
+  await expect(page.getByText('The team roster unavailable:')).toHaveCount(0);
+  await expect(page.getByText('The notification composer unavailable:')).toBeVisible();
+  await expect(page.getByText('Failed to load the notification roster')).toHaveCount(0);
+  await expect(page.getByText('Failed to load the registration records')).toBeVisible();
+  await expect(roster).toBeFocused();
 
   // The composer's retry repeats its remaining failed dependency.
   const composer = page.getByRole('group', { name: 'The notification composer' });
@@ -190,7 +207,8 @@ test('VAL-RES-009: Data Connections fails each section independently and retries
   await expect(composer).toBeFocused();
 
   expectSameOriginOnly(page, requests);
-  // Each scripted failure logged exactly its own operation; nothing else errored.
+  // Each scripted failure logged exactly its own operation once — the retries
+  // all succeeded — and nothing else errored.
   const scriptedFailure =
     /component: DataProvider, operation: (getTeamRoster|getRegistrationSlaAlerts|listRecentRegistrations)/;
   expect(pageErrors).toEqual([]);
@@ -200,9 +218,9 @@ test('VAL-RES-009: Data Connections fails each section independently and retries
     'getRegistrationSlaAlerts',
     'listRecentRegistrations',
   ]) {
-    expect(
-      consoleErrors.filter((text) => text.includes(`operation: ${operation}`)).length,
-    ).toBeGreaterThan(0);
+    expect(consoleErrors.filter((text) => text.includes(`operation: ${operation}`))).toHaveLength(
+      1,
+    );
   }
 });
 
@@ -335,4 +353,137 @@ test('VAL-RES-009: a failed first calendar page is named inside Log Meetings and
   expect(pageErrors).toEqual([]);
   expect(consoleErrors.filter((text) => !scriptedFailure.test(text))).toEqual([]);
   expect(consoleErrors.filter((text) => scriptedFailure.test(text)).length).toBeGreaterThan(0);
+});
+
+test('VAL-RES-009: a Data Connections roster-only failure leaves the SLA queue live and retries only the roster', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const { consoleErrors, pageErrors, requests } = watch(page);
+  await bootRemoteWithPlan(page, 'getTeamRoster:1');
+
+  await primaryNavigation(page).getByRole('button', { name: 'Data Connections' }).click();
+  await expect(page.getByRole('heading', { name: 'Data Connections', level: 1 })).toBeVisible();
+
+  // The roster-driven sections name the roster failure; the raw transport
+  // prose never renders.
+  const roster = page.getByRole('group', { name: 'The team roster' });
+  await expect(page.getByText('The team roster unavailable:')).toBeVisible();
+  await expect(page.getByText('The notification composer unavailable:')).toBeVisible();
+  await expect(roster.getByText('Failed to load the notification roster')).toBeVisible();
+  await expect(page.getByText(/failed in transit/)).toHaveCount(0);
+  await expect(
+    tileWith(page, 'Receiving notifications').getByText(
+      /roster unavailable — the provider did not answer/,
+    ),
+  ).toBeVisible();
+
+  // The SLA alert queue never gated on the roster: the KPI keeps the live
+  // count, the rows render, and the owner actions stay enabled — the digest
+  // carries its own resolved owners.
+  const alertQueue = page.getByRole('group', { name: 'The SLA alert queue' });
+  await expect(alertQueue.getByText(/past the SLA/)).toBeVisible();
+  await expect(page.getByText('The SLA alert queue unavailable:')).toHaveCount(0);
+  await expect(tileWith(page, 'SLA alerts due').getByText('17', { exact: true })).toBeVisible();
+  await expect(alertQueue.getByRole('button', { name: 'Notify owner' }).first()).toBeEnabled();
+  await expect(alertQueue.getByRole('button', { name: /^Notify all \d+ owners$/ })).toBeEnabled();
+
+  // The roster's retry repeats only getTeamRoster: the roster section and the
+  // composer recover, the queue never blinked, and focus lands on the roster
+  // region.
+  await roster.getByRole('button', { name: 'Retry The team roster' }).click();
+  await expect(roster.getByText('Alex Morgan').first()).toBeVisible();
+  await expect(page.getByText(/unavailable:/)).toHaveCount(0);
+  await expect(tileWith(page, 'SLA alerts due').getByText('17', { exact: true })).toBeVisible();
+  await expect(alertQueue.getByText(/past the SLA/)).toBeVisible();
+  await expect(roster).toBeFocused();
+
+  expectSameOriginOnly(page, requests);
+  const scriptedFailure = /component: DataProvider, operation: getTeamRoster/;
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors.filter((text) => !scriptedFailure.test(text))).toEqual([]);
+  expect(consoleErrors.filter((text) => scriptedFailure.test(text))).toHaveLength(1);
+});
+
+test('VAL-RES-009: a Partner View ranking-only failure opens the first roster partner and retries only the ranking', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const { consoleErrors, pageErrors, requests } = watch(page);
+  // Skip plan: Home's leaderboard fires the first getTopPartnerLeaders call
+  // after the provider commits, so the deterministic landing needs the skip —
+  // wait for Home's leaderboard, which proves that call completed.
+  await bootRemoteWithPlan(page, 'getTopPartnerLeaders:1:1');
+  await expect(cardWith(page, 'Partner leaderboard').getByText('Kestrel Networks')).toBeVisible();
+
+  await primaryNavigation(page).getByRole('button', { name: 'Partner View' }).click();
+
+  // The portal did not blank: it opened on the roster's first partner — not
+  // the ranked leader — with the picker usable and the partner's cards live.
+  const ranking = page.getByRole('group', { name: 'partner ranking' });
+  await expect(ranking.getByText('Partner ranking unavailable:')).toBeVisible();
+  await expect(ranking.getByText('Failed to rank the partners')).toBeVisible();
+  await expect(page.getByText(/failed in transit/)).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Northwind Solutions', level: 1 })).toBeVisible();
+  await expect(page.getByLabel('Viewing as')).toBeEnabled();
+  await expect(tileWith(page, 'Open pipeline')).toHaveText(/\$/);
+
+  // The ranking's retry repeats only getTopPartnerLeaders; the recovered
+  // answer applies the intended default, so the portal switches to the
+  // portal-visible leader, and focus lands on the ranking's region.
+  await ranking.getByRole('button', { name: 'Retry partner ranking' }).click();
+  await expect(page.getByRole('heading', { name: 'Kestrel Networks', level: 1 })).toBeVisible();
+  await expect(page.getByText(/Partner ranking unavailable/)).toHaveCount(0);
+  await expect(ranking).toBeFocused();
+
+  expectSameOriginOnly(page, requests);
+  const scriptedFailure = /component: DataProvider, operation: getTopPartnerLeaders/;
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors.filter((text) => !scriptedFailure.test(text))).toEqual([]);
+  expect(consoleErrors.filter((text) => scriptedFailure.test(text))).toHaveLength(1);
+});
+
+test('VAL-RES-009: a Home roster-only failure names the roster, keeps the widgets live, and retries only the roster', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const { consoleErrors, pageErrors, requests } = watch(page);
+  // Home fires the first getPartnerRoster call after the provider commits, so
+  // the plan's one failure lands exactly on the route under test.
+  await bootRemoteWithPlan(page, 'getPartnerRoster:1');
+  await expect(
+    page.getByRole('heading', { name: 'Partner Performance Overview', level: 1 }),
+  ).toBeVisible();
+
+  // The roster failure is named with the explicit id fallback; the raw
+  // transport prose never renders.
+  const roster = page.getByRole('group', { name: 'partner roster' });
+  await expect(roster.getByText('Partner names unavailable — showing partner ids:')).toBeVisible();
+  await expect(roster.getByText('Failed to load the partner roster')).toBeVisible();
+  await expect(page.getByText(/failed in transit/)).toHaveCount(0);
+
+  // Every widget answered right through the failure: the KPIs, the funnel,
+  // the leaderboard, and the review queue — whose partner column renders the
+  // explicit id fallback. The header omits the aligned-partner count rather
+  // than showing a plausible wrong number.
+  await expect(tileWith(page, 'Partner sourced pipeline')).toHaveText(/\$/);
+  await expect(cardWith(page, 'Partner leaderboard').getByText('Kestrel Networks')).toBeVisible();
+  const queue = cardWith(page, 'Registrations awaiting review');
+  await expect(queue.getByText(/18 pending · oldest first/)).toBeVisible();
+  await expect(queue.locator('td', { hasText: /^p-\d+$/ }).first()).toBeVisible();
+  await expect(page.getByText(/aligned partners/)).toHaveCount(0);
+
+  // The roster's retry repeats only getPartnerRoster: the names resolve, the
+  // header count returns, and focus lands on the roster's region.
+  await roster.getByRole('button', { name: 'Retry partner roster' }).click();
+  await expect(queue.locator('td', { hasText: /^p-\d+$/ })).toHaveCount(0);
+  await expect(page.getByText(/· 25 aligned partners/)).toBeVisible();
+  await expect(page.getByText(/Partner names unavailable/)).toHaveCount(0);
+  await expect(roster).toBeFocused();
+
+  expectSameOriginOnly(page, requests);
+  const scriptedFailure = /component: DataProvider, operation: getPartnerRoster/;
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors.filter((text) => !scriptedFailure.test(text))).toEqual([]);
+  expect(consoleErrors.filter((text) => scriptedFailure.test(text))).toHaveLength(1);
 });
