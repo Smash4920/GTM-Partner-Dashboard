@@ -279,10 +279,11 @@ The weekly snapshot job must be **idempotent**: a unique key on
 - Replace the single `Promise.all` in `useDashboardData` with a server-state
   library (TanStack Query) and **per-widget** loading and error states, so one
   slow endpoint no longer blanks the whole page. _Partly done:_ the migrated
-  views have hand-rolled per-widget states (`useForecastQueries.ts`,
-  `useHomeQueries.ts`, `usePartnerPerformanceQueries.ts`) and a global spinner
-  still covers the other five. The library is worth adopting when there are
-  several migrated views to share it, not before.
+  views have hand-rolled per-widget states (`useForecastQueries.ts` and its
+  siblings through `usePartnerViewQueries.ts` and
+  `useDataConnectionsQueries.ts`), and every route now loads through them.
+  The library is worth adopting when there are several migrated views to
+  share it, not before.
 - Virtualize `OpportunityTable` and `ForecastTable`; give `Leaderboard` a real
   limit instead of `limit={uniquePartners}`. _Not started_ — the scoped contract
   now bounds what reaches the client, so this is comfort rather than survival.
@@ -364,8 +365,12 @@ Ship two additional providers behind the same contract:
 Performance followed, and Deal Reg Ops and Activity Tracking have since joined
 them — the manager/partner selection is a provider input, the Log Meetings
 calendar is a cursor-paginated week of raw calls, and every card carries its
-own loading, error, retry, and metadata state. Only Partner View remains on
-the list-everything contract. Measured on the built demo,
+own loading, error, retry, and metadata state. Partner View and Data
+Connections have since joined them — the partner presentation reads only its
+own partner-audience projection, and the connection catalog is static while
+its roster and alert panels carry their own query states — so no route reads
+the list-everything contract; it stays until its loader is deleted. Measured
+on the built demo,
 which is honest about what the mock can and cannot show. Medians over five runs
 at 100× — 2,500 partners, 21,300 opportunities, 191,000 snapshot rows, ~45 MB of
 JSON:

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
 import ExclusivityTable from '../components/ExclusivityTable';
@@ -6,7 +6,9 @@ import FilterChips, { type ChipOption } from '../components/FilterChips';
 import KpiTile from '../components/KpiTile';
 import MetricBars, { type MetricBarRow } from '../components/MetricBars';
 import OpportunityTable from '../components/OpportunityTable';
+import PageFooter from '../components/PageFooter';
 import PartnerPicker from '../components/PartnerPicker';
+import { renderQueryState, renderQueryStates } from '../components/QueryState';
 import RegistrationsTable from '../components/RegistrationsTable';
 import RevenueTrend from '../components/RevenueTrend';
 import {
@@ -20,29 +22,24 @@ import {
   REGISTRATION_EXCLUSIVITY_DAYS,
   STAGE_META,
 } from '../data/constants';
-import type { DashboardData, FiscalPhase, Opportunity } from '../data/types';
-import type { CoverageState } from '../lib/metrics';
-import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
+import type { DataProvider } from '../data/DataProvider';
+import { pageWindowAsQuery } from '../data/paginationState';
+import type { QueryState } from '../data/queryState';
+import type {
+  PartnerCertificationProfile,
+  PerformanceSummary,
+  RegistrationOpsSummary,
+  StageBreakdown,
+} from '../data/DataProvider';
 import {
-  approvedNotConverted,
-  closedWonForPhase,
-  coverageState,
-  filterByPhase,
-  formatCoverage,
-  openPipeline,
-  partnerLeaderboard,
-  pendingRegistrations,
-  quarterlyClosedWonAndTarget,
-  recentRegistrations,
-  registrationConversionTimes,
-  stageBreakdown,
-  targetsForPhase,
-  winRateForPhase,
-  ytdTarget,
-} from '../lib/metrics';
-
-/** Partners see their whole book or one revenue motion within it. */
-type PartnerSlice = 'all' | 'sell-with' | 'allocate';
+  usePartnerPickerQueries,
+  usePartnerViewQueries,
+  type PartnerSlice,
+} from '../data/usePartnerViewQueries';
+import type { FiscalPhase, Partner } from '../data/types';
+import { formatCoverage } from '../lib/metrics';
+import type { QuarterRevenueRow, TypeRow } from '../lib/metrics';
+import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 
 const SLICE_OPTIONS: ChipOption<PartnerSlice>[] = [
   { id: 'all', label: 'Total pipeline', title: 'Sell With and Allocate combined' },
@@ -66,197 +63,177 @@ function attainmentText(certified: number, goal: number): string {
   return goal > 0 ? `${formatPct(certified / goal)} of goal` : 'No goal set';
 }
 
+/** The KPI tiles, grouped by the query that answers them. */
 function PartnerKpis({
   slice,
   sliceLabel,
-  pipelineValue,
-  pipelineCount,
-  coverage,
   phase,
-  won,
-  attainment,
-  winRate,
-  pendingCount,
+  summary,
+  ops,
   certification,
 }: {
   slice: PartnerSlice;
   sliceLabel: string;
-  pipelineValue: number;
-  pipelineCount: number;
-  coverage: CoverageState;
   phase: FiscalPhase;
-  won: number;
-  attainment: number;
-  winRate: number;
-  pendingCount: number;
-  certification: DashboardData['certifications'][number] | undefined;
+  summary: QueryState<PerformanceSummary>;
+  ops: QueryState<RegistrationOpsSummary>;
+  certification: QueryState<PartnerCertificationProfile | null>;
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <KpiTile
-        label={slice === 'all' ? 'Open pipeline' : `Open ${sliceLabel} pipeline`}
-        value={formatUsdCompact(pipelineValue)}
-        sub={
-          slice === 'all'
-            ? `${pipelineCount} open · ${
-                coverage.kind === 'coverage'
-                  ? `${formatCoverage(coverage)} coverage`
-                  : formatCoverage(coverage).toLowerCase()
-              }`
-            : `${pipelineCount} open ${sliceLabel} opp${pipelineCount === 1 ? '' : 's'}`
-        }
-      />
-      <KpiTile
-        label={`Closed-won ${FISCAL_PHASE_META[phase].label}`}
-        value={formatUsdCompact(won)}
-        sub={
-          slice === 'all'
-            ? `${formatPct(attainment)} of their ${
-                phase === 'fy' ? FISCAL_YEAR : FISCAL_PHASE_META[phase].label
-              } target`
-            : `${sliceLabel} only · target covers all revenue`
-        }
-      />
-      <KpiTile
-        label="Win rate"
-        value={formatPct(winRate)}
-        sub={
-          slice === 'all'
-            ? `of closed ${FISCAL_PHASE_META[phase].label}`
-            : `of closed ${sliceLabel} ${FISCAL_PHASE_META[phase].label}`
-        }
-      />
-      <KpiTile label="Awaiting review" value={`${pendingCount}`} sub="registrations pending" />
-      <KpiTile
-        label="Partner strategists certified"
-        value={
-          certification
-            ? `${certification.partnerStrategistsCertified}/${certification.partnerStrategistsGoal}`
-            : '—'
-        }
-        sub={
-          certification
-            ? attainmentText(
-                certification.partnerStrategistsCertified,
-                certification.partnerStrategistsGoal,
-              )
-            : 'No certification data'
-        }
-      />
-      <KpiTile
-        label="Partner engineers certified"
-        value={
-          certification
-            ? `${certification.partnerEngineersCertified}/${certification.partnerEngineersGoal}`
-            : '—'
-        }
-        sub={
-          certification
-            ? attainmentText(
-                certification.partnerEngineersCertified,
-                certification.partnerEngineersGoal,
-              )
-            : 'No certification data'
-        }
-      />
+      {renderQueryState(
+        'performance summary',
+        summary,
+        (data) => (
+          <>
+            <KpiTile
+              label={slice === 'all' ? 'Open pipeline' : `Open ${sliceLabel} pipeline`}
+              value={formatUsdCompact(data.openPipelineValue)}
+              sub={
+                slice === 'all'
+                  ? `${data.openCount} open · ${
+                      data.coverage.kind === 'coverage'
+                        ? `${formatCoverage(data.coverage)} coverage`
+                        : formatCoverage(data.coverage).toLowerCase()
+                    }`
+                  : `${data.openCount} open ${sliceLabel} opp${data.openCount === 1 ? '' : 's'}`
+              }
+            />
+            <KpiTile
+              label={`Closed-won ${FISCAL_PHASE_META[phase].label}`}
+              value={formatUsdCompact(data.closedWon)}
+              sub={
+                slice === 'all'
+                  ? `${formatPct(data.attainment)} of their ${
+                      phase === 'fy' ? FISCAL_YEAR : FISCAL_PHASE_META[phase].label
+                    } target`
+                  : `${sliceLabel} only · target covers all revenue`
+              }
+            />
+            <KpiTile
+              label="Win rate"
+              value={formatPct(data.winRate)}
+              sub={
+                slice === 'all'
+                  ? `of closed ${FISCAL_PHASE_META[phase].label}`
+                  : `of closed ${sliceLabel} ${FISCAL_PHASE_META[phase].label}`
+              }
+            />
+          </>
+        ),
+        'contents',
+      )}
+      {renderQueryState(
+        'registration queue depth',
+        ops,
+        (data) => (
+          <KpiTile label="Awaiting review" value={`${data.pending}`} sub="registrations pending" />
+        ),
+        'contents',
+      )}
+      {renderQueryState(
+        'certification record',
+        certification,
+        (profile) => {
+          const record = profile?.certification;
+          return (
+            <>
+              <KpiTile
+                label="Partner strategists certified"
+                value={
+                  record
+                    ? `${record.partnerStrategistsCertified}/${record.partnerStrategistsGoal}`
+                    : '—'
+                }
+                sub={
+                  record
+                    ? attainmentText(
+                        record.partnerStrategistsCertified,
+                        record.partnerStrategistsGoal,
+                      )
+                    : 'No certification data'
+                }
+              />
+              <KpiTile
+                label="Partner engineers certified"
+                value={
+                  record
+                    ? `${record.partnerEngineersCertified}/${record.partnerEngineersGoal}`
+                    : '—'
+                }
+                sub={
+                  record
+                    ? attainmentText(record.partnerEngineersCertified, record.partnerEngineersGoal)
+                    : 'No certification data'
+                }
+              />
+            </>
+          );
+        },
+        'contents',
+      )}
     </div>
   );
 }
 
-/**
- * Partner-facing portal. In production this view would be scoped by partner
- * SSO; the picker here is an untrusted demo presentation selector, not a
- * security boundary, and the visible note next to it says so. Only Sell With
- * and Allocate opportunities are visible — Sell To is internal-only.
- */
-export default function PartnerView({ data }: { data: DashboardData }) {
-  const [partnerId, setPartnerId] = useState<string>(() => {
-    // Rank the default partner on revenue the portal can actually show:
-    // Sell To is internal-only, so it must not drive the "top" pick.
-    const visible = data.opportunities.filter((opp) => opp.oppType !== 'sell-to');
-    return (
-      partnerLeaderboard({ ...data, opportunities: visible }, 'all')[0]?.partner.id ??
-      data.partners[0]?.id ??
-      ''
-    );
-  });
-  const [slice, setSlice] = useState<PartnerSlice>('all');
-  const [phase, setPhase] = useState<FiscalPhase>('q3');
+/** The conversion-time bars from the ops answer's own times. */
+function timelineRows(times: RegistrationOpsSummary['times']): MetricBarRow[] {
+  const fmtDays = (days: number | null) => (days === null ? '—' : `${days.toFixed(1)}d`);
+  return [
+    {
+      label: 'Submitted → Approved',
+      value: times.submittedToApprovedBusinessDays ?? 0,
+      displayValue: fmtDays(times.submittedToApprovedBusinessDays),
+      // The approval hop is measured in the SLA's own unit, so the bar reads
+      // directly against the response SLA.
+      secondary: 'avg business days · 5-business-day SLA',
+      color: '#7e7b78',
+    },
+    {
+      label: 'Approved → Opportunity',
+      value: times.approvedToOpportunityCalendarDays ?? 0,
+      displayValue: fmtDays(times.approvedToOpportunityCalendarDays),
+      secondary: 'avg elapsed calendar days · converted registrations',
+      color: '#9a9693',
+    },
+    {
+      label: 'Opportunity → Win',
+      value: times.opportunityToWinCalendarDays ?? 0,
+      displayValue: fmtDays(times.opportunityToWinCalendarDays),
+      secondary: 'avg elapsed calendar days · converted & won',
+      color: '#a0ca92',
+    },
+    {
+      label: 'Submitted → Win',
+      value: times.submittedToWinCalendarDays ?? 0,
+      displayValue: fmtDays(times.submittedToWinCalendarDays),
+      secondary: 'avg elapsed calendar days · converted & won',
+      color: '#b8b3b0',
+    },
+  ];
+}
 
-  // Default to the top-performing partner so the first view is representative.
-  const partner = data.partners.find((candidate) => candidate.id === partnerId) ?? data.partners[0];
-
-  // Everything the partner is allowed to see: Sell To is internal-only.
-  const visibleOpps = useMemo(
-    () =>
-      data.opportunities.filter((opp) => opp.partnerId === partnerId && opp.oppType !== 'sell-to'),
-    [data.opportunities, partnerId],
-  );
-  const phaseVisibleOpps = useMemo(() => filterByPhase(visibleOpps, phase), [visibleOpps, phase]);
-  const partnerOpps = useMemo(
-    () =>
-      slice === 'all'
-        ? phaseVisibleOpps
-        : phaseVisibleOpps.filter((opp: Opportunity) => opp.oppType === slice),
-    [phaseVisibleOpps, slice],
-  );
-  const partnerTargets = useMemo(
-    () => data.targets.filter((target) => target.partnerId === partnerId),
-    [data.targets, partnerId],
-  );
-  const partnerRegistrations = useMemo(
-    () => data.registrations.filter((reg) => reg.partnerId === partnerId),
-    [data.registrations, partnerId],
-  );
-  // The portal pairs the deal-registration ops section with each partner's
-  // own book: their conversion times and their exclusivity window. Conflicts
-  // and other partners' submissions stay internal.
-  const partnerLeaking = useMemo(
-    () => approvedNotConverted(partnerRegistrations),
-    [partnerRegistrations],
-  );
-  const partnerTimes = useMemo(
-    () => registrationConversionTimes(partnerRegistrations, visibleOpps),
-    [partnerRegistrations, visibleOpps],
-  );
-
-  if (!partner) {
-    return <p className="text-sm text-granite">No partners available.</p>;
-  }
-
-  const pipeline = openPipeline(partnerOpps);
-  const wonYtd = closedWonForPhase(partnerOpps, phase);
-  const winRate = winRateForPhase(partnerOpps, phase);
-  const pending = pendingRegistrations(data.registrations, partnerId);
-  const phaseTargets = targetsForPhase(partnerTargets, phase);
-  const target = phase === 'fy' ? ytdTarget(partnerTargets) : ytdTarget(phaseTargets);
-  const attainment = target > 0 ? wonYtd / target : 0;
-  const coverage = coverageState(partnerOpps, partnerTargets, phase);
-  // The chart buckets by fiscal quarter itself, so it gets the partner's
-  // motion-scoped book *before* phase filtering — phase-filtered input would
-  // draw $0 for every quarter outside the selected phase.
-  const quarterlyOpps =
-    slice === 'all' ? visibleOpps : visibleOpps.filter((opp) => opp.oppType === slice);
-  const quarterly = quarterlyClosedWonAndTarget(quarterlyOpps, partnerTargets);
-  const stages = stageBreakdown(partnerOpps);
-  const registrations = recentRegistrations(data.registrations, partnerId, 8);
-
-  const stageRows: MetricBarRow[] = stages.map((row) => ({
+function stageRows(stages: StageBreakdown): MetricBarRow[] {
+  return stages.stages.map((row) => ({
     label: STAGE_META[row.stage].label,
     value: row.value,
     displayValue: formatUsdCompact(row.value),
     secondary: `${row.count} open`,
     color: STAGE_META[row.stage].color,
   }));
+}
 
-  // Always computed over everything visible, so the split stays readable
-  // regardless of which slice is selected above.
-  const sellWith = openPipeline(phaseVisibleOpps.filter((opp) => opp.oppType === 'sell-with'));
-  const allocate = openPipeline(phaseVisibleOpps.filter((opp) => opp.oppType === 'allocate'));
-  const total = openPipeline(phaseVisibleOpps);
-  const certification = data.certifications.find((item) => item.partnerId === partnerId);
-
-  const sliceRows: MetricBarRow[] = [
+/**
+ * The motion split: the phase's open pipeline across the partner's motions.
+ * The partner audience's book holds no Sell To rows at all, so the two
+ * portal motions sum to the whole visible pipeline.
+ */
+function motionRows(motions: TypeRow[]): MetricBarRow[] {
+  const byType = new Map(motions.map((row) => [row.type, row]));
+  const sellWith = byType.get('sell-with') ?? { count: 0, value: 0 };
+  const allocate = byType.get('allocate') ?? { count: 0, value: 0 };
+  const total = { count: sellWith.count + allocate.count, value: sellWith.value + allocate.value };
+  return [
     {
       label: 'Total pipeline',
       value: total.value,
@@ -279,45 +256,48 @@ export default function PartnerView({ data }: { data: DashboardData }) {
       color: OPP_TYPE_META.allocate.color,
     },
   ];
+}
 
+/**
+ * One partner's portal, mounted once a selection exists. Every card reads
+ * its own scoped query — the provider computes each answer from the
+ * partner's audience scope, so Sell To deals, conflicting registrations, and
+ * every other partner's rows never reach this route. One rejected call fails
+ * exactly one card; its retry repeats only that call.
+ */
+function PartnerViewBody({
+  provider,
+  partner,
+  roster,
+  phase,
+  slice,
+  prospects,
+  onSelectPartner,
+  onPhaseChange,
+  onSliceChange,
+}: {
+  provider: DataProvider;
+  partner: Partner;
+  /** The picker's options: every partner, the frozen demo behavior. */
+  roster: Partner[];
+  phase: FiscalPhase;
+  slice: PartnerSlice;
+  prospects: Partner[];
+  onSelectPartner: (partnerId: string) => void;
+  onPhaseChange: (phase: FiscalPhase) => void;
+  onSliceChange: (slice: PartnerSlice) => void;
+}) {
+  const queries = usePartnerViewQueries({
+    provider,
+    partnerId: partner.id,
+    phase,
+    slice,
+    prospects,
+  });
   const sliceLabel = slice === 'all' ? 'Sell With + Allocate' : OPP_TYPE_META[slice].label;
 
-  const fmtDays = (days: number | null) => (days === null ? '—' : `${days.toFixed(1)}d`);
-  const timelineRows: MetricBarRow[] = [
-    {
-      label: 'Submitted → Approved',
-      value: partnerTimes.submittedToApprovedBusinessDays ?? 0,
-      displayValue: fmtDays(partnerTimes.submittedToApprovedBusinessDays),
-      // The approval hop is measured in the SLA's own unit, so the bar reads
-      // directly against the response SLA.
-      secondary: 'avg business days · 5-business-day SLA',
-      color: '#7e7b78',
-    },
-    {
-      label: 'Approved → Opportunity',
-      value: partnerTimes.approvedToOpportunityCalendarDays ?? 0,
-      displayValue: fmtDays(partnerTimes.approvedToOpportunityCalendarDays),
-      secondary: 'avg elapsed calendar days · converted registrations',
-      color: '#9a9693',
-    },
-    {
-      label: 'Opportunity → Win',
-      value: partnerTimes.opportunityToWinCalendarDays ?? 0,
-      displayValue: fmtDays(partnerTimes.opportunityToWinCalendarDays),
-      secondary: 'avg elapsed calendar days · converted & won',
-      color: '#a0ca92',
-    },
-    {
-      label: 'Submitted → Win',
-      value: partnerTimes.submittedToWinCalendarDays ?? 0,
-      displayValue: fmtDays(partnerTimes.submittedToWinCalendarDays),
-      secondary: 'avg elapsed calendar days · converted & won',
-      color: '#b8b3b0',
-    },
-  ];
-
   return (
-    <div className="space-y-6">
+    <>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-signal">
@@ -333,23 +313,24 @@ export default function PartnerView({ data }: { data: DashboardData }) {
             </span>
           </div>
           <p className="mt-1.5 text-xs text-granite">
-            Account manager {partner.accountManager} · partner since {formatDate(partner.joinedAt)}{' '}
-            · {partnerRegistrations.length} lifetime registrations
+            Account manager {partner.accountManager} · partner since {formatDate(partner.joinedAt)}
+            {queries.history.meta !== null &&
+              ` · ${queries.history.totalCount} lifetime registrations`}
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <PartnerPicker partners={data.partners} value={partner.id} onChange={setPartnerId} />
+          <PartnerPicker partners={roster} value={partner.id} onChange={onSelectPartner} />
           <FilterChips
             options={PHASE_OPTIONS}
             value={phase}
-            onChange={setPhase}
+            onChange={onPhaseChange}
             ariaLabel="Select fiscal phase"
             size="xs"
           />
           <FilterChips
             options={SLICE_OPTIONS}
             value={slice}
-            onChange={setSlice}
+            onChange={onSliceChange}
             ariaLabel="Slice pipeline by revenue motion"
           />
           <p className="max-w-xs text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
@@ -362,25 +343,25 @@ export default function PartnerView({ data }: { data: DashboardData }) {
       <PartnerKpis
         slice={slice}
         sliceLabel={sliceLabel}
-        pipelineValue={pipeline.value}
-        pipelineCount={pipeline.count}
-        coverage={coverage}
         phase={phase}
-        won={wonYtd}
-        attainment={attainment}
-        winRate={winRate}
-        pendingCount={pending.length}
-        certification={certification}
+        summary={queries.summary}
+        ops={queries.ops}
+        certification={queries.certification}
       />
 
       <Card title="Deal registrations" subtitle="Most recent first · all statuses">
-        <RegistrationsTable
-          registrations={registrations}
-          partners={data.partners}
-          variant="history"
-          showPartner={false}
-          limit={8}
-        />
+        {renderQueryState('registration history', pageWindowAsQuery(queries.history), (rows) => (
+          <>
+            <RegistrationsTable
+              registrations={rows}
+              partners={roster}
+              variant="history"
+              showPartner={false}
+              limit={rows.length}
+            />
+            <PageFooter state={queries.history} noun="registrations" pageSize={8} />
+          </>
+        ))}
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -388,18 +369,33 @@ export default function PartnerView({ data }: { data: DashboardData }) {
           title="Deal registration timeline"
           subtitle="Average conversion time across your registrations · submitted → approved → opportunity → win"
         >
-          <MetricBars rows={timelineRows} />
+          {renderQueryState('registration timeline', queries.ops, (ops) => (
+            <MetricBars rows={timelineRows(ops.times)} />
+          ))}
         </Card>
         <Card
           title="Exclusivity window"
-          subtitle={`${partnerLeaking.length} approved registrations without an opportunity · ${REGISTRATION_EXCLUSIVITY_DAYS}-day window from approval`}
+          subtitle={
+            queries.ops.data === null
+              ? `Approved registrations without an opportunity · ${REGISTRATION_EXCLUSIVITY_DAYS}-day window from approval`
+              : `${queries.ops.data.approvedNotConverted} approved registrations without an opportunity · ${REGISTRATION_EXCLUSIVITY_DAYS}-day window from approval`
+          }
         >
-          <ExclusivityTable
-            registrations={partnerLeaking}
-            partners={data.partners}
-            showPartner={false}
-            limit={6}
-          />
+          {renderQueryState(
+            'exclusivity window',
+            pageWindowAsQuery(queries.exclusivity),
+            (rows) => (
+              <>
+                <ExclusivityTable
+                  registrations={rows}
+                  partners={roster}
+                  showPartner={false}
+                  limit={rows.length}
+                />
+                <PageFooter state={queries.exclusivity} noun="unconverted" pageSize={6} />
+              </>
+            ),
+          )}
           <p className="mt-4 text-xs text-granite">
             Your approved leads keep exclusivity for {REGISTRATION_EXCLUSIVITY_DAYS} calendar days —
             introduce the lead within it or the window lapses.
@@ -409,14 +405,23 @@ export default function PartnerView({ data }: { data: DashboardData }) {
 
       <Card
         title={`Pipeline opportunities · ${FISCAL_PHASE_META[phase].label}`}
-        subtitle={`${partnerOpps.length} opportunities · Salesforce fields shown as mock data`}
+        subtitle={
+          queries.pipeline.meta === null
+            ? 'Salesforce fields shown as mock data'
+            : `${queries.pipeline.totalCount} opportunities · Salesforce fields shown as mock data`
+        }
       >
-        <OpportunityTable
-          opportunities={partnerOpps}
-          emptyMessage={`No ${
-            slice === 'all' ? '' : `${sliceLabel} `
-          }${FISCAL_PHASE_META[phase].label} opportunities.`}
-        />
+        {renderQueryState('pipeline opportunities', pageWindowAsQuery(queries.pipeline), (rows) => (
+          <>
+            <OpportunityTable
+              opportunities={rows}
+              emptyMessage={`No ${
+                slice === 'all' ? '' : `${sliceLabel} `
+              }${FISCAL_PHASE_META[phase].label} opportunities.`}
+            />
+            <PageFooter state={queries.pipeline} noun="opportunities" pageSize={25} />
+          </>
+        ))}
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -428,10 +433,14 @@ export default function PartnerView({ data }: { data: DashboardData }) {
               : `${sliceLabel} closed-won · target covers all revenue`
           }
         >
-          <RevenueTrend data={quarterly} />
+          {renderQueryState('revenue trend', queries.trend, (trend: QuarterRevenueRow[]) => (
+            <RevenueTrend data={trend} />
+          ))}
         </Card>
         <Card title="Pipeline by stage" subtitle={`Open ${sliceLabel} opportunities`}>
-          <MetricBars rows={stageRows} />
+          {renderQueryState('pipeline by stage', queries.stages, (stages) => (
+            <MetricBars rows={stageRows(stages)} />
+          ))}
         </Card>
       </div>
 
@@ -439,8 +448,69 @@ export default function PartnerView({ data }: { data: DashboardData }) {
         title="Pipeline by revenue motion"
         subtitle={`Open ${FISCAL_PHASE_META[phase].label} pipeline split across your motions · always shows the full visible book`}
       >
-        <MetricBars rows={sliceRows} />
+        {renderQueryState('revenue motion split', queries.motions, (motions) => (
+          <MetricBars rows={motionRows(motions)} />
+        ))}
       </Card>
+    </>
+  );
+}
+
+/**
+ * Partner-facing portal. In production this view would be scoped by partner
+ * SSO; the picker here is an untrusted demo presentation selector, not a
+ * security boundary, and the visible note next to it says so. Only Sell With
+ * and Allocate opportunities are visible — Sell To is internal-only.
+ *
+ * The picker is the route's only whole-roster read, and it is frozen demo
+ * behavior: every partner stays an option. Everything below it is the
+ * selected partner's scoped projection through `usePartnerViewQueries`.
+ */
+export default function PartnerView({
+  provider,
+  prospects,
+}: {
+  provider: DataProvider;
+  prospects: Partner[];
+}) {
+  const picker = usePartnerPickerQueries({ provider, prospects });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [slice, setSlice] = useState<PartnerSlice>('all');
+  const [phase, setPhase] = useState<FiscalPhase>('q3');
+
+  return (
+    <div className="space-y-6">
+      {renderQueryStates(
+        'The partner list',
+        [
+          ['the partner list', picker.roster],
+          ['the partner ranking', picker.defaultPick],
+        ],
+        () => {
+          const roster = picker.roster.data ?? [];
+          // Default to the top-performing partner on portal-visible revenue
+          // so the first view is representative; the picker owns it after.
+          const partnerId = selectedId ?? picker.defaultPick.data ?? roster[0]?.id;
+          const partner = roster.find((candidate) => candidate.id === partnerId);
+          if (partner === undefined) {
+            return <p className="text-sm text-granite">No partners available.</p>;
+          }
+          return (
+            <PartnerViewBody
+              key={partner.id}
+              provider={provider}
+              partner={partner}
+              roster={roster}
+              phase={phase}
+              slice={slice}
+              prospects={prospects}
+              onSelectPartner={setSelectedId}
+              onPhaseChange={setPhase}
+              onSliceChange={setSlice}
+            />
+          );
+        },
+      )}
     </div>
   );
 }

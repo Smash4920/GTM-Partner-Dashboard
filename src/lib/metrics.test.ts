@@ -8,8 +8,10 @@ import type {
   Partner,
   PipelineSnapshot,
   Target,
+  TeamUser,
 } from '../data/types';
 import {
+  applyTeamRosterOverlays,
   categoryStageMismatches,
   closedWonForPhase,
   closedWonPriorYearForPhase,
@@ -26,6 +28,7 @@ import {
   phaseForQuarter,
   phaseWindow,
   quarterlyClosedWonAndTarget,
+  registrationsNewestFirst,
   remainingQuota,
   weeklyForecastRows,
   weeklyGoalProgress,
@@ -873,6 +876,75 @@ describe('categoryStageMismatches', () => {
     expect(result.below).toHaveLength(0);
     expect(result.aboveValue).toBe(0);
     expect(result.belowValue).toBe(0);
+  });
+});
+
+// ---- registration history order + roster overlays -------------------------
+
+describe('registrationsNewestFirst', () => {
+  it('orders newest submission first across every status, id breaking ties', () => {
+    const rows = [
+      { ...registration('2026-09-10T00:00:00Z'), id: 'reg-b', status: 'approved' as const },
+      { ...registration('2026-09-17T00:00:00Z'), id: 'reg-a' },
+      { ...registration('2026-09-10T00:00:00Z'), id: 'reg-a', status: 'rejected' as const },
+      { ...registration('2026-09-01T00:00:00Z'), id: 'reg-c', status: 'rejected' as const },
+    ];
+
+    expect(registrationsNewestFirst(rows).map((row) => row.id)).toEqual([
+      'reg-a', // Sep 17
+      'reg-a', // Sep 10, id tiebreak
+      'reg-b',
+      'reg-c',
+    ]);
+    // The tiebreak is what makes the walk a total order: the cursor contract
+    // needs "the same page twice means the same rows", and an unstable sort
+    // over equal timestamps would not give it.
+    expect(registrationsNewestFirst(rows)).toEqual(registrationsNewestFirst([...rows].reverse()));
+  });
+
+  it('does not mutate the input', () => {
+    const rows = [registration('2026-09-10T00:00:00Z'), registration('2026-09-17T00:00:00Z')];
+    const before = rows.map((row) => row.id);
+    registrationsNewestFirst(rows);
+    expect(rows.map((row) => row.id)).toEqual(before);
+  });
+});
+
+describe('applyTeamRosterOverlays', () => {
+  const user = (id: string): TeamUser => ({
+    id,
+    name: `User ${id}`,
+    email: `${id}@factory.example`,
+    role: 'deal-desk-ops',
+    channels: ['email', 'in-app'],
+    status: 'active',
+    addedAt: '2026-09-01T00:00:00Z',
+  });
+
+  it('folds patches into the provider roster by id and appends session adds', () => {
+    const result = applyTeamRosterOverlays(
+      [user('user-a'), user('user-b')],
+      { 'user-a': { status: 'suspended' } },
+      [user('user-c')],
+    );
+
+    expect(result.map((entry) => entry.id)).toEqual(['user-a', 'user-b', 'user-c']);
+    expect(result[0]!.status).toBe('suspended');
+    expect(result[1]!.status).toBe('active');
+  });
+
+  it('ignores a patch naming a user the provider never served', () => {
+    const result = applyTeamRosterOverlays([user('user-a')], {
+      'user-ghost': { status: 'suspended' },
+    });
+    expect(result.map((entry) => entry.id)).toEqual(['user-a']);
+    expect(result[0]!.status).toBe('active');
+  });
+
+  it('does not mutate the provider roster it was handed', () => {
+    const roster = [user('user-a')];
+    applyTeamRosterOverlays(roster, { 'user-a': { status: 'suspended' } });
+    expect(roster[0]!.status).toBe('active');
   });
 });
 

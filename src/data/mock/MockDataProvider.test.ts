@@ -645,6 +645,9 @@ describe('scoped answer metadata (VAL-DATA-006)', () => {
       provider.listPendingRegistrations(INTERNAL_DEMO_SCOPE, {}, { limit: 25 }),
       provider.listUnconvertedRegistrations(INTERNAL_DEMO_SCOPE, {}, { limit: 25 }),
       provider.listDuplicateRegistrationGroups(INTERNAL_DEMO_SCOPE, {}, { limit: 25 }),
+      provider.listRecentRegistrations(INTERNAL_DEMO_SCOPE, {}, { limit: 25 }),
+      provider.getTeamRoster(INTERNAL_DEMO_SCOPE, {}),
+      provider.getRegistrationSlaAlerts(INTERNAL_DEMO_SCOPE, {}, 8),
       provider.listWeeklyClassificationMeetings(
         INTERNAL_DEMO_SCOPE,
         { partnerManagerId: book.partnerManagers[0]!.id },
@@ -838,6 +841,9 @@ describe('cancellation', () => {
       local.listPendingRegistrations(INTERNAL_DEMO_SCOPE, {}, { limit: 5 }, context),
       local.listUnconvertedRegistrations(INTERNAL_DEMO_SCOPE, {}, { limit: 5 }, context),
       local.listDuplicateRegistrationGroups(INTERNAL_DEMO_SCOPE, {}, { limit: 5 }, context),
+      local.listRecentRegistrations(INTERNAL_DEMO_SCOPE, {}, { limit: 5 }, context),
+      local.getTeamRoster(INTERNAL_DEMO_SCOPE, {}, context),
+      local.getRegistrationSlaAlerts(INTERNAL_DEMO_SCOPE, {}, 8, context),
       local.listWeeklyClassificationMeetings(
         INTERNAL_DEMO_SCOPE,
         { partnerManagerId: 'pm-1' },
@@ -1076,6 +1082,9 @@ describe('demo access scope isolation (VAL-DATA-003)', () => {
       scopedProvider.listPendingRegistrations(partnerScope, {}, { limit: 25 }),
       scopedProvider.listUnconvertedRegistrations(partnerScope, {}, { limit: 25 }),
       scopedProvider.listDuplicateRegistrationGroups(partnerScope, {}, { limit: 25 }),
+      scopedProvider.listRecentRegistrations(partnerScope, {}, { limit: 25 }),
+      scopedProvider.getTeamRoster(partnerScope, {}),
+      scopedProvider.getRegistrationSlaAlerts(partnerScope, {}, 8),
       scopedProvider.listWeeklyClassificationMeetings(
         partnerScope,
         { partnerManagerId: 'pm-1' },

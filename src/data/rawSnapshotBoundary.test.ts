@@ -123,6 +123,9 @@ async function collectAllAnswers(access: DemoAccessScope): Promise<unknown[]> {
     await provider.listPendingRegistrations(access, {}, { limit: 50 }),
     await provider.listUnconvertedRegistrations(access, {}, { limit: 50 }),
     await provider.listDuplicateRegistrationGroups(access, {}, { limit: 50 }),
+    await provider.listRecentRegistrations(access, {}, { limit: 50 }),
+    await provider.getTeamRoster(access, {}),
+    await provider.getRegistrationSlaAlerts(access, {}, 8),
     await provider.listWeeklyClassificationMeetings(
       access,
       { partnerManagerId: book.partnerManagers[0]!.id },

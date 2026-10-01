@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import DataConnectionsView from './DataConnectionsView';
 import {
@@ -8,31 +8,33 @@ import {
   CONNECTION_NODES,
 } from '../data/connections';
 import { REGISTRATION_SLA_BUSINESS_DAYS, SNAPSHOT_DATE } from '../data/constants';
-import type {
-  DashboardData,
-  DashboardNotification,
-  DealRegistration,
-  Partner,
-  TeamUser,
-} from '../data/types';
+import type { DataProvider } from '../data/DataProvider';
+import { MockDataProvider } from '../data/mock/MockDataProvider';
+import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
+import type { DashboardNotification, DealRegistration, Partner, TeamUser } from '../data/types';
+import type { ProviderBook } from '../data/types';
 import { businessDaysBefore } from '../lib/fiscal';
 import { formatDate } from '../lib/format';
 import { registrationSlaAlerts, type RegistrationSlaAlert } from '../lib/metrics';
 import { slaAlertCopy } from '../lib/notifications';
 import {
-  makeDashboardData,
   makeNotification,
   makePartner,
+  makeProviderBook,
   makeRegistration,
   makeTeamUser,
 } from '../test/fixtures';
 
 /**
  * DataConnectionsView is three connected panels, so this suite drives them
- * together: the KPI totals derived from the connection catalog, the node
- * detail panel behind the wire diagram, the SLA alert queue the rule produces,
- * and the notification composer that both the roster chips and the queue
- * re-target.
+ * together: the KPI totals derived from the static connection catalog, the
+ * node detail panel behind the wire diagram, the SLA alert queue the
+ * provider's rule answer carries, and the notification composer that both
+ * the roster chips and the queue re-target.
+ *
+ * Every data-backed section runs its own scoped query, so the failure tests
+ * fail one provider method at a time and watch exactly one section fall —
+ * with a retry that repeats only that method.
  *
  * Every alert fixture is measured in business days back from SNAPSHOT_DATE,
  * because `registrationSlaAlerts` clocks a registration against the snapshot,
@@ -145,49 +147,43 @@ const COVERED_METHODS = new Set(
 ).size;
 
 interface SetupOptions {
-  data?: Partial<DashboardData>;
+  data?: Partial<ProviderBook>;
   notifications?: DashboardNotification[];
-  /** Simulate total provider failure: no book, just the stable failure copy. */
-  unavailable?: boolean;
-  /** Simulate the initial load: no book yet, and no failure either. */
-  loading?: boolean;
+  /** Fail each named provider method this many times, as a flaky remote would. */
+  failMethods?: Record<string, number>;
+  /** Hold the simulated network open so the initial load is observable. */
+  latencyMs?: number;
 }
 
 function setup(options: SetupOptions = {}) {
   const user = userEvent.setup();
   const onSendNotification = vi.fn();
-  const onRetry = vi.fn();
-  const data = makeDashboardData({
+  const book = makeProviderBook({
     partners: PARTNERS,
     registrations: REGISTRATIONS,
     teamUsers: TEAM_USERS,
     ...options.data,
   });
-
-  const viewFor = (book: DashboardData | null, loadError: string | null) => (
+  let provider: DataProvider = new MockDataProvider(book);
+  if (options.failMethods !== undefined || options.latencyMs !== undefined) {
+    provider = new SimulatedRemoteProvider(provider, {
+      latencyMs: options.latencyMs ?? 0,
+      failMethods: options.failMethods,
+    });
+  }
+  render(
     <DataConnectionsView
-      data={book}
-      loadError={loadError}
-      onRetry={onRetry}
-      addedUserIds={new Set<string>()}
+      provider={provider}
+      teamUserOverrides={{}}
+      addedTeamUsers={[]}
       notifications={options.notifications ?? []}
       onAddTeamUser={vi.fn()}
       onSetTeamUserStatus={vi.fn()}
       onRemoveTeamUser={vi.fn()}
       onSendNotification={onSendNotification}
-    />
+    />,
   );
-  const utils = render(
-    viewFor(
-      options.unavailable === true || options.loading === true ? null : data,
-      options.unavailable === true ? 'Failed to load dashboard data' : null,
-    ),
-  );
-  // The recovery half of the retry contract: the attempt cleared the error,
-  // then the book landed.
-  const recover = () => utils.rerender(viewFor(data, null));
-
-  return { user, onSendNotification, onRetry, recover };
+  return { user, onSendNotification };
 }
 
 /** Scopes assertions to one KPI tile by its label. */
@@ -223,13 +219,25 @@ function queueRow(accountName: string): HTMLElement {
   return row;
 }
 
+/** The composer prefill lands when the alert queue's query does. */
+async function composerSettled() {
+  await waitFor(() => expect(screen.getByLabelText('To')).toHaveValue(OWNER_USER_ID));
+}
+
 describe('DataConnectionsView', () => {
-  it('keeps the catalog up through total provider failure and names what is unavailable', async () => {
-    // VAL-DATA-006 / VAL-RES-008 route-level half: the connection catalog is
-    // static, so it never depends on the provider. The roster, composer, and
-    // alert queue do, and under total failure each one names itself and
-    // offers the retry that re-runs the load.
-    const { user, onRetry } = setup({ unavailable: true });
+  it('keeps the static catalog up through section failures and retries only the failed query', async () => {
+    // VAL-CROSS-004: the connection catalog is static, so it never depends on
+    // the provider. Each data-backed section runs its own query; failing
+    // every one of them fails each section by its own name, with the failed
+    // query's stable copy — never raw provider prose.
+    const { user } = setup({
+      failMethods: {
+        getTeamRoster: 1,
+        getRegistrationSlaAlerts: 1,
+        listRecentRegistrations: 1,
+        getPartnerRoster: 1,
+      },
+    });
 
     // The catalog: KPIs from CONNECTION_NODES and the wire map render.
     expect(tile('Connections required').getByText(String(REQUIRED_NODES))).toBeInTheDocument();
@@ -240,28 +248,45 @@ describe('DataConnectionsView', () => {
     ).toBeInTheDocument();
     expect(connectionMap().getByRole('button', { name: /^CRM/ })).toBeInTheDocument();
 
-    // The data-derived KPIs degrade to a dash instead of a plausible zero.
+    // Each business section names itself; the data-derived KPIs degrade to a
+    // dash instead of a plausible zero.
+    await screen.findByText('The team roster unavailable:');
+    expect(screen.getByText('The notification composer unavailable:')).toBeInTheDocument();
+    expect(screen.getByText('The SLA alert queue unavailable:')).toBeInTheDocument();
+    // The roster query's failure is shared by the two sections that read it;
+    // the alert queue's failure is its own query's.
+    expect(screen.getAllByText('Failed to load the notification roster')).toHaveLength(2);
+    expect(screen.getByText('Failed to load the registration SLA alerts')).toBeInTheDocument();
     expect(tile('Receiving notifications').getByText('—')).toBeInTheDocument();
     expect(tile('SLA alerts due').getByText('—')).toBeInTheDocument();
+    expect(
+      tile('Receiving notifications').getByText(/roster unavailable — the provider did not answer/),
+    ).toBeInTheDocument();
+    expect(
+      tile('SLA alerts due').getByText(/alert queue unavailable — the provider did not answer/),
+    ).toBeInTheDocument();
 
-    // Each business section names itself and shows the load's stable failure
-    // copy; none of them renders pretend-empty content, and no raw provider
-    // prose appears anywhere on the route.
-    expect(screen.getByText('The notification composer unavailable:')).toBeInTheDocument();
-    expect(screen.getByText('The team roster unavailable:')).toBeInTheDocument();
-    expect(screen.getByText('The SLA alert queue unavailable:')).toBeInTheDocument();
-    expect(screen.getAllByText('Failed to load dashboard data')).toHaveLength(3);
-    expect(screen.queryByText(/failed in transit/)).not.toBeInTheDocument();
-
+    // The roster section's retry repeats only getTeamRoster: the roster
+    // section recovers, the composer moves on to its next failed dependency,
+    // and the alert queue is still down.
     await user.click(screen.getByRole('button', { name: 'Retry The team roster' }));
-    expect(onRetry).toHaveBeenCalledTimes(1);
+    const region = screen.getByRole('group', { name: 'The team roster' });
+    await waitFor(() =>
+      expect(within(region).getAllByText('J. Alvarez').length).toBeGreaterThan(0),
+    );
+    // A successful retry lands focus on the section's named region, never
+    // the document body.
+    expect(document.activeElement).toBe(region);
+    expect(screen.getByText('The SLA alert queue unavailable:')).toBeInTheDocument();
+    expect(screen.getByText('The notification composer unavailable:')).toBeInTheDocument();
+    expect(screen.getByText('Failed to load the partner roster')).toBeInTheDocument();
   });
 
   it('distinguishes the initial load from a failure: loading announces itself and offers no retry', () => {
     // The defect this guards: the route used to render "the provider did not
     // answer" with a Retry button while the provider was still answering.
     // Loading is not a failure — it announces itself and waits.
-    setup({ loading: true });
+    setup({ latencyMs: 60_000 });
 
     expect(screen.getByText('Loading the notification composer')).toBeInTheDocument();
     expect(screen.getByText('Loading the team roster')).toBeInTheDocument();
@@ -278,27 +303,11 @@ describe('DataConnectionsView', () => {
     expect(
       tile('SLA alerts due').getByText(/alert queue loading — waiting on the provider/),
     ).toBeInTheDocument();
+    // The static catalog did not wait on any of it.
+    expect(connectionMap().getByRole('button', { name: /^CRM/ })).toBeInTheDocument();
   });
 
-  it('a successful retry moves focus to the section’s named region, never the document body', async () => {
-    const { user, onRetry, recover } = setup({ unavailable: true });
-
-    const retryButton = screen.getByRole('button', { name: 'Retry The team roster' });
-    await user.click(retryButton);
-    expect(onRetry).toHaveBeenCalledTimes(1);
-
-    // The attempt starts (the error clears) and then the book lands. The
-    // Retry button unmounted with the failure UI; focus must land on the
-    // section's stable, named region — not on document.body.
-    recover();
-
-    const region = screen.getByRole('group', { name: 'The team roster' });
-    expect(within(region).getAllByText('J. Alvarez').length).toBeGreaterThan(0);
-    expect(document.activeElement).toBe(region);
-    expect(document.activeElement).not.toBe(document.body);
-  });
-
-  it('derives the KPI tiles from the catalog and the live alert split', () => {
+  it('derives the KPI tiles from the catalog and the live alert split', async () => {
     setup();
 
     expect(tile('Connections required').getByText(String(REQUIRED_NODES))).toBeInTheDocument();
@@ -317,14 +326,14 @@ describe('DataConnectionsView', () => {
       tile('Flows planned').getByText(`${REQUIRED_EDGES} required to go live`),
     ).toBeInTheDocument();
     // Two of the four roster entries receive notifications; the paused pair does not.
-    expect(tile('Receiving notifications').getByText('2/4')).toBeInTheDocument();
+    expect(await tile('Receiving notifications').findByText('2/4')).toBeInTheDocument();
     expect(
       tile('Receiving notifications').getByText(
         'roster entries routed simulated notifications this session',
       ),
     ).toBeInTheDocument();
 
-    expect(tile('SLA alerts due').getByText('3')).toBeInTheDocument();
+    expect(await tile('SLA alerts due').findByText('3')).toBeInTheDocument();
     expect(
       tile('SLA alerts due').getByText(
         `1 due next business day · 2 past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`,
@@ -332,10 +341,10 @@ describe('DataConnectionsView', () => {
     ).toBeInTheDocument();
   });
 
-  it('lists the alert queue and surfaces the alert whose owner is missing', () => {
+  it('lists the alert queue and surfaces the alert whose owner is missing', async () => {
     setup();
 
-    expect(screen.getByText('1 due next business day')).toBeInTheDocument();
+    expect(await screen.findByText('1 due next business day')).toBeInTheDocument();
     expect(screen.getByText('2 past the SLA')).toBeInTheDocument();
     expect(screen.getByText('2 with a resolvable owner')).toBeInTheDocument();
 
@@ -447,8 +456,9 @@ describe('DataConnectionsView', () => {
     expect(screen.getByText('Limit of the demo')).toBeInTheDocument();
   });
 
-  it('opens the composer on the most urgent approaching alert that has an owner', () => {
+  it('opens the composer on the most urgent approaching alert that has an owner', async () => {
     setup();
+    await composerSettled();
 
     const approaching = alertFor(APPROACHING_REG_ID);
     expect(screen.getByLabelText('To')).toHaveValue(OWNER_USER_ID);
@@ -469,6 +479,7 @@ describe('DataConnectionsView', () => {
 
   it('sends the composer draft on the owner channels with the SLA kind', async () => {
     const { user, onSendNotification } = setup();
+    await composerSettled();
 
     await user.click(screen.getByRole('button', { name: 'Send to J. Alvarez' }));
 
@@ -485,6 +496,7 @@ describe('DataConnectionsView', () => {
 
   it('keeps the alert kind when the copy is edited by hand', async () => {
     const { user, onSendNotification } = setup();
+    await composerSettled();
 
     await user.clear(screen.getByLabelText('Subject'));
     await user.type(screen.getByLabelText('Subject'), 'Quick nudge');
@@ -504,6 +516,7 @@ describe('DataConnectionsView', () => {
 
   it('cannot send while the subject or body is blank', async () => {
     const { user, onSendNotification } = setup();
+    await composerSettled();
 
     await user.clear(screen.getByLabelText('Subject'));
     const send = screen.getByRole('button', { name: 'Send to J. Alvarez' });
@@ -521,10 +534,11 @@ describe('DataConnectionsView', () => {
     expect(onSendNotification).not.toHaveBeenCalled();
   });
 
-  it('opens an empty composer when no registration is near the SLA', () => {
+  it('opens an empty composer when no registration is near the SLA', async () => {
     setup({ data: { registrations: [] } });
+    await waitFor(() => expect(screen.getByLabelText('To')).toHaveValue(''));
 
-    expect(tile('SLA alerts due').getByText('0')).toBeInTheDocument();
+    expect(await tile('SLA alerts due').findByText('0')).toBeInTheDocument();
     expect(
       tile('SLA alerts due').getByText(
         `0 due next business day · 0 past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`,
@@ -533,7 +547,6 @@ describe('DataConnectionsView', () => {
     expect(screen.getByText('Nothing near the SLA — the queue is clear.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Notify all 0 owners' })).toBeDisabled();
 
-    expect(screen.getByLabelText('To')).toHaveValue('');
     expect(screen.getByLabelText('Subject')).toHaveValue('');
     expect(screen.getByLabelText('Message')).toHaveValue('');
     expect(
@@ -542,16 +555,17 @@ describe('DataConnectionsView', () => {
     expect(screen.getByRole('button', { name: 'Send to a teammate' })).toBeDisabled();
   });
 
-  it('says the roster is empty when there is nobody to notify', () => {
+  it('says the roster is empty when there is nobody to notify', async () => {
     setup({ data: { registrations: [], teamUsers: [] } });
 
-    expect(tile('Receiving notifications').getByText('0/0')).toBeInTheDocument();
-    expect(screen.getByText('Add someone to the roster first.')).toBeInTheDocument();
+    expect(await tile('Receiving notifications').findByText('0/0')).toBeInTheDocument();
+    expect(await screen.findByText('Add someone to the roster first.')).toBeInTheDocument();
     expect(connectionMap().getByText('No roster yet.')).toBeInTheDocument();
   });
 
   it('retargets the composer from a teammate chip, blank if they own nothing', async () => {
     const { user } = setup();
+    await composerSettled();
 
     await user.click(chip('R.'));
     expect(chip('R.')).toHaveAttribute('aria-pressed', 'true');
@@ -575,6 +589,7 @@ describe('DataConnectionsView', () => {
 
   it('will not notify a paused teammate', async () => {
     const { user } = setup();
+    await composerSettled();
 
     await user.click(chip('T.'));
     expect(chip('T.')).toHaveAttribute('aria-pressed', 'true');
@@ -588,6 +603,7 @@ describe('DataConnectionsView', () => {
 
   it('retargets the composer to a single alert picked from the queue', async () => {
     const { user } = setup();
+    await composerSettled();
 
     await user.click(nodeButton('Salesforce'));
     expect(screen.getByRole('heading', { level: 3, name: 'Salesforce' })).toBeInTheDocument();
@@ -610,6 +626,7 @@ describe('DataConnectionsView', () => {
 
   it('notifies every alert that has an owner and skips the unowned one', async () => {
     const { user, onSendNotification } = setup();
+    await composerSettled();
 
     await user.click(screen.getByRole('button', { name: 'Notify all 2 owners' }));
 
@@ -639,6 +656,7 @@ describe('DataConnectionsView', () => {
 
   it('recomposes the copy when the template or registration changes', async () => {
     const { user } = setup();
+    await composerSettled();
 
     await user.selectOptions(screen.getByLabelText('Template'), 'registration-note');
     expect(screen.getByLabelText('Subject')).toHaveValue(
@@ -675,6 +693,7 @@ describe('DataConnectionsView', () => {
         ],
       },
     });
+    await composerSettled();
 
     await user.selectOptions(screen.getByLabelText('Registration'), 'reg-inside');
 
@@ -706,6 +725,7 @@ describe('DataConnectionsView', () => {
         ],
       },
     });
+    await waitFor(() => expect(screen.getByLabelText('To')).not.toBeDisabled());
 
     await user.selectOptions(screen.getByLabelText('To'), 'user-analyst');
 
@@ -716,6 +736,7 @@ describe('DataConnectionsView', () => {
 
   it('sends a hand-written note to a teammate picked from the composer roster', async () => {
     const { user, onSendNotification } = setup({ data: { registrations: [] } });
+    await waitFor(() => expect(screen.getByLabelText('To')).not.toBeDisabled());
 
     await user.selectOptions(screen.getByLabelText('To'), OWNER_USER_ID);
     expect(composerRegion().getByText('Email')).toBeInTheDocument();
@@ -734,7 +755,7 @@ describe('DataConnectionsView', () => {
     });
   });
 
-  it('falls back to the partner id when the book no longer carries the partner', () => {
+  it('falls back to the partner id when the book no longer carries the partner', async () => {
     setup({
       data: {
         registrations: [
@@ -748,12 +769,14 @@ describe('DataConnectionsView', () => {
       },
     });
 
-    const row = queueRow('Ghost Partner Deal');
-    expect(within(row).getByText('partner-gone')).toBeInTheDocument();
-    expect(within(row).getByText('No owner — add one')).toBeInTheDocument();
+    const row = await screen.findByText('Ghost Partner Deal');
+    const queueRowElement = row.closest('tr');
+    if (!queueRowElement) throw new Error('no alert queue row for Ghost Partner Deal');
+    expect(within(queueRowElement).getByText('partner-gone')).toBeInTheDocument();
+    expect(within(queueRowElement).getByText('No owner — add one')).toBeInTheDocument();
   });
 
-  it('caps the queue at the eight most urgent registrations', () => {
+  it('caps the queue at the eight most urgent registrations', async () => {
     const registrations = Array.from({ length: 10 }, (_, index) =>
       makeRegistration({
         id: `reg-${index}`,
@@ -764,11 +787,13 @@ describe('DataConnectionsView', () => {
     setup({ data: { registrations } });
 
     expect(
-      screen.getByText('Showing the 8 most urgent of 10 registrations flagged against the SLA.'),
+      await screen.findByText(
+        'Showing the 8 most urgent of 10 registrations flagged against the SLA.',
+      ),
     ).toBeInTheDocument();
   });
 
-  it('shows the last send and the session log', () => {
+  it('shows the last send and the session log', async () => {
     setup({
       notifications: [
         makeNotification({
@@ -779,6 +804,7 @@ describe('DataConnectionsView', () => {
         }),
       ],
     });
+    await composerSettled();
 
     // The last send is labeled simulated/local-only, never delivered.
     expect(screen.getByText('Simulated / local only · 12:00 · email + slack')).toBeInTheDocument();
@@ -803,13 +829,14 @@ describe('DataConnectionsView', () => {
     expect(within(log).getByText('email + slack')).toBeInTheDocument();
   });
 
-  it('names the sender by id when they have left the roster', () => {
+  it('names the sender by id when they have left the roster', async () => {
     setup({ notifications: [makeNotification({ userId: 'user-departed' })] });
 
-    const sentCard = screen
-      .getByRole('heading', { name: 'Deal-registration SLA alerts' })
-      .closest('section');
-    if (!sentCard) throw new Error('no SLA alert card');
-    expect(within(sentCard).getByRole('list')).toHaveTextContent('user-departed');
+    const sentCard = await screen.findByRole('heading', { name: 'Deal-registration SLA alerts' });
+    const section = sentCard.closest('section');
+    if (!section) throw new Error('no SLA alert card');
+    await waitFor(() =>
+      expect(within(section).getByRole('list')).toHaveTextContent('user-departed'),
+    );
   });
 });

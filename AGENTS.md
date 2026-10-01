@@ -100,13 +100,16 @@ survivable.
 - `src/data/constants.ts`: fiscal dates, service levels, labels, and other
   shared domain constants.
 - `src/data/DataProvider.ts`: the read-side integration boundary used by the UI.
-  It is mid-migration between two interfaces; see below.
-- `src/data/useDashboardData.ts`: loads and combines every provider collection
-  Partner View, the last un-migrated view, still needs.
+  It carries the retired legacy interface alongside the scoped one until the
+  legacy loader is deleted; see below.
+- `src/data/useDashboardData.ts`: folds the eight legacy list-everything calls
+  into one `DashboardData`. No route reads it any more; it is deleted with
+  `LegacyBookProvider`.
 - `src/data/useForecastQueries.ts` and its siblings (`useHomeQueries.ts`,
   `usePartnerPerformanceQueries.ts`, `useRegistrationOpsQueries.ts`,
-  `useActivityQueries.ts`): load the scoped contract for their routes, with
-  per-widget loading and error state.
+  `useActivityQueries.ts`, `usePartnerViewQueries.ts`,
+  `useDataConnectionsQueries.ts`): load the scoped contract for their routes,
+  with per-widget loading and error state.
 - `src/data/providers.ts`: selects between the three providers the header's
   provider dropdown exposes.
 - `src/data/mock/`: seeded data generation and the provider implementations —
@@ -122,18 +125,17 @@ survivable.
   app shell → views → components → data/domain helpers. Providers are isolated
   under `src/data/mock/`, and production views and components cannot import
   them directly. Tests may cross these boundaries to build fixtures.
-- Views consume the merged `DashboardData` passed down from `src/App.tsx`; they
-  must not import mock records directly. The one view still on that contract is
-  Partner View. Every other route reads the scoped contract through its own
-  query hook and passes the session's edits _into_ its queries rather than
-  receiving the folded book.
+- Every route reads the scoped contract through its own query hook and passes
+  the session's edits _into_ its queries rather than receiving a folded book;
+  views must not import mock records directly. The merged `DashboardData` and
+  its loader remain in the tree only until the legacy interface is deleted.
 - **`DataProvider` is two interfaces, deliberately.** `ScopedQueryProvider` is
-  the target shape — a scope in, an aggregate whose size does not depend on the
-  book or one page of rows out. `LegacyBookProvider` is the eight
-  list-everything calls still being retired. Only Partner View reads the
-  legacy side. When a view moves across, add the queries it needs to the
-  scoped interface, implement them in `MockDataProvider` by delegating to
-  `src/lib/metrics.ts`, and migrate the view onto a hook.
+  the shape every route uses — a scope in, an aggregate whose size does not
+  depend on the book or one page of rows out. `LegacyBookProvider` is the
+  eight list-everything calls, kept only until `useDashboardData` is deleted
+  with them. New view needs are new scoped queries: add them to the interface,
+  implement them in `MockDataProvider` by delegating to `src/lib/metrics.ts`,
+  and read them through the route's hook.
 - When adding a method to `DataProvider`, list it in `DATA_PROVIDER_METHODS`
   (a compile error until you do, because the record is keyed by
   `keyof DataProvider`) and give it a wire or a box in `src/data/connections.ts`;

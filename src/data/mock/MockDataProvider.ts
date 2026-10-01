@@ -17,8 +17,10 @@ import type {
   PerformanceScope,
   PerformanceSummary,
   RegistrationOpsSummary,
+  RegistrationSlaAlertDigest,
   RevenueTrendScope,
   StageBreakdown,
+  TeamRosterScope,
   WeeklyClassificationScope,
   WeeklySeriesRow,
   WeightedForecastSummary,
@@ -55,10 +57,12 @@ import type {
   PartnerManager,
   ProviderBook,
   Target,
+  TeamUser,
 } from '../types';
 import { SNAPSHOT_DATE } from '../constants';
 import {
   activePartnerCount,
+  applyTeamRosterOverlays,
   approvalRate,
   approvedNotConverted,
   avgOpenDealSize,
@@ -82,6 +86,8 @@ import {
   registrationConversionRate,
   registrationConversionTimes,
   registrationFunnel,
+  registrationSlaAlerts,
+  registrationsNewestFirst,
   registrationsPastSla,
   remainingQuota,
   stageBreakdown,
@@ -737,6 +743,7 @@ export class MockDataProvider implements DataProvider {
     return queryResult(
       {
         times: registrationConversionTimes(book.registrations, book.opportunities),
+        pending: pendingRegistrations(book.registrations).length,
         approvedNotConverted: leaking.length,
         exclusivityLapsed: leaking.filter(exclusivityLapsed).length,
         pastSla: registrationsPastSla(book.registrations).length,
@@ -921,6 +928,88 @@ export class MockDataProvider implements DataProvider {
         cursor: page.cursor,
         limit: page.limit,
       }),
+      this.meta(undefined),
+    );
+  }
+
+  async listRecentRegistrations(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DealRegistration>>> {
+    throwIfAborted(context?.signal);
+    const book = this.performanceBook(access, scope);
+    // Newest submission first — the metric's stable total order, so a cursor
+    // walk over an unchanged book visits every row exactly once.
+    const ordered = registrationsNewestFirst(book.registrations);
+    return queryResult(
+      paginateRows({
+        rows: ordered,
+        queryKey: `listRecentRegistrations|access:${demoScopeKey(access)}|${this.drilldownKey(scope)}`,
+        asOf: this.dataEpoch(),
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
+      this.meta(undefined),
+    );
+  }
+
+  // ---- Data Connections ----------------------------------------------------
+
+  /**
+   * The roster the session routes simulated notifications to: the access
+   * scope first (a partner audience has no roster at all — the session's
+   * overlays are internal-roster edits, so they fall with it), then the
+   * overlays, so the alert rule below resolves owners against exactly the
+   * roster the Access panel renders.
+   */
+  private teamRoster(access: DemoAccessScope, scope: TeamRosterScope): TeamUser[] {
+    const scoped = scopeTeamUsers(this.data.teamUsers, access);
+    if (access.audience === 'partner') return scoped;
+    return applyTeamRosterOverlays(scoped, scope.overrides ?? {}, scope.added ?? []);
+  }
+
+  async getTeamRoster(
+    access: DemoAccessScope,
+    scope: TeamRosterScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<TeamUser[]>> {
+    throwIfAborted(context?.signal);
+    return queryResult(this.teamRoster(access, scope), this.meta(undefined));
+  }
+
+  async getRegistrationSlaAlerts(
+    access: DemoAccessScope,
+    scope: TeamRosterScope,
+    maxAlerts: number,
+    context?: QueryContext,
+  ): Promise<QueryResult<RegistrationSlaAlertDigest>> {
+    throwIfAborted(context?.signal);
+    // The rule reads the access-scoped registrations and partners — a partner
+    // audience's queue is computed from its own conflict-free submissions —
+    // and the overlaid roster, so a routing change this session is already
+    // reflected in who an alert belongs to.
+    const alerts = registrationSlaAlerts(
+      scopeRegistrations(this.data.registrations, this.data.partners, access),
+      scopePartners(this.data.partners, access),
+      this.teamRoster(access, scope),
+    );
+    const alertCountByOwner: Record<string, number> = {};
+    for (const alert of alerts) {
+      if (alert.owner === undefined) continue;
+      alertCountByOwner[alert.owner.id] = (alertCountByOwner[alert.owner.id] ?? 0) + 1;
+    }
+    return queryResult(
+      {
+        // The metric's order is the queue's order: due-soon warnings lead,
+        // then most overdue. The window is the top of that queue.
+        alerts: alerts.slice(0, Math.max(0, maxAlerts)),
+        totalCount: alerts.length,
+        approachingCount: alerts.filter((alert) => alert.state === 'approaching').length,
+        ownedCount: alerts.filter((alert) => alert.owner !== undefined).length,
+        alertCountByOwner,
+      },
       this.meta(undefined),
     );
   }

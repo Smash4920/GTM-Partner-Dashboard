@@ -610,8 +610,7 @@ and deliberately reads that way. Two families:
 **The target shape — scoped aggregates and paginated rows.** A caller states a
 scope (a fiscal quarter, optionally one partner manager, plus the session's
 uncommitted edits) and receives an answer whose size does not depend on the size
-of the book. **Forecasting, Home, Partner Performance, Deal Reg Ops, and
-Activity Tracking are built on it today.**
+of the book. **Every route is built on it today.**
 
 | Method                               | Returns                                                            |
 | ------------------------------------ | ------------------------------------------------------------------ |
@@ -636,6 +635,9 @@ Activity Tracking are built on it today.**
 | `getPartnerCertification()`          | `QueryResult<PartnerCertificationProfile \| null>`                 |
 | `listScopedOpportunities()`          | `QueryResult<Page<Opportunity>>` (opaque cursor, 25-row pages)     |
 | `listPendingRegistrations()`         | `QueryResult<Page<DealRegistration>>` (oldest first, cursor pages) |
+| `listRecentRegistrations()`          | `QueryResult<Page<DealRegistration>>` (newest first, cursor pages) |
+| `getTeamRoster()`                    | `QueryResult<TeamUser[]>` (internal audience only)                 |
+| `getRegistrationSlaAlerts()`         | `QueryResult<RegistrationSlaAlertDigest>` (urgent window + counts) |
 | `listUnconvertedRegistrations()`     | `QueryResult<Page<DealRegistration>>` (exclusivity watch)          |
 | `listDuplicateRegistrationGroups()`  | `QueryResult<Page<DuplicateRegistrationGroup>>` (internal only)    |
 | `listWeeklyClassificationMeetings()` | `QueryResult<Page<ActivityMeeting>>` (one week, cursor pages)      |
@@ -651,8 +653,9 @@ never smoothed over.
 **The shape being retired — eight list-everything calls.** `listPartners()`,
 `listOpportunities()`, `listRegistrations()`, `getTargets()`,
 `listPartnerManagers()`, `listActivities()`, `listCertifications()`,
-`listTeamUsers()`. Partner View — the last view on this contract — takes the
-whole book and aggregates it in the browser.
+`listTeamUsers()`. No route reads them any more — Partner View, the last to
+move off, now asks for scoped answers like every other view — and they leave
+the interface with `useDashboardData`, the loader that still folds them.
 
 **Every method — both families — takes a required demo access scope first**
 ([`src/data/accessScope.ts`](src/data/accessScope.ts)): `{ audience:
@@ -701,18 +704,15 @@ server pipeline could call them unchanged.
   exercised rather than theoretical. Seeded, so a failing run can be replayed.
 - **Scaled 100×** — 100 copies of the book: 2,500 partners, 21,300
   opportunities, 191,000 weekly snapshot rows, ~45 MB. The scoped queries return
-  the same kilobytes (a handful of aggregates, one cursor page of rows); the
-  load-everything path is what changes. That is the argument, and it is why
-  the default is the local mock: this provider deliberately makes the
-  un-migrated view slow.
+  the same kilobytes (a handful of aggregates, one cursor page of rows) while
+  the book grows a hundredfold. That is the argument, performed.
 
-The interface is read-only. `App.tsx` layers the session's in-app edits —
+The interface is read-only. `App.tsx` holds the session's in-app edits —
 revenue overrides, forecast-category calls, notes, next steps, meeting
-classifications, added prospects, roster changes, and sent notifications — on
-top of the provider's book before handing a single merged `DashboardData` to
-Partner View, the last view on the old contract; the scoped views instead pass
-the edits _into_ their queries, so the provider aggregates the corrected book
-itself. Writes are the one thing a live provider still needs to add.
+classifications, added prospects, roster changes, and sent notifications — and
+every view passes them _into_ its queries, so the provider aggregates the
+corrected book itself. Writes are the one thing a live provider still needs to
+add.
 
 **Weekly pipeline history never crosses the seam whole.** It used to arrive as
 `listPipelineSnapshots()`: 1,911 rows in the demo and ~87% of the payload at

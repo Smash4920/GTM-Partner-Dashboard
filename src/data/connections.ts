@@ -133,6 +133,7 @@ export const CONNECTION_NODES: ConnectionNode[] = [
       'listPendingRegistrations()',
       'listUnconvertedRegistrations()',
       'listDuplicateRegistrationGroups()',
+      'listRecentRegistrations()',
     ],
     source: 'Opportunity, Deal_Registration__c, Account, quota objects',
     auth: 'Connected app, OAuth 2.0 JWT bearer, service account',
@@ -310,7 +311,6 @@ export const CONNECTION_NODES: ConnectionNode[] = [
       'getWeightedForecast()',
       'getForecastQuality()',
       'getManagerForecastGroups()',
-      'DashboardData — every view',
     ],
     blocker:
       'Writes are session-only in the demo: revenue overrides, forecast calls, notes, next steps, meeting classifications, and added prospects are not persisted (Architecture roadmap: persistence and operating workflows).',
@@ -328,7 +328,7 @@ export const CONNECTION_NODES: ConnectionNode[] = [
     summary:
       'Authenticates internal users and partners, and owns the roster, roles, and manager alignment.',
     supplies: ['Sign-in and role claims', 'The partner-team roster in Access below'],
-    methods: ['listTeamUsers()'],
+    methods: ['listTeamUsers()', 'getTeamRoster()'],
     source: 'OIDC/SAML application plus SCIM directory sync',
     auth: 'OIDC for sessions, SCIM token for provisioning',
     cadence: 'SCIM in real time, just-in-time on first sign-in',
@@ -348,7 +348,7 @@ export const CONNECTION_NODES: ConnectionNode[] = [
     summary:
       'Delivers SLA alerts and ad-hoc notes to one named owner over the channels they are configured for.',
     supplies: ['Deal-registration SLA warnings and breaches', 'Hand-sent notes about a record'],
-    methods: ['sendNotification()'],
+    methods: ['sendNotification()', 'getRegistrationSlaAlerts()'],
     source: 'Slack app for direct messages, transactional email provider',
     auth: 'Bot token with chat:write; email through the transactional provider',
     cadence: 'Event-driven, evaluated when the alert rule fires',

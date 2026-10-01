@@ -16,8 +16,10 @@ import type {
   PerformanceScope,
   PerformanceSummary,
   RegistrationOpsSummary,
+  RegistrationSlaAlertDigest,
   RevenueTrendScope,
   StageBreakdown,
+  TeamRosterScope,
   WeeklyClassificationScope,
   WeeklySeriesRow,
   WeightedForecastSummary,
@@ -580,6 +582,46 @@ export class SimulatedRemoteProvider implements DataProvider {
     return this.stamp(
       this.roundTrip('listDuplicateRegistrationGroups', context?.signal, () =>
         this.inner.listDuplicateRegistrationGroups(access, scope, page, context),
+      ),
+    );
+  }
+
+  async listRecentRegistrations(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DealRegistration>>> {
+    return this.stamp(
+      this.roundTrip('listRecentRegistrations', context?.signal, () =>
+        this.inner.listRecentRegistrations(access, scope, page, context),
+      ),
+    );
+  }
+
+  // ---- Data Connections -----------------------------------------------------
+
+  async getTeamRoster(
+    access: DemoAccessScope,
+    scope: TeamRosterScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<TeamUser[]>> {
+    return this.stamp(
+      this.roundTrip('getTeamRoster', context?.signal, () =>
+        this.inner.getTeamRoster(access, scope, context),
+      ),
+    );
+  }
+
+  async getRegistrationSlaAlerts(
+    access: DemoAccessScope,
+    scope: TeamRosterScope,
+    maxAlerts: number,
+    context?: QueryContext,
+  ): Promise<QueryResult<RegistrationSlaAlertDigest>> {
+    return this.stamp(
+      this.roundTrip('getRegistrationSlaAlerts', context?.signal, () =>
+        this.inner.getRegistrationSlaAlerts(access, scope, maxAlerts, context),
       ),
     );
   }

@@ -216,6 +216,7 @@ describe('useRegistrationOpsQueries (VAL-DATA-015)', () => {
     const ops = result.current.ops.data!;
     expect(ops).toEqual({
       times: registrationConversionTimes(book.registrations, book.opportunities),
+      pending: pendingRegistrations(book.registrations).length,
       approvedNotConverted: approvedNotConverted(book.registrations).length,
       exclusivityLapsed: approvedNotConverted(book.registrations).filter(exclusivityLapsed).length,
       pastSla: registrationsPastSla(book.registrations).length,

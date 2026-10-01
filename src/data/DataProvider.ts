@@ -11,6 +11,7 @@ import type {
   QuarterRevenueRow,
   RegistrationConversionTimes,
   RegistrationFunnel,
+  RegistrationSlaAlert,
   StageRow,
   TypeRow,
   WeeklyActivityRow,
@@ -40,15 +41,15 @@ import type {
  *
  * - `ScopedQueryProvider` is the target shape: the caller states a scope, the
  *   provider returns an answer. Aggregates come back as kilobytes however
- *   large the book is, and rows come back a page at a time. Forecasting,
- *   Home, Partner Performance, Deal Reg Ops, and Activity Tracking are built
- *   on it.
+ *   large the book is, and rows come back a page at a time. Every route is
+ *   built on it.
  * - `LegacyBookProvider` is the shape being retired: eight calls that each
  *   return an entire collection, which the browser then aggregates itself.
- *   Two views still depend on it (Partner View and Data Connections).
+ *   No route reads it any more; it stays only until `useDashboardData`, the
+ *   loader that folds it, is deleted with it.
  *
- * The split is the backlog. A view moves across when its queries exist on the
- * scoped side, and `LegacyBookProvider` is deleted when the last one has.
+ * The split was the backlog. Every view has moved across; what remains is
+ * deleting the legacy side and its loader together.
  *
  * Every method takes a `DemoAccessScope` (see src/data/accessScope.ts) as its
  * first argument: the demo's required, non-authoritative record visibility
@@ -73,7 +74,8 @@ import type {
  * already gone: weekly history is ~87% of the payload at production scale,
  * millions of rows to answer a question about fourteen weeks, and it is
  * replaced by `getWeeklyForecastSeries()` below. What remains is bookkeeping
- * and small dimensions, and it goes the same way view by view.
+ * and small dimensions, and it goes the same way: deleted with the loader
+ * that still folds it.
  */
 interface LegacyBookProvider {
   listPartnerManagers(access: DemoAccessScope, context?: QueryContext): Promise<PartnerManager[]>;
@@ -292,6 +294,42 @@ export interface PartnerCertificationScope {
 }
 
 /**
+ * The internal notification roster's session overlays, riding the roster and
+ * alert queries the way the session's edits ride the forecast queries: there
+ * is no write path to an identity provider (Production: Prod Only), so the
+ * roster the demo routes simulated notifications to exists only in the
+ * session and has to travel with the query. Keeping the arithmetic on the
+ * provider's side is what lets the SLA alert rule resolve owners against the
+ * same roster the Access panel renders.
+ */
+export interface TeamRosterScope {
+  /** Status/routing patches keyed by provider roster user id. */
+  overrides?: Record<string, Partial<TeamUser>>;
+  /** Users added during this session, appended after the provider roster. */
+  added?: TeamUser[];
+}
+
+/**
+ * The SLA alert queue as a bounded answer, in the shape getForecastQuality
+ * established: the full-set counts, plus the most urgent alerts up to
+ * `maxAlerts` — the queue a human works from the top of. Returning every
+ * alert would put an unbounded list back on the wire for a panel that
+ * renders its first page.
+ */
+export interface RegistrationSlaAlertDigest {
+  /** The most urgent alerts — due-soon warnings first, then most overdue. */
+  alerts: RegistrationSlaAlert[];
+  /** Every registration flagged against the SLA, not just the window above. */
+  totalCount: number;
+  /** Of those, still inside the SLA but within the one-business-day warning. */
+  approachingCount: number;
+  /** Of those, with a resolvable owner on the roster. */
+  ownedCount: number;
+  /** Alerts per owner user id, across the whole set (the roster chips' counts). */
+  alertCountByOwner: Record<string, number>;
+}
+
+/**
  * The Log Meetings calendar's scope: exactly one partner manager. The answer
  * is that manager's current-week calendar — the raw "Google Calendar import"
  * the classification modal works from — and it is deliberately NOT the
@@ -345,6 +383,8 @@ export interface StageBreakdown {
  */
 export interface RegistrationOpsSummary {
   times: RegistrationConversionTimes;
+  /** Pending registrations awaiting review — the queue's total depth. */
+  pending: number;
   /** Approved registrations that never became an opportunity. */
   approvedNotConverted: number;
   /** Of those, past the 60-calendar-day exclusivity window. */
@@ -572,6 +612,53 @@ interface ScopedQueryProvider {
     page: PageRequest,
     context?: QueryContext,
   ): Promise<QueryResult<Page<DuplicateRegistrationGroup>>>;
+  /**
+   * The scope's registrations across every status, newest submission first,
+   * a page at a time — the partner portal's history card and the notification
+   * composer's record picker. Under a partner-audience scope the answer is
+   * that partner's submissions minus any under a conflict: the conflict stays
+   * an internal matter on both sides of it. Pages follow the shared contract
+   * in src/data/pagination.ts.
+   */
+  listRecentRegistrations(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DealRegistration>>>;
+
+  // ---- Data Connections ----------------------------------------------------
+  //
+  // The identity-provider roster and the notification rule's answer, scoped
+  // like everything else: both are internal-only material, so a partner
+  // audience receives an empty roster and an ownerless digest.
+
+  /**
+   * The internal partner-team roster, projected from the identity provider,
+   * with the session's overlays applied (see `TeamRosterScope`). This is what
+   * decides who a deal-registration alert belongs to; a provider with no
+   * roster yet may return an empty array, and the alerts simply carry no
+   * owner. A partner-audience scope receives an empty roster — the roster is
+   * internal, and the session's overlays are internal-roster edits, so they
+   * fall with it.
+   */
+  getTeamRoster(
+    access: DemoAccessScope,
+    scope: TeamRosterScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<TeamUser[]>>;
+  /**
+   * The notification rule's answer: pending registrations at or within one
+   * business day of the response SLA, owners resolved against the overlaid
+   * roster. Bounded like `getForecastQuality` — the full-set counts plus the
+   * most urgent `maxAlerts` alerts, never the whole queue.
+   */
+  getRegistrationSlaAlerts(
+    access: DemoAccessScope,
+    scope: TeamRosterScope,
+    maxAlerts: number,
+    context?: QueryContext,
+  ): Promise<QueryResult<RegistrationSlaAlertDigest>>;
 
   // ---- Activity Tracking ---------------------------------------------------
 
@@ -647,6 +734,10 @@ const METHOD_INDEX: Record<keyof DataProvider, true> = {
   listPendingRegistrations: true,
   listUnconvertedRegistrations: true,
   listDuplicateRegistrationGroups: true,
+  listRecentRegistrations: true,
+  // Data Connections
+  getTeamRoster: true,
+  getRegistrationSlaAlerts: true,
   // Activity Tracking
   listWeeklyClassificationMeetings: true,
 };

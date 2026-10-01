@@ -509,24 +509,21 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     const refreshed = await window.GTM_HEALTH?.refresh();
     expect(refreshed?.status).toBe('unavailable');
     expect(window.GTM_HEALTH?.artifact).toBe(refreshed);
-    // Home reads the scoped contract now, so its overview still renders
-    // through the failed book load; its widgets report their own failures
-    // with the same stable copy.
+    // Every route reads the scoped contract now: Home's overview still
+    // renders through the failed queries, and each widget reports its own
+    // failure in the load's stable copy — the rejection's raw prose stays in
+    // the health check and never reaches the DOM.
     expect(
       await screen.findByRole('heading', { name: 'Partner Performance Overview' }),
     ).toBeInTheDocument();
     await screen.findByText('Performance summary unavailable:');
-
-    // The route itself tells the truth too — in the load's stable copy, not
-    // the rejection's own prose (the raw detail stays in the health check).
-    await screen.findByText('Failed to load dashboard data');
     expect(screen.queryByText(/failed in transit/)).not.toBeInTheDocument();
   }, 30_000);
 
   it('keeps Production Requirements and the connection catalog up through total failure', async () => {
     const user = userEvent.setup();
     render(<App providerFactory={() => failingProvider()} />);
-    await screen.findByText('Failed to load dashboard data');
+    await screen.findByText('Performance summary unavailable:');
 
     await user.click(nav().getByRole('button', { name: 'Production Requirements' }));
     expect(
@@ -544,10 +541,10 @@ describe('App under total provider failure (VAL-RES-008)', () => {
   it('a focused retry recovers only the failed work', async () => {
     const user = userEvent.setup();
     render(<App providerFactory={() => flakyOnceProvider()} />);
-    await screen.findByText('Failed to load dashboard data');
+    await screen.findByText('Performance summary unavailable:');
 
     // Forecasting renders its widgets as individually unavailable, not as a
-    // blank page, while the whole-book load has failed. (The summary itself
+    // blank page, while their queries are failing. (The summary itself
     // already spent its one failure on the mount-time health ping, so it is
     // the healthy sibling here.)
     await user.click(nav().getByRole('button', { name: 'Forecasting' }));
@@ -563,7 +560,7 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     );
     expect(screen.getByText('Forecast quality unavailable:')).toBeInTheDocument();
 
-    // The book-level retry on Data Connections recovers the whole-book load.
+    // The roster section's retry recovers that section alone.
     await user.click(nav().getByRole('button', { name: 'Data Connections' }));
     await screen.findByText('The team roster unavailable:');
     await user.click(screen.getByRole('button', { name: 'Retry The team roster' }));
@@ -577,23 +574,28 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     expect(document.activeElement).toBe(screen.getByRole('group', { name: 'The team roster' }));
   }, 30_000);
 
-  it('a successful book-route retry moves focus to the recovered dashboard region', async () => {
-    // The remaining book route keeps the shared failure surface. When its
-    // retry succeeds, focus lands on the stable "dashboard data" region
-    // instead of falling to document.body with the Retry button that just
-    // unmounted. Home and the other migrated routes no longer show that
-    // takeover, so the check runs on Partner View.
+  it('a successful section retry moves focus to the recovered named region', async () => {
+    // The whole-book takeover surface is gone: every route is on scoped
+    // queries, so the check runs on Partner View's picker gate — a
+    // multi-query section whose successful retry lands focus on the gate's
+    // named region instead of falling to document.body with the Retry
+    // button that just unmounted.
     const user = userEvent.setup();
     render(<App providerFactory={() => flakyOnceProvider()} />);
 
     await user.click(await screen.findByRole('button', { name: 'Partner View' }));
-    await user.click(await screen.findByRole('button', { name: 'Retry dashboard data' }));
-    // The recovered book renders Partner View: the failure surface is gone.
+    // Home's mount already spent the first-call failures on the queries the
+    // two routes share, so the picker gate is up; the certification query is
+    // Partner View's own and is the one still failing here.
+    await screen.findByText('Certification record unavailable:');
+    await user.click(screen.getByRole('button', { name: 'Retry certification record' }));
+
+    // The recovered tile renders; the failure surface is gone.
     await waitFor(() =>
-      expect(screen.queryByText(/Dashboard data unavailable/)).not.toBeInTheDocument(),
+      expect(screen.queryByText(/Certification record unavailable/)).not.toBeInTheDocument(),
     );
 
-    const region = screen.getByRole('group', { name: 'dashboard data' });
+    const region = screen.getByRole('group', { name: 'certification record' });
     expect(document.activeElement).toBe(region);
     expect(document.activeElement).not.toBe(document.body);
   }, 30_000);

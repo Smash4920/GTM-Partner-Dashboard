@@ -19,7 +19,14 @@ import { SendIcon } from './icons';
  */
 
 interface SlaAlertPanelProps {
+  /**
+   * The most urgent alerts — the window the queue renders and notifies from.
+   * The provider bounds this list, so `totalCount` carries the whole queue's
+   * depth for the cap line below the table.
+   */
   alerts: RegistrationSlaAlert[];
+  /** Every registration flagged against the SLA; defaults to alerts.length. */
+  totalCount?: number;
   users: TeamUser[];
   notifications: DashboardNotification[];
   onNotify: (alert: RegistrationSlaAlert) => void;
@@ -31,6 +38,7 @@ const LOG_LIMIT = 5;
 
 export default function SlaAlertPanel({
   alerts,
+  totalCount = alerts.length,
   users,
   notifications,
   onNotify,
@@ -163,10 +171,10 @@ export default function SlaAlertPanel({
           </tbody>
         </table>
       </div>
-      {alerts.length > shown.length && (
+      {totalCount > shown.length && (
         <p className="text-xs text-granite">
-          Showing the {shown.length} most urgent of {alerts.length} registrations flagged against
-          the SLA.
+          Showing the {shown.length} most urgent of {totalCount} registrations flagged against the
+          SLA.
         </p>
       )}
 

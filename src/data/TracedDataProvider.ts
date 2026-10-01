@@ -17,8 +17,10 @@ import type {
   PerformanceScope,
   PerformanceSummary,
   RegistrationOpsSummary,
+  RegistrationSlaAlertDigest,
   RevenueTrendScope,
   StageBreakdown,
+  TeamRosterScope,
   WeeklyClassificationScope,
   WeeklySeriesRow,
   WeightedForecastSummary,
@@ -345,6 +347,38 @@ export class TracedDataProvider implements DataProvider {
   ): Promise<QueryResult<Page<DuplicateRegistrationGroup>>> {
     return this.request('listDuplicateRegistrationGroups', context, (withTrace) =>
       this.inner.listDuplicateRegistrationGroups(access, scope, page, withTrace),
+    );
+  }
+
+  listRecentRegistrations(
+    access: DemoAccessScope,
+    scope: PartnerDrilldown,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<DealRegistration>>> {
+    return this.request('listRecentRegistrations', context, (withTrace) =>
+      this.inner.listRecentRegistrations(access, scope, page, withTrace),
+    );
+  }
+
+  getTeamRoster(
+    access: DemoAccessScope,
+    scope: TeamRosterScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<TeamUser[]>> {
+    return this.request('getTeamRoster', context, (withTrace) =>
+      this.inner.getTeamRoster(access, scope, withTrace),
+    );
+  }
+
+  getRegistrationSlaAlerts(
+    access: DemoAccessScope,
+    scope: TeamRosterScope,
+    maxAlerts: number,
+    context?: QueryContext,
+  ): Promise<QueryResult<RegistrationSlaAlertDigest>> {
+    return this.request('getRegistrationSlaAlerts', context, (withTrace) =>
+      this.inner.getRegistrationSlaAlerts(access, scope, maxAlerts, withTrace),
     );
   }
 

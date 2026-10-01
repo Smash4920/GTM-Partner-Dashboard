@@ -54,6 +54,9 @@ function unscopedCalls(provider: DataProvider): (() => Promise<unknown>)[] {
     () => provider.listPendingRegistrations(missing, {}, { limit: 5 }),
     () => provider.listUnconvertedRegistrations(missing, {}, { limit: 5 }),
     () => provider.listDuplicateRegistrationGroups(missing, {}, { limit: 5 }),
+    () => provider.listRecentRegistrations(missing, {}, { limit: 5 }),
+    () => provider.getTeamRoster(missing, {}),
+    () => provider.getRegistrationSlaAlerts(missing, {}, 8),
     () =>
       provider.listWeeklyClassificationMeetings(
         missing,
@@ -64,7 +67,7 @@ function unscopedCalls(provider: DataProvider): (() => Promise<unknown>)[] {
 }
 
 describe('DataProvider demo access scope (VAL-DATA-003)', () => {
-  it('keeps a closed inventory: exactly these thirty-two data-bearing methods exist', () => {
+  it('keeps a closed inventory: exactly these thirty-five data-bearing methods exist', () => {
     expect([...DATA_PROVIDER_METHODS].sort()).toEqual([
       'getForecastQuality',
       'getForecastSummary',
@@ -78,8 +81,10 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       'getQuarterlyRevenueTrend',
       'getRegistrationFunnel',
       'getRegistrationOpsSummary',
+      'getRegistrationSlaAlerts',
       'getStageBreakdown',
       'getTargets',
+      'getTeamRoster',
       'getTypeBreakdown',
       'getWeeklyActivitySeries',
       'getWeeklyForecastSeries',
@@ -93,6 +98,7 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       'listPartners',
       'listPendingRegistrations',
       'listQuarterOpportunities',
+      'listRecentRegistrations',
       'listRegistrations',
       'listScopedOpportunities',
       'listTeamUsers',
@@ -168,8 +174,11 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       provider.listPendingRegistrations(scope, {}, { limit: 5 }),
       provider.listUnconvertedRegistrations(scope, {}, { limit: 5 }),
       provider.listDuplicateRegistrationGroups(scope, {}, { limit: 5 }),
+      provider.listRecentRegistrations(scope, {}, { limit: 5 }),
+      provider.getTeamRoster(scope, {}),
+      provider.getRegistrationSlaAlerts(scope, {}, 8),
       provider.listWeeklyClassificationMeetings(scope, { partnerManagerId: 'pm-1' }, { limit: 5 }),
     ]);
-    expect(results).toHaveLength(32);
+    expect(results).toHaveLength(35);
   });
 });

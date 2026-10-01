@@ -1,19 +1,16 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import ProviderTransitionNotice from './components/ProviderTransitionNotice';
-import { QueryFailure, useRetryRecovery } from './components/QueryState';
 import Sidebar, { type Route } from './components/Sidebar';
 import { MenuIcon } from './components/icons';
 import { SNAPSHOT_DATE } from './data/constants';
 import type { DataProvider } from './data/DataProvider';
 import { PROVIDER_OPTIONS, providerOption } from './data/providers';
 import type { ProviderId } from './data/providers';
-import { applySessionEdits } from './data/sessionEdits';
 import type { SessionEdits } from './data/sessionEdits';
 import { useCommittedProvider } from './data/useCommittedProvider';
 import type { CommittedProvider } from './data/useCommittedProvider';
 import type {
-  DashboardData,
   DashboardNotification,
   ForecastCategory,
   MeetingClassification,
@@ -22,8 +19,6 @@ import type {
   TeamUser,
   TeamUserStatus,
 } from './data/types';
-import { INTERNAL_DEMO_SCOPE } from './data/accessScope';
-import { useDashboardData } from './data/useDashboardData';
 import type { NotificationDraft } from './lib/notifications';
 import { formatDate } from './lib/format';
 import { featureFlags, getFeatureFlagSubject, type FeatureFlagClient } from './lib/featureFlags';
@@ -145,26 +140,6 @@ export default function App({
   const providerId = committed.id;
   const providerMeta = providerOption(providerId);
   const requestedMeta = providerOption(transition.requestedId);
-  const { data, loading, error, retry } = useDashboardData(provider, INTERNAL_DEMO_SCOPE);
-
-  const partners = useMemo(
-    () => [...(data?.partners ?? []), ...prospects],
-    [data?.partners, prospects],
-  );
-
-  // The roster the whole app sees: the identity provider's projection with any
-  // session status changes applied, plus anyone added this session.
-  const teamUsers = useMemo(() => {
-    const base = (data?.teamUsers ?? []).map((user) =>
-      teamUserOverrides[user.id] ? { ...user, ...teamUserOverrides[user.id] } : user,
-    );
-    return [...base, ...addedTeamUsers];
-  }, [data?.teamUsers, teamUserOverrides, addedTeamUsers]);
-
-  const addedUserIds = useMemo(
-    () => new Set(addedTeamUsers.map((user) => user.id)),
-    [addedTeamUsers],
-  );
 
   // Route and provider are the two halves of "where is this session": every
   // telemetry envelope, error capture, and the health artifact carry them, so
@@ -179,33 +154,9 @@ export default function App({
     telemetry.setProviderId(providerId);
   }, [providerId]);
 
-  // Edited forecasts, notes, next steps, and called categories are folded into
-  // the opportunity book itself, so every KPI, chart, and table in the app
-  // reads the corrected figure rather than the one Salesforce supplied. The
-  // weighted forecast therefore moves the moment a manager re-calls a deal.
-  const opportunities = useMemo(
-    () =>
-      applySessionEdits(data?.opportunities ?? [], {
-        revenueOverrides,
-        notes,
-        nextSteps,
-        forecastCalls,
-      }),
-    [data?.opportunities, revenueOverrides, notes, nextSteps, forecastCalls],
-  );
-
-  // The single book every view renders: provider data plus in-app edits.
-  const live = useMemo(
-    () => (data ? { ...data, partners, opportunities, teamUsers } : null),
-    [data, partners, opportunities, teamUsers],
-  );
-
-  // The same edits in the shape the scoped contract takes. The scoped
-  // routes' queries carry them so the provider aggregates the corrected book
-  // itself, rather than the client re-applying edits to an answer computed
-  // without them. The fold above is the same work for the last view still
-  // on the load-everything contract; both exist only until Partner View
-  // moves across, at which point the provider owns the edit path alone.
+  // The session's edits in the shape the scoped contract takes: every route
+  // is on the scoped contract now, so the provider aggregates the corrected
+  // book itself and there is no folded-book copy of these edits left.
   const forecastEdits = useMemo<SessionEdits>(
     () => ({ revenueOverrides, notes, nextSteps, forecastCalls }),
     [revenueOverrides, notes, nextSteps, forecastCalls],
@@ -513,10 +464,6 @@ export default function App({
           )}
           <RouteContent
             route={route}
-            live={live}
-            loading={loading}
-            error={error}
-            retry={retry}
             providerId={providerId}
             generation={committed.generation}
             productionRequirementsEnabled={productionRequirementsEnabled}
@@ -524,7 +471,8 @@ export default function App({
             forecastEdits={forecastEdits}
             classifications={classifications}
             prospects={prospects}
-            addedUserIds={addedUserIds}
+            teamUserOverrides={teamUserOverrides}
+            addedTeamUsers={addedTeamUsers}
             notifications={notifications}
             onSetRevenue={setRevenue}
             onSetNote={setNote}
@@ -553,10 +501,6 @@ export default function App({
 /** Everything RouteContent needs from the shell, in one place. */
 interface RouteContentProps {
   route: Route;
-  live: DashboardData | null;
-  loading: boolean;
-  error: string | null;
-  retry: () => void;
   providerId: ProviderId;
   generation: number;
   productionRequirementsEnabled: boolean;
@@ -564,7 +508,8 @@ interface RouteContentProps {
   forecastEdits: SessionEdits;
   classifications: Record<string, MeetingClassification>;
   prospects: Partner[];
-  addedUserIds: Set<string>;
+  teamUserOverrides: Record<string, Partial<TeamUser>>;
+  addedTeamUsers: TeamUser[];
   notifications: DashboardNotification[];
   onSetRevenue: (opportunityId: string, value: number) => void;
   onSetNote: (opportunityId: string, note: string) => void;
@@ -579,25 +524,15 @@ interface RouteContentProps {
 }
 
 /**
- * The three route kinds, with three failure contracts:
- *
- * - Production Requirements and the connection catalog are static. They
- *   render through total provider failure; only the roster and alert sections
- *   of Data Connections need the book, and those say so themselves, with a
- *   retry.
- * - Forecasting, Home, and Partner Performance read the scoped contract and
- *   carry per-widget failure state, so a failed whole-book load never blanks
- *   them: each widget names its own failure and retries its own query.
- * - The remaining routes render the folded book. While it is absent they hold
- *   the route with a named loading or error state rather than rendering
- *   another provider's rows.
+ * The route kinds, with one failure contract: every route is scoped or
+ * static. Production Requirements and the connection catalog are static and
+ * render through total provider failure; every other route reads the scoped
+ * contract and carries per-widget failure state, so one rejected provider
+ * call fails exactly one card or section, and its retry repeats only that
+ * call. There is no whole-book load left to blank a route.
  */
 function RouteContent({
   route,
-  live,
-  loading,
-  error,
-  retry,
   providerId,
   generation,
   productionRequirementsEnabled,
@@ -605,7 +540,8 @@ function RouteContent({
   forecastEdits,
   classifications,
   prospects,
-  addedUserIds,
+  teamUserOverrides,
+  addedTeamUsers,
   notifications,
   onSetRevenue,
   onSetNote,
@@ -624,19 +560,8 @@ function RouteContent({
   // instead of pointing at ids another provider's directory may not even
   // contain.
   const boundaryKey = `${providerId}:${generation}`;
-  // Only Partner View still rides the folded book; every other route is
-  // scoped or static.
-  const isBookRoute = route === 'partner-view';
   return (
     <>
-      {/* Forecasting and Production Requirements do not read the book, but
-          its failure is still reported there as a plain banner; the book
-          routes get the failure with its retry inside their recovery region
-          below. The copy is the load's stable failure message either way —
-          never the rejection's own prose. */}
-      {error !== null && !isBookRoute && route !== 'data-connections' && (
-        <p className="rounded-card border border-ash p-4 text-sm text-bone">{error}</p>
-      )}
       {route === 'production-requirements' && (
         <FlaggedContent enabled={productionRequirementsEnabled}>
           <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:production-requirements`}>
@@ -647,10 +572,9 @@ function RouteContent({
       {route === 'data-connections' && (
         <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:data-connections`}>
           <DataConnectionsView
-            data={live}
-            loadError={error}
-            onRetry={retry}
-            addedUserIds={addedUserIds}
+            provider={provider}
+            teamUserOverrides={teamUserOverrides}
+            addedTeamUsers={addedTeamUsers}
             notifications={notifications}
             onAddTeamUser={onAddTeamUser}
             onSetTeamUserStatus={onSetTeamUserStatus}
@@ -707,70 +631,11 @@ function RouteContent({
           />
         </ErrorBoundary>
       )}
-      {isBookRoute && (
-        <BookRouteContent
-          route={route}
-          live={live}
-          loading={loading}
-          error={error}
-          retry={retry}
-          boundaryKey={boundaryKey}
-        />
-      )}
-    </>
-  );
-}
-
-/** The folded-book route: one load, one failure surface, one recovery region. */
-function BookRouteContent({
-  route,
-  live,
-  loading,
-  error,
-  retry,
-  boundaryKey,
-}: {
-  route: Route;
-  live: DashboardData | null;
-  loading: boolean;
-  error: string | null;
-  retry: () => void;
-  boundaryKey: string;
-}) {
-  // The book routes' recovery region: it survives the failure → recovered
-  // transition, so a successful retry lands focus on the named region rather
-  // than dropping it to the document body.
-  const recovery = useRetryRecovery('dashboard data', error !== null);
-  return (
-    <div ref={recovery.regionRef} {...recovery.regionProps}>
-      {/* The legacy book load is still one logical unit — the scoped-route
-          migration chain owns splitting it — so its failure names the load
-          and retries it as a unit. */}
-      {error !== null && (
-        <div className="rounded-card border border-ash p-4">
-          <QueryFailure
-            text="Dashboard data unavailable"
-            retryLabel="dashboard data"
-            error={error}
-            onRetry={recovery.armRetry(retry)}
-          />
-        </div>
-      )}
-      {/* The book on screen always belongs to the committed provider: a
-          switch keeps the old book while the candidate is only requested,
-          and the commit drops it for a loading state until the new
-          provider's own data arrives. There is no frame in between. */}
-      {loading && !live && (
-        <p className="flex items-center gap-2 py-32 font-mono text-xs uppercase tracking-[0.08em] text-granite">
-          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-signal" />
-          Loading dashboard data
-        </p>
-      )}
-      {live !== null && (
-        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:${route}`}>
-          {route === 'partner-view' && <PartnerView data={live} />}
+      {route === 'partner-view' && (
+        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:partner-view`}>
+          <PartnerView provider={provider} prospects={prospects} />
         </ErrorBoundary>
       )}
-    </div>
+    </>
   );
 }

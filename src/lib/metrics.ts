@@ -292,12 +292,6 @@ export function quarterlyClosedWonAndTarget(
   }));
 }
 
-export function ytdTarget(targets: Target[]): number {
-  return targets
-    .filter((target) => target.quarter.startsWith(FISCAL_YEAR))
-    .reduce((sum, target) => sum + target.revenueTarget, 0);
-}
-
 export interface PhaseWindow {
   phase: FiscalPhase;
   /** Phase start (UTC midnight). */
@@ -628,16 +622,36 @@ export function pendingRegistrations(
     .sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
 }
 
-/** Most recent registrations for one partner. */
-export function recentRegistrations(
-  registrations: DealRegistration[],
-  partnerId: string,
-  limit: number,
-): DealRegistration[] {
-  return registrations
-    .filter((reg) => reg.partnerId === partnerId)
-    .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
-    .slice(0, limit);
+/**
+ * Registrations across every status, newest submission first with the id as
+ * tiebreak: a total order over an immutable book, which is what makes a
+ * cursor walk visit every row exactly once. This is the registration
+ * history's stable order behind `listRecentRegistrations`.
+ */
+export function registrationsNewestFirst(registrations: DealRegistration[]): DealRegistration[] {
+  return [...registrations].sort((a, b) =>
+    a.submittedAt === b.submittedAt
+      ? a.id.localeCompare(b.id)
+      : new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime(),
+  );
+}
+
+/**
+ * The notification roster with the session's overlays applied: status and
+ * routing patches fold into the provider's roster by user id, and users
+ * added this session append after it. The provider's roster stays the source
+ * of truth — a patch naming an unknown id applies to nothing, and an
+ * addition is the session's own row. Pure: inputs are not mutated.
+ */
+export function applyTeamRosterOverlays(
+  users: readonly TeamUser[],
+  overrides: Record<string, Partial<TeamUser>> = {},
+  added: readonly TeamUser[] = [],
+): TeamUser[] {
+  const base = users.map((user) =>
+    overrides[user.id] ? { ...user, ...overrides[user.id] } : user,
+  );
+  return [...base, ...added];
 }
 
 // ---- forecast quality ------------------------------------------------------
