@@ -182,18 +182,6 @@ describe('useRegistrationOpsQueries (VAL-DATA-015)', () => {
       'listPendingRegistrations',
       'listUnconvertedRegistrations',
     ]);
-    // The retired whole-book reads are not part of this route's world.
-    for (const legacy of [
-      'listOpportunities',
-      'listRegistrations',
-      'listPartners',
-      'listPartnerManagers',
-      'listActivities',
-      'listCertifications',
-      'getTargets',
-    ]) {
-      expect(calls).not.toContain(legacy);
-    }
     // Every row collection is one bounded page request.
     for (const pageQuery of [
       'listPendingRegistrations',

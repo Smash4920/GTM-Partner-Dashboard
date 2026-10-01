@@ -810,14 +810,6 @@ describe('cancellation', () => {
     const local = new MockDataProvider(makeProviderBook());
 
     const attempts: Promise<unknown>[] = [
-      local.listPartnerManagers(INTERNAL_DEMO_SCOPE, context),
-      local.listPartners(INTERNAL_DEMO_SCOPE, context),
-      local.listRegistrations(INTERNAL_DEMO_SCOPE, context),
-      local.listOpportunities(INTERNAL_DEMO_SCOPE, context),
-      local.getTargets(INTERNAL_DEMO_SCOPE, context),
-      local.listActivities(INTERNAL_DEMO_SCOPE, context),
-      local.listCertifications(INTERNAL_DEMO_SCOPE, context),
-      local.listTeamUsers(INTERNAL_DEMO_SCOPE, context),
       local.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter }, context),
       local.getWeightedForecast(INTERNAL_DEMO_SCOPE, { quarter }, context),
       local.getForecastQuality(INTERNAL_DEMO_SCOPE, { quarter }, 3, context),
@@ -950,26 +942,42 @@ describe('demo access scope isolation (VAL-DATA-003)', () => {
   const scopedProvider = new MockDataProvider(scopedBook);
   const partnerScope = { audience: 'partner', partnerId: 'partner-1' } as const;
 
-  it('scopes every legacy collection before it crosses the seam', async () => {
-    expect((await scopedProvider.listPartners(partnerScope)).map((p) => p.id)).toEqual([
-      'partner-1',
-    ]);
-    expect((await scopedProvider.listOpportunities(partnerScope)).map((o) => o.id)).toEqual([
-      'opp-open',
-    ]);
-    // The conflict drops on BOTH sides of it; the clean registration stays.
-    expect((await scopedProvider.listRegistrations(partnerScope)).map((r) => r.id)).toEqual([
-      'reg-clean',
-    ]);
-    expect((await scopedProvider.getTargets(partnerScope)).map((t) => t.partnerId)).toEqual([
-      'partner-1',
-    ]);
-    expect((await scopedProvider.listCertifications(partnerScope)).map((c) => c.partnerId)).toEqual(
-      ['partner-1'],
+  it('scopes every collection behind the scoped queries, before it crosses the seam', async () => {
+    const { data: roster } = await scopedProvider.getPartnerRoster(partnerScope, {});
+    expect(roster.map((p) => p.id)).toEqual(['partner-1']);
+
+    const { data: opportunities } = await scopedProvider.listScopedOpportunities(
+      partnerScope,
+      { phase: 'fy' },
+      { limit: 25 },
     );
+    expect(opportunities.rows.map((row) => row.id)).toEqual(['opp-open']);
+
+    // The conflict drops on BOTH sides of it; the clean registration stays.
+    const { data: registrations } = await scopedProvider.listRecentRegistrations(
+      partnerScope,
+      {},
+      { limit: 25 },
+    );
+    expect(registrations.rows.map((row) => row.id)).toEqual(['reg-clean']);
+
+    // Targets scope through the summary: partner-1's 100k, never the org's 400k.
+    const { data: summary } = await scopedProvider.getPerformanceSummary(partnerScope, {
+      phase: 'q3',
+    });
+    expect(summary.target).toBe(100_000);
+
+    const { data: certification } = await scopedProvider.getPartnerCertification(partnerScope, {
+      partnerId: 'partner-1',
+    });
+    expect(certification?.partner.id).toBe('partner-1');
+    expect(certification?.certification?.partnerStrategistsCertified).toBe(1);
+
     // The internal directories: empty for a partner audience.
-    expect(await scopedProvider.listPartnerManagers(partnerScope)).toEqual([]);
-    expect(await scopedProvider.listTeamUsers(partnerScope)).toEqual([]);
+    const { data: managers } = await scopedProvider.getManagerDirectory(partnerScope);
+    expect(managers).toEqual([]);
+    const { data: team } = await scopedProvider.getTeamRoster(partnerScope, {});
+    expect(team).toEqual([]);
   });
 
   it('computes the summary from the scoped rows, before aggregation', async () => {
@@ -1043,8 +1051,15 @@ describe('demo access scope isolation (VAL-DATA-003)', () => {
 
   it('answers an unknown partner with empty collections, never the book', async () => {
     const nobody = { audience: 'partner', partnerId: 'partner-absent' } as const;
-    expect(await scopedProvider.listPartners(nobody)).toEqual([]);
-    expect(await scopedProvider.listOpportunities(nobody)).toEqual([]);
+    const { data: roster } = await scopedProvider.getPartnerRoster(nobody, {});
+    expect(roster).toEqual([]);
+    const { data: opportunities } = await scopedProvider.listScopedOpportunities(
+      nobody,
+      { phase: 'fy' },
+      { limit: 25 },
+    );
+    expect(opportunities.rows).toEqual([]);
+    expect(opportunities.totalCount).toBe(0);
     const { data: summary } = await scopedProvider.getForecastSummary(nobody, { quarter });
     expect(summary.openPipelineValue).toBe(0);
     expect(summary.openCount).toBe(0);
@@ -1054,12 +1069,6 @@ describe('demo access scope isolation (VAL-DATA-003)', () => {
 
   it('no partner-audience answer carries another partner’s identifiers anywhere inside it', async () => {
     const answers = await Promise.all([
-      scopedProvider.listPartners(partnerScope),
-      scopedProvider.listOpportunities(partnerScope),
-      scopedProvider.listRegistrations(partnerScope),
-      scopedProvider.getTargets(partnerScope),
-      scopedProvider.listActivities(partnerScope),
-      scopedProvider.listCertifications(partnerScope),
       scopedProvider.getForecastSummary(partnerScope, { quarter }),
       scopedProvider.getWeightedForecast(partnerScope, { quarter }),
       scopedProvider.getForecastQuality(partnerScope, { quarter }, 3),

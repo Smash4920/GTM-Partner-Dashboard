@@ -439,8 +439,8 @@ const UTILITY_REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
  * the codebase, so the test harness came first. Doing both against mock data
  * answered the only question that really matters — do the views survive
  * pagination and server-side aggregation? — for the price of a refactor rather
- * than the price of a warehouse. The answer was yes, with three views migrated
- * and five to go.
+ * than the price of a warehouse. The answer was yes: all eight routes migrated,
+ * and the legacy whole-book contract is deleted.
  */
 interface MigrationPhase {
   phase: string;
@@ -481,10 +481,10 @@ const MIGRATION_PHASES: MigrationPhase[] = [
     subtitle: 'No infrastructure required · landed in demo mode',
     demoMode: true,
     status:
-      'Done for Forecasting, Home, Partner Performance, Deal Reg Ops, and Activity Tracking · Partner View still on the old contract',
+      'Done · every route reads scoped queries, and the legacy whole-book contract is deleted',
     items: [
       {
-        text: 'DataProvider is split in two: the scoped aggregates and cursor-paginated row lists that are the target shape, and the eight list-everything calls still being retired. Only Partner View reads the second.',
+        text: 'DataProvider was split in two — the scoped aggregates and cursor-paginated row lists that are the target shape, and the eight list-everything calls — and every route moved across. The legacy half and its loader are now deleted, so the interface ships only bounded answers.',
         demo: 'complete',
       },
       {

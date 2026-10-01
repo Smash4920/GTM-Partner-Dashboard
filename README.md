@@ -604,13 +604,17 @@ automated release history, so the first release does not claim older changes.
 ## Data contract (the integration seam)
 
 The UI only talks to the `DataProvider` interface
-([`src/data/DataProvider.ts`](src/data/DataProvider.ts)), which is mid-migration
-and deliberately reads that way. Two families:
-
-**The target shape — scoped aggregates and paginated rows.** A caller states a
-scope (a fiscal quarter, optionally one partner manager, plus the session's
-uncommitted edits) and receives an answer whose size does not depend on the size
-of the book. **Every route is built on it today.**
+([`src/data/DataProvider.ts`](src/data/DataProvider.ts)): scoped aggregates and
+paginated rows. A caller states a scope (a fiscal quarter, optionally one
+partner manager, plus the session's uncommitted edits) and receives an answer
+whose size does not depend on the size of the book. **Every route is built on
+it**, and the migration is complete at the seam: the eight list-everything
+calls (`listPartners()`, `listOpportunities()`, `listRegistrations()`,
+`getTargets()`, `listPartnerManagers()`, `listActivities()`,
+`listCertifications()`, `listTeamUsers()`) and the `useDashboardData` loader
+that folded them into one `DashboardData` are deleted, so no caller — route,
+shell, or provider — can ask for the whole book any more. The cost those calls
+carried at volume is measured in [`docs/migration-plan.md`](docs/migration-plan.md).
 
 | Method                               | Returns                                                            |
 | ------------------------------------ | ------------------------------------------------------------------ |
@@ -650,14 +654,7 @@ typed warnings. Partial answers stay visible with their warnings next to them
 — a reconstructed weekly history or an unattributed opportunity is disclosed,
 never smoothed over.
 
-**The shape being retired — eight list-everything calls.** `listPartners()`,
-`listOpportunities()`, `listRegistrations()`, `getTargets()`,
-`listPartnerManagers()`, `listActivities()`, `listCertifications()`,
-`listTeamUsers()`. No route reads them any more — Partner View, the last to
-move off, now asks for scoped answers like every other view — and they leave
-the interface with `useDashboardData`, the loader that still folds them.
-
-**Every method — both families — takes a required demo access scope first**
+**Every method takes a required demo access scope first**
 ([`src/data/accessScope.ts`](src/data/accessScope.ts)): `{ audience:
 'internal' }`, optionally narrowed to one partner manager, or `{ audience:
 'partner', partnerId }`. Providers apply it before any aggregation, ordering,
@@ -674,7 +671,7 @@ Prod Only. No feature flag can change what a scope returns; that invariance
 is pinned in `src/data/accessScope.test.ts` and enforced by the module
 boundary that keeps flag code out of the data layer.
 
-`MockDataProvider` fills both with deterministic, seeded data. To go live,
+`MockDataProvider` fills it with deterministic, seeded data. To go live,
 implement the interface against your CRM (HubSpot, Salesforce) or warehouse
 (Snowflake, Looker) and swap the provider — no view code changes. The scoped
 side is where a server does the arithmetic: `src/lib/metrics.ts` is the

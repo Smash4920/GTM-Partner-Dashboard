@@ -19,6 +19,14 @@ class Inspectable extends ScaleDataProvider {
   get snapshotRows() {
     return this.data.snapshots;
   }
+
+  get partners() {
+    return this.data.partners;
+  }
+
+  get opportunities() {
+    return this.data.opportunities;
+  }
 }
 
 const scaled = new Inspectable(SCALE, base);
@@ -35,9 +43,9 @@ describe('ScaleDataProvider', () => {
     expect(base.partnerManagers).toHaveLength(5);
   });
 
-  it('keeps every copy internally consistent', async () => {
-    const partners = await scaled.listPartners(INTERNAL_DEMO_SCOPE);
-    const opportunities = await scaled.listOpportunities(INTERNAL_DEMO_SCOPE);
+  it('keeps every copy internally consistent', () => {
+    const partners = scaled.partners;
+    const opportunities = scaled.opportunities;
     const snapshotRows = scaled.snapshotRows;
 
     expect(new Set(partners.map((partner) => partner.id)).size).toBe(partners.length);
@@ -52,7 +60,7 @@ describe('ScaleDataProvider', () => {
     expect(snapshotRows.every((row) => opportunityIds.has(row.opportunityId))).toBe(true);
   });
 
-  it('answers the scoped contract at the same size, and the legacy one at 5×', async () => {
+  it('answers the scoped contract at the same shape, with 5× the values', async () => {
     const { data: weeks, meta } = await scaled.getWeeklyForecastSeries(INTERNAL_DEMO_SCOPE, {
       quarter,
     });
@@ -77,13 +85,6 @@ describe('ScaleDataProvider', () => {
     expect(summary.openPipelineValue).toBe(flatSummary.openPipelineValue * SCALE);
     // The 5× book is a different answer, and the envelope says so.
     expect(meta.providerId).toBe('scaled');
-
-    expect((await scaled.listOpportunities(INTERNAL_DEMO_SCOPE)).length).toBe(
-      base.opportunities.length * SCALE,
-    );
-    expect((await scaled.listPartners(INTERNAL_DEMO_SCOPE)).length).toBe(
-      base.partners.length * SCALE,
-    );
   });
 
   it('defaults to the multiple the demo advertises', () => {
@@ -94,8 +95,8 @@ describe('ScaleDataProvider', () => {
     const one = new ScaleDataProvider(1, base);
     expect(one.size.opportunities).toBe(base.opportunities.length);
     expect(one.size.snapshots).toBe(base.snapshots.length);
-    expect((await one.listOpportunities(INTERNAL_DEMO_SCOPE))[0]?.id).toBe(
-      base.opportunities[0]?.id,
-    );
+    const { data: summary } = await one.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter });
+    const { data: flatSummary } = await flat.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter });
+    expect(summary).toEqual(flatSummary);
   });
 });

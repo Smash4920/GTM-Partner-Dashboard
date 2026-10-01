@@ -41,7 +41,7 @@ export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
     id: 'scaled',
     label: 'Scaled 100×',
     summary:
-      '100 copies of the book: 2,500 partners, 21,300 opportunities, 191,000 weekly snapshot rows — about 45 MB of JSON, and ~87% of it snapshots. The scoped queries still return the same kilobytes (five aggregates, 25 rows a page) and the same latency; the load-everything path is what changes, which is the entire argument. The aggregation still runs in this tab, because the mock stands in for the server, so the queue of complaints is honest about what a real one would pre-compute.',
+      '100 copies of the book: 2,500 partners, 21,300 opportunities, 191,000 weekly snapshot rows — about 45 MB of JSON, and ~87% of it snapshots. The scoped queries still return the same kilobytes (five aggregates, 25 rows a page) and the same latency, and there is no load-everything path left to degrade — which is the entire argument. The aggregation still runs in this tab, because the mock stands in for the server, so the queue of complaints is honest about what a real one would pre-compute.',
   },
 ];
 

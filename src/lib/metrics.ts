@@ -19,7 +19,6 @@ import {
 } from '../data/constants';
 import type {
   ActivityMeeting,
-  DashboardData,
   DealRegistration,
   FiscalPhase,
   ForecastCategory,
@@ -474,32 +473,6 @@ export interface LeaderboardRow {
   openCount: number;
   closedWonValue: number;
   winRate: number;
-}
-
-/** Ranks partners on closed-won for the given phase, then on open pipeline. */
-export function partnerLeaderboard(
-  data: DashboardData,
-  oppType: OpportunityType | 'all',
-  partnerIds?: Set<string>,
-  phase: FiscalPhase = 'fy',
-): LeaderboardRow[] {
-  const opps = filterByType(data.opportunities, oppType);
-  const rows = data.partners
-    .filter((partner) => !partnerIds || partnerIds.has(partner.id))
-    .map((partner) => {
-      const partnerOpps = opps.filter((opp) => opp.partnerId === partner.id);
-      const pipeline = openPipeline(partnerOpps);
-      return {
-        partner,
-        openPipelineValue: pipeline.value,
-        openCount: pipeline.count,
-        closedWonValue: closedWonForPhase(partnerOpps, phase),
-        winRate: winRateForPhase(partnerOpps, phase),
-      };
-    });
-  return rows.sort(
-    (a, b) => b.closedWonValue - a.closedWonValue || b.openPipelineValue - a.openPipelineValue,
-  );
 }
 
 export interface WeeklyActivityRow {

@@ -1,6 +1,6 @@
 ---
 name: migrate-dashboard-data-view
-description: Migrate a GTM Partner Dashboard view from the legacy load-everything DashboardData flow to scoped aggregates and paginated DataProvider queries. Use for DataProvider contract changes, view data migrations, provider implementations, or removal of legacy list methods.
+description: Extend the GTM Partner Dashboard data layer with scoped aggregates and paginated DataProvider queries. Use for DataProvider contract changes, view data work, provider implementations, or removal of list methods. (The load-everything DashboardData flow this skill originally migrated views away from is deleted; every route already reads the scoped contract.)
 ---
 
 # Migrate a dashboard view to scoped data
@@ -93,15 +93,15 @@ Create a focused hook under `src/data/` rather than fetching in the view.
 
 ## Migrate the view
 
-1. Replace only the target view's legacy `DashboardData` reads with the new
-   hook state.
+1. Replace only the target view's reads with the new hook state; keep every
+   untouched view on its existing hook.
 2. Keep session-only writes in `src/App.tsx`; do not imply persistence or add
    browser storage.
 3. Preserve accessible labels, native controls, responsive behavior, and
    Tailwind design tokens.
 4. For Partner View, test that Sell To opportunities, conflicting
    registrations, and other partners' records cannot appear.
-5. Remove a legacy prop, field, method, or loader call only after a repository
+5. Remove a prop, field, method, or loader call only after a repository
    search proves it has no remaining consumer.
 
 ## Prove the migration
@@ -123,5 +123,5 @@ npm run test:e2e
 npm run bundle:check
 ```
 
-In the final summary, name the legacy calls removed, the new bounded query
-shapes, the scope and edit semantics preserved, and the exact checks run.
+In the final summary, name the calls removed, the new bounded query shapes,
+the scope and edit semantics preserved, and the exact checks run.

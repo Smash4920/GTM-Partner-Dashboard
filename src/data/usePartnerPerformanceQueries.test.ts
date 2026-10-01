@@ -203,18 +203,6 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
       'listScopedOpportunities',
       'listUnconvertedRegistrations',
     ]);
-    // The retired whole-book reads are not part of this route's world.
-    for (const legacy of [
-      'listOpportunities',
-      'listRegistrations',
-      'listPartners',
-      'listPartnerManagers',
-      'listActivities',
-      'listCertifications',
-      'getTargets',
-    ]) {
-      expect(calls).not.toContain(legacy);
-    }
     // Every row collection is one bounded page request.
     for (const pageQuery of [
       'listScopedOpportunities',

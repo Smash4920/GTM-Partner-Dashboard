@@ -95,16 +95,13 @@ survivable.
 - `src/components/`: reusable UI and domain components.
 - `src/lib/`: pure formatting, fiscal-calendar, structured logging,
   notification, and metric helpers. Unit tests are colocated as `*.test.ts`.
-- `src/data/types.ts`: shared domain types, the `DashboardData` shape the client
-  receives, and `ProviderBook`, which extends it with the provider-only history.
+- `src/data/types.ts`: shared domain types and `ProviderBook`, the provider-only
+  book (collections plus weekly snapshot history) that never crosses the seam
+  whole.
 - `src/data/constants.ts`: fiscal dates, service levels, labels, and other
   shared domain constants.
-- `src/data/DataProvider.ts`: the read-side integration boundary used by the UI.
-  It carries the retired legacy interface alongside the scoped one until the
-  legacy loader is deleted; see below.
-- `src/data/useDashboardData.ts`: folds the eight legacy list-everything calls
-  into one `DashboardData`. No route reads it any more; it is deleted with
-  `LegacyBookProvider`.
+- `src/data/DataProvider.ts`: the read-side integration boundary used by the UI —
+  the scoped contract below, and nothing else.
 - `src/data/useForecastQueries.ts` and its siblings (`useHomeQueries.ts`,
   `usePartnerPerformanceQueries.ts`, `useRegistrationOpsQueries.ts`,
   `useActivityQueries.ts`, `usePartnerViewQueries.ts`,
@@ -127,13 +124,12 @@ survivable.
   them directly. Tests may cross these boundaries to build fixtures.
 - Every route reads the scoped contract through its own query hook and passes
   the session's edits _into_ its queries rather than receiving a folded book;
-  views must not import mock records directly. The merged `DashboardData` and
-  its loader remain in the tree only until the legacy interface is deleted.
-- **`DataProvider` is two interfaces, deliberately.** `ScopedQueryProvider` is
-  the shape every route uses — a scope in, an aggregate whose size does not
-  depend on the book or one page of rows out. `LegacyBookProvider` is the
-  eight list-everything calls, kept only until `useDashboardData` is deleted
-  with them. New view needs are new scoped queries: add them to the interface,
+  views must not import mock records directly.
+- **`DataProvider` is one interface: the scoped contract.** A scope in, an
+  aggregate whose size does not depend on the book or one page of rows out.
+  The legacy list-everything interface and its `useDashboardData` loader were
+  deleted once every route migrated, so the whole book can no longer cross
+  the seam. New view needs are new scoped queries: add them to the interface,
   implement them in `MockDataProvider` by delegating to `src/lib/metrics.ts`,
   and read them through the route's hook.
 - When adding a method to `DataProvider`, list it in `DATA_PROVIDER_METHODS`
@@ -143,8 +139,8 @@ survivable.
 - **Weekly pipeline history never crosses the seam whole.** It is ~87% of the
   payload at production volume, so `listPipelineSnapshots()` is gone from the
   client contract and history leaves only through `getWeeklyForecastSeries()` as
-  a handful of buckets. `ProviderBook` holds the snapshot rows; `DashboardData`
-  does not.
+  a handful of buckets. `ProviderBook` holds the snapshot rows; no client-facing
+  type does.
 - `src/lib/metrics.ts` is the _specification_ a server implementation has to
   match, not just the current implementation. Its suite plus
   `src/data/mock/MockDataProvider.test.ts` are the conformance check.

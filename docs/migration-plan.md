@@ -23,13 +23,14 @@ ingestion, then persisted writes and audit, then production operations. The
 phases below follow that order, and no phase may be pulled ahead of identity
 and server-side row enforcement.
 
-## Where the current design breaks
+## Where the pre-migration design broke
 
-Every view today reads a single in-memory `DashboardData` containing the entire
-ecosystem. `useDashboardData` fetches nine collections in one `Promise.all` and
-`src/lib/metrics.ts` aggregates them in the browser on every render. That is the
-right shape for a deterministic demo and it does not survive contact with real
-volume.
+Every view read a single in-memory `DashboardData` containing the entire
+ecosystem. `useDashboardData` fetched nine collections in one `Promise.all` and
+`src/lib/metrics.ts` aggregated them in the browser on every render. That was the
+right shape for a deterministic demo and it could not survive contact with real
+volume. Phase 1 below replaced it end to end; this section is the measurement
+that justified doing so.
 
 Extrapolating from measured object sizes (~600 B per `Opportunity`, ~250 B per
 `PipelineSnapshot`), retaining three years of history:
@@ -64,9 +65,10 @@ memory, and vice versa. Both need the same underlying change.
 
 **The server ships answers, not books.**
 
-Today `metrics.ts` is the implementation: ~1,100 lines of aggregation running in
-the browser over the full dataset. In production it becomes the _specification_
-a server implementation must match.
+Before the rewrite, `metrics.ts` was the implementation: ~1,100 lines of
+aggregation running in the browser over the full dataset. It now sits behind
+the `MockDataProvider` seam — the in-browser stand-in for the server — and in
+production it becomes the _specification_ a server implementation must match.
 
 That reframing is more tractable than it sounds, because the aggregate return
 types already exist as exported interfaces: `RegistrationFunnel`, `StageRow`,
@@ -278,12 +280,12 @@ The weekly snapshot job must be **idempotent**: a unique key on
 
 - Replace the single `Promise.all` in `useDashboardData` with a server-state
   library (TanStack Query) and **per-widget** loading and error states, so one
-  slow endpoint no longer blanks the whole page. _Partly done:_ the migrated
-  views have hand-rolled per-widget states (`useForecastQueries.ts` and its
-  siblings through `usePartnerViewQueries.ts` and
-  `useDataConnectionsQueries.ts`), and every route now loads through them.
-  The library is worth adopting when there are several migrated views to
-  share it, not before.
+  slow endpoint no longer blanks the whole page. _Done at the seam:_ every
+  route loads through its hand-rolled per-widget hook (`useForecastQueries.ts`
+  and its siblings through `usePartnerViewQueries.ts` and
+  `useDataConnectionsQueries.ts`), and `useDashboardData` itself is deleted.
+  The library stays optional — it is worth adopting when the hooks outgrow
+  their shared helpers, not before.
 - Virtualize `OpportunityTable` and `ForecastTable`; give `Leaderboard` a real
   limit instead of `limit={uniquePartners}`. _Not started_ — the scoped contract
   now bounds what reaches the client, so this is comfort rather than survival.
@@ -362,31 +364,36 @@ Ship two additional providers behind the same contract:
   holds at volume is demonstrable rather than asserted.
 
 **Outcome, as built.** Forecasting migrated end to end first; Home and Partner
-Performance followed, and Deal Reg Ops and Activity Tracking have since joined
-them — the manager/partner selection is a provider input, the Log Meetings
-calendar is a cursor-paginated week of raw calls, and every card carries its
-own loading, error, retry, and metadata state. Partner View and Data
-Connections have since joined them — the partner presentation reads only its
-own partner-audience projection, and the connection catalog is static while
-its roster and alert panels carry their own query states — so no route reads
-the list-everything contract; it stays until its loader is deleted. Measured
+Performance followed, and Deal Reg Ops, Activity Tracking, Partner View, and
+Data Connections joined them — the manager/partner selection is a provider
+input, the Log Meetings calendar is a cursor-paginated week of raw calls, the
+partner presentation reads only its own partner-audience projection, the
+connection catalog is static while its roster and alert panels carry their own
+query states, and every card carries its own loading, error, retry, and
+metadata state. With all eight routes reading the scoped contract, the legacy
+`LegacyBookProvider` interface, its eight list-everything methods, and the
+`useDashboardData` loader were deleted: `DataProvider` _is_ the scoped contract
+now, and the connection map covers every remaining method. Measured
 on the built demo,
 which is honest about what the mock can and cannot show. Medians over five runs
 at 100× — 2,500 partners, 21,300 opportunities, 191,000 snapshot rows, ~45 MB of
 JSON:
 
-| Call                                            | Payload                | Median          |
-| ----------------------------------------------- | ---------------------- | --------------- |
-| `getForecastSummary`                            | 217 B                  | 15 ms           |
-| `getManagerForecastGroups`                      | 578 B                  | 13 ms           |
-| `getForecastQuality`                            | < 1 KB                 | 14 ms           |
-| `listQuarterOpportunities`                      | 7.8 KB, one page of 25 | 15 ms           |
-| `getWeeklyForecastSeries`                       | 4.2 KB, 13 buckets     | 106 ms          |
-| the five aggregates, as one view load           | ~13 KB                 | ~165 ms         |
-| `listOpportunities` (still on the old contract) | **7.5 MB**             | 0 ms in-process |
+| Call                                              | Payload                | Median          |
+| ------------------------------------------------- | ---------------------- | --------------- |
+| `getForecastSummary`                              | 217 B                  | 15 ms           |
+| `getManagerForecastGroups`                        | 578 B                  | 13 ms           |
+| `getForecastQuality`                              | < 1 KB                 | 14 ms           |
+| `listQuarterOpportunities`                        | 7.8 KB, one page of 25 | 15 ms           |
+| `getWeeklyForecastSeries`                         | 4.2 KB, 13 buckets     | 106 ms          |
+| the five aggregates, as one view load             | ~13 KB                 | ~165 ms         |
+| `listOpportunities` (the retired whole-book call) | **7.5 MB**             | 0 ms in-process |
 
 The week-over-week series is the whole argument in one line: 191,100 rows,
-35.9 MB, and the client now receives 13 buckets. What is left is in-process
+35.9 MB, and the client now receives 13 buckets. The last row is the measured
+cost of the retired contract — 7.5 MB for one list call, kept here as the
+baseline the scoped contract replaced; the method itself no longer exists.
+What is left is in-process
 work, because `MockDataProvider` stands in for the server and does the
 aggregation the browser used to do; that is the 100 ms and it is exactly the
 work a rollup table removes in Phase 3. What changed is the _shape_ of what

@@ -144,18 +144,6 @@ describe('useActivityQueries (VAL-DATA-015)', () => {
       'getWeeklyGoalProgress',
       'listWeeklyClassificationMeetings',
     ]);
-    // The retired whole-book reads are not part of this route's world.
-    for (const legacy of [
-      'listOpportunities',
-      'listRegistrations',
-      'listPartners',
-      'listPartnerManagers',
-      'listActivities',
-      'listCertifications',
-      'getTargets',
-    ]) {
-      expect(calls).not.toContain(legacy);
-    }
     // The classification calendar is one bounded page request.
     expect(calls.filter((method) => method === 'listWeeklyClassificationMeetings')).toHaveLength(1);
     expect(result.current.meetings.rows.length).toBeLessThanOrEqual(25);

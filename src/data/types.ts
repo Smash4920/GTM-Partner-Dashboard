@@ -261,7 +261,20 @@ export interface DashboardNotification {
   registrationId?: string;
 }
 
-export interface DashboardData {
+/**
+ * What a provider holds. None of it crosses the seam as a collection: the
+ * client receives scoped aggregates and cursor pages (see
+ * `src/data/DataProvider.ts`), never the book.
+ *
+ * `snapshots` is the sharpest case, and the whole argument for the scoped
+ * contract: weekly pipeline history is ~87% of the payload at production
+ * volume, and no screen wants it as rows — the week-over-week chart wants
+ * fourteen buckets. So it stays behind the seam, and
+ * `DataProvider.getWeeklyForecastSeries()` is the only way out. A provider
+ * that has no history may hold an empty array; the series then falls back to
+ * what the current book can say.
+ */
+export interface ProviderBook {
   partnerManagers: PartnerManager[];
   partners: Partner[];
   registrations: DealRegistration[];
@@ -271,20 +284,6 @@ export interface DashboardData {
   certifications: PartnerCertification[];
   /** Internal partner-team roster projected from the identity provider. */
   teamUsers: TeamUser[];
-}
-
-/**
- * What a provider holds, as distinct from what the client receives.
- *
- * The difference is `snapshots`, and it is the whole argument for the scoped
- * contract: weekly pipeline history is ~87% of the payload at production
- * volume, and no screen wants it as rows — the week-over-week chart wants
- * fourteen buckets. So it stays behind the seam, and
- * `DataProvider.getWeeklyForecastSeries()` is the only way out. A provider
- * that has no history may hold an empty array; the series then falls back to
- * what the current book can say.
- */
-export interface ProviderBook extends DashboardData {
   /** Append-only weekly recordings of the open book. Never corrected. */
   snapshots: PipelineSnapshot[];
 }

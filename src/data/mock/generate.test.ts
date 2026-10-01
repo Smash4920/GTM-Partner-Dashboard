@@ -396,35 +396,22 @@ describe('generateDashboardData', () => {
 });
 
 describe('MockDataProvider', () => {
-  it('fills every DataProvider collection', async () => {
+  it('serves the generated book through the scoped contract', async () => {
     const provider = new MockDataProvider();
-    const [
-      managers,
-      partners,
-      registrations,
-      opportunities,
-      targets,
-      activities,
-      certifications,
-      teamUsers,
-    ] = await Promise.all([
-      provider.listPartnerManagers(INTERNAL_DEMO_SCOPE),
-      provider.listPartners(INTERNAL_DEMO_SCOPE),
-      provider.listRegistrations(INTERNAL_DEMO_SCOPE),
-      provider.listOpportunities(INTERNAL_DEMO_SCOPE),
-      provider.getTargets(INTERNAL_DEMO_SCOPE),
-      provider.listActivities(INTERNAL_DEMO_SCOPE),
-      provider.listCertifications(INTERNAL_DEMO_SCOPE),
-      provider.listTeamUsers(INTERNAL_DEMO_SCOPE),
-    ]);
+    // The collections that cross as directories and pages: the scoped
+    // contract's counts are the generator's volumes, pinned above.
+    const { data: managers } = await provider.getManagerDirectory(INTERNAL_DEMO_SCOPE);
     expect(managers).toHaveLength(5);
+    const { data: partners } = await provider.getPartnerRoster(INTERNAL_DEMO_SCOPE, {});
     expect(partners).toHaveLength(25);
-    expect(registrations).toHaveLength(180);
-    expect(opportunities.length).toBeGreaterThan(200);
-    expect(targets).toHaveLength(99);
-    expect(activities.length).toBeGreaterThan(100);
-    expect(certifications).toHaveLength(25);
-    expect(teamUsers).toHaveLength(8);
+    const { data: team } = await provider.getTeamRoster(INTERNAL_DEMO_SCOPE, {});
+    expect(team).toHaveLength(8);
+    const { data: registrations } = await provider.listRecentRegistrations(
+      INTERNAL_DEMO_SCOPE,
+      {},
+      { limit: 1 },
+    );
+    expect(registrations.totalCount).toBe(180);
   });
 
   it('keeps weekly history off the client contract', async () => {

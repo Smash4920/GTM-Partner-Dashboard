@@ -41,9 +41,7 @@ import type {
   DealRegistration,
   Opportunity,
   Partner,
-  PartnerCertification,
   PartnerManager,
-  Target,
   TeamUser,
 } from './types';
 
@@ -63,57 +61,6 @@ export class TracedDataProvider implements DataProvider {
     run: (context: QueryContext) => Promise<T>,
   ): Promise<T> {
     return traceProviderRequest(operation, (trace) => run({ ...context, trace }), context?.trace);
-  }
-
-  listPartnerManagers(access: DemoAccessScope, context?: QueryContext): Promise<PartnerManager[]> {
-    return this.request('listPartnerManagers', context, (withTrace) =>
-      this.inner.listPartnerManagers(access, withTrace),
-    );
-  }
-
-  listPartners(access: DemoAccessScope, context?: QueryContext): Promise<Partner[]> {
-    return this.request('listPartners', context, (withTrace) =>
-      this.inner.listPartners(access, withTrace),
-    );
-  }
-
-  listRegistrations(access: DemoAccessScope, context?: QueryContext): Promise<DealRegistration[]> {
-    return this.request('listRegistrations', context, (withTrace) =>
-      this.inner.listRegistrations(access, withTrace),
-    );
-  }
-
-  listOpportunities(access: DemoAccessScope, context?: QueryContext): Promise<Opportunity[]> {
-    return this.request('listOpportunities', context, (withTrace) =>
-      this.inner.listOpportunities(access, withTrace),
-    );
-  }
-
-  getTargets(access: DemoAccessScope, context?: QueryContext): Promise<Target[]> {
-    return this.request('getTargets', context, (withTrace) =>
-      this.inner.getTargets(access, withTrace),
-    );
-  }
-
-  listActivities(access: DemoAccessScope, context?: QueryContext): Promise<ActivityMeeting[]> {
-    return this.request('listActivities', context, (withTrace) =>
-      this.inner.listActivities(access, withTrace),
-    );
-  }
-
-  listCertifications(
-    access: DemoAccessScope,
-    context?: QueryContext,
-  ): Promise<PartnerCertification[]> {
-    return this.request('listCertifications', context, (withTrace) =>
-      this.inner.listCertifications(access, withTrace),
-    );
-  }
-
-  listTeamUsers(access: DemoAccessScope, context?: QueryContext): Promise<TeamUser[]> {
-    return this.request('listTeamUsers', context, (withTrace) =>
-      this.inner.listTeamUsers(access, withTrace),
-    );
   }
 
   getForecastSummary(

@@ -23,14 +23,6 @@ const quarter = 'FY27-Q3';
 function unscopedCalls(provider: DataProvider): (() => Promise<unknown>)[] {
   const missing = undefined as unknown as DemoAccessScope;
   return [
-    () => provider.listPartnerManagers(missing),
-    () => provider.listPartners(missing),
-    () => provider.listRegistrations(missing),
-    () => provider.listOpportunities(missing),
-    () => provider.getTargets(missing),
-    () => provider.listActivities(missing),
-    () => provider.listCertifications(missing),
-    () => provider.listTeamUsers(missing),
     () => provider.getForecastSummary(missing, { quarter }),
     () => provider.getWeightedForecast(missing, { quarter }),
     () => provider.getForecastQuality(missing, { quarter }, 3),
@@ -67,7 +59,7 @@ function unscopedCalls(provider: DataProvider): (() => Promise<unknown>)[] {
 }
 
 describe('DataProvider demo access scope (VAL-DATA-003)', () => {
-  it('keeps a closed inventory: exactly these thirty-five data-bearing methods exist', () => {
+  it('keeps a closed inventory: exactly these twenty-seven data-bearing methods exist', () => {
     expect([...DATA_PROVIDER_METHODS].sort()).toEqual([
       'getForecastQuality',
       'getForecastSummary',
@@ -83,25 +75,17 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       'getRegistrationOpsSummary',
       'getRegistrationSlaAlerts',
       'getStageBreakdown',
-      'getTargets',
       'getTeamRoster',
       'getTypeBreakdown',
       'getWeeklyActivitySeries',
       'getWeeklyForecastSeries',
       'getWeeklyGoalProgress',
       'getWeightedForecast',
-      'listActivities',
-      'listCertifications',
       'listDuplicateRegistrationGroups',
-      'listOpportunities',
-      'listPartnerManagers',
-      'listPartners',
       'listPendingRegistrations',
       'listQuarterOpportunities',
       'listRecentRegistrations',
-      'listRegistrations',
       'listScopedOpportunities',
-      'listTeamUsers',
       'listUnconvertedRegistrations',
       'listWeeklyClassificationMeetings',
     ]);
@@ -114,17 +98,18 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
     // the compile error, and an executed scope-less call belongs to the
     // fail-closed runtime test below.
     // @ts-expect-error the access scope is required, not optional
-    void (() => provider.listPartners());
+    void (() => provider.getPartnerRoster({}));
     // @ts-expect-error the access scope is required, not optional
     void (() => provider.getForecastSummary({ quarter }));
     // @ts-expect-error the access scope is required, not optional
     void (() => provider.getPartnerDirectory());
     // @ts-expect-error the audience is a closed set; there is no guest audience
-    void (() => provider.listPartners({ audience: 'guest' }));
+    void (() => provider.getPartnerRoster({ audience: 'guest' }, {}));
     // @ts-expect-error a partner-audience scope must name its partner
     void (() => provider.getForecastSummary({ audience: 'partner' }, { quarter }));
     // @ts-expect-error an internal scope cannot claim a partner id
-    void (() => provider.listOpportunities({ audience: 'internal', partnerId: 'partner-1' }));
+    const badScope: DemoAccessScope = { audience: 'internal', partnerId: 'partner-1' };
+    void badScope;
     // A well-formed scope type-checks: the constant itself is the proof.
     const scope: DemoAccessScope = INTERNAL_DEMO_SCOPE;
     expect(scope.audience).toBe('internal');
@@ -143,14 +128,6 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
     const provider = new MockDataProvider(makeProviderBook());
     const scope: DemoAccessScope = { audience: 'partner', partnerId: 'partner-1' };
     const results = await Promise.all([
-      provider.listPartnerManagers(scope),
-      provider.listPartners(scope),
-      provider.listRegistrations(scope),
-      provider.listOpportunities(scope),
-      provider.getTargets(scope),
-      provider.listActivities(scope),
-      provider.listCertifications(scope),
-      provider.listTeamUsers(scope),
       provider.getForecastSummary(scope, { quarter }),
       provider.getWeightedForecast(scope, { quarter }),
       provider.getForecastQuality(scope, { quarter }, 3),
@@ -179,6 +156,6 @@ describe('DataProvider demo access scope (VAL-DATA-003)', () => {
       provider.getRegistrationSlaAlerts(scope, {}, 8),
       provider.listWeeklyClassificationMeetings(scope, { partnerManagerId: 'pm-1' }, { limit: 5 }),
     ]);
-    expect(results).toHaveLength(35);
+    expect(results).toHaveLength(27);
   });
 });

@@ -47,5 +47,5 @@ dependencies, and tool caches are excluded.
 
 ## Skills
 
-- `.skills/migrate-dashboard-data-view/SKILL.md` — Migrate a GTM Partner Dashboard view from the legacy load-everything DashboardData flow to scoped aggregates and paginated DataProvider queries. Use for DataProvider contract changes, view data migrations, provider implementations, or removal of legacy list methods.
+- `.skills/migrate-dashboard-data-view/SKILL.md` — Extend the GTM Partner Dashboard data layer with scoped aggregates and paginated DataProvider queries. Use for DataProvider contract changes, view data work, provider implementations, or removal of list methods. (The load-everything DashboardData flow this skill originally migrated views away from is deleted; every route already reads the scoped contract.)
 - `.skills/release-and-deploy/SKILL.md` — Cut and deploy a GTM Partner Dashboard release. Use when merging to main, preparing release notes, deploying to Vercel, publishing GitHub Pages, or rolling back a bad deploy.

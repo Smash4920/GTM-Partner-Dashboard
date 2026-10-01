@@ -170,12 +170,6 @@ describe('useHomeQueries (VAL-DATA-014)', () => {
       'getWeeklyActivitySeries',
       'listPendingRegistrations',
     ]);
-    // The retired whole-book reads are not part of this route's world.
-    expect(calls).not.toContain('listOpportunities');
-    expect(calls).not.toContain('listRegistrations');
-    expect(calls).not.toContain('listPartners');
-    expect(calls).not.toContain('listActivities');
-    expect(calls).not.toContain('getTargets');
     // The queue page is bounded: one page request, under the maximum limit.
     expect(calls.filter((method) => method === 'listPendingRegistrations')).toHaveLength(1);
     expect(result.current.pending.rows.length).toBeLessThanOrEqual(7);

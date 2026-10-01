@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { CURRENT_FISCAL_QUARTER, FISCAL_PHASE_META, SNAPSHOT_DATE } from '../data/constants';
 import type {
   ActivityMeeting,
-  DashboardData,
   DealRegistration,
   Opportunity,
-  Partner,
   PipelineSnapshot,
   Target,
   TeamUser,
@@ -24,7 +22,6 @@ import {
   formatCoverage,
   openOpportunities,
   openPipeline,
-  partnerLeaderboard,
   phaseForQuarter,
   phaseWindow,
   quarterlyClosedWonAndTarget,
@@ -65,31 +62,6 @@ function registration(submittedAt: string): DealRegistration {
     amount: 50_000,
     submittedAt,
     status: 'pending',
-  };
-}
-
-const partner: Partner = {
-  id: 'p-01',
-  name: 'Northwind Solutions',
-  type: 'reseller',
-  tier: 'gold',
-  region: 'na',
-  accountManager: 'Dana Reyes',
-  partnerManagerId: 'pm-01',
-  joinedAt: '2024-01-01T00:00:00Z',
-};
-
-function dashboard(overrides: Partial<DashboardData>): DashboardData {
-  return {
-    partnerManagers: [],
-    partners: [],
-    registrations: [],
-    opportunities: [],
-    targets: [],
-    activities: [],
-    certifications: [],
-    teamUsers: [],
-    ...overrides,
   };
 }
 
@@ -406,42 +378,6 @@ describe('quarterlyClosedWonAndTarget', () => {
     expect(rows[2].closedWon).toBe(0);
     // Prior-year wins never appear in FY27 quarters.
     expect(rows.every((row) => row.closedWon < 999_999)).toBe(true);
-  });
-});
-
-// ---- leaderboard ------------------------------------------------------------
-
-describe('partnerLeaderboard', () => {
-  it('ranks partners by closed-won for the selected phase', () => {
-    const data = dashboard({
-      partners: [partner, { ...partner, id: 'p-02', name: 'Second Partner' }],
-      opportunities: [
-        opp({
-          id: 'a',
-          partnerId: 'p-01',
-          expectedCloseDate: '2026-08-05T00:00:00Z',
-          outcome: 'won',
-          closedAt: '2026-08-05T00:00:00Z',
-          forecastedRevenue: 10,
-        }),
-        opp({
-          id: 'b',
-          partnerId: 'p-02',
-          expectedCloseDate: '2026-05-05T00:00:00Z',
-          outcome: 'won',
-          closedAt: '2026-05-05T00:00:00Z',
-          forecastedRevenue: 20,
-        }),
-      ],
-    });
-
-    const q3 = partnerLeaderboard(data, 'all', undefined, 'q3');
-    expect(q3[0]?.partner.id).toBe('p-01');
-    expect(q3[0]?.closedWonValue).toBe(10);
-
-    const q2 = partnerLeaderboard(data, 'all', undefined, 'q2');
-    expect(q2[0]?.partner.id).toBe('p-02');
-    expect(q2[0]?.closedWonValue).toBe(20);
   });
 });
 

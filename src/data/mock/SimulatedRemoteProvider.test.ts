@@ -3,7 +3,6 @@ import { MockDataProvider } from './MockDataProvider';
 import { ScaleDataProvider } from './ScaleDataProvider';
 import { SimulatedRemoteProvider } from './SimulatedRemoteProvider';
 import { CURRENT_FISCAL_QUARTER } from '../constants';
-import { generateDashboardData } from './generate';
 import { INTERNAL_DEMO_SCOPE } from '../accessScope';
 
 const quarter = CURRENT_FISCAL_QUARTER;
@@ -13,7 +12,8 @@ const instant = { latencyMs: 0, failureRate: 0 };
 describe('SimulatedRemoteProvider', () => {
   it('passes the answer through when the wire is clear, under its own identity', async () => {
     const provider = new SimulatedRemoteProvider(new MockDataProvider(), instant);
-    await expect(provider.listPartners(INTERNAL_DEMO_SCOPE)).resolves.toHaveLength(25);
+    const { data: partners } = await provider.getPartnerRoster(INTERNAL_DEMO_SCOPE, {});
+    expect(partners).toHaveLength(25);
     // The envelope survives the hop, re-labelled: the committed provider is
     // the remote one, whatever the inner implementation called itself.
     await expect(
@@ -47,7 +47,7 @@ describe('SimulatedRemoteProvider', () => {
       const results: boolean[] = [];
       for (let call = 0; call < 12; call += 1) {
         results.push(
-          await provider.getTargets(INTERNAL_DEMO_SCOPE).then(
+          await provider.getManagerDirectory(INTERNAL_DEMO_SCOPE).then(
             () => true,
             () => false,
           ),
@@ -67,7 +67,7 @@ describe('SimulatedRemoteProvider', () => {
       seed: 1,
     });
     const startedAt = Date.now();
-    await provider.getTargets(INTERNAL_DEMO_SCOPE);
+    await provider.getManagerDirectory(INTERNAL_DEMO_SCOPE);
     // Jitter is 0.6–1.4× the base; only the floor is asserted, so the test
     // cannot flake on a slow machine.
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(20);
@@ -110,7 +110,7 @@ describe('SimulatedRemoteProvider', () => {
       const results: boolean[] = [];
       for (let call = 0; call < 4; call += 1) {
         results.push(
-          await provider.getTargets(INTERNAL_DEMO_SCOPE).then(
+          await provider.getManagerDirectory(INTERNAL_DEMO_SCOPE).then(
             () => true,
             () => false,
           ),
@@ -136,11 +136,15 @@ describe('SimulatedRemoteProvider', () => {
 
     // Unrelated calls before, between, and after the named method neither
     // consume the plan nor fail themselves.
-    await expect(provider.getTargets(INTERNAL_DEMO_SCOPE)).resolves.toBeInstanceOf(Array);
+    await expect(provider.getManagerDirectory(INTERNAL_DEMO_SCOPE)).resolves.toMatchObject({
+      data: expect.any(Array),
+    });
     await expect(provider.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter })).rejects.toThrow(
       'getForecastSummary failed in transit (simulated)',
     );
-    await expect(provider.listPartners(INTERNAL_DEMO_SCOPE)).resolves.toBeInstanceOf(Array);
+    await expect(provider.getPartnerDirectory(INTERNAL_DEMO_SCOPE)).resolves.toMatchObject({
+      data: expect.any(Array),
+    });
     // The plan is spent for that method; later calls pass despite the 100%
     // failure rate the draw would have applied.
     await expect(
@@ -166,9 +170,9 @@ describe('SimulatedRemoteProvider', () => {
           () => false,
         );
       outcomes.push(await attempt());
-      if (interleave) await provider.listPartners(INTERNAL_DEMO_SCOPE);
+      if (interleave) await provider.getPartnerDirectory(INTERNAL_DEMO_SCOPE);
       outcomes.push(await attempt());
-      if (interleave) await provider.getTargets(INTERNAL_DEMO_SCOPE);
+      if (interleave) await provider.getManagerDirectory(INTERNAL_DEMO_SCOPE);
       outcomes.push(await attempt());
       return outcomes;
     };
@@ -190,7 +194,7 @@ describe('SimulatedRemoteProvider', () => {
         // shift the named method's outcomes. The unrelated call has its own
         // pattern and may itself fail; that is not what is being measured.
         if (interleave) {
-          await provider.getTargets(INTERNAL_DEMO_SCOPE).then(
+          await provider.getManagerDirectory(INTERNAL_DEMO_SCOPE).then(
             () => true,
             () => false,
           );
@@ -269,11 +273,9 @@ describe('SimulatedRemoteProvider', () => {
       { limit: 4 },
     );
     expect(page.rows).toHaveLength(4);
-    // The roomy call comes back at 3× as well, which is and always was the
-    // problem the scoped calls do not have.
-    expect((await provider.listOpportunities(INTERNAL_DEMO_SCOPE)).length).toBe(
-      generateDashboardData().opportunities.length * 3,
-    );
+    // The page is the whole answer however large the book behind it: the
+    // total says 3×, the payload stays four rows.
+    expect(page.totalCount).toBeGreaterThan(page.rows.length);
   });
 
   it('aborts during the delay without invoking the inner provider', async () => {
@@ -315,7 +317,7 @@ describe('SimulatedRemoteProvider', () => {
     vi.useFakeTimers();
     try {
       const inner = new MockDataProvider();
-      const spy = vi.spyOn(inner, 'listPartners');
+      const spy = vi.spyOn(inner, 'getPartnerDirectory');
       const provider = new SimulatedRemoteProvider(inner, {
         latencyMs: 100,
         failureRate: 0,
@@ -324,7 +326,7 @@ describe('SimulatedRemoteProvider', () => {
       controller.abort();
 
       const rejected = await provider
-        .listPartners(INTERNAL_DEMO_SCOPE, { signal: controller.signal })
+        .getPartnerDirectory(INTERNAL_DEMO_SCOPE, { signal: controller.signal })
         .catch((error: unknown) => error);
       expect(rejected).toBeInstanceOf(Error);
       expect((rejected as Error).name).toBe('AbortError');
@@ -340,13 +342,13 @@ describe('SimulatedRemoteProvider', () => {
     try {
       const provider = new SimulatedRemoteProvider(new MockDataProvider(), {
         latencyMs: 100,
-        failMethods: { getTargets: 1 },
+        failMethods: { getManagerDirectory: 1 },
       });
       const controller = new AbortController();
 
       // The first call is cancelled in transit; the plan slot must survive.
       const aborted = provider
-        .getTargets(INTERNAL_DEMO_SCOPE, { signal: controller.signal })
+        .getManagerDirectory(INTERNAL_DEMO_SCOPE, { signal: controller.signal })
         .catch((error: unknown) => error);
       await vi.advanceTimersByTimeAsync(10);
       controller.abort();
@@ -355,13 +357,15 @@ describe('SimulatedRemoteProvider', () => {
       expect((abortedError as Error).name).toBe('AbortError');
 
       // The plan is unspent: the next completed call is the one that fails…
-      const second = provider.getTargets(INTERNAL_DEMO_SCOPE).catch((error: unknown) => error);
+      const second = provider
+        .getManagerDirectory(INTERNAL_DEMO_SCOPE)
+        .catch((error: unknown) => error);
       await vi.advanceTimersByTimeAsync(100);
       expect(await second).toBeInstanceOf(Error);
       // …and the call after it succeeds, proving exactly one slot existed.
-      const third = provider.getTargets(INTERNAL_DEMO_SCOPE);
+      const third = provider.getManagerDirectory(INTERNAL_DEMO_SCOPE);
       await vi.advanceTimersByTimeAsync(100);
-      await expect(third).resolves.toBeInstanceOf(Array);
+      await expect(third).resolves.toMatchObject({ data: expect.any(Array) });
     } finally {
       vi.useRealTimers();
     }

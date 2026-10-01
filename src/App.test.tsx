@@ -154,9 +154,9 @@ describe('App', () => {
     await user.selectOptions(selector, 'local');
     expect(screen.queryByText(remoteNotice)).not.toBeInTheDocument();
 
-    // The failure this guards: useDashboardData used to set `error` and never
-    // clear it, so a provider that failed a call left its message on screen
-    // over perfectly good data from the next provider.
+    // The failure this guards: the retired whole-book loader used to set
+    // `error` and never clear it, so a provider that failed a call left its
+    // message on screen over perfectly good data from the next provider.
     expect(screen.queryByText(/failed in transit/)).not.toBeInTheDocument();
   }, 30_000);
 });

@@ -147,49 +147,7 @@ export class MockDataProvider implements DataProvider {
     this.providerId = options?.providerId ?? 'local';
   }
 
-  // ---- the shape being retired --------------------------------------------
-
-  async listPartnerManagers(access: DemoAccessScope, context?: QueryContext) {
-    throwIfAborted(context?.signal);
-    return scopePartnerManagers(this.data.partnerManagers, access);
-  }
-
-  async listPartners(access: DemoAccessScope, context?: QueryContext) {
-    throwIfAborted(context?.signal);
-    return scopePartners(this.data.partners, access);
-  }
-
-  async listRegistrations(access: DemoAccessScope, context?: QueryContext) {
-    throwIfAborted(context?.signal);
-    return scopeRegistrations(this.data.registrations, this.data.partners, access);
-  }
-
-  async listOpportunities(access: DemoAccessScope, context?: QueryContext) {
-    throwIfAborted(context?.signal);
-    return scopeOpportunities(this.data.opportunities, this.data.partners, access);
-  }
-
-  async getTargets(access: DemoAccessScope, context?: QueryContext) {
-    throwIfAborted(context?.signal);
-    return scopeTargets(this.data.targets, this.data.partners, access);
-  }
-
-  async listActivities(access: DemoAccessScope, context?: QueryContext) {
-    throwIfAborted(context?.signal);
-    return scopeActivities(this.data.activities, this.data.partners, access);
-  }
-
-  async listCertifications(access: DemoAccessScope, context?: QueryContext) {
-    throwIfAborted(context?.signal);
-    return scopeCertifications(this.data.certifications, this.data.partners, access);
-  }
-
-  async listTeamUsers(access: DemoAccessScope, context?: QueryContext) {
-    throwIfAborted(context?.signal);
-    return scopeTeamUsers(this.data.teamUsers, access);
-  }
-
-  // ---- the target shape ----------------------------------------------------
+  // ---- scoped queries ------------------------------------------------------
 
   /**
    * The book the query describes: the demo access scope first (the rows the
@@ -417,17 +375,19 @@ export class MockDataProvider implements DataProvider {
     // a partner audience's series is computed from its own opportunities and
     // their snapshot rows alone, and a snapshot row always names its
     // opportunity, so the recorded weeks filter by the same visibility as
-    // the live ones.
+    // the live ones. The visible ids are collected once: history is by far
+    // the largest collection at production volume, so a per-row lookup into
+    // the opportunities array would turn this query quadratic.
     const snapshots =
       access.audience === 'partner'
-        ? this.data.snapshots.filter((row) => {
-            const opportunity = this.data.opportunities.find((opp) => opp.id === row.opportunityId);
-            return (
-              opportunity !== undefined &&
-              opportunity.partnerId === access.partnerId &&
-              opportunity.oppType !== 'sell-to'
+        ? (() => {
+            const visibleIds = new Set(
+              scopeOpportunities(this.data.opportunities, this.data.partners, access).map(
+                (opp) => opp.id,
+              ),
             );
-          })
+            return this.data.snapshots.filter((row) => visibleIds.has(row.opportunityId));
+          })()
         : this.data.snapshots;
     const weeks = weeklyForecastRows(edited, scope.quarter, SNAPSHOT_DATE, snapshots);
     // A closed week with no recording is reconstructed from today's book,
@@ -767,10 +727,20 @@ export class MockDataProvider implements DataProvider {
       this.data.partners,
       access,
     );
+    // One bucketing pass over the phase's opportunities, rather than a full
+    // filter per partner: the roster grows with the book, so per-partner
+    // scans would turn this leaderboard quadratic at scale.
+    const oppsByPartner = new Map<string, Opportunity[]>();
+    for (const opp of phaseOpps) {
+      const bucket = oppsByPartner.get(opp.partnerId);
+      if (bucket) bucket.push(opp);
+      else oppsByPartner.set(opp.partnerId, [opp]);
+    }
+    const certByPartner = new Map(certifications.map((cert) => [cert.partnerId, cert]));
     const rows = book.roster
       .filter((partner) => book.selected === undefined || book.selected.has(partner.id))
       .map((partner): PartnerLeaderboardEntry => {
-        const own = phaseOpps.filter((opp) => opp.partnerId === partner.id);
+        const own = oppsByPartner.get(partner.id) ?? [];
         const open = openPipeline(own);
         return {
           partner,
@@ -780,7 +750,7 @@ export class MockDataProvider implements DataProvider {
           winRate: winRateForPhase(own, scope.phase),
           // undefined, not an empty record: no certification data is a fact
           // about the partner, and the view renders it as such.
-          certification: certifications.find((cert) => cert.partnerId === partner.id),
+          certification: certByPartner.get(partner.id),
         };
       });
     rows.sort(

@@ -1,6 +1,5 @@
 import type {
   ActivityMeeting,
-  DashboardData,
   DashboardNotification,
   DealRegistration,
   Opportunity,
@@ -126,8 +125,8 @@ export function makeNotification(
   };
 }
 
-/** A whole book as the client receives it, small enough to reason about. */
-export function makeDashboardData(overrides: Partial<DashboardData> = {}): DashboardData {
+/** A provider's book, small enough to reason about. */
+export function makeProviderBook(overrides: Partial<ProviderBook> = {}): ProviderBook {
   return {
     partnerManagers: [{ id: 'pm-1', name: 'J. Alvarez' }],
     partners: [makePartner()],
@@ -137,14 +136,7 @@ export function makeDashboardData(overrides: Partial<DashboardData> = {}): Dashb
     activities: [makeMeeting()],
     certifications: [makeCertification()],
     teamUsers: [],
+    snapshots: [],
     ...overrides,
   };
-}
-
-/**
- * The same book as a provider holds it: the client shape plus the weekly
- * history that never crosses the seam whole.
- */
-export function makeProviderBook(overrides: Partial<ProviderBook> = {}): ProviderBook {
-  return { ...makeDashboardData(), snapshots: [], ...overrides };
 }

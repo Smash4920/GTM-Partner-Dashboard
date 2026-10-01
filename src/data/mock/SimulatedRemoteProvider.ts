@@ -41,9 +41,7 @@ import type {
   DealRegistration,
   Opportunity,
   Partner,
-  PartnerCertification,
   PartnerManager,
-  Target,
   TeamUser,
 } from '../types';
 import { MockDataProvider } from './MockDataProvider';
@@ -229,69 +227,7 @@ export class SimulatedRemoteProvider implements DataProvider {
     return run();
   }
 
-  // ---- the shape being retired --------------------------------------------
-
-  async listPartnerManagers(
-    access: DemoAccessScope,
-    context?: QueryContext,
-  ): Promise<PartnerManager[]> {
-    return this.roundTrip('listPartnerManagers', context?.signal, () =>
-      this.inner.listPartnerManagers(access, context),
-    );
-  }
-
-  async listPartners(access: DemoAccessScope, context?: QueryContext): Promise<Partner[]> {
-    return this.roundTrip('listPartners', context?.signal, () =>
-      this.inner.listPartners(access, context),
-    );
-  }
-
-  async listRegistrations(
-    access: DemoAccessScope,
-    context?: QueryContext,
-  ): Promise<DealRegistration[]> {
-    return this.roundTrip('listRegistrations', context?.signal, () =>
-      this.inner.listRegistrations(access, context),
-    );
-  }
-
-  async listOpportunities(access: DemoAccessScope, context?: QueryContext): Promise<Opportunity[]> {
-    return this.roundTrip('listOpportunities', context?.signal, () =>
-      this.inner.listOpportunities(access, context),
-    );
-  }
-
-  async getTargets(access: DemoAccessScope, context?: QueryContext): Promise<Target[]> {
-    return this.roundTrip('getTargets', context?.signal, () =>
-      this.inner.getTargets(access, context),
-    );
-  }
-
-  async listActivities(
-    access: DemoAccessScope,
-    context?: QueryContext,
-  ): Promise<ActivityMeeting[]> {
-    return this.roundTrip('listActivities', context?.signal, () =>
-      this.inner.listActivities(access, context),
-    );
-  }
-
-  async listCertifications(
-    access: DemoAccessScope,
-    context?: QueryContext,
-  ): Promise<PartnerCertification[]> {
-    return this.roundTrip('listCertifications', context?.signal, () =>
-      this.inner.listCertifications(access, context),
-    );
-  }
-
-  async listTeamUsers(access: DemoAccessScope, context?: QueryContext): Promise<TeamUser[]> {
-    return this.roundTrip('listTeamUsers', context?.signal, () =>
-      this.inner.listTeamUsers(access, context),
-    );
-  }
-
-  // ---- the target shape ----------------------------------------------------
+  // ---- scoped queries ------------------------------------------------------
 
   /**
    * Re-labels a scoped answer with this provider's identity when one is set.

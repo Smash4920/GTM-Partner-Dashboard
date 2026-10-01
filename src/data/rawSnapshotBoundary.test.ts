@@ -93,14 +93,6 @@ function expectNoRawHistory(value: unknown, label: string): void {
 /** Every answer the provider can give one audience, envelopes included. */
 async function collectAllAnswers(access: DemoAccessScope): Promise<unknown[]> {
   const answers: unknown[] = [
-    await provider.listPartnerManagers(access),
-    await provider.listPartners(access),
-    await provider.listRegistrations(access),
-    await provider.listOpportunities(access),
-    await provider.getTargets(access),
-    await provider.listActivities(access),
-    await provider.listCertifications(access),
-    await provider.listTeamUsers(access),
     await provider.getForecastSummary(access, { quarter }),
     await provider.getWeightedForecast(access, { quarter }),
     await provider.getForecastQuality(access, { quarter }, 3),

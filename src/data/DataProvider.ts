@@ -29,27 +29,24 @@ import type {
   Partner,
   PartnerCertification,
   PartnerManager,
-  Target,
   TeamUser,
 } from './types';
 
 /**
- * The integration seam. The UI only ever talks to this interface.
- *
- * It is mid-migration, and deliberately reads that way. See
+ * The integration seam. The UI only ever talks to this interface. See
  * docs/migration-plan.md.
  *
- * - `ScopedQueryProvider` is the target shape: the caller states a scope, the
- *   provider returns an answer. Aggregates come back as kilobytes however
- *   large the book is, and rows come back a page at a time. Every route is
- *   built on it.
- * - `LegacyBookProvider` is the shape being retired: eight calls that each
- *   return an entire collection, which the browser then aggregates itself.
- *   No route reads it any more; it stays only until `useDashboardData`, the
- *   loader that folds it, is deleted with it.
+ * `ScopedQueryProvider` is the whole shape: the caller states a scope, the
+ * provider returns an answer. Aggregates come back as kilobytes however
+ * large the book is, and rows come back a page at a time. Every route is
+ * built on it.
  *
- * The split was the backlog. Every view has moved across; what remains is
- * deleting the legacy side and its loader together.
+ * The legacy side is gone: the eight list-everything calls and
+ * `useDashboardData`, the loader that folded them into one book, were
+ * deleted once the last route moved across. `listPipelineSnapshots()` went
+ * earlier still — weekly history is ~87% of the payload at production
+ * scale, millions of rows to answer a question about fourteen weeks, and it
+ * is replaced by `getWeeklyForecastSeries()` below.
  *
  * Every method takes a `DemoAccessScope` (see src/data/accessScope.ts) as its
  * first argument: the demo's required, non-authoritative record visibility
@@ -64,41 +61,7 @@ import type {
  * request becomes obsolete, and the trace context the seam creates per call.
  */
 
-// ---- the shape being retired ----------------------------------------------
-
-/**
- * Load-everything access to the book.
- *
- * This cannot survive real volume, and the collections it returns are the
- * reason. The one that used to be here — `listPipelineSnapshots()` — has
- * already gone: weekly history is ~87% of the payload at production scale,
- * millions of rows to answer a question about fourteen weeks, and it is
- * replaced by `getWeeklyForecastSeries()` below. What remains is bookkeeping
- * and small dimensions, and it goes the same way: deleted with the loader
- * that still folds it.
- */
-interface LegacyBookProvider {
-  listPartnerManagers(access: DemoAccessScope, context?: QueryContext): Promise<PartnerManager[]>;
-  listPartners(access: DemoAccessScope, context?: QueryContext): Promise<Partner[]>;
-  listRegistrations(access: DemoAccessScope, context?: QueryContext): Promise<DealRegistration[]>;
-  listOpportunities(access: DemoAccessScope, context?: QueryContext): Promise<Opportunity[]>;
-  getTargets(access: DemoAccessScope, context?: QueryContext): Promise<Target[]>;
-  listActivities(access: DemoAccessScope, context?: QueryContext): Promise<ActivityMeeting[]>;
-  listCertifications(
-    access: DemoAccessScope,
-    context?: QueryContext,
-  ): Promise<PartnerCertification[]>;
-  /**
-   * The internal partner-team roster, projected from the identity provider.
-   * This is what decides who a deal-registration alert belongs to; a provider
-   * with no roster yet may return an empty array, and the alerts simply carry
-   * no owner. The roster is internal, so a partner-audience scope receives
-   * an empty roster.
-   */
-  listTeamUsers(access: DemoAccessScope, context?: QueryContext): Promise<TeamUser[]>;
-}
-
-// ---- the target shape ------------------------------------------------------
+// ---- the contract ----------------------------------------------------------
 
 /** What a caller is asking about. Everything else is the provider's problem. */
 export interface ForecastScope {
@@ -683,10 +646,11 @@ interface ScopedQueryProvider {
 }
 
 /**
- * What the app is wired to today: the target shape, plus what has not moved
- * across yet.
+ * What the app is wired to today: the scoped shape, in full. There is no
+ * legacy side any more. An alias rather than a redeclaration so the two names
+ * stay interchangeable for callers that import either.
  */
-export interface DataProvider extends LegacyBookProvider, ScopedQueryProvider {}
+export type DataProvider = ScopedQueryProvider;
 
 /**
  * Every method on the contract, as strings, because types are erased at
@@ -700,16 +664,7 @@ export interface DataProvider extends LegacyBookProvider, ScopedQueryProvider {}
  * it should not depend on anyone remembering to update two lists.
  */
 const METHOD_INDEX: Record<keyof DataProvider, true> = {
-  // the shape being retired
-  listPartnerManagers: true,
-  listPartners: true,
-  listRegistrations: true,
-  listOpportunities: true,
-  getTargets: true,
-  listActivities: true,
-  listCertifications: true,
-  listTeamUsers: true,
-  // the target shape
+  // Forecasting
   getForecastSummary: true,
   getWeightedForecast: true,
   getForecastQuality: true,

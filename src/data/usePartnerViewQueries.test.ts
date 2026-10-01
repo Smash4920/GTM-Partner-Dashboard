@@ -274,18 +274,6 @@ describe('usePartnerViewQueries (VAL-CROSS-004)', () => {
       'listScopedOpportunities',
       'listUnconvertedRegistrations',
     ]);
-    for (const legacy of [
-      'listOpportunities',
-      'listRegistrations',
-      'listPartners',
-      'listPartnerManagers',
-      'listActivities',
-      'listCertifications',
-      'getTargets',
-      'listTeamUsers',
-    ]) {
-      expect(calls.map((call) => call.method)).not.toContain(legacy);
-    }
     // Every call is answered under the selected partner's audience scope —
     // the boundary the route's isolation rests on.
     expect(

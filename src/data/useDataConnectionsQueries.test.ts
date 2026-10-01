@@ -150,18 +150,6 @@ describe('useDataConnectionsQueries (VAL-CROSS-004)', () => {
       'getTeamRoster',
       'listRecentRegistrations',
     ]);
-    for (const legacy of [
-      'listOpportunities',
-      'listRegistrations',
-      'listPartners',
-      'listPartnerManagers',
-      'listActivities',
-      'listCertifications',
-      'getTargets',
-      'listTeamUsers',
-    ]) {
-      expect(calls.map((call) => call.method)).not.toContain(legacy);
-    }
     // This route's data is internal notification infrastructure; every call
     // carries the internal scope it was given.
     expect(calls.every((call) => call.access.audience === 'internal')).toBe(true);

@@ -8,7 +8,6 @@ import { buildQueryMeta, queryResult } from './queryMetadata';
 import { NO_SESSION_EDITS } from './sessionEdits';
 import type { ForecastScope } from './DataProvider';
 import type { PartnerRef } from './DataProvider';
-import { useDashboardData } from './useDashboardData';
 import { useForecastSummary, useManagerBook, usePartnerNames } from './useForecastQueries';
 import { makeOpportunity, makePartner, makeProviderBook } from '../test/fixtures';
 import { INTERNAL_DEMO_SCOPE } from './accessScope';
@@ -68,96 +67,6 @@ function taggedAggregatesProvider(tag: number, gate?: () => Promise<unknown>): D
 }
 
 describe('VAL-RES-002 query race safety', () => {
-  describe('useDashboardData', () => {
-    it("never exposes the prior provider's book once the provider changes, and drops its late answer", async () => {
-      const first = stubProvider({
-        listPartnerManagers: async () => [{ id: 'pm-1', name: 'FIRST provider manager' }],
-      });
-      const secondGate = deferred<void>();
-      const second = stubProvider({
-        listPartnerManagers: async () => {
-          await secondGate.promise;
-          return [{ id: 'pm-1', name: 'SECOND provider manager' }];
-        },
-      });
-
-      const { result, rerender } = renderHook(
-        ({ provider }: { provider: DataProvider }) =>
-          useDashboardData(provider, INTERNAL_DEMO_SCOPE),
-        { initialProps: { provider: first } },
-      );
-      await waitFor(() => expect(result.current.data).not.toBeNull());
-      expect(result.current.data?.partnerManagers[0]?.name).toBe('FIRST provider manager');
-
-      // The provider commits elsewhere and the hook is re-rendered with it.
-      // From this render on, the first provider's book is no one's data.
-      rerender({ provider: second });
-      expect(result.current.data).toBeNull();
-      expect(result.current.loading).toBe(true);
-
-      await act(async () => {
-        secondGate.resolve();
-      });
-      await waitFor(() => expect(result.current.data).not.toBeNull());
-      expect(result.current.data?.partnerManagers[0]?.name).toBe('SECOND provider manager');
-    });
-
-    it('drops a whole-book answer that resolves after the provider was swapped', async () => {
-      const slowGate = deferred<void>();
-      const slow = stubProvider({
-        listPartnerManagers: async () => {
-          await slowGate.promise;
-          return [{ id: 'pm-1', name: 'SLOW provider manager' }];
-        },
-      });
-      const fast = stubProvider({
-        listPartnerManagers: async () => [{ id: 'pm-1', name: 'FAST provider manager' }],
-      });
-
-      const { result, rerender } = renderHook(
-        ({ provider }: { provider: DataProvider }) =>
-          useDashboardData(provider, INTERNAL_DEMO_SCOPE),
-        { initialProps: { provider: slow } },
-      );
-      // Swap before the first answer exists at all, then let the loser land.
-      rerender({ provider: fast });
-      await waitFor(() => expect(result.current.data).not.toBeNull());
-      expect(result.current.data?.partnerManagers[0]?.name).toBe('FAST provider manager');
-
-      await act(async () => {
-        slowGate.resolve();
-      });
-      expect(result.current.data?.partnerManagers[0]?.name).toBe('FAST provider manager');
-    });
-
-    it('drops a failure that rejects after the provider was swapped', async () => {
-      const failureGate = deferred<void>();
-      const failing = stubProvider({
-        listPartners: async () => {
-          await failureGate.promise;
-          throw new Error('listPartners failed in transit (simulated)');
-        },
-      });
-      const healthy = stubProvider();
-
-      const { result, rerender } = renderHook(
-        ({ provider }: { provider: DataProvider }) =>
-          useDashboardData(provider, INTERNAL_DEMO_SCOPE),
-        { initialProps: { provider: failing } },
-      );
-      rerender({ provider: healthy });
-      await waitFor(() => expect(result.current.data).not.toBeNull());
-
-      await act(async () => {
-        failureGate.resolve();
-      });
-      // The late failure belongs to an abandoned generation: no error appears
-      // under the healthy provider, and its data is untouched.
-      expect(result.current.error).toBeNull();
-      expect(result.current.data).not.toBeNull();
-    });
-  });
-
   describe('useForecastSummary', () => {
     it("shows no prior-provider aggregates while the new provider's first answer is in flight", async () => {
       const first = taggedAggregatesProvider(111);

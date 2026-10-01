@@ -12,13 +12,13 @@ afterEach(() => {
 describe('TracedDataProvider', () => {
   it('propagates W3C and request-id context across the provider seam', async () => {
     const inner: DataProvider = new MockDataProvider(makeProviderBook());
-    const call = vi.spyOn(inner, 'listPartners');
+    const call = vi.spyOn(inner, 'getPartnerRoster');
     const provider = new TracedDataProvider(inner);
 
-    await provider.listPartners(INTERNAL_DEMO_SCOPE);
+    await provider.getPartnerRoster(INTERNAL_DEMO_SCOPE, {});
 
     expect(call).toHaveBeenCalledOnce();
-    const trace = call.mock.calls[0]?.[1]?.trace;
+    const trace = call.mock.calls[0]?.[2]?.trace;
     expect(trace).toMatchObject({
       traceId: expect.stringMatching(/^[0-9a-f]{32}$/),
       spanId: expect.stringMatching(/^[0-9a-f]{16}$/),
@@ -59,9 +59,9 @@ describe('TracedDataProvider', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const failure = new Error('CRM timed out');
     const inner = new MockDataProvider(makeProviderBook());
-    vi.spyOn(inner, 'getTargets').mockRejectedValue(failure);
+    vi.spyOn(inner, 'getManagerDirectory').mockRejectedValue(failure);
     const provider = new TracedDataProvider(inner);
 
-    await expect(provider.getTargets(INTERNAL_DEMO_SCOPE)).rejects.toBe(failure);
+    await expect(provider.getManagerDirectory(INTERNAL_DEMO_SCOPE)).rejects.toBe(failure);
   });
 });
