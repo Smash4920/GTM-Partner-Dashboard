@@ -430,15 +430,17 @@ export default function PartnerPerformanceView({
   edits,
   classifications,
   prospects,
+  initialPartnerId = 'all',
 }: {
   provider: DataProvider;
   edits: SessionEdits;
   classifications: Record<string, MeetingClassification>;
   prospects: Partner[];
+  initialPartnerId?: string;
 }) {
   const [phase, setPhase] = useState<FiscalPhase>('q3');
   const [managerId, setManagerId] = useState('all');
-  const [partnerId, setPartnerId] = useState('all');
+  const [partnerId, setPartnerId] = useState(initialPartnerId);
   const queries = usePartnerPerformanceQueries({
     provider,
     access: INTERNAL_DEMO_SCOPE,

@@ -410,7 +410,11 @@ export default function ForecastTable({
             const nextStep = nextSteps[opportunity.id] ?? opportunity.nextStep;
 
             return (
-              <tr key={opportunity.id} className="border-b border-carbon last:border-0">
+              <tr
+                key={opportunity.id}
+                data-opportunity-id={opportunity.id}
+                className="border-b border-carbon last:border-0"
+              >
                 <td className="py-3 pr-3">
                   <p className="text-bone">{opportunity.accountName}</p>
                   <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.05em] text-granite">

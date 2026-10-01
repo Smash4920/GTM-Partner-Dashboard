@@ -80,3 +80,17 @@ HTML or `data-target-state` marker, and preserves normal provider choices, seede
 volumes, and the existing Partner View picker. No dependency or production
 budget changes are needed. This evidence verifies only the client demo, not
 production authorization or an external deployment.
+
+## Action Center resilience fixture
+
+`E2E_PRODUCTION_PREVIEW=1 npm run test:e2e -- --grep VAL-CROSS-006` also runs
+the isolated `action-resilience` input through the same serial preview harness.
+It renders the real App without StrictMode replay to make call counts exact:
+the initial health probe fails, the Action Center summary fails once, usable
+action pages carry a typed partial warning, and the second page fails once.
+Focused retries recover only the failed work, keep existing IDs, and restore
+focus. The fixture exposes technical call counts only, never raw records.
+
+For a manual check, use `npm run test:e2e:fixture-preview -- action-resilience`
+and the printed URL. Its HTML and injection code are test-only, absent from
+ordinary `dist`. No runtime QA selector or live API is introduced.

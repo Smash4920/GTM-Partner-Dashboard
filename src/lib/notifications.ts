@@ -11,7 +11,6 @@ import { REGISTRATION_SLA_BUSINESS_DAYS } from '../data/constants';
 import type {
   ActionCategory,
   ActionItem,
-  ActionReason,
   DealRegistration,
   NotificationChannel,
   NotificationKind,
@@ -20,6 +19,7 @@ import type {
 } from '../data/types';
 import { ACTION_CATEGORY_LABELS } from '../data/actionCenter';
 import { formatDate, formatUsd } from './format';
+import { actionEvidence } from './actionEvidence';
 import { businessDaysWaiting, type RegistrationSlaAlert } from './metrics';
 
 export type NotificationTemplateId = 'sla-alert' | 'registration-note' | 'custom' | ActionCategory;
@@ -90,21 +90,6 @@ export function prepareNotificationDraft(
     ...(draft.entityKind ? { entityKind: draft.entityKind } : {}),
     ...(draft.entityId ? { entityId: draft.entityId } : {}),
   };
-}
-
-function actionEvidence(reason: ActionReason): string {
-  switch (reason.category) {
-    case 'stale-high-value':
-      return `${reason.evidence.elapsedCalendarDays} calendar days since ${reason.evidence.basis} baseline ${formatDate(reason.evidence.baselineAt)}.`;
-    case 'missing-next-step':
-      return `Next step is blank; qualifying causes: ${reason.evidence.causes.join(', ')}. Expected close in ${reason.evidence.daysUntilClose} calendar days.`;
-    case 'close-date-slip':
-      return `Expected close moved from ${formatDate(reason.evidence.priorCloseDate)} to ${formatDate(reason.evidence.currentCloseDate)}: ${reason.evidence.deltaCalendarDays} calendar days later.`;
-    case 'registration-sla':
-      return `${reason.evidence.state}; submitted ${formatDate(reason.evidence.submittedAt)}, due ${formatDate(reason.evidence.dueAt)}. Waiting ${reason.evidence.businessDaysWaiting} business days; ${reason.evidence.businessDaysRemaining} business days remaining.`;
-    case 'partner-health':
-      return `Prior window (${formatDate(reason.evidence.priorWindow.startExclusive)}, ${formatDate(reason.evidence.priorWindow.endInclusive)}]; current window (${formatDate(reason.evidence.currentWindow.startExclusive)}, ${formatDate(reason.evidence.currentWindow.endInclusive)}]. ${reason.evidence.drivers.map((driver) => `${driver.driver}: ${driver.prior} → ${driver.current} ${driver.unit}`).join('; ')}.`;
-  }
 }
 
 /** Category-specific copy uses only the reason's minimum public evidence. */

@@ -225,6 +225,7 @@ async function dataSeamCheck(
   signal?.addEventListener('abort', forwardAbort, { once: true });
   const startedAt = now();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
   let dropAbandonListener: (() => void) | undefined;
   // Settles the moment the caller walks away, even against a provider that
   // ignores its signal; the ping's own settlement goes through a wrapper
@@ -235,7 +236,10 @@ async function dataSeamCheck(
     signal?.addEventListener('abort', onAbandoned, { once: true });
   });
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`ping exceeded ${pingBudgetMs}ms`)), pingBudgetMs);
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error('Health ping budget exceeded'));
+    }, pingBudgetMs);
   });
   try {
     const ping = Promise.resolve(
@@ -255,7 +259,7 @@ async function dataSeamCheck(
         name: 'dataSeam',
         status: 'unavailable',
         latencyMs: now() - startedAt,
-        detail: settled.error instanceof Error ? settled.error.message : String(settled.error),
+        detail: 'getForecastSummary unavailable',
       };
     }
     const latencyMs = now() - startedAt;
@@ -274,7 +278,7 @@ async function dataSeamCheck(
       name: 'dataSeam',
       status: 'unavailable',
       latencyMs: now() - startedAt,
-      detail: error instanceof Error ? error.message : String(error),
+      detail: timedOut ? `ping exceeded ${pingBudgetMs}ms` : 'getForecastSummary unavailable',
     };
   } finally {
     if (timer !== undefined) clearTimeout(timer);

@@ -11,7 +11,7 @@ import { build } from 'vite';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const state = process.argv[2] ?? 'finite';
-if (!['finite', 'no-target', 'target-met'].includes(state)) {
+if (!['finite', 'no-target', 'target-met', 'action-resilience'].includes(state)) {
   throw new Error('Unknown target-state fixture');
 }
 const outDir = await mkdtemp(join(tmpdir(), 'gtm-target-state-'));

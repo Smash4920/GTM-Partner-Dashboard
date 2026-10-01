@@ -124,13 +124,15 @@ export default defineConfig({
             /\/src\/views\/(system|DataConnectionsView|ProductionRequirementsView|ActionCenterView)\.tsx?$/.test(
               id,
             ) ||
-            /\/src\/components\/(NotificationComposer|ActionNotificationPanel|SlaAlertPanel|TeamAccessPanel|WireDiagram|ActionPolicyForm)\.tsx$/.test(
+            /\/src\/components\/(NotificationComposer|ActionNotificationPanel|SlaAlertPanel|TeamAccessPanel|WireDiagram|ActionPolicyForm|ActionItemRow|ActionPagination)\.tsx$/.test(
               id,
             ) ||
             /\/src\/data\/(connections|useDataConnectionsQueries|actionCenter|useActionCenterQueries|mock\/actionCenterQueries)\.ts$/.test(
               id,
             ) ||
-            /\/src\/lib\/(notifications|partnerHealthRules|actionRules|actionRouting)\.ts$/.test(id)
+            /\/src\/lib\/(notifications|partnerHealthRules|actionRules|actionRouting|actionEvidence)\.ts$/.test(
+              id,
+            )
           ) {
             return 'system';
           }

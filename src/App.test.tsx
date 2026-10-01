@@ -639,7 +639,7 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     await waitFor(() => expect(window.GTM_HEALTH?.artifact.status).toBe('unavailable'));
     const seam = window.GTM_HEALTH?.artifact.checks.find((check) => check.name === 'dataSeam');
     expect(seam?.status).toBe('unavailable');
-    expect(seam?.detail).toContain('getForecastSummary failed in transit (simulated)');
+    expect(seam?.detail).toBe('getForecastSummary unavailable');
 
     // refresh() re-probes the seam the session is on and returns the new
     // artifact, without any business data having loaded.
@@ -648,8 +648,8 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     expect(window.GTM_HEALTH?.artifact).toBe(refreshed);
     // Every route reads the scoped contract now: Home's overview still
     // renders through the failed queries, and each widget reports its own
-    // failure in the load's stable copy — the rejection's raw prose stays in
-    // the health check and never reaches the DOM.
+    // failure in the load's stable copy — neither the local health artifact
+    // nor the DOM contains the rejection's raw prose.
     expect(
       await screen.findByRole('heading', { name: 'Partner Performance Overview' }),
     ).toBeInTheDocument();

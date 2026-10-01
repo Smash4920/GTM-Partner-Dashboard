@@ -21,6 +21,7 @@ import type { SessionEdits } from './data/sessionEdits';
 import { useCommittedProvider } from './data/useCommittedProvider';
 import type { CommittedProvider } from './data/useCommittedProvider';
 import type {
+  ActionItem,
   ActionPolicy,
   DashboardNotification,
   ForecastCategory,
@@ -34,6 +35,7 @@ import type { NotificationDraft } from './lib/notifications';
 import { recordNotification } from './lib/notificationRecords';
 import { formatDate } from './lib/format';
 import { DEFAULT_ACTION_POLICY } from './lib/actionPolicy';
+import { actionDestination } from './data/actionNavigation';
 import { isAbortError } from './lib/abort';
 import { featureFlags, getFeatureFlagSubject, type FeatureFlagClient } from './lib/featureFlags';
 import { assessHealth, publishHealthArtifact, shellHealthArtifact } from './lib/health';
@@ -108,6 +110,11 @@ export default function App({
   probeProvider,
 }: AppProps) {
   const [route, setRoute] = useState<Route>('home');
+  const [actionContext, setActionContext] = useState<ActionItem | null>(null);
+  const contextHeading = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    if (actionContext) contextHeading.current?.focus();
+  }, [actionContext]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [flagSubject] = useState(getFeatureFlagSubject);
@@ -149,6 +156,7 @@ export default function App({
   // every piece of session state resets in the same batch, because an edit
   // recorded against one provider's ids is meaningless to another's.
   const resetSessionState = useCallback(() => {
+    setActionContext(null);
     setRevenueOverrides({});
     setNotes({});
     setNextSteps({});
@@ -510,6 +518,7 @@ export default function App({
           route={route}
           hiddenRoutes={hiddenRoutes(productionRequirementsEnabled)}
           onNavigate={(nextRoute) => {
+            setActionContext(null);
             setRoute(nextRoute);
             setMobileNavOpen(false);
           }}
@@ -537,6 +546,35 @@ export default function App({
               {providerMeta.summary}
             </p>
           )}
+          {actionContext && (
+            <section
+              aria-label="Action context"
+              className="mb-6 space-y-2 rounded-card border border-ash p-4 text-sm text-stone"
+            >
+              <h2 ref={contextHeading} tabIndex={-1} className="break-all font-mono text-bone">
+                Action context: {actionContext.id}
+              </h2>
+              <p>
+                Partner: {actionContext.partnerId} · reporting snapshot{' '}
+                {formatDate(SNAPSHOT_DATE.toISOString())}
+              </p>
+              <p>
+                This is the internal context for the selected entity. The route below keeps its own
+                scoped filters; an entity outside its current reporting window may not appear in its
+                table.
+              </p>
+              <button
+                type="button"
+                className="rounded border border-ash px-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-bone"
+                onClick={() => {
+                  setActionContext(null);
+                  setRoute('action-center');
+                }}
+              >
+                Back to Action Center
+              </button>
+            </section>
+          )}
           <RouteContent
             route={route}
             providerId={providerId}
@@ -561,6 +599,11 @@ export default function App({
             onSetTeamUserStatus={setTeamUserStatus}
             onRemoveTeamUser={removeTeamUser}
             onSendNotification={sendNotification}
+            onOpenActionContext={(item) => {
+              setActionContext(item);
+              setRoute(actionDestination(item).route);
+            }}
+            contextPartnerId={actionContext?.partnerId}
           />
         </main>
       </div>
@@ -600,6 +643,8 @@ interface RouteContentProps {
   onSetTeamUserStatus: (userId: string, status: TeamUserStatus) => void;
   onRemoveTeamUser: (userId: string) => void;
   onSendNotification: (draft: NotificationDraft) => void;
+  onOpenActionContext: (item: ActionItem) => void;
+  contextPartnerId?: string;
 }
 
 /**
@@ -634,6 +679,8 @@ function RouteContent({
   onSetTeamUserStatus,
   onRemoveTeamUser,
   onSendNotification,
+  onOpenActionContext,
+  contextPartnerId,
 }: RouteContentProps) {
   // The key is the selection-reconciliation rule: a new committed provider
   // generation remounts the route, so view-local selections — a manager
@@ -660,6 +707,7 @@ function RouteContent({
             roster={{ overrides: teamUserOverrides, added: addedTeamUsers }}
             onSendNotification={onSendNotification}
             notifications={notifications}
+            onOpenContext={onOpenActionContext}
           />
         </ErrorBoundary>
       )}
@@ -709,7 +757,9 @@ function RouteContent({
       {route === 'partners' && (
         <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:partners`}>
           <PartnerPerformanceView
+            key={contextPartnerId}
             provider={provider}
+            initialPartnerId={contextPartnerId}
             edits={forecastEdits}
             classifications={classifications}
             prospects={prospects}

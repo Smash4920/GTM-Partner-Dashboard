@@ -126,7 +126,7 @@ describe('Action Center demo policy controls', () => {
     expect(screen.getByText('Showing 25 of 85 action items')).toBeInTheDocument();
   });
 
-  it('shows unowned recommendations and disables only notification recipient controls', async () => {
+  it('keeps unowned items visible and disables only notification recipient controls', async () => {
     const provider = new MockDataProvider();
     const users = (await provider.getTeamRoster(INTERNAL_DEMO_SCOPE, {})).data;
     const send = vi.fn();
@@ -136,6 +136,7 @@ describe('Action Center demo policy controls', () => {
         policy={DEFAULT_ACTION_POLICY}
         onPolicyChange={vi.fn()}
         onSendNotification={send}
+        onOpenContext={vi.fn()}
         roster={{
           overrides: Object.fromEntries(users.map((user) => [user.id, { status: 'suspended' }])),
         }}
@@ -149,10 +150,62 @@ describe('Action Center demo policy controls', () => {
         within(row).getByText('Unowned — no eligible active demo recipient.'),
       ).toBeInTheDocument();
       expect(within(row).getByRole('button', { name: 'Notify owner' })).toBeDisabled();
+      expect(within(row).getByRole('link', { name: /Open .* context/ })).not.toHaveAttribute(
+        'aria-disabled',
+      );
+      expect(within(row).getByRole('button', { name: /Show evidence/ })).toBeEnabled();
     }
     fireEvent.change(screen.getByLabelText('Owner ID'), { target: { value: 'unowned' } });
     await screen.findByText('Showing 25 of 85 action items');
+    fireEvent.click(screen.getByRole('button', { name: 'Unowned only' }));
+    expect(screen.getByLabelText('Owner ID')).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Unowned only' }));
+    expect(screen.getByLabelText('Owner ID')).toHaveValue('unowned');
+    expect(screen.getByRole('button', { name: 'Unowned only' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByLabelText('Owner ID')).toHaveValue('');
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('exposes complete merged evidence, recommendation, owner basis and lineage with an internal context action', async () => {
+    const provider = new MockDataProvider();
+    const context = vi.fn();
+    const page = await provider.listActionItems(
+      INTERNAL_DEMO_SCOPE,
+      { policy: DEFAULT_ACTION_POLICY },
+      { limit: 25 },
+    );
+    render(
+      <ActionCenterView
+        provider={provider}
+        policy={DEFAULT_ACTION_POLICY}
+        onPolicyChange={vi.fn()}
+        onOpenContext={context}
+      />,
+    );
+    await screen.findByText('85 unique items');
+    const item = page.data.rows[0];
+    const row = screen.getAllByTestId('action-item')[0];
+    const disclosure = within(row).getByRole('button', { name: `Show evidence for ${item.id}` });
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    expect(within(row).queryByText(/Lineage:/)).not.toBeInTheDocument();
+    fireEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    const evidence = document.getElementById(disclosure.getAttribute('aria-controls') ?? '');
+    expect(evidence).toHaveTextContent('As of Sep 18, 2026');
+    expect(evidence).toHaveTextContent('Lineage:');
+    expect(evidence).toHaveTextContent('mock-book');
+    for (const reason of item.reasons) expect(evidence).toHaveTextContent(reason.recommendedAction);
+    expect(row).toHaveTextContent(`Owner: ${item.owner?.userId}`);
+    expect(row).toHaveTextContent('Exposure:');
+    expect(row).toHaveTextContent('Due:');
+    fireEvent.click(within(row).getByRole('link', { name: /Open .* context/ }));
+    expect(context).toHaveBeenCalledWith(item);
+    fireEvent.click(disclosure);
+    expect(evidence).not.toBeInTheDocument();
   });
 
   it('opens and closes the shared composer without changing the action item list', async () => {

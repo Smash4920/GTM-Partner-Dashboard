@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import ActionPolicyForm from '../components/ActionPolicyForm';
-import ActionNotificationPanel from '../components/ActionNotificationPanel';
+import ActionItemRow from '../components/ActionItemRow';
+import ActionPagination from '../components/ActionPagination';
 import Card from '../components/Card';
-import PageFooter from '../components/PageFooter';
 import { renderQueryState } from '../components/QueryState';
 import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
 import { ACTION_CATEGORIES, ACTION_CATEGORY_LABELS } from '../data/actionCenter';
@@ -10,9 +10,8 @@ import type { ActionCenterScope } from '../data/actionCenter';
 import type { DataProvider } from '../data/DataProvider';
 import { pageWindowAsQuery } from '../data/paginationState';
 import { useActionCenterQueries } from '../data/useActionCenterQueries';
-import type { ActionPolicy, DashboardNotification } from '../data/types';
+import type { ActionItem, ActionPolicy, DashboardNotification } from '../data/types';
 import type { NotificationDraft } from '../lib/notifications';
-import { formatUsd, formatDate } from '../lib/format';
 
 export default function ActionCenterView({
   provider,
@@ -20,6 +19,7 @@ export default function ActionCenterView({
   onPolicyChange,
   onSendNotification,
   notifications = [],
+  onOpenContext,
   ...sessionScope
 }: {
   provider: DataProvider;
@@ -27,9 +27,9 @@ export default function ActionCenterView({
   onPolicyChange: (policy: ActionPolicy) => void;
   onSendNotification?: (draft: NotificationDraft) => void;
   notifications?: DashboardNotification[];
+  onOpenContext?: (item: ActionItem) => void;
 } & Pick<ActionCenterScope, 'edits' | 'roster' | 'classifications' | 'prospects'>) {
   const [filters, setFilters] = useState<NonNullable<ActionCenterScope['filters']>>({});
-  const [composingId, setComposingId] = useState<string | null>(null);
   const { summary, items } = useActionCenterQueries({
     provider,
     access: INTERNAL_DEMO_SCOPE,
@@ -38,6 +38,11 @@ export default function ActionCenterView({
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-medium text-bone">Action Center</h1>
+      <p className="max-w-3xl text-sm text-granite">
+        Internal demo · policy, routing and notifications are session-only. Refresh loses this
+        state. Notifications are simulated/local-only, with no external delivery, persistence or
+        write-back. Client filtering is not authorization.
+      </p>
       <Card title="Reporting policy">
         <ActionPolicyForm policy={policy} onApply={onPolicyChange} />
       </Card>
@@ -45,9 +50,9 @@ export default function ActionCenterView({
         {renderQueryState('Action Center summary', summary, (data) => (
           <>
             <p className="mb-3 text-sm text-bone">{data.totalCount} unique items</p>
-            <ul className="grid gap-2 text-xs text-stone sm:grid-cols-2">
+            <ul className="grid gap-3 text-xs text-stone sm:grid-cols-2 xl:grid-cols-5">
               {ACTION_CATEGORIES.map((category) => (
-                <li key={category}>
+                <li key={category} className="rounded border border-ash p-3">
                   {ACTION_CATEGORY_LABELS[category]}: {data.categoryCounts[category]}
                 </li>
               ))}
@@ -101,6 +106,26 @@ export default function ActionCenterView({
               <option value="medium">Medium</option>
             </select>
           </label>
+          <button
+            type="button"
+            aria-pressed={filters.ownerId === 'unowned'}
+            onClick={() =>
+              setFilters((current) => ({
+                ...current,
+                ownerId: current.ownerId === 'unowned' ? undefined : 'unowned',
+              }))
+            }
+            className="rounded border border-ash px-3 py-2 text-xs text-stone focus-visible:outline focus-visible:outline-2 focus-visible:outline-bone"
+          >
+            Unowned only
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilters({})}
+            className="rounded border border-ash px-3 py-2 text-xs text-stone focus-visible:outline focus-visible:outline-2 focus-visible:outline-bone"
+          >
+            Clear filters
+          </button>
           <label className="text-xs text-stone">
             Owner ID
             <input
@@ -119,61 +144,20 @@ export default function ActionCenterView({
           <>
             <ul className="divide-y divide-ash">
               {rows.map((item) => (
-                <li
+                <ActionItemRow
                   key={item.id}
-                  data-testid="action-item"
-                  data-action-id={item.id}
-                  className="py-3 text-xs text-stone"
-                >
-                  <p className="font-mono text-bone">{item.id}</p>
-                  <p>
-                    {item.reasons
-                      .map((reason) => ACTION_CATEGORY_LABELS[reason.category])
-                      .join(' · ')}
-                  </p>
-                  {!item.owner?.userId && (
-                    <p className="text-signal">Unowned — no eligible active demo recipient.</p>
-                  )}
-                  {onSendNotification && (
-                    <>
-                      <button
-                        type="button"
-                        className="mt-2 rounded border border-ash px-3 py-2 disabled:opacity-40"
-                        disabled={!item.owner?.userId}
-                        aria-expanded={composingId === item.id}
-                        aria-controls={`notification-${item.id}`}
-                        onClick={() => setComposingId(composingId === item.id ? null : item.id)}
-                      >
-                        {composingId === item.id ? 'Close notification' : 'Notify owner'}
-                      </button>
-                      {composingId === item.id && (
-                        <section
-                          id={`notification-${item.id}`}
-                          aria-label={`Notification for ${item.id}`}
-                          className="mt-3 max-w-2xl border-t border-ash pt-3"
-                        >
-                          <ActionNotificationPanel
-                            key={item.id}
-                            action={item}
-                            provider={provider}
-                            roster={sessionScope.roster}
-                            onSend={onSendNotification}
-                            notifications={notifications}
-                          />
-                        </section>
-                      )}
-                    </>
-                  )}
-                  <p>
-                    {item.severity} · {item.owner?.userId ?? 'Unowned'} ·{' '}
-                    {item.dueAt ? formatDate(item.dueAt) : 'No due date'} ·{' '}
-                    {formatUsd(item.exposure)}
-                  </p>
-                </li>
+                  item={item}
+                  meta={items.meta!}
+                  provider={provider}
+                  roster={sessionScope.roster}
+                  onSendNotification={onSendNotification}
+                  notifications={notifications}
+                  onOpenContext={onOpenContext}
+                />
               ))}
             </ul>
             {rows.length === 0 && <p className="text-xs text-granite">No matching action items.</p>}
-            <PageFooter state={items} noun="action items" pageSize={25} />
+            <ActionPagination state={items} />
           </>
         ))}
       </Card>

@@ -173,8 +173,13 @@ Missing recipients remain Unowned. Each category prefills minimum evidence,
 recommendation, and entity reference in the shared notification composer.
 Only selected configured channels are recorded, with runtime action time and
 `simulated-local` status. Confirmation says **Simulated / local only**.
-Refresh clears all records; no transport executes. Complete evidence disclosures,
-contextual actions, and workflow decisions remain separate in-progress work.
+Refresh clears all records; no transport executes. Each row exposes its merged
+evidence, per-reason recommendation, due date, exposure, routed owner or Unowned,
+and provider lineage/as-of through a keyboard/touch disclosure. Internal links
+open an explicit entity context in Forecasting, Deal Reg Ops, or the selected
+partner's Partner Performance view. The destination retains its reporting window,
+so an out-of-window entity may not be in its table. Workflow decisions remain
+separate in-progress work.
 
 ### Deal Reg Ops
 

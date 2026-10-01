@@ -44,6 +44,8 @@ export default defineConfig({
             : `npm run dev -- --host 127.0.0.1 --port ${port}`,
           env: {
             BASE_PATH: '/',
+            // Technical seam logs let browser tests count focused retries.
+            VITE_LOG_LEVEL: 'debug',
           },
           reuseExistingServer: productionPreview ? false : !process.env.CI,
           timeout: 120_000,

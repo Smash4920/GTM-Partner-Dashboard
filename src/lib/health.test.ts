@@ -183,7 +183,23 @@ describe('runReadinessChecks', () => {
 
     const dataSeam = checks.find((check) => check.name === 'dataSeam');
     expect(dataSeam?.status).toBe('unavailable');
-    expect(dataSeam?.detail).toBe('CRM is down');
+    expect(dataSeam?.detail).toBe('getForecastSummary unavailable');
+  });
+
+  it('VAL-CROSS-006: keeps rejected and synchronously thrown provider prose out of the local health artifact', async () => {
+    for (const synchronous of [false, true]) {
+      const broken = new MockDataProvider();
+      broken.getForecastSummary = () => {
+        const error = new Error('PRIVATE health provider prose sentinel');
+        if (synchronous) throw error;
+        return Promise.reject(error);
+      };
+      const artifact = await assessHealth({ provider: broken });
+      expect(artifact.checks.find((check) => check.name === 'dataSeam')?.detail).toBe(
+        'getForecastSummary unavailable',
+      );
+      expect(JSON.stringify(artifact)).not.toContain('PRIVATE');
+    }
   });
 
   it('cuts off a ping that exceeds its budget instead of waiting for it', async () => {
@@ -403,7 +419,7 @@ describe('shellHealthArtifact and the unavailable seam (VAL-RES-008)', () => {
     expect(artifact.status).toBe('unavailable');
     expect(artifact.checks.find((entry) => entry.name === 'dataSeam')).toMatchObject({
       status: 'unavailable',
-      detail: 'CRM is down',
+      detail: 'getForecastSummary unavailable',
     });
   });
 });

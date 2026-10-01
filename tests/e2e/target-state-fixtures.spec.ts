@@ -11,6 +11,89 @@ const LABELS = [
   'Open pipeline',
 ];
 
+test('VAL-CROSS-006: isolated built startup failure, partial actions, summary failure and failed page recover independently', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const preview = await startTargetPreview('action-resilience');
+  const errors: string[] = [];
+  const requests: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('request', (request) => requests.push(request.url()));
+  try {
+    await page.goto(preview.url);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.GTM_HEALTH?.checks.find((check) => check.name === 'dataSeam')?.status,
+        ),
+      )
+      .toBe('unavailable');
+    expect(JSON.stringify(await page.evaluate(() => window.GTM_HEALTH?.artifact))).not.toContain(
+      'PRIVATE',
+    );
+    const nav = page.getByRole('navigation', { name: 'Primary' });
+    await nav.getByRole('button', { name: 'Production Requirements', exact: true }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Production Requirements', level: 1 }),
+    ).toBeVisible();
+    await nav.getByRole('button', { name: 'Data Connections', exact: true }).click();
+    await page.getByRole('button', { name: /^Salesforce/ }).click();
+    await expect(page.getByRole('heading', { name: 'Salesforce', level: 3 })).toBeVisible();
+    await nav.getByRole('button', { name: 'Action Center', exact: true }).click();
+    const summary = page.getByRole('group', { name: 'Action Center summary', exact: true });
+    const items = page.getByRole('group', { name: 'action items', exact: true });
+    const rows = page.getByTestId('action-item');
+    await expect(
+      summary.getByText('Action Center summary unavailable:', { exact: true }),
+    ).toBeVisible();
+    await expect(rows).toHaveCount(25);
+    await expect(items).toContainText('provider local · partial');
+    await expect(items).toContainText('Fixture: one opportunity lacks manager attribution');
+    const first = await rows.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute('data-action-id')),
+    );
+    await summary.getByRole('button', { name: 'Retry Action Center summary', exact: true }).click();
+    await expect(summary).toContainText('85 unique items');
+    await expect(summary).toBeFocused();
+    expect(await page.evaluate(() => window.actionResilienceFixture.calls)).toMatchObject({
+      getActionCenterSummary: 2,
+      listActionItems: 1,
+    });
+    const more = page.getByRole('button', { name: 'Load 25 more', exact: true });
+    await more.click();
+    await expect(
+      items.getByRole('button', { name: 'Retry action items', exact: true }),
+    ).toBeVisible();
+    await expect(more).toBeFocused();
+    expect(
+      await rows.evaluateAll((elements) =>
+        elements.map((element) => element.getAttribute('data-action-id')),
+      ),
+    ).toEqual(first);
+    await items.getByRole('button', { name: 'Retry action items', exact: true }).click();
+    await expect(rows).toHaveCount(50);
+    await expect(items).toBeFocused();
+    expect(await page.evaluate(() => window.actionResilienceFixture.calls)).toMatchObject({
+      getActionCenterSummary: 2,
+      listActionItems: 3,
+    });
+    await expect(items).toContainText('partial');
+    await expect(page.getByRole('status')).toContainText('Showing 50 of 85 action items');
+    await expect(page.getByText(/PRIVATE|failed in transit/)).toHaveCount(0);
+    expect(errors).toEqual([]);
+    expect(requests.every((url) => new URL(url).origin === new URL(preview.url).origin)).toBe(true);
+    expect(requests.some((url) => /\/@vite\/client|\/src\//.test(url))).toBe(false);
+    await page.screenshot({ path: testInfo.outputPath('partial-and-recovered-actions.png') });
+  } finally {
+    const teardown = await preview.stop();
+    await writeFile(
+      testInfo.outputPath('fixture-lifecycle.json'),
+      JSON.stringify({ preview, teardown }, null, 2),
+    );
+  }
+});
+
 function kpiTile(page: Page, label: string) {
   return page.getByText(label, { exact: true }).and(page.locator('p')).locator('..');
 }
