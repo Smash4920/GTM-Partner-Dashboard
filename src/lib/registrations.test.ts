@@ -183,8 +183,7 @@ describe('registrationSlaAlerts', () => {
 
   it('routes to the aligned partner manager, and to the deal desk otherwise', () => {
     expect(registrationSlaAlerts([warning], [partner], roster)[0].owner?.id).toBe('u-01');
-    // A manager without an alignment, or one whose access was revoked, cannot
-    // own the alert: the deal desk catches it rather than nobody.
+    // An unaligned or notification-paused manager cannot own the alert.
     expect(registrationSlaAlerts([warning], [partner], [dealDesk])[0].owner?.id).toBe('u-02');
     expect(
       registrationSlaAlerts(
@@ -195,9 +194,7 @@ describe('registrationSlaAlerts', () => {
     ).toBe('u-02');
   });
 
-  it('keeps the first active manager aligned to a partner manager', () => {
-    // A second user appended to the roster with the same alignment must not
-    // silently take over the first one's alert queue.
+  it('uses deterministic ID ordering for both manager and deal-desk recipients', () => {
     const second = teamUser({
       id: 'u-03',
       role: 'partner-manager',
@@ -206,6 +203,13 @@ describe('registrationSlaAlerts', () => {
     expect(registrationSlaAlerts([warning], [partner], [manager, second])[0].owner?.id).toBe(
       'u-01',
     );
+    expect(registrationSlaAlerts([warning], [partner], [second, manager])[0].owner?.id).toBe(
+      'u-01',
+    );
+    expect(
+      registrationSlaAlerts([warning], [partner], [{ ...dealDesk, id: 'z-desk' }, dealDesk])[0]
+        .owner?.id,
+    ).toBe('u-02');
   });
 
   it('still returns an alert with no owner when the roster is empty', () => {

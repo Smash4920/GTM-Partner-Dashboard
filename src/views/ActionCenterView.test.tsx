@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import ActionCenterView from './ActionCenterView';
 import type { ActionPolicy } from '../data/types';
@@ -124,5 +124,57 @@ describe('Action Center demo policy controls', () => {
     fireEvent.click(category);
     await screen.findByText('85 unique items');
     expect(screen.getByText('Showing 25 of 85 action items')).toBeInTheDocument();
+  });
+
+  it('shows unowned recommendations and disables only notification recipient controls', async () => {
+    const provider = new MockDataProvider();
+    const users = (await provider.getTeamRoster(INTERNAL_DEMO_SCOPE, {})).data;
+    const send = vi.fn();
+    render(
+      <ActionCenterView
+        provider={provider}
+        policy={DEFAULT_ACTION_POLICY}
+        onPolicyChange={vi.fn()}
+        onSendNotification={send}
+        roster={{
+          overrides: Object.fromEntries(users.map((user) => [user.id, { status: 'suspended' }])),
+        }}
+      />,
+    );
+    await screen.findByText('85 unique items');
+    const rows = screen.getAllByTestId('action-item');
+    expect(rows).toHaveLength(25);
+    for (const row of rows) {
+      expect(
+        within(row).getByText('Unowned — no eligible active demo recipient.'),
+      ).toBeInTheDocument();
+      expect(within(row).getByRole('button', { name: 'Notify owner' })).toBeDisabled();
+    }
+    fireEvent.change(screen.getByLabelText('Owner ID'), { target: { value: 'unowned' } });
+    await screen.findByText('Showing 25 of 85 action items');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('opens and closes the shared composer without changing the action item list', async () => {
+    const provider = new MockDataProvider();
+    render(
+      <ActionCenterView
+        provider={provider}
+        policy={DEFAULT_ACTION_POLICY}
+        onPolicyChange={vi.fn()}
+        onSendNotification={vi.fn()}
+      />,
+    );
+    await screen.findByText('85 unique items');
+    const row = screen.getAllByTestId('action-item')[0];
+    fireEvent.click(within(row).getByRole('button', { name: 'Notify owner' }));
+    await screen.findByLabelText('Subject');
+    expect(within(row).getByRole('button', { name: 'Close notification' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    fireEvent.click(within(row).getByRole('button', { name: 'Close notification' }));
+    expect(screen.queryByLabelText('Subject')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('action-item')).toHaveLength(25);
   });
 });

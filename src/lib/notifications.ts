@@ -9,15 +9,20 @@
 
 import { REGISTRATION_SLA_BUSINESS_DAYS } from '../data/constants';
 import type {
+  ActionCategory,
+  ActionItem,
+  ActionReason,
   DealRegistration,
   NotificationChannel,
   NotificationKind,
   Partner,
+  TeamUser,
 } from '../data/types';
-import { formatDate } from './format';
+import { ACTION_CATEGORY_LABELS } from '../data/actionCenter';
+import { formatDate, formatUsd } from './format';
 import { businessDaysWaiting, type RegistrationSlaAlert } from './metrics';
 
-export type NotificationTemplateId = 'sla-alert' | 'registration-note' | 'custom';
+export type NotificationTemplateId = 'sla-alert' | 'registration-note' | 'custom' | ActionCategory;
 
 export interface NotificationTemplate {
   id: NotificationTemplateId;
@@ -51,6 +56,88 @@ export interface NotificationDraft {
   body: string;
   channels: NotificationChannel[];
   registrationId?: string;
+  actionId?: string;
+  actionCategory?: ActionCategory;
+  entityKind?: ActionItem['entityKind'];
+  entityId?: string;
+}
+
+/** Explicit local record allowlist, never a spread of caller/provider records. */
+export function prepareNotificationDraft(
+  draft: NotificationDraft,
+  recipient: TeamUser,
+): NotificationDraft | null {
+  const channels = [...new Set(draft.channels)].filter((channel) =>
+    recipient.channels.includes(channel),
+  );
+  if (
+    recipient.status !== 'active' ||
+    recipient.id !== draft.userId ||
+    !draft.subject.trim() ||
+    !draft.body.trim() ||
+    channels.length === 0
+  )
+    return null;
+  return {
+    userId: recipient.id,
+    kind: draft.kind,
+    subject: draft.subject.trim(),
+    body: draft.body.trim(),
+    channels,
+    ...(draft.registrationId ? { registrationId: draft.registrationId } : {}),
+    ...(draft.actionId ? { actionId: draft.actionId } : {}),
+    ...(draft.actionCategory ? { actionCategory: draft.actionCategory } : {}),
+    ...(draft.entityKind ? { entityKind: draft.entityKind } : {}),
+    ...(draft.entityId ? { entityId: draft.entityId } : {}),
+  };
+}
+
+function actionEvidence(reason: ActionReason): string {
+  switch (reason.category) {
+    case 'stale-high-value':
+      return `${reason.evidence.elapsedCalendarDays} calendar days since ${reason.evidence.basis} baseline ${formatDate(reason.evidence.baselineAt)}.`;
+    case 'missing-next-step':
+      return `Next step is blank; qualifying causes: ${reason.evidence.causes.join(', ')}. Expected close in ${reason.evidence.daysUntilClose} calendar days.`;
+    case 'close-date-slip':
+      return `Expected close moved from ${formatDate(reason.evidence.priorCloseDate)} to ${formatDate(reason.evidence.currentCloseDate)}: ${reason.evidence.deltaCalendarDays} calendar days later.`;
+    case 'registration-sla':
+      return `${reason.evidence.state}; submitted ${formatDate(reason.evidence.submittedAt)}, due ${formatDate(reason.evidence.dueAt)}. Waiting ${reason.evidence.businessDaysWaiting} business days; ${reason.evidence.businessDaysRemaining} business days remaining.`;
+    case 'partner-health':
+      return `Prior window (${formatDate(reason.evidence.priorWindow.startExclusive)}, ${formatDate(reason.evidence.priorWindow.endInclusive)}]; current window (${formatDate(reason.evidence.currentWindow.startExclusive)}, ${formatDate(reason.evidence.currentWindow.endInclusive)}]. ${reason.evidence.drivers.map((driver) => `${driver.driver}: ${driver.prior} → ${driver.current} ${driver.unit}`).join('; ')}.`;
+  }
+}
+
+/** Category-specific copy uses only the reason's minimum public evidence. */
+export function actionNotificationDraft(
+  item: ActionItem,
+  category: ActionCategory,
+  users: readonly TeamUser[],
+): NotificationDraft | null {
+  const recipient = users.find(
+    (user) => user.id === item.owner?.userId && user.status === 'active',
+  );
+  const reason = item.reasons.find((candidate) => candidate.category === category);
+  if (!recipient || !reason) return null;
+  return prepareNotificationDraft(
+    {
+      userId: recipient.id,
+      kind:
+        reason.category === 'registration-sla'
+          ? reason.evidence.state === 'warning'
+            ? 'registration-sla-warning'
+            : 'registration-sla-breach'
+          : reason.category,
+      subject: `${ACTION_CATEGORY_LABELS[category]}: ${item.entityId}`,
+      body: `Entity: ${item.id}; partner: ${item.partnerId}. Exposure: ${formatUsd(item.exposure)}. Evidence: ${actionEvidence(reason)} Recommended action: ${reason.recommendedAction}`,
+      channels: [...recipient.channels],
+      actionId: item.id,
+      actionCategory: category,
+      entityKind: item.entityKind,
+      entityId: item.entityId,
+      ...(item.entityKind === 'registration' ? { registrationId: item.entityId } : {}),
+    },
+    recipient,
+  );
 }
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;

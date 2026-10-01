@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import ActionPolicyForm from '../components/ActionPolicyForm';
+import ActionNotificationPanel from '../components/ActionNotificationPanel';
 import Card from '../components/Card';
 import PageFooter from '../components/PageFooter';
 import { renderQueryState } from '../components/QueryState';
@@ -9,20 +10,26 @@ import type { ActionCenterScope } from '../data/actionCenter';
 import type { DataProvider } from '../data/DataProvider';
 import { pageWindowAsQuery } from '../data/paginationState';
 import { useActionCenterQueries } from '../data/useActionCenterQueries';
-import type { ActionPolicy } from '../data/types';
+import type { ActionPolicy, DashboardNotification } from '../data/types';
+import type { NotificationDraft } from '../lib/notifications';
 import { formatUsd, formatDate } from '../lib/format';
 
 export default function ActionCenterView({
   provider,
   policy,
   onPolicyChange,
+  onSendNotification,
+  notifications = [],
   ...sessionScope
 }: {
   provider: DataProvider;
   policy: Readonly<ActionPolicy>;
   onPolicyChange: (policy: ActionPolicy) => void;
+  onSendNotification?: (draft: NotificationDraft) => void;
+  notifications?: DashboardNotification[];
 } & Pick<ActionCenterScope, 'edits' | 'roster' | 'classifications' | 'prospects'>) {
   const [filters, setFilters] = useState<NonNullable<ActionCenterScope['filters']>>({});
+  const [composingId, setComposingId] = useState<string | null>(null);
   const { summary, items } = useActionCenterQueries({
     provider,
     access: INTERNAL_DEMO_SCOPE,
@@ -124,6 +131,39 @@ export default function ActionCenterView({
                       .map((reason) => ACTION_CATEGORY_LABELS[reason.category])
                       .join(' · ')}
                   </p>
+                  {!item.owner?.userId && (
+                    <p className="text-signal">Unowned — no eligible active demo recipient.</p>
+                  )}
+                  {onSendNotification && (
+                    <>
+                      <button
+                        type="button"
+                        className="mt-2 rounded border border-ash px-3 py-2 disabled:opacity-40"
+                        disabled={!item.owner?.userId}
+                        aria-expanded={composingId === item.id}
+                        aria-controls={`notification-${item.id}`}
+                        onClick={() => setComposingId(composingId === item.id ? null : item.id)}
+                      >
+                        {composingId === item.id ? 'Close notification' : 'Notify owner'}
+                      </button>
+                      {composingId === item.id && (
+                        <section
+                          id={`notification-${item.id}`}
+                          aria-label={`Notification for ${item.id}`}
+                          className="mt-3 max-w-2xl border-t border-ash pt-3"
+                        >
+                          <ActionNotificationPanel
+                            key={item.id}
+                            action={item}
+                            provider={provider}
+                            roster={sessionScope.roster}
+                            onSend={onSendNotification}
+                            notifications={notifications}
+                          />
+                        </section>
+                      )}
+                    </>
+                  )}
                   <p>
                     {item.severity} · {item.owner?.userId ?? 'Unowned'} ·{' '}
                     {item.dueAt ? formatDate(item.dueAt) : 'No due date'} ·{' '}

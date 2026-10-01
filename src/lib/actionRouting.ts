@@ -13,7 +13,7 @@ export function routeActionOwner(
         (user) => user.role === role && (!aligned || user.partnerManagerId === partnerManagerId),
       )
       .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))[0];
-  const manager = partnerManagerId === undefined ? undefined : pick('partner-manager', true);
+  const manager = partnerManagerId?.trim() ? pick('partner-manager', true) : undefined;
   if (manager !== undefined) return { userId: manager.id, basis: 'manager' };
   const registration = entityKind === 'registration';
   const fallback = pick(registration ? 'deal-desk-ops' : 'partnership-lead');

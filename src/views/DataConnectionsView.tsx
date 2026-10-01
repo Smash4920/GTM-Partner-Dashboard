@@ -25,7 +25,12 @@ import type {
   TeamUser,
   TeamUserStatus,
 } from '../data/types';
-import { composeCopy, slaAlertCopy, type NotificationDraft } from '../lib/notifications';
+import {
+  composeCopy,
+  prepareNotificationDraft,
+  slaAlertCopy,
+  type NotificationDraft,
+} from '../lib/notifications';
 import type { RegistrationSlaAlert } from '../lib/metrics';
 
 /**
@@ -115,7 +120,7 @@ export default function DataConnectionsView({
   const send = () => {
     const user = users.find((candidate) => candidate.id === composer.userId);
     const registration = registrations.rows.find((item) => item.id === composer.registrationId);
-    if (!user || !composer.subject.trim() || !composer.body.trim()) return;
+    if (!user) return;
     const copy = composeCopy({
       template: composer.template,
       registration,
@@ -124,14 +129,18 @@ export default function DataConnectionsView({
         : undefined,
       alert: alertList.find((item) => item.registration.id === composer.registrationId),
     });
-    onSendNotification({
-      userId: user.id,
-      kind: copy.kind,
-      subject: composer.subject.trim(),
-      body: composer.body.trim(),
-      channels: user.channels,
-      registrationId: composer.registrationId ?? undefined,
-    });
+    const draft = prepareNotificationDraft(
+      {
+        userId: user.id,
+        kind: copy.kind,
+        subject: composer.subject.trim(),
+        body: composer.body.trim(),
+        channels: composer.channels ?? user.channels,
+        registrationId: composer.registrationId ?? undefined,
+      },
+      user,
+    );
+    if (draft) onSendNotification(draft);
   };
 
   const notifyAlert = (registrationId: string) => {
@@ -257,7 +266,7 @@ export default function DataConnectionsView({
               setComposer(
                 owned.length > 0
                   ? composerForAlert(owned)
-                  : (prev) => ({ ...prev, userId, subject: '', body: '' }),
+                  : (prev) => ({ ...prev, userId, channels: undefined, subject: '', body: '' }),
               );
             }}
             alertCountByUserId={alerts.data?.alertCountByOwner ?? {}}

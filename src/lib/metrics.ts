@@ -994,19 +994,20 @@ export function registrationSlaAlerts(
   warningBusinessDays = REGISTRATION_SLA_WARNING_BUSINESS_DAYS,
 ): RegistrationSlaAlert[] {
   const partnerById = new Map(partners.map((partner) => [partner.id, partner]));
+  const orderedUsers = [...teamUsers].sort((left, right) =>
+    left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+  );
   const managerUserByManagerId = new Map<string, TeamUser>();
-  for (const user of teamUsers) {
+  for (const user of orderedUsers) {
     if (user.role !== 'partner-manager' || user.status !== 'active') continue;
-    // The roster is ordered, and the first active user aligned to a manager is
-    // that manager's owner. A later addition does not silently take over an
-    // existing manager's queue just by being appended.
+    // Match Action Center's stable ID ordering, independent of roster input order.
     if (user.partnerManagerId && !managerUserByManagerId.has(user.partnerManagerId)) {
       managerUserByManagerId.set(user.partnerManagerId, user);
     }
   }
   // The deal desk works the whole queue, so it catches alerts whose manager
   // has left, been suspended, or was never set.
-  const fallbackOwner = teamUsers.find(
+  const fallbackOwner = orderedUsers.find(
     (user) => user.role === 'deal-desk-ops' && user.status === 'active',
   );
 

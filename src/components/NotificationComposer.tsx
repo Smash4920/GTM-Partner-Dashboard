@@ -1,5 +1,8 @@
+import { useId } from 'react';
 import { NOTIFICATION_CHANNEL_META, TEAM_ROLE_META } from '../data/constants';
+import { ACTION_CATEGORY_LABELS } from '../data/actionCenter';
 import type {
+  ActionItem,
   DashboardNotification,
   DealRegistration,
   NotificationChannel,
@@ -18,6 +21,7 @@ export interface ComposerState {
   registrationId: string | null;
   subject: string;
   body: string;
+  channels?: NotificationChannel[];
 }
 
 interface NotificationComposerProps {
@@ -38,6 +42,8 @@ interface NotificationComposerProps {
     subject: string;
     body: string;
   };
+  /** Routed action context; no registration-picker/whole-record dependency. */
+  action?: ActionItem;
 }
 
 const selectClass =
@@ -72,6 +78,63 @@ function RegistrationStatus({
   );
 }
 
+function NotificationChannels({
+  user,
+  channels,
+  onChange,
+}: {
+  user: TeamUser | null;
+  channels: NotificationChannel[];
+  onChange: (channels: NotificationChannel[]) => void;
+}) {
+  const errorId = useId();
+  const invalid = Boolean(user && channels.length === 0);
+  return (
+    <fieldset aria-invalid={invalid} aria-describedby={invalid ? errorId : undefined}>
+      <legend className={labelClass}>Channels</legend>
+      <div className="mt-1 flex flex-wrap gap-2">
+        {user ? (
+          user.channels.map((channel) => (
+            <label
+              key={channel}
+              title={NOTIFICATION_CHANNEL_META[channel].description}
+              className="rounded border border-ash bg-ash/30 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-bone"
+            >
+              <input
+                type="checkbox"
+                aria-label={`Use ${NOTIFICATION_CHANNEL_META[channel].label}`}
+                checked={channels.includes(channel)}
+                onChange={(event) =>
+                  onChange(
+                    event.target.checked
+                      ? [...channels, channel]
+                      : channels.filter((value) => value !== channel),
+                  )
+                }
+                className="mr-1"
+              />
+              <span>{NOTIFICATION_CHANNEL_META[channel].label}</span>
+            </label>
+          ))
+        ) : (
+          <span className="text-[10px] text-granite">
+            Pick a teammate to see the channels they receive on.
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-[10px] text-granite">
+        Only selected configured channels are used. Records are session-only. Refresh clears them.
+        Simulated / local only — nothing is delivered.
+      </p>
+      {invalid && (
+        <p id={errorId} className="text-xs text-signal">
+          Select at least one configured channel.
+        </p>
+      )}
+    </fieldset>
+  );
+}
+
 /**
  * Send a notification to one named person, from inside the connection map:
  * picking a teammate in the notification node lands here, and the SLA queue
@@ -88,20 +151,35 @@ export default function NotificationComposer({
   onSend,
   lastSent,
   describe,
+  action,
 }: NotificationComposerProps) {
   // Only a teammate with notifications on can be messaged; a paused or
   // not-yet-routing one cannot.
   const notifiableUsers = users.filter((user) => user.status === 'active');
   const user = notifiableUsers.find((candidate) => candidate.id === state.userId) ?? null;
-  const template = NOTIFICATION_TEMPLATES.find((item) => item.id === state.template)!;
+  const templates = action
+    ? action.reasons.map((reason) => ({
+        id: reason.category,
+        label: ACTION_CATEGORY_LABELS[reason.category],
+        description: reason.recommendedAction,
+      }))
+    : NOTIFICATION_TEMPLATES;
+  const template = templates.find((item) => item.id === state.template);
   const registration = registrations.find((item) => item.id === state.registrationId);
   const alert = alerts.find((item) => item.registration.id === state.registrationId);
   const partner = registration
     ? partners.find((candidate) => candidate.id === registration.partnerId)
     : undefined;
-  const canSend = Boolean(user) && state.subject.trim().length > 0 && state.body.trim().length > 0;
+  const channels = (state.channels ?? user?.channels ?? []).filter((channel) =>
+    user?.channels.includes(channel),
+  );
+  const canSend =
+    Boolean(user) &&
+    channels.length > 0 &&
+    state.subject.trim().length > 0 &&
+    state.body.trim().length > 0;
 
-  const setUser = (userId: string) => onChange({ ...state, userId });
+  const setUser = (userId: string) => onChange({ ...state, userId, channels: undefined });
 
   const setTemplate = (nextTemplate: NotificationTemplateId) => {
     const copy = describe(nextTemplate, state.registrationId);
@@ -126,6 +204,7 @@ export default function NotificationComposer({
             value={state.userId ?? ''}
             onChange={(event) => setUser(event.target.value)}
             className={`${selectClass} mt-1`}
+            disabled={Boolean(action)}
           >
             <option value="" disabled>
               Pick a teammate
@@ -143,9 +222,9 @@ export default function NotificationComposer({
             value={state.template}
             onChange={(event) => setTemplate(event.target.value as NotificationTemplateId)}
             className={`${selectClass} mt-1`}
-            title={template.description}
+            title={template?.description}
           >
-            {NOTIFICATION_TEMPLATES.map((item) => (
+            {templates.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.label}
               </option>
@@ -154,30 +233,35 @@ export default function NotificationComposer({
         </label>
       </div>
 
-      <label className="block">
-        <span className={labelClass}>Registration</span>
-        <select
-          value={state.registrationId ?? ''}
-          onChange={(event) => setRegistration(event.target.value)}
-          disabled={state.template === 'custom'}
-          className={`${selectClass} mt-1 disabled:opacity-40`}
-        >
-          <option value="" disabled>
-            Pick a registration
-          </option>
-          {registrations.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.accountName} · {formatDate(item.submittedAt)}
+      {action ? (
+        <p className="text-xs text-stone">Entity: {action.id}</p>
+      ) : (
+        <label className="block">
+          <span className={labelClass}>Registration</span>
+          <select
+            value={state.registrationId ?? ''}
+            onChange={(event) => setRegistration(event.target.value)}
+            disabled={state.template === 'custom'}
+            className={`${selectClass} mt-1 disabled:opacity-40`}
+          >
+            <option value="" disabled>
+              Pick a registration
             </option>
-          ))}
-        </select>
-      </label>
+            {registrations.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.accountName} · {formatDate(item.submittedAt)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <RegistrationStatus registration={registration} alert={alert} partner={partner} />
 
       <label className="block">
         <span className={labelClass}>Subject</span>
         <input
+          autoFocus={Boolean(action)}
           value={state.subject}
           onChange={(event) => onChange({ ...state, subject: event.target.value })}
           placeholder="What this is about"
@@ -196,30 +280,11 @@ export default function NotificationComposer({
         />
       </label>
 
-      <div>
-        <span className={labelClass}>Channels</span>
-        <div className="mt-1 flex flex-wrap gap-2">
-          {user ? (
-            user.channels.map((channel: NotificationChannel) => (
-              <span
-                key={channel}
-                title={NOTIFICATION_CHANNEL_META[channel].description}
-                className="rounded border border-ash bg-ash/30 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-bone"
-              >
-                {NOTIFICATION_CHANNEL_META[channel].label}
-              </span>
-            ))
-          ) : (
-            <span className="text-[10px] text-granite">
-              Pick a teammate to see the channels they receive on.
-            </span>
-          )}
-        </div>
-        <p className="mt-1 text-[10px] text-granite">
-          Only the channels the recipient receives on are used; email always is. Sends are simulated
-          and local to this session — nothing is delivered.
-        </p>
-      </div>
+      <NotificationChannels
+        user={user}
+        channels={channels}
+        onChange={(selected) => onChange({ ...state, channels: selected })}
+      />
 
       <div className="flex flex-wrap items-center gap-3 border-t border-carbon pt-3">
         <button

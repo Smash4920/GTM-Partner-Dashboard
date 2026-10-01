@@ -166,10 +166,15 @@ Metadata identifies the provider and deterministic reporting as-of date.
 health windows, and at least two deteriorating drivers. Controls reject invalid
 values before querying. Applying policy resets only Action Center paging.
 Policy is session-only, survives route navigation, and resets on reload or a
-committed provider change. It is never stored in browser storage. Evidence
-disclosures, contextual actions, generalized notification composition, and
-workflow decisions remain separate in-progress work; this page does not
-claim delivery, persistence, or write-back.
+committed provider change. It is never stored in browser storage.
+Opportunity/health owners use the first active aligned manager by ID, then an
+active partnership lead; registrations fall back to active deal-desk ops.
+Missing recipients remain Unowned. Each category prefills minimum evidence,
+recommendation, and entity reference in the shared notification composer.
+Only selected configured channels are recorded, with runtime action time and
+`simulated-local` status. Confirmation says **Simulated / local only**.
+Refresh clears all records; no transport executes. Complete evidence disclosures,
+contextual actions, and workflow decisions remain separate in-progress work.
 
 ### Deal Reg Ops
 
@@ -309,8 +314,8 @@ team can be told about the data, and the rule that tells them.
   registration is measured against the 5-business-day response SLA at the
   snapshot; one business day before the deadline the owner is warned, and once
   it has passed the breach is raised. The owner is the submitting partner's
-  aligned partner manager, with the deal desk catching anything unaligned, so a
-  registration never goes unowned. The warnings lead the queue — they are the
+  aligned active partner manager, with active deal-desk fallback. A registration
+  remains unowned if no eligible recipient exists. The warnings lead the queue — they are the
   ones with a business day left in them
 - **Notifications** are composed from inside the map: pick a teammate in the
   notification node and it loads their own most urgent alert, or pick a

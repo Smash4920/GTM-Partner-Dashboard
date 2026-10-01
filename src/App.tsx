@@ -31,6 +31,7 @@ import type {
   TeamUserStatus,
 } from './data/types';
 import type { NotificationDraft } from './lib/notifications';
+import { recordNotification } from './lib/notificationRecords';
 import { formatDate } from './lib/format';
 import { DEFAULT_ACTION_POLICY } from './lib/actionPolicy';
 import { isAbortError } from './lib/abort';
@@ -453,20 +454,7 @@ export default function App({
       channels: draft.channels,
     });
     telemetry.track('notification_sent', { kind: draft.kind, channels: draft.channels });
-    setNotifications((prev) => [
-      {
-        id,
-        userId: draft.userId,
-        kind: draft.kind,
-        subject: draft.subject,
-        body: draft.body,
-        channels: draft.channels,
-        sentAt: new Date().toISOString(),
-        status: 'simulated-local',
-        registrationId: draft.registrationId,
-      },
-      ...prev,
-    ]);
+    setNotifications((prev) => [recordNotification(draft, id, new Date().toISOString()), ...prev]);
   };
 
   return (
@@ -670,6 +658,8 @@ function RouteContent({
             classifications={classifications}
             prospects={prospects}
             roster={{ overrides: teamUserOverrides, added: addedTeamUsers }}
+            onSendNotification={onSendNotification}
+            notifications={notifications}
           />
         </ErrorBoundary>
       )}

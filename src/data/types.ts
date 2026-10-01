@@ -163,7 +163,7 @@ export type TeamRole = 'partnership-lead' | 'partner-manager' | 'deal-desk-ops' 
  */
 export type TeamUserStatus = 'active' | 'invited' | 'suspended';
 
-/** Where a simulated notification would go. Email is the always-on channel. */
+/** Configured demo channels; each notification may select a nonempty subset. */
 export type NotificationChannel = 'email' | 'slack' | 'in-app';
 
 /**
@@ -173,7 +173,7 @@ export type NotificationChannel = 'email' | 'slack' | 'in-app';
  * identity provider owns the roster and this record is a projection of it
  * (see the Data Connections view). What lives here is the dashboard-specific
  * part — which manager a user is aligned to, and which channels they are
- * authorized to be notified on — because that is what decides who hears about
+ * configured to be notified on — because that is what decides who hears about
  * a deal registration they own.
  */
 export interface TeamUser {
@@ -209,6 +209,7 @@ export interface NewTeamUserInput {
 }
 
 export type NotificationKind =
+  | Exclude<ActionCategory, 'registration-sla'>
   /** Owner's registration is one business day from the response SLA. */
   | 'registration-sla-warning'
   /** Owner's registration has already passed the response SLA. */
@@ -239,6 +240,10 @@ export interface DashboardNotification {
   status: NotificationStatus;
   /** The registration the notification is about, when it is about one. */
   registrationId?: string;
+  actionId?: string;
+  actionCategory?: ActionCategory;
+  entityKind?: ActionItem['entityKind'];
+  entityId?: string;
 }
 
 /** Session-configurable demo reporting policy, never a production control. */
