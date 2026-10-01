@@ -21,9 +21,9 @@ import type { TraceContext } from '../lib/tracing';
  *   provider receives, so a real HTTP implementation can put the headers on
  *   the wire.
  *
- * The context is optional at the type level because tests and one-shot
- * callers (the health ping) legitimately fire-and-forget; every request the
- * React layer issues carries a live signal.
+ * The context is optional at the type level so tests and one-shot fixtures
+ * can omit it; every request the running app issues — route hooks, the
+ * readiness probe, the health readiness ping — carries a live signal.
  */
 export interface QueryContext {
   signal?: AbortSignal;

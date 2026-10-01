@@ -469,4 +469,245 @@ describe('usePaginatedRows rowEdits narrowing', () => {
     expect(spy).toHaveBeenCalledTimes(3);
     expect(result.current.rows.find((row) => row.id === 'opp-1')?.forecastedRevenue).toBe(7);
   });
+
+  it('an unrelated edit during the initial load neither aborts nor restarts it', async () => {
+    const provider = new MockDataProvider(book);
+    const contexts: QueryContext[] = [];
+    const gate = deferred<void>();
+    const real = provider.listQuarterOpportunities.bind(provider);
+    const spy = vi
+      .spyOn(provider, 'listQuarterOpportunities')
+      .mockImplementation((access, scope, page, context) => {
+        if (context !== undefined) contexts.push(context);
+        return (async () => {
+          await gate.promise;
+          return real(access, scope, page, context);
+        })();
+      });
+    const { result, rerender } = renderTracked(provider);
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(result.current.loading).toBe(true);
+
+    // opp-5 is in this collection but on a page nobody has asked for yet:
+    // the edit does not touch the question the in-flight load is answering.
+    rerender({ edits: { 'opp-5': 9 } });
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(contexts[0]?.signal?.aborted).toBe(false);
+
+    // The load lands as if the edit never happened; the edit is picked up
+    // by whatever fetches page three, when anything does.
+    await act(async () => {
+      gate.resolve();
+    });
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+    expect(result.current.error).toBeNull();
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('an edit to a row in the in-flight first page refetches with the current edits', async () => {
+    const provider = new MockDataProvider(book);
+    const gate = deferred<void>();
+    const real = provider.listQuarterOpportunities.bind(provider);
+    const spy = vi
+      .spyOn(provider, 'listQuarterOpportunities')
+      .mockImplementation((access, scope, page, context) =>
+        (async () => {
+          await gate.promise;
+          return real(access, scope, page, context);
+        })(),
+      );
+    const { result, rerender } = renderTracked(provider);
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+
+    // Nothing is loaded yet, so no loaded row can prove the edit matters —
+    // but opp-1 is inside the page already flying. The answer that comes
+    // back is stale before it lands, and must not become the collection.
+    rerender({ edits: { 'opp-1': 42_000 } });
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      gate.resolve();
+    });
+    // The stale answer is discarded and the first page re-asked with the
+    // edits now current.
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+    expect(result.current.rows.find((row) => row.id === 'opp-1')?.forecastedRevenue).toBe(42_000);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('an unrelated edit during a page fetch neither aborts nor refetches the book', async () => {
+    const provider = new MockDataProvider(book);
+    const contexts: QueryContext[] = [];
+    const gate = deferred<void>();
+    const real = provider.listQuarterOpportunities.bind(provider);
+    const spy = vi
+      .spyOn(provider, 'listQuarterOpportunities')
+      .mockImplementation((access, scope, page, context) => {
+        if (context !== undefined) contexts.push(context);
+        return (async () => {
+          if (page.cursor !== undefined) await gate.promise;
+          return real(access, scope, page, context);
+        })();
+      });
+    const { result, rerender } = renderTracked(provider);
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.loadingMore).toBe(true));
+    expect(spy).toHaveBeenCalledTimes(2);
+
+    // opp-5 sits beyond the page in flight: no loaded or landing row is
+    // affected, so the page keeps its cursor, its signal, and its answer.
+    rerender({ edits: { 'opp-5': 9 } });
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(contexts[1]?.signal?.aborted).toBe(false);
+    expect(result.current.loadingMore).toBe(true);
+    expect(result.current.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2']);
+
+    await act(async () => {
+      gate.resolve();
+    });
+    await waitFor(() => expect(result.current.rows).toHaveLength(4));
+    expect(result.current.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2', 'opp-3', 'opp-4']);
+    expect(result.current.error).toBeNull();
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('a relevant edit during a page fetch supersedes the page with a window refresh', async () => {
+    const provider = new MockDataProvider(book);
+    const contexts: QueryContext[] = [];
+    const gate = deferred<void>();
+    const real = provider.listQuarterOpportunities.bind(provider);
+    const spy = vi
+      .spyOn(provider, 'listQuarterOpportunities')
+      .mockImplementation((access, scope, page, context) => {
+        if (context !== undefined) contexts.push(context);
+        return (async () => {
+          if (page.cursor !== undefined) await gate.promise;
+          return real(access, scope, page, context);
+        })();
+      });
+    const { result, rerender } = renderTracked(provider);
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.loadingMore).toBe(true));
+
+    // opp-1 is on screen: its edit supersedes the in-flight page — the page
+    // is cancelled at the seam and the window refetches with the edit.
+    rerender({ edits: { 'opp-1': 7 } });
+    await waitFor(() => expect(result.current.refreshing).toBe(true));
+    expect(contexts[1]?.signal?.aborted).toBe(true);
+    expect(result.current.loadingMore).toBe(false);
+
+    await waitFor(() => expect(result.current.refreshing).toBe(false));
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(spy.mock.calls[2]?.[2]).toEqual({ limit: 2 });
+    expect(result.current.rows.find((row) => row.id === 'opp-1')?.forecastedRevenue).toBe(7);
+
+    // The superseded page's late answer changes nothing.
+    await act(async () => {
+      gate.resolve();
+    });
+    expect(result.current.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2']);
+    expect(result.current.error).toBeNull();
+    expect(spy).toHaveBeenCalledTimes(3);
+  });
+
+  it('an edit to a row in the in-flight page drops that page and re-asks the same cursor', async () => {
+    const provider = new MockDataProvider(book);
+    const gate = deferred<void>();
+    const real = provider.listQuarterOpportunities.bind(provider);
+    const spy = vi
+      .spyOn(provider, 'listQuarterOpportunities')
+      .mockImplementation((access, scope, page, context) =>
+        (async () => {
+          if (page.cursor !== undefined) await gate.promise;
+          return real(access, scope, page, context);
+        })(),
+      );
+    const { result, rerender } = renderTracked(provider);
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.loadingMore).toBe(true));
+
+    // opp-3 is not loaded, so the edit skips the effect — but it is inside
+    // the page already flying. The stale answer must not append.
+    rerender({ edits: { 'opp-3': 21_000 } });
+    await act(async () => {});
+
+    await act(async () => {
+      gate.resolve();
+    });
+    // The stale page is discarded and the same cursor re-asked with the
+    // edits now current — one extra request, never stale rows.
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(result.current.rows).toHaveLength(4));
+    const firstPage = await spy.mock.results[0]!.value;
+    expect(spy.mock.calls[2]?.[2]).toEqual({ cursor: firstPage.data.nextCursor, limit: 2 });
+    expect(result.current.rows.find((row) => row.id === 'opp-3')?.forecastedRevenue).toBe(21_000);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('an unrelated edit while a page failure is retained keeps the error and the owed retry', async () => {
+    const provider = new MockDataProvider(book);
+    const spy = vi.spyOn(provider, 'listQuarterOpportunities');
+    const { result, rerender } = renderTracked(provider);
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+
+    spy.mockRejectedValueOnce(new Error('RAW SENTINEL: cursor store offline'));
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.error).toBe('Failed to load more of this book'));
+    expect(spy).toHaveBeenCalledTimes(2);
+
+    // No loaded row contains opp-5: the edit must not refetch, clear, or
+    // retry the book — the retained failure is the explicit retry's alone.
+    rerender({ edits: { 'opp-5': 9 } });
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(result.current.error).toBe('Failed to load more of this book');
+    expect(result.current.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2']);
+
+    // The explicit retry still repeats exactly the failed page request.
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.rows).toHaveLength(4));
+    expect(result.current.error).toBeNull();
+    expect(spy).toHaveBeenCalledTimes(3);
+    const firstPage = await spy.mock.results[0]!.value;
+    expect(spy.mock.calls[2]?.[2]).toEqual({ cursor: firstPage.data.nextCursor, limit: 2 });
+  });
+
+  it('an unrelated edit while a refresh failure is retained keeps the rows, error, and owed retry', async () => {
+    const provider = new MockDataProvider(book);
+    const spy = vi.spyOn(provider, 'listQuarterOpportunities');
+    const { result, rerender } = renderTracked(provider);
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+
+    // A relevant edit's window refresh fails: the failure is retained.
+    spy.mockRejectedValueOnce(new Error('RAW SENTINEL: snapshot segment unreadable'));
+    rerender({ edits: { 'opp-1': 7 } });
+    await waitFor(() => expect(result.current.error).toBe('Failed to load this book'));
+    expect(spy).toHaveBeenCalledTimes(2);
+
+    // Layering an unrelated edit on top changes nothing the failed refresh
+    // owed: no refetch, no cleared error, no consumed retry.
+    rerender({ edits: { 'opp-1': 7, 'opp-5': 9 } });
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(result.current.error).toBe('Failed to load this book');
+    expect(result.current.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2']);
+
+    // The explicit retry still retries the owed failure, with the edits now
+    // current.
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.error).toBeNull());
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(spy.mock.calls[2]?.[2]).toEqual({ limit: 2 });
+    expect(result.current.rows.find((row) => row.id === 'opp-1')?.forecastedRevenue).toBe(7);
+  });
 });

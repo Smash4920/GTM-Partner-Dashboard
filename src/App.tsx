@@ -31,6 +31,7 @@ import type {
 } from './data/types';
 import type { NotificationDraft } from './lib/notifications';
 import { formatDate } from './lib/format';
+import { isAbortError } from './lib/abort';
 import { featureFlags, getFeatureFlagSubject, type FeatureFlagClient } from './lib/featureFlags';
 import { assessHealth, publishHealthArtifact, shellHealthArtifact } from './lib/health';
 import type { HealthArtifact } from './lib/health';
@@ -209,34 +210,75 @@ export default function App({
     requestedId: transition.requestedId,
     status: transition.status,
   });
+  // The assessment in flight, so the work it asked the provider for can be
+  // cancelled — not merely ignored — when it becomes obsolete: a newer
+  // refresh starts, the committed provider is replaced, or the shell
+  // unmounts. The publication and identity guards below still fence any
+  // answer a signal-ignoring provider produces afterwards.
+  const healthProbe = useRef<AbortController | null>(null);
   useEffect(() => {
+    const previous = healthContextRef.current;
     healthContextRef.current = {
       provider,
       requestedId: transition.requestedId,
       status: transition.status,
     };
+    if (previous.provider !== provider) {
+      // The committed provider moved: a probe still running against the old
+      // seam is obsolete, so its provider-visible work stops now.
+      healthProbe.current?.abort();
+      healthProbe.current = null;
+    }
   }, [provider, transition.requestedId, transition.status]);
+
+  // Unmount abandons the in-flight probe: its provider work is cancelled at
+  // the seam. StrictMode's simulated unmount runs this too; the boot
+  // effect's re-run starts the replacement assessment.
+  useEffect(
+    () => () => {
+      healthProbe.current?.abort();
+      healthProbe.current = null;
+    },
+    [],
+  );
 
   const refreshHealth = useCallback(async (): Promise<HealthArtifact | null> => {
     const started = healthContextRef.current;
-    const artifact = await assessHealth({
-      provider: started.provider,
-      transition: {
-        requestedId: started.requestedId,
-        status:
-          started.status === 'idle'
-            ? 'committed'
-            : started.status === 'probing'
-              ? 'committing'
-              : 'failed',
-      },
-    });
-    // The committed provider moved while the assessment ran: this artifact
-    // speaks for a seam that is no longer committed. Returning null lets the
-    // publisher leave the current artifact alone — the transition's own
-    // publication already carries the newly committed identity, and probing
-    // again is the next refresh's job.
-    return healthContextRef.current.provider === started.provider ? artifact : null;
+    // A newer refresh supersedes one still in flight: the abandoned
+    // assessment's provider work stops at the seam rather than running on
+    // to an answer the publication guard would discard anyway.
+    healthProbe.current?.abort();
+    const controller = new AbortController();
+    healthProbe.current = controller;
+    try {
+      const artifact = await assessHealth({
+        provider: started.provider,
+        signal: controller.signal,
+        transition: {
+          requestedId: started.requestedId,
+          status:
+            started.status === 'idle'
+              ? 'committed'
+              : started.status === 'probing'
+                ? 'committing'
+                : 'failed',
+        },
+      });
+      // The assessment was superseded, or the committed provider moved
+      // while it ran: this artifact speaks for a seam that is no longer
+      // committed. Returning null lets the publisher leave the current
+      // artifact alone — the transition's own publication already carries
+      // the newly committed identity, and probing again is the next
+      // refresh's job.
+      return !controller.signal.aborted && healthContextRef.current.provider === started.provider
+        ? artifact
+        : null;
+    } catch (error) {
+      // An aborted assessment is a cancelled one, not a failed one: nothing
+      // is published or reported for it.
+      if (isAbortError(error)) return null;
+      throw error;
+    }
   }, []);
 
   const lastHealthArtifact = useRef<HealthArtifact | null>(null);
@@ -250,13 +292,18 @@ export default function App({
 
   const healthBooted = useRef(false);
   useEffect(() => {
-    if (healthBooted.current) return;
-    healthBooted.current = true;
-    publishHealth(shellHealthArtifact());
+    if (!healthBooted.current) {
+      healthBooted.current = true;
+      publishHealth(shellHealthArtifact());
+    }
+    // The assessment runs on every mount, not once: StrictMode's simulated
+    // unmount aborts the first boot probe (the unmount cleanup above), so
+    // the remount starts its replacement — and the supersede abort inside
+    // refreshHealth keeps exactly one assessment live either way.
     void refreshHealth().then((artifact) => {
-      // A null artifact means the committed provider changed mid-assessment;
-      // the transition's own publication stands and nothing is reported for
-      // the abandoned probe.
+      // A null artifact means the assessment was abandoned — superseded, or
+      // the committed provider moved mid-probe; the transition's own
+      // publication stands and nothing is reported for the abandoned probe.
       if (artifact === null) return;
       // Only the assessed artifact ships as telemetry; the provisional one
       // would alert on a boot that has not finished judging itself.

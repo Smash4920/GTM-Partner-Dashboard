@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
+import { CURRENT_FISCAL_QUARTER } from '../data/constants';
 import type { DataProvider, ForecastSummary } from '../data/DataProvider';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
+import { createSimulatedRemoteProvider } from '../data/mock/createSimulatedRemoteProvider';
+import type { QueryContext } from '../data/queryContext';
 import type { QueryResult } from '../data/queryMetadata';
 import {
   assessHealth,
@@ -197,6 +201,135 @@ describe('runReadinessChecks', () => {
     const dataSeam = checks.find((check) => check.name === 'dataSeam');
     expect(dataSeam?.status).toBe('unavailable');
     expect(dataSeam?.detail).toContain('ping exceeded 20ms');
+  });
+});
+
+describe('data-seam ping cancellation (VAL-RES-002)', () => {
+  it('hands the seam ping a live abort signal in its query context', async () => {
+    const provider = new MockDataProvider();
+    const spy = vi.spyOn(provider, 'getForecastSummary');
+    const controller = new AbortController();
+
+    const checks = await runReadinessChecks({ provider, signal: controller.signal });
+
+    expect(checks.find((check) => check.name === 'dataSeam')?.status).toBe('ok');
+    expect(spy).toHaveBeenCalledTimes(1);
+    const context = spy.mock.calls[0]?.[2];
+    expect(context?.signal).toBeInstanceOf(AbortSignal);
+    // A ping that answered inside its budget and was never superseded stays
+    // live, and the caller's signal was never touched.
+    expect(context?.signal?.aborted).toBe(false);
+    expect(controller.signal.aborted).toBe(false);
+  });
+
+  it('a caller abort rejects the assessment as a cancellation and cancels the ping at the seam', async () => {
+    const provider = new MockDataProvider();
+    let seen: AbortSignal | undefined;
+    provider.getForecastSummary = ((
+      _access: unknown,
+      _scope: unknown,
+      context?: QueryContext,
+    ): Promise<QueryResult<ForecastSummary>> => {
+      seen = context?.signal;
+      return new Promise<QueryResult<ForecastSummary>>(() => {});
+    }) as DataProvider['getForecastSummary'];
+    const controller = new AbortController();
+
+    const pending = assessHealth({ provider, signal: controller.signal });
+    controller.abort();
+
+    // A cancellation, never a failed check: the assessment rejects with the
+    // shared abort error rather than resolving with an 'unavailable' seam.
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    // The provider's own signal was spent, so signal-honouring work stops.
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it('a spent caller signal stops the assessment before any provider work', async () => {
+    const provider = new MockDataProvider();
+    const spy = vi.spyOn(provider, 'getForecastSummary');
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(assessHealth({ provider, signal: controller.signal })).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('a timed-out ping aborts the signal the provider was handed', async () => {
+    let seen: AbortSignal | undefined;
+    const silent = new MockDataProvider();
+    silent.getForecastSummary = ((
+      _access: unknown,
+      _scope: unknown,
+      context?: QueryContext,
+    ): Promise<QueryResult<ForecastSummary>> => {
+      seen = context?.signal;
+      return new Promise<QueryResult<ForecastSummary>>(() => {});
+    }) as DataProvider['getForecastSummary'];
+
+    const checks = await runReadinessChecks({ provider: silent, pingBudgetMs: 20 });
+
+    const dataSeam = checks.find((check) => check.name === 'dataSeam');
+    expect(dataSeam?.status).toBe('unavailable');
+    expect(dataSeam?.detail).toContain('ping exceeded 20ms');
+    // The deadline cancelled the call itself, not just the wait for it.
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it('a timed-out ping stops a simulated remote before any inner provider work', async () => {
+    const inner = new MockDataProvider();
+    const innerSpy = vi.spyOn(inner, 'getForecastSummary');
+    const remote = createSimulatedRemoteProvider(inner, { latencyMs: 200, failureRate: 0 });
+
+    const checks = await runReadinessChecks({ provider: remote, pingBudgetMs: 20 });
+
+    const dataSeam = checks.find((check) => check.name === 'dataSeam');
+    expect(dataSeam?.status).toBe('unavailable');
+    // The wire honoured the abort during its delay: the inner provider was
+    // never invoked, and letting the delay play out changes that not.
+    expect(innerSpy).not.toHaveBeenCalled();
+    await sleep(250);
+    expect(innerSpy).not.toHaveBeenCalled();
+  });
+
+  it('a superseded ping cancels a simulated remote in transit', async () => {
+    const inner = new MockDataProvider();
+    const innerSpy = vi.spyOn(inner, 'getForecastSummary');
+    const remote = createSimulatedRemoteProvider(inner, { latencyMs: 200, failureRate: 0 });
+    const controller = new AbortController();
+
+    const pending = assessHealth({ provider: remote, signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+
+    await sleep(250);
+    expect(innerSpy).not.toHaveBeenCalled();
+  });
+
+  it('a ping that ignores its signal is abandoned at the race and its late answer dropped', async () => {
+    let finish!: (result: QueryResult<ForecastSummary>) => void;
+    const stubborn = new MockDataProvider();
+    stubborn.getForecastSummary = (() =>
+      new Promise<QueryResult<ForecastSummary>>((resolve) => {
+        finish = resolve;
+      })) as DataProvider['getForecastSummary'];
+    const controller = new AbortController();
+
+    const pending = assessHealth({ provider: stubborn, signal: controller.signal });
+    controller.abort();
+    // The assessment walks away immediately instead of hanging on a
+    // provider that never observes cancellation.
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+
+    // The late answer settles into nothing: no unhandled rejection, no
+    // late artifact, no further calls.
+    const answer = await new MockDataProvider().getForecastSummary(INTERNAL_DEMO_SCOPE, {
+      quarter: CURRENT_FISCAL_QUARTER,
+    });
+    finish(answer);
+    await sleep(0);
   });
 });
 

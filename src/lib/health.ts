@@ -1,6 +1,7 @@
 import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
 import type { DataProvider } from '../data/DataProvider';
 import { CURRENT_FISCAL_QUARTER } from '../data/constants';
+import { createAbortError, isAbortError, throwIfAborted } from './abort';
 import { TELEMETRY_STARTUP_EPOCH } from './telemetry/config';
 import { flagIssues, flagSnapshot } from './telemetry/flags';
 import { telemetry } from './telemetry/telemetry';
@@ -96,6 +97,16 @@ export interface ReadinessOptions {
    * distinguish "serving remote" from "still local while remote probes".
    */
   transition?: { requestedId: string; status: 'committing' | 'committed' | 'failed' };
+  /**
+   * Cancels the assessment's provider-visible work. The data-seam ping
+   * carries the signal through the query context like every other scoped
+   * call, so a timed-out, superseded, or provider-obsolete probe stops at
+   * the seam instead of running to an answer nobody will publish. A
+   * provider that ignores the signal is abandoned at the race and its late
+   * answer dropped. An aborted assessment rejects with the shared abort
+   * error — a cancellation, never a failed check.
+   */
+  signal?: AbortSignal;
 }
 
 const DEFAULT_PING_BUDGET_MS = 10_000;
@@ -186,6 +197,16 @@ function recentErrorsCheck(windowMs: number, budget: number): HealthCheck {
  * (`getForecastSummary`), so the check measures the seam a user depends on
  * without paying for the book, and it goes through the instrumented wrapper,
  * so the ping is itself measured by the same metrics it is checking.
+ *
+ * The ping carries a live AbortSignal in its query context, like every other
+ * scoped call. Two things cancel it: the caller's signal (a superseded
+ * refresh, a committed-provider replacement, an unmount) and the latency
+ * budget's deadline. Either way the provider sees the abort at the seam — a
+ * simulated remote stops during its delay and never reaches the inner
+ * provider — and a provider that ignores the signal is still abandoned at
+ * the race, its late answer dropped by the wrapper that swallows it. A
+ * caller abort rejects the whole assessment with the shared abort error: an
+ * abandoned probe is obsolete, not 'unavailable'.
  */
 async function dataSeamCheck(
   provider: DataProvider,
@@ -193,14 +214,50 @@ async function dataSeamCheck(
   pingBudgetMs: number,
   healthyPingMs: number,
   now: () => number,
+  signal?: AbortSignal,
 ): Promise<HealthCheck> {
+  // A spent signal means the probe was obsolete before it started.
+  throwIfAborted(signal);
+  // The ping's own controller: the caller's abort forwards into it, and the
+  // budget deadline aborts it, so both paths cancel at the provider seam.
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort();
+  signal?.addEventListener('abort', forwardAbort, { once: true });
   const startedAt = now();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let dropAbandonListener: (() => void) | undefined;
+  // Settles the moment the caller walks away, even against a provider that
+  // ignores its signal; the ping's own settlement goes through a wrapper
+  // that never rejects, so a late answer or late rejection floats nowhere.
+  const abandoned = new Promise<never>((_, reject) => {
+    const onAbandoned = () => reject(createAbortError());
+    dropAbandonListener = () => signal?.removeEventListener('abort', onAbandoned);
+    signal?.addEventListener('abort', onAbandoned, { once: true });
+  });
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`ping exceeded ${pingBudgetMs}ms`)), pingBudgetMs);
   });
   try {
-    await Promise.race([provider.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter }), deadline]);
+    const ping = Promise.resolve(
+      provider.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter }, { signal: controller.signal }),
+    ).then(
+      (result) => ({ outcome: 'answered' as const, result }),
+      (error: unknown) => ({ outcome: 'failed' as const, error }),
+    );
+    const settled = await Promise.race([ping, deadline, abandoned]);
+    if (settled.outcome === 'failed') {
+      // The caller's abort rejects the assessment rather than reporting the
+      // cancelled seam as down.
+      if (isAbortError(settled.error) && controller.signal.aborted) {
+        throw settled.error;
+      }
+      return {
+        name: 'dataSeam',
+        status: 'unavailable',
+        latencyMs: now() - startedAt,
+        detail: settled.error instanceof Error ? settled.error.message : String(settled.error),
+      };
+    }
     const latencyMs = now() - startedAt;
     return {
       name: 'dataSeam',
@@ -209,6 +266,10 @@ async function dataSeamCheck(
       detail: `getForecastSummary answered in ${latencyMs}ms`,
     };
   } catch (error) {
+    if (isAbortError(error)) throw error;
+    // The budget cut the ping off: cancel the provider's work at the seam
+    // rather than leaving it to finish a call nobody is waiting for.
+    controller.abort();
     return {
       name: 'dataSeam',
       status: 'unavailable',
@@ -217,6 +278,8 @@ async function dataSeamCheck(
     };
   } finally {
     if (timer !== undefined) clearTimeout(timer);
+    dropAbandonListener?.();
+    signal?.removeEventListener('abort', forwardAbort);
   }
 }
 
@@ -247,6 +310,7 @@ export async function runReadinessChecks(options: ReadinessOptions): Promise<Hea
     options.pingBudgetMs ?? DEFAULT_PING_BUDGET_MS,
     options.healthyPingMs ?? DEFAULT_HEALTHY_PING_MS,
     options.now ?? Date.now,
+    options.signal,
   );
   return [...staticChecks, dataSeam];
 }

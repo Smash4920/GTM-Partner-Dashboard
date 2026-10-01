@@ -401,6 +401,138 @@ describe('useManagerBook edit scoping (two-manager matrix)', () => {
     expect(result.current.first.refreshing).toBe(false);
     expect(result.current.second.refreshing).toBe(false);
   });
+
+  it('an edit to the other book neither aborts nor refetches a book mid-load-more', async () => {
+    const provider = new MockDataProvider(twoManagerBook);
+    let resolveGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      resolveGate = resolve;
+    });
+    const pm1Signals: (AbortSignal | undefined)[] = [];
+    const real = provider.listQuarterOpportunities.bind(provider);
+    const spy = vi
+      .spyOn(provider, 'listQuarterOpportunities')
+      .mockImplementation((access, scope, page, context) => {
+        if (scope.partnerManagerId === 'pm-1') pm1Signals.push(context?.signal);
+        return (async () => {
+          // Hold pm-1's page fetch; every other call answers normally.
+          if (scope.partnerManagerId === 'pm-1' && page.cursor !== undefined) await gate;
+          return real(access, scope, page, context);
+        })();
+      });
+    const { result, rerender } = renderTwoBooks(provider);
+    await waitFor(() => expect(result.current.first.rows).toHaveLength(2));
+    await waitFor(() => expect(result.current.second.rows).toHaveLength(1));
+
+    act(() => result.current.first.loadMore());
+    await waitFor(() => expect(result.current.first.loadingMore).toBe(true));
+    expect(spy).toHaveBeenCalledTimes(3);
+
+    // The edit lands in pm-2's loaded window while pm-1's page is flying:
+    // pm-2 refreshes, pm-1's page keeps its signal, its cursor, its state.
+    rerender({
+      scope: { quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-9': 9 } } },
+    });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(4));
+    expect(spy.mock.calls[3]?.[1]).toMatchObject({ partnerManagerId: 'pm-2' });
+    expect(pm1Signals[1]?.aborted).toBe(false);
+    expect(result.current.first.loadingMore).toBe(true);
+    expect(result.current.first.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2']);
+
+    // And pm-1's page still lands, unbothered.
+    await act(async () => {
+      resolveGate();
+    });
+    await waitFor(() => expect(result.current.first.rows).toHaveLength(3));
+    expect(result.current.first.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2', 'opp-3']);
+    expect(result.current.first.error).toBeNull();
+    // pm-1 saw exactly its initial load and its page — never a refetch.
+    expect(spy.mock.calls.filter((call) => call[1].partnerManagerId === 'pm-1')).toHaveLength(2);
+  });
+
+  it('a relevant edit supersedes a book’s in-flight page while the other book is untouched', async () => {
+    const provider = new MockDataProvider(twoManagerBook);
+    let resolveGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      resolveGate = resolve;
+    });
+    const pm1Signals: (AbortSignal | undefined)[] = [];
+    const real = provider.listQuarterOpportunities.bind(provider);
+    const spy = vi
+      .spyOn(provider, 'listQuarterOpportunities')
+      .mockImplementation((access, scope, page, context) => {
+        if (scope.partnerManagerId === 'pm-1') pm1Signals.push(context?.signal);
+        return (async () => {
+          if (scope.partnerManagerId === 'pm-1' && page.cursor !== undefined) await gate;
+          return real(access, scope, page, context);
+        })();
+      });
+    const { result, rerender } = renderTwoBooks(provider);
+    await waitFor(() => expect(result.current.first.rows).toHaveLength(2));
+    await waitFor(() => expect(result.current.second.rows).toHaveLength(1));
+
+    act(() => result.current.first.loadMore());
+    await waitFor(() => expect(result.current.first.loadingMore).toBe(true));
+
+    // opp-1 is on pm-1's screen: its edit supersedes the in-flight page —
+    // cancelled at the seam, the window refetched with the edit — while
+    // pm-2's settled book is not touched at all.
+    rerender({
+      scope: { quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 7 } } },
+    });
+    await waitFor(() => expect(result.current.first.refreshing).toBe(true));
+    expect(pm1Signals[1]?.aborted).toBe(true);
+    expect(result.current.first.loadingMore).toBe(false);
+    await waitFor(() => expect(result.current.first.refreshing).toBe(false));
+    expect(spy.mock.calls[3]?.[1]).toMatchObject({ partnerManagerId: 'pm-1' });
+    expect(spy.mock.calls[3]?.[2]).toEqual({ limit: 2 });
+    expect(result.current.first.rows.find((row) => row.id === 'opp-1')?.forecastedRevenue).toBe(7);
+
+    // The superseded page's late answer appends nothing, and pm-2 issued
+    // exactly its initial load throughout.
+    await act(async () => {
+      resolveGate();
+    });
+    expect(result.current.first.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2']);
+    expect(spy.mock.calls.filter((call) => call[1].partnerManagerId === 'pm-2')).toHaveLength(1);
+  });
+
+  it('an edit to the other book neither refetches nor clears a book’s retained page failure', async () => {
+    const provider = new MockDataProvider(twoManagerBook);
+    const spy = vi.spyOn(provider, 'listQuarterOpportunities');
+    const { result, rerender } = renderTwoBooks(provider);
+    await waitFor(() => expect(result.current.first.rows).toHaveLength(2));
+    await waitFor(() => expect(result.current.second.rows).toHaveLength(1));
+
+    // pm-1's next page fails; its loaded rows and the failure stay.
+    spy.mockRejectedValueOnce(new Error('RAW SENTINEL: cursor store offline'));
+    act(() => result.current.first.loadMore());
+    await waitFor(() =>
+      expect(result.current.first.error).toBe('Failed to load more of this book'),
+    );
+    expect(spy).toHaveBeenCalledTimes(3);
+
+    // The edit belongs to pm-2's book: pm-1 must not refetch, clear, or
+    // retry on its retained failure — pm-2's refresh is the only new call.
+    rerender({
+      scope: { quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-9': 9 } } },
+    });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(4));
+    expect(spy.mock.calls[3]?.[1]).toMatchObject({ partnerManagerId: 'pm-2' });
+    await act(async () => {});
+    expect(spy.mock.calls.filter((call) => call[1].partnerManagerId === 'pm-1')).toHaveLength(2);
+    expect(result.current.first.error).toBe('Failed to load more of this book');
+    expect(result.current.first.rows.map((row) => row.id)).toEqual(['opp-1', 'opp-2']);
+
+    // pm-1's explicit Retry still repeats exactly the page it owes.
+    act(() => result.current.first.retry());
+    await waitFor(() => expect(result.current.first.rows).toHaveLength(3));
+    expect(result.current.first.error).toBeNull();
+    const pm1Calls = spy.mock.calls.filter((call) => call[1].partnerManagerId === 'pm-1');
+    expect(pm1Calls).toHaveLength(3);
+    const firstPage = await spy.mock.results[0]!.value;
+    expect(pm1Calls[2]?.[2]).toEqual({ cursor: firstPage.data.nextCursor, limit: 2 });
+  });
 });
 
 describe('useManagerBook', () => {

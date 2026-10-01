@@ -22,20 +22,30 @@ import type { QueryState } from './queryState';
  *   page requests covering the rows on screen — instead of resetting to the
  *   first page. A failed window refresh keeps the loaded rows and reports
  *   the error alongside.
- * - With `rowEdits` set, that window refresh is also *narrow*: an edit whose
- *   target no loaded row contains is not a refresh at all, so one manager's
- *   book does not refetch because another manager's deal was edited. A page
- *   appended after the edit already carries it, so no later refresh is owed
- *   for that row either.
+ * - With `rowEdits` set, edit invalidation is *narrow* in every state: an
+ *   edit whose target no loaded row contains is not a refresh at all — an
+ *   in-flight initial load, page fetch, or window refresh keeps running,
+ *   a retained failure keeps its error for the explicit retry, and one
+ *   manager's book never refetches because another manager's deal was
+ *   edited. The comparison runs against the newest window attempt's edit
+ *   values, so an unrelated edit cannot churn a book mid-refresh either.
+ *   A relevant edit landing mid-flight is caught when the answer lands: a
+ *   stale first page or window is refetched with the edits now current,
+ *   and a stale appended page is discarded and re-requested at the same
+ *   cursor. A page appended after the edit already carries it, so no later
+ *   refresh is owed for that row.
  * - A membership change (provider, business scope, or page size) resets to
  *   the first page: rows fetched under another membership would read as
  *   members of a collection they do not belong to.
  * - Every request's AbortSignal reaches the provider through the query
  *   context, so a superseded initial load, refresh, or page fetch stops
- *   provider-visible work instead of merely being ignored. Late answers are
- *   still dropped by request sequence and read-time identity gating for
- *   providers that ignore the signal, and an aborted request writes nothing,
- *   so aborts are silent.
+ *   provider-visible work instead of merely being ignored. The aborts are
+ *   explicit at supersede time rather than effect cleanups, which is
+ *   exactly what lets a skipped edit leave in-flight work running; unmount
+ *   aborts whatever is still in flight. Late answers are still dropped by
+ *   request sequence and read-time identity gating for providers that
+ *   ignore the signal, and an aborted request writes nothing, so aborts
+ *   are silent.
  */
 export interface PaginationState<T> {
   rows: T[];
@@ -115,6 +125,31 @@ function emptyEntry<T>(provider: DataProvider, resetKey: string): PageEntry<T> {
 
 /** What the single in-flight slot is doing. Anything but idle blocks loadMore. */
 type Phase = 'idle' | 'initial' | 'refresh' | 'page';
+
+/**
+ * The narrow-invalidation decision for one effect re-run: true only when
+ * the run exists because edit values moved (same attempt, same membership,
+ * new `refreshKey`) and the edits now current move no loaded row's fetched
+ * values. Phase and recorded failures are deliberately absent — the skip
+ * holds in every state: in-flight work keeps running, a retained failure
+ * keeps the retry it owes, and an edit that only matters to rows still in
+ * flight is caught by the land-time drift guard. A retry (the attempt
+ * moved) and a StrictMode remount (nothing moved) are not edit-only runs.
+ */
+function isSkippableEditRun<T>(args: {
+  membershipChanged: boolean;
+  enabled: boolean;
+  tracking: RowEditScope<T> | undefined;
+  last: { attempt: number; refreshKey: string } | null;
+  attempt: number;
+  refreshKey: string;
+  loadedRowsStale: (tracking: RowEditScope<T>) => boolean;
+}): boolean {
+  const { membershipChanged, enabled, tracking, last, attempt, refreshKey } = args;
+  if (membershipChanged || !enabled || tracking === undefined) return false;
+  if (last === null || last.attempt !== attempt || last.refreshKey === refreshKey) return false;
+  return !args.loadedRowsStale(tracking);
+}
 
 /**
  * A paginated collection viewed as one query state, for cards that render a
@@ -206,8 +241,30 @@ export function usePaginatedRows<T>(args: {
   const loadedCount = useRef(0);
   /** The edit values each loaded row was fetched with, by row id. */
   const appliedEdits = useRef(new Map<string, string>());
+  /**
+   * The edit maps the newest *window* attempt issued with. While the fetch
+   * runs, this — not the values the retained rows were fetched with — is
+   * the bar for whether another window restart would change anything; a
+   * failed attempt keeps it too, because the explicit retry owes exactly
+   * that question and an unrelated edit must not perform it on the
+   * failure's back. A landed window replaces it with the per-row record.
+   */
+  const pendingWindowMaps = useRef<Record<string, Record<string, string | number>> | null>(null);
+  /**
+   * The controller of the latest window attempt, settled or not, so a
+   * superseding run or an unmount can cancel it at the seam. Aborts are
+   * explicit here rather than effect cleanups — precisely so a skipped
+   * edit-only re-run leaves in-flight work and its signal untouched.
+   */
+  const windowRequest = useRef<AbortController | null>(null);
   /** The controller of a page fetch in flight, if one is. */
   const pageRequest = useRef<AbortController | null>(null);
+  /**
+   * What the effect last ran for, so the next re-run can tell an edit-only
+   * bump (same attempt, new edit values) from a retry (the attempt moved),
+   * a membership change, or a StrictMode remount (nothing moved).
+   */
+  const lastRun = useRef<{ attempt: number; refreshKey: string } | null>(null);
   const membership = useRef<{
     provider: DataProvider;
     resetKey: string;
@@ -231,10 +288,30 @@ export function usePaginatedRows<T>(args: {
     }
   }
 
-  /** True when an edit moved a value a loaded row was fetched with. */
+  /** True when an edit moved a value a loaded row was — or is being — fetched with. */
   function loadedRowsStale(tracking: RowEditScope<T>): boolean {
+    const pending = pendingWindowMaps.current;
     for (const [id, applied] of appliedEdits.current) {
-      if (rowEditKey(id, tracking.maps) !== applied) return true;
+      // While a window fetch runs, its edit values are the baseline: the
+      // rows on screen are about to be replaced by rows carrying them.
+      const baseline = pending === null ? applied : rowEditKey(id, pending);
+      if (rowEditKey(id, tracking.maps) !== baseline) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Land-time guard: a fetch that started before an edit landed carries the
+   * older values, so when the maps now current moved any of the rows it is
+   * bringing back, its answer is stale before it lands. Edits to other rows
+   * — another manager's book, a page beyond the window — move nothing here.
+   */
+  function rowsDrifted(fetched: readonly T[], tracking: RowEditScope<T>): boolean {
+    const current = rowEditsRef.current;
+    if (current === undefined) return false;
+    for (const row of fetched) {
+      const id = tracking.idOf(row);
+      if (rowEditKey(id, tracking.maps) !== rowEditKey(id, current.maps)) return true;
     }
     return false;
   }
@@ -249,27 +326,34 @@ export function usePaginatedRows<T>(args: {
       prev.enabled !== enabled;
     membership.current = { provider, resetKey, pageSize, enabled };
 
-    // Narrowed invalidation: an edit-only re-run that changes no loaded
-    // row's applied edits asks for nothing. Only an idle, healthy collection
-    // may skip — an in-flight window fetch carries older edits and must be
-    // replaced, a page fetch in flight must give way to the refresh, and a
-    // recorded failure owes its retry.
+    // Narrowed invalidation: an edit-only re-run that moves no loaded row's
+    // fetched values asks for nothing — in any state.
     const tracking = rowEditsRef.current;
+    const last = lastRun.current;
+    lastRun.current = { attempt, refreshKey };
     if (
-      !membershipChanged &&
-      enabled &&
-      tracking !== undefined &&
-      phase.current === 'idle' &&
-      lastFailure.current === null &&
-      loadedRowsStale(tracking) === false
+      isSkippableEditRun({
+        membershipChanged,
+        enabled,
+        tracking,
+        last,
+        attempt,
+        refreshKey,
+        loadedRowsStale,
+      })
     ) {
       return undefined;
     }
 
     const request = ++latest.current;
     const controller = new AbortController();
-    // A window fetch supersedes a page fetch still in flight: its answer
-    // belongs to a window this run is about to replace.
+    // This run supersedes the previous window attempt and any page fetch
+    // still in flight — that page's answer belongs to a window this run is
+    // about to replace. The aborts are explicit rather than effect
+    // cleanups, which is exactly what lets the skipped run above leave
+    // in-flight work — and its signal — untouched.
+    windowRequest.current?.abort();
+    windowRequest.current = null;
     pageRequest.current?.abort();
     pageRequest.current = null;
     // The edit values this run's fetch applies, recorded when it lands.
@@ -281,8 +365,9 @@ export function usePaginatedRows<T>(args: {
       lastFailure.current = null;
       loadedCount.current = 0;
       appliedEdits.current.clear();
+      pendingWindowMaps.current = null;
       setEntry(emptyEntry(provider, resetKey));
-      return () => controller.abort();
+      return undefined;
     }
 
     const currentEntry = (): PageEntry<T> => ({
@@ -304,6 +389,7 @@ export function usePaginatedRows<T>(args: {
       const page = result.data;
       phase.current = 'idle';
       lastFailure.current = null;
+      pendingWindowMaps.current = null;
       cursor.current = page.nextCursor;
       loadedCount.current = page.rows.length;
       recordApplied(page.rows, fetchTracking, true);
@@ -318,9 +404,20 @@ export function usePaginatedRows<T>(args: {
       loadedCount.current = 0;
       appliedEdits.current.clear();
       setEntry({ ...currentEntry(), loading: true });
+      pendingWindowMaps.current = fetchTracking?.maps ?? null;
+      windowRequest.current = controller;
       fetchPageRef.current({ limit: pageSize }, { signal: controller.signal }).then(
         (result) => {
           if (controller.signal.aborted || request !== latest.current) return;
+          if (fetchTracking !== undefined && rowsDrifted(result.data.rows, fetchTracking)) {
+            // The edits this page was fetched under moved while it flew:
+            // its answer is stale before it lands. Drop it and re-ask the
+            // first page with the values now current.
+            phase.current = 'idle';
+            pendingWindowMaps.current = null;
+            setAttempt((count) => count + 1);
+            return;
+          }
           const page = acceptPage(result);
           setEntry({
             ...currentEntry(),
@@ -340,21 +437,34 @@ export function usePaginatedRows<T>(args: {
           });
         },
       );
-      return () => controller.abort();
+      return undefined;
     }
 
     // Same membership, new data: refetch the window already on screen
     // (bounded pages covering the loaded rows) instead of resetting to
     // page one.
     phase.current = 'refresh';
+    pendingWindowMaps.current = fetchTracking?.maps ?? null;
+    windowRequest.current = controller;
     setEntry((previous) =>
       previous.provider === provider && previous.resetKey === resetKey
-        ? { ...previous, refreshing: true, error: null }
+        ? // A page fetch this run just superseded is gone: its spinner goes
+          // with it, whatever its late answer does.
+          { ...previous, refreshing: true, loadingMore: false, error: null }
         : previous,
     );
     fetchWindowPages(fetchPageRef.current, loadedCount.current, controller.signal).then(
       (result) => {
         if (controller.signal.aborted || request !== latest.current) return;
+        if (fetchTracking !== undefined && rowsDrifted(result.data.rows, fetchTracking)) {
+          // The edits this window was fetched under moved while it flew:
+          // its answer is stale before it lands. Refetch the window with
+          // the values now current.
+          phase.current = 'idle';
+          pendingWindowMaps.current = null;
+          setAttempt((count) => count + 1);
+          return;
+        }
         const page = acceptPage(result);
         setEntry((previous) =>
           previous.provider === provider && previous.resetKey === resetKey
@@ -387,14 +497,17 @@ export function usePaginatedRows<T>(args: {
         );
       },
     );
-    return () => controller.abort();
+    return undefined;
   }, [provider, enabled, resetKey, refreshKey, pageSize, attempt]);
 
-  // Unmount cancels a page fetch still in flight. This sits in its own
-  // effect because a narrowed no-op run registers no cleanup of its own, and
-  // an abandoned page fetch must never outlive the collection.
+  // Unmount cancels whatever is still running — the window attempt and any
+  // page fetch. This sits in its own effect because a narrowed no-op run
+  // aborts nothing of its own, and an abandoned request must never outlive
+  // the collection.
   useEffect(
     () => () => {
+      windowRequest.current?.abort();
+      windowRequest.current = null;
       pageRequest.current?.abort();
       pageRequest.current = null;
     },
@@ -428,6 +541,20 @@ export function usePaginatedRows<T>(args: {
         // slot, and this answer belongs to a question nobody is asking.
         if (controller.signal.aborted || request !== latest.current) return;
         const page = result.data;
+        if (tracking !== undefined && rowsDrifted(page.rows, tracking)) {
+          // An edit moved values inside this page while it flew: the answer
+          // is stale before it lands. Drop it and re-ask the same cursor —
+          // cursors name positions, not edit values — with the maps now
+          // current, instead of appending rows nobody asked for.
+          phase.current = 'idle';
+          setEntry((previous) =>
+            previous.provider === owner && previous.resetKey === key
+              ? { ...previous, loadingMore: false }
+              : previous,
+          );
+          loadMore();
+          return;
+        }
         phase.current = 'idle';
         lastFailure.current = null;
         cursor.current = page.nextCursor;

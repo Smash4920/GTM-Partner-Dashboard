@@ -464,6 +464,131 @@ describe('App provider transitions', () => {
   }, 30_000);
 });
 
+// ---------------------------------------------------------------------------
+// VAL-RES-002: the health readiness ping is provider work like any other —
+// a committed-provider replacement, a newer refresh, or an unmount cancels
+// it at the seam instead of letting it run to an answer nobody publishes.
+// ---------------------------------------------------------------------------
+
+/**
+ * Gates the committed local provider's seam ping and records the signal each
+ * ping carried. The ping is the only mount-time `getForecastSummary` caller
+ * (Home's widgets read other aggregates), so the gate isolates exactly the
+ * health probe's lifecycle.
+ */
+function gatedHealthPing() {
+  const signals: (AbortSignal | undefined)[] = [];
+  const releases: (() => void)[] = [];
+  const wrap = (provider: MockDataProvider): MockDataProvider => {
+    const real = provider.getForecastSummary.bind(provider);
+    provider.getForecastSummary = (access, scope, context) => {
+      signals.push(context?.signal);
+      return new Promise<void>((resolve) => {
+        releases.push(resolve);
+      }).then(() => real(access, scope, context));
+    };
+    return provider;
+  };
+  return { signals, releases, wrap };
+}
+
+describe('App health probe lifecycle (VAL-RES-002)', () => {
+  it('committing a provider replacement aborts the health probe still running against the old seam', async () => {
+    const user = userEvent.setup();
+    const ping = gatedHealthPing();
+    const factory = (id: ProviderId): DataProvider =>
+      id === 'local'
+        ? ping.wrap(new MockDataProvider(taggedBook('LOCAL', 1)))
+        : new MockDataProvider(taggedBook('REMOTE', 2));
+    const control = controllableProbe();
+    render(<App providerFactory={factory} probeProvider={control.probe} />);
+    await screen.findByRole(
+      'heading',
+      { name: 'Partner Performance Overview', level: 1 },
+      { timeout: 10_000 },
+    );
+
+    // The boot assessment's seam ping is in flight against the local
+    // provider, its signal live.
+    await waitFor(() => expect(ping.signals).toHaveLength(1));
+    expect(ping.signals[0]?.aborted).toBe(false);
+
+    // The candidate passes its readiness probe and commits while the health
+    // ping is still waiting.
+    await user.selectOptions(screen.getByLabelText('Data provider'), 'remote');
+    await waitFor(() => expect(control.probes).toHaveLength(1));
+    await act(async () => {
+      control.probes[0]!.resolve();
+    });
+    expect(await screen.findByText(REMOTE_BANNER)).toBeInTheDocument();
+
+    // The commit cancelled the probe against the seam the session left —
+    // the signal the provider holds is spent — and no replacement ping was
+    // issued against the old provider.
+    expect(ping.signals[0]?.aborted).toBe(true);
+    expect(ping.signals).toHaveLength(1);
+    expect(window.GTM_HEALTH?.artifact.providerId).toBe('remote');
+
+    // The abandoned ping's late answer writes nothing: the artifact keeps
+    // speaking for the committed provider, and nothing re-pings the old one.
+    await act(async () => {
+      ping.releases[0]!();
+    });
+    expect(window.GTM_HEALTH?.artifact.providerId).toBe('remote');
+    expect(ping.signals).toHaveLength(1);
+  }, 30_000);
+
+  it('a newer refresh aborts the superseded refresh’s seam ping', async () => {
+    const ping = gatedHealthPing();
+    const factory = (): DataProvider => ping.wrap(new MockDataProvider(taggedBook('LOCAL', 1)));
+    render(<App providerFactory={factory} />);
+    await screen.findByRole(
+      'heading',
+      { name: 'Partner Performance Overview', level: 1 },
+      { timeout: 10_000 },
+    );
+
+    // Let the boot ping answer so the assessed artifact is live. (The
+    // rollup is not 'ok' in this harness: RTL renders into its own
+    // container, so the appShell check reports no #root. The seam check is
+    // the one this lifecycle is about.)
+    const seamStatus = () =>
+      window.GTM_HEALTH?.artifact.checks.find((check) => check.name === 'dataSeam')?.status;
+    await waitFor(() => expect(ping.signals).toHaveLength(1));
+    await act(async () => {
+      ping.releases[0]!();
+    });
+    await waitFor(() => expect(seamStatus()).toBe('ok'));
+    expect(ping.signals[0]?.aborted).toBe(false);
+
+    // A refresh starts and its ping is in flight…
+    const superseded = window.GTM_HEALTH!.refresh();
+    await waitFor(() => expect(ping.signals).toHaveLength(2));
+    expect(ping.signals[1]?.aborted).toBe(false);
+
+    // …and a newer refresh supersedes it: the abandoned ping is cancelled
+    // at the seam, not merely ignored.
+    const newer = window.GTM_HEALTH!.refresh();
+    await waitFor(() => expect(ping.signals).toHaveLength(3));
+    expect(ping.signals[1]?.aborted).toBe(true);
+    expect(ping.signals[2]?.aborted).toBe(false);
+
+    // The superseded ping settles late; the newer refresh's answer is the
+    // one that publishes.
+    await act(async () => {
+      ping.releases[1]!();
+    });
+    await act(async () => {
+      ping.releases[2]!();
+    });
+    const newerArtifact = await newer;
+    await superseded;
+    expect(newerArtifact.checks.find((check) => check.name === 'dataSeam')?.status).toBe('ok');
+    expect(window.GTM_HEALTH?.artifact).toBe(newerArtifact);
+    expect(ping.signals).toHaveLength(3);
+  }, 30_000);
+});
+
 describe('App under total provider failure (VAL-RES-008)', () => {
   /** Every method on the contract rejects; nothing the app asks for can succeed. */
   function failingProvider(): DataProvider {
