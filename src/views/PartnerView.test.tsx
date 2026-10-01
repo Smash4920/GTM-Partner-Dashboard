@@ -5,6 +5,7 @@ import PartnerView from './PartnerView';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
 import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
 import type { DataProvider } from '../data/DataProvider';
+import { NO_SESSION_EDITS } from '../data/sessionEdits';
 import {
   makeCertification,
   makeOpportunity,
@@ -24,7 +25,7 @@ import type { ProviderBook } from '../data/mock/book';
  */
 
 function renderView(provider: DataProvider) {
-  return render(<PartnerView provider={provider} prospects={[]} />);
+  return render(<PartnerView provider={provider} edits={NO_SESSION_EDITS} prospects={[]} />);
 }
 
 function mockProvider(book: Partial<ProviderBook> = {}): DataProvider {

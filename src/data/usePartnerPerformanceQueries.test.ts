@@ -1,8 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { INTERNAL_DEMO_SCOPE } from './accessScope';
+import type { DemoAccessScope } from './accessScope';
 import { DATA_PROVIDER_METHODS } from './DataProvider';
-import type { DataProvider } from './DataProvider';
+import type { ActivityScope, DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { SimulatedRemoteProvider } from './mock/SimulatedRemoteProvider';
 import { NO_SESSION_EDITS } from './sessionEdits';
@@ -10,6 +11,7 @@ import { usePartnerPerformanceQueries } from './usePartnerPerformanceQueries';
 import type { PartnerPerformanceQueryInput } from './usePartnerPerformanceQueries';
 import {
   makeCertification,
+  makeMeeting,
   makeOpportunity,
   makePartner,
   makeProviderBook,
@@ -188,7 +190,6 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
 
     expect([...new Set(calls)].sort()).toEqual([
       'getManagerDirectory',
-      'getPartnerCertification',
       'getPartnerRoster',
       'getPerformanceSummary',
       'getQuarterlyRevenueTrend',
@@ -472,5 +473,273 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
     expect(calls.filter((name) => name === 'getRegistrationFunnel')).toHaveLength(1);
     expect(calls.filter((name) => name === 'getWeeklyGoalProgress')).toHaveLength(1);
     expect(calls.filter((name) => name === 'getRegistrationOpsSummary')).toHaveLength(1);
+  });
+
+  describe('scope identity', () => {
+    it('drops every drill-down-scoped answer the moment the manager changes — synchronously', async () => {
+      const { provider } = spyProvider(new MockDataProvider(makeBook()));
+      const { result, rerender } = renderHook(
+        (input: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(input),
+        { initialProps: inputFor(provider) },
+      );
+      await settle(result);
+
+      rerender(inputFor(provider, { managerId: 'pm-2' }));
+
+      // The manager is the membership of these answers: under the new
+      // manager's label none of the old scope's figures may render, not even
+      // for the frames while the replacement requests are in flight.
+      expect(result.current.summary.data).toBeNull();
+      expect(result.current.funnel.data).toBeNull();
+      expect(result.current.stages.data).toBeNull();
+      expect(result.current.trend.data).toBeNull();
+      expect(result.current.activity.data).toBeNull();
+      expect(result.current.goal.data).toBeNull();
+      expect(result.current.ops.data).toBeNull();
+      expect(result.current.opportunities.rows).toEqual([]);
+      expect(result.current.leaderboard.rows).toEqual([]);
+
+      await waitFor(() => expect(result.current.summary.data?.openPipelineValue).toBe(40_000));
+    });
+
+    it('never restores the prior manager’s summary when the replacement request fails', async () => {
+      let resolveSecond!: () => void;
+      let rejectSecond!: (reason: unknown) => void;
+      const gate = new Promise<unknown>((res, rej) => {
+        resolveSecond = () => res(undefined);
+        rejectSecond = rej;
+      });
+      void resolveSecond;
+      const inner = new MockDataProvider(makeBook());
+      let summaryCalls = 0;
+      const provider: DataProvider = Object.assign(new MockDataProvider(makeBook()), {
+        getPerformanceSummary: (
+          ...args: Parameters<DataProvider['getPerformanceSummary']>
+        ): ReturnType<DataProvider['getPerformanceSummary']> => {
+          summaryCalls += 1;
+          if (summaryCalls === 1) return inner.getPerformanceSummary(...args);
+          return gate.then(() => inner.getPerformanceSummary(...args));
+        },
+      });
+      const { result, rerender } = renderHook(
+        (input: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(input),
+        { initialProps: inputFor(provider) },
+      );
+      await settle(result);
+      expect(result.current.summary.data?.openPipelineValue).toBe(290_000);
+
+      rerender(inputFor(provider, { managerId: 'pm-2' }));
+      // The new manager's summary is an initial load, never a stale frame of
+      // the org-wide figures under the new label.
+      expect(result.current.summary.data).toBeNull();
+      expect(result.current.summary.loading).toBe(true);
+
+      await act(async () => {
+        rejectSecond(new Error('boom'));
+      });
+      // The failed first fetch of the new scope is unavailable with a retry;
+      // the prior scope's numbers never come back.
+      expect(result.current.summary.data).toBeNull();
+      expect(result.current.summary.error).toBe('Failed to load the performance summary');
+    });
+
+    it('keeps the same scope’s last good answer while an edit refresh is in flight', async () => {
+      let resolveSecond!: () => void;
+      const gate = new Promise<void>((res) => {
+        resolveSecond = res;
+      });
+      const inner = new MockDataProvider(makeBook());
+      let summaryCalls = 0;
+      const provider: DataProvider = Object.assign(new MockDataProvider(makeBook()), {
+        getPerformanceSummary: (
+          ...args: Parameters<DataProvider['getPerformanceSummary']>
+        ): ReturnType<DataProvider['getPerformanceSummary']> => {
+          summaryCalls += 1;
+          if (summaryCalls === 1) return inner.getPerformanceSummary(...args);
+          return gate.then(() => inner.getPerformanceSummary(...args));
+        },
+      });
+      const { result, rerender } = renderHook(
+        (input: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(input),
+        { initialProps: inputFor(provider) },
+      );
+      await settle(result);
+
+      rerender(
+        inputFor(provider, {
+          edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-open': 400_000 } },
+        }),
+      );
+      // Same manager, same phase, new edit: the previous answer stays on
+      // screen, marked refreshing, until the edited one lands.
+      expect(result.current.summary.data?.openPipelineValue).toBe(290_000);
+      expect(result.current.summary.refreshing).toBe(true);
+
+      await act(async () => {
+        resolveSecond();
+      });
+      await waitFor(() => expect(result.current.summary.data?.openPipelineValue).toBe(440_000));
+    });
+  });
+
+  describe('session prospects', () => {
+    /** A provider that also records the activity-scope argument of each call. */
+    function scopeSpyProvider(inner: DataProvider) {
+      const activityScopes: ActivityScope[] = [];
+      const goalScopes: ActivityScope[] = [];
+      const provider = new Proxy(inner, {
+        get(target, property, receiver) {
+          const value = Reflect.get(target, property, receiver);
+          if (property === 'getWeeklyActivitySeries') {
+            return (access: DemoAccessScope, scope: ActivityScope, context: unknown) => {
+              activityScopes.push(scope);
+              return target.getWeeklyActivitySeries(access, scope, context as never);
+            };
+          }
+          if (property === 'getWeeklyGoalProgress') {
+            return (access: DemoAccessScope, scope: ActivityScope, context: unknown) => {
+              goalScopes.push(scope);
+              return target.getWeeklyGoalProgress(access, scope, context as never);
+            };
+          }
+          return value;
+        },
+      });
+      return { provider, activityScopes, goalScopes };
+    }
+
+    it('passes prospects into the activity and goal scopes so a prospect-classified meeting counts exactly once', async () => {
+      // One current-week meeting, reclassified onto a session prospect. The
+      // roster filter must see the prospect — appended by the provider from
+      // the scope the hook passes — or the meeting falls out of every
+      // aggregate even though the classification names a roster partner.
+      const prospect = makePartner({
+        id: 'prospect-1',
+        name: 'Prospect Co',
+        partnerManagerId: 'pm-1',
+      });
+      const book = makeProviderBook({
+        ...makeBook(),
+        activities: [makeMeeting({ id: 'meeting-1', partnerId: 'partner-1' })],
+      });
+      const { provider, activityScopes, goalScopes } = scopeSpyProvider(new MockDataProvider(book));
+      const classifications = {
+        'meeting-1': { type: 'pio-interlock', partnerId: 'prospect-1' },
+      } as const;
+      const { result } = renderHook(
+        (input: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(input),
+        {
+          initialProps: inputFor(provider, {
+            classifications: { ...classifications },
+            prospects: [prospect],
+          }),
+        },
+      );
+      await settle(result);
+
+      // The prospect rode along with both queries as a scope input.
+      expect(activityScopes).toHaveLength(1);
+      expect(activityScopes[0]!.prospects?.map((partner) => partner.id)).toEqual(['prospect-1']);
+      expect(goalScopes).toHaveLength(1);
+      expect(goalScopes[0]!.prospects?.map((partner) => partner.id)).toEqual(['prospect-1']);
+
+      // Exactly once: the current-week bucket holds the one classified
+      // meeting, and the goal counts it as this week's one PIO interlock.
+      const activity = result.current.activity.data!;
+      expect(activity[activity.length - 1]!.total).toBe(1);
+      expect(activity[activity.length - 1]!.byType['pio-interlock']).toBe(1);
+      expect(result.current.goal.data!.meetings).toBe(1);
+      expect(result.current.goal.data!.pioMeetings).toBe(1);
+    });
+
+    it('refetches the activity and goal aggregates when a prospect is added', async () => {
+      const { provider, calls } = spyProvider(new MockDataProvider(makeBook()));
+      const { result, rerender } = renderHook(
+        (input: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(input),
+        { initialProps: inputFor(provider) },
+      );
+      await settle(result);
+
+      rerender(
+        inputFor(provider, {
+          prospects: [makePartner({ id: 'prospect-1', name: 'Prospect Co' })],
+        }),
+      );
+      await waitFor(() =>
+        expect(calls.filter((name) => name === 'getWeeklyGoalProgress')).toHaveLength(2),
+      );
+      expect(calls.filter((name) => name === 'getWeeklyActivitySeries')).toHaveLength(2);
+    });
+  });
+
+  describe('certification gating', () => {
+    it('never asks for a certification while no partner is selected', async () => {
+      const { provider, calls } = spyProvider(new MockDataProvider(makeBook()));
+      const { result } = renderHook(
+        (input: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(input),
+        { initialProps: inputFor(provider) },
+      );
+      await settle(result);
+
+      // 'All partners' has no certification answer to give, so no request is
+      // issued and nothing invisible can fail.
+      expect(calls.filter((name) => name === 'getPartnerCertification')).toHaveLength(0);
+    });
+
+    it('starts the certification query only when a partner is selected', async () => {
+      const { provider, calls } = spyProvider(new MockDataProvider(makeBook()));
+      const { result, rerender } = renderHook(
+        (input: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(input),
+        { initialProps: inputFor(provider) },
+      );
+      await settle(result);
+      expect(calls.filter((name) => name === 'getPartnerCertification')).toHaveLength(0);
+
+      rerender(inputFor(provider, { partnerId: 'partner-1' }));
+      await waitFor(() => expect(result.current.certification.data).not.toBeNull());
+
+      expect(calls.filter((name) => name === 'getPartnerCertification')).toHaveLength(1);
+      expect(result.current.certification.data?.partner.id).toBe('partner-1');
+
+      // Deselecting stops the query from re-firing; selecting another
+      // partner starts it again under that partner's identity.
+      rerender(inputFor(provider, { partnerId: 'all' }));
+      rerender(inputFor(provider, { partnerId: 'partner-2' }));
+      await waitFor(() =>
+        expect(calls.filter((name) => name === 'getPartnerCertification')).toHaveLength(2),
+      );
+      await waitFor(() => expect(result.current.certification.data?.partner.id).toBe('partner-2'));
+    });
+
+    it('fails the certification query independently, with a retry that repeats only that call', async () => {
+      const remote = new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+        latencyMs: 0,
+        failMethods: { getPartnerCertification: 1 },
+      });
+      const { provider, calls } = spyProvider(remote);
+      const { result, rerender } = renderHook(
+        (input: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(input),
+        { initialProps: inputFor(provider) },
+      );
+      await settle(result);
+      // The armed failure is still unspent: no partner selected, no call.
+      expect(result.current.certification.error).toBeNull();
+
+      rerender(inputFor(provider, { partnerId: 'partner-1' }));
+      await waitFor(() => expect(result.current.certification.error).not.toBeNull());
+      expect(result.current.certification.error).toBe('Failed to load the certification profile');
+      expect(result.current.certification.data).toBeNull();
+      // The failure is this card's alone: the selected partner's summary
+      // answered on the same selection change.
+      await waitFor(() => expect(result.current.summary.data).not.toBeNull());
+
+      // The retry repeats only the failed call.
+      const beforeRetry = calls.length;
+      act(() => result.current.certification.retry());
+      await waitFor(() => expect(result.current.certification.data).not.toBeNull());
+
+      expect(calls.slice(beforeRetry)).toEqual(['getPartnerCertification']);
+      expect(result.current.certification.data?.partner.id).toBe('partner-1');
+    });
   });
 });

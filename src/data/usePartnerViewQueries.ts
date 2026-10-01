@@ -10,8 +10,9 @@ import type { DemoAccessScope } from './accessScope';
 import type { QuarterRevenueRow, TypeRow } from '../lib/metrics';
 import { usePaginatedRows } from './paginationState';
 import type { PaginationState } from './paginationState';
-import { prospectsKey, useScopedQuery } from './queryState';
+import { editMapKey, prospectsKey, useScopedQuery } from './queryState';
 import type { QueryState } from './queryState';
+import type { SessionEdits } from './sessionEdits';
 import type { DealRegistration, FiscalPhase, Opportunity, OpportunityType, Partner } from './types';
 
 /**
@@ -37,6 +38,23 @@ import type { DealRegistration, FiscalPhase, Opportunity, OpportunityType, Partn
  * One rejected call fails exactly one card; its retry repeats only that
  * call. The pipeline table and the registration cards paginate a cursor at
  * a time; a failed page keeps the pages already loaded.
+ *
+ * The session's edits ride into the revenue answers the way they do on
+ * every other route: the provider applies them once, so a revenue override
+ * made on Forecasting moves this route's KPIs, stage bars, motion split,
+ * trend, and pipeline rows to the corrected figure instead of reverting to
+ * the provider's original. Invalidation stays narrow — revenue edits
+ * refresh those aggregates, and any revenue, forecast-call, note, or
+ * next-step edit refreshes only the pipeline windows that hold the edited
+ * row; an edit touching no loaded row issues no page request at all.
+ *
+ * Every aggregate carries a `scopeKey` — the identity of the question it
+ * answers, from the access scope, phase, and slice it reads. A phase or
+ * slice change is a different question: the previous scope's answer is
+ * dropped at read time, so old figures never render under the new label,
+ * not even while the replacement is in flight or after it fails. Edit keys
+ * stay in `queryKey` only: same question, new session input, so an edit
+ * refresh keeps the last good answer on screen.
  */
 
 /** The revenue motions the partner portal can show — Sell To is internal-only. */
@@ -108,6 +126,12 @@ export interface PartnerViewQueryInput {
   phase: FiscalPhase;
   /** The revenue-motion lens: 'all' or one motion. */
   slice: PartnerSlice;
+  /**
+   * The session's uncommitted edits, keyed to the committed provider. They
+   * ride the revenue aggregates and the pipeline pages so an edit made on
+   * Forecasting is reflected here exactly once, applied by the provider.
+   */
+  edits: SessionEdits;
   prospects: Partner[];
 }
 
@@ -137,6 +161,7 @@ export function usePartnerViewQueries({
   partnerId,
   phase,
   slice,
+  edits,
   prospects,
 }: PartnerViewQueryInput): PartnerViewQueries {
   // The audience scope is the whole isolation story: every query below is
@@ -145,19 +170,26 @@ export function usePartnerViewQueries({
   const accessKey = demoScopeKey(access);
   const rosterKey = prospectsKey(prospects);
   const oppType = slice === 'all' ? undefined : slice;
+  const revKey = editMapKey(edits.revenueOverrides);
+  const callKey = editMapKey(edits.forecastCalls);
+  const noteKey = editMapKey(edits.notes);
+  const nextKey = editMapKey(edits.nextSteps);
 
   const summary = useScopedQuery({
     provider,
-    queryKey: `partner-view-summary|access:${accessKey}|${phase}|slice:${slice}`,
+    queryKey: `partner-view-summary|access:${accessKey}|${phase}|slice:${slice}|rev:${revKey}`,
+    scopeKey: `partner-view-summary|access:${accessKey}|${phase}|slice:${slice}`,
     run: (context) =>
-      provider.getPerformanceSummary(access, { phase, partnerId, oppType }, context),
+      provider.getPerformanceSummary(access, { phase, partnerId, oppType, edits }, context),
     errorFallback: 'Failed to load the performance summary',
   });
 
   const stages = useScopedQuery({
     provider,
-    queryKey: `partner-view-stages|access:${accessKey}|${phase}|slice:${slice}`,
-    run: (context) => provider.getStageBreakdown(access, { phase, partnerId, oppType }, context),
+    queryKey: `partner-view-stages|access:${accessKey}|${phase}|slice:${slice}|rev:${revKey}`,
+    scopeKey: `partner-view-stages|access:${accessKey}|${phase}|slice:${slice}`,
+    run: (context) =>
+      provider.getStageBreakdown(access, { phase, partnerId, oppType, edits }, context),
     errorFallback: 'Failed to load the pipeline by stage',
   });
 
@@ -165,21 +197,25 @@ export function usePartnerViewQueries({
     provider,
     // Deliberately no slice in the key: the split always shows the full
     // visible book, whichever motion lens the pipeline cards are under.
-    queryKey: `partner-view-motions|access:${accessKey}|${phase}`,
-    run: (context) => provider.getTypeBreakdown(access, { phase, partnerId }, context),
+    queryKey: `partner-view-motions|access:${accessKey}|${phase}|rev:${revKey}`,
+    scopeKey: `partner-view-motions|access:${accessKey}|${phase}`,
+    run: (context) => provider.getTypeBreakdown(access, { phase, partnerId, edits }, context),
     errorFallback: 'Failed to load the revenue-motion split',
   });
 
   const trend = useScopedQuery({
     provider,
-    queryKey: `partner-view-trend|access:${accessKey}|slice:${slice}`,
-    run: (context) => provider.getQuarterlyRevenueTrend(access, { partnerId, oppType }, context),
+    queryKey: `partner-view-trend|access:${accessKey}|slice:${slice}|rev:${revKey}`,
+    scopeKey: `partner-view-trend|access:${accessKey}|slice:${slice}`,
+    run: (context) =>
+      provider.getQuarterlyRevenueTrend(access, { partnerId, oppType, edits }, context),
     errorFallback: 'Failed to load the revenue trend',
   });
 
   const certification = useScopedQuery({
     provider,
     queryKey: `partner-view-cert|access:${accessKey}|prospects:${rosterKey}`,
+    scopeKey: `partner-view-cert|access:${accessKey}`,
     run: (context) => provider.getPartnerCertification(access, { partnerId, prospects }, context),
     errorFallback: 'Failed to load the certification record',
   });
@@ -188,6 +224,7 @@ export function usePartnerViewQueries({
     provider,
     // No phase: exclusivity lapsing and conversion times span quarters.
     queryKey: `partner-view-ops|access:${accessKey}`,
+    scopeKey: `partner-view-ops|access:${accessKey}`,
     run: (context) => provider.getRegistrationOpsSummary(access, { partnerId }, context),
     errorFallback: 'Failed to load the registration timeline',
   });
@@ -220,10 +257,22 @@ export function usePartnerViewQueries({
     provider,
     enabled: true,
     resetKey: `partner-view-pipeline|access:${accessKey}|${phase}|slice:${slice}|${PIPELINE_PAGE_SIZE}`,
-    refreshKey: '',
+    // Any edit that moves a loaded row's fetched values — revenue, call,
+    // note, or next step — refreshes that window in place; the rowEdits
+    // narrowing keeps an edit to a row no window holds from fetching at all.
+    refreshKey: `rev:${revKey}|call:${callKey}|note:${noteKey}|next:${nextKey}`,
     pageSize: PIPELINE_PAGE_SIZE,
     fetchPage: (page, context) =>
-      provider.listScopedOpportunities(access, { phase, partnerId, oppType }, page, context),
+      provider.listScopedOpportunities(access, { phase, partnerId, oppType, edits }, page, context),
+    rowEdits: {
+      maps: {
+        rev: edits.revenueOverrides,
+        call: edits.forecastCalls,
+        note: edits.notes,
+        next: edits.nextSteps,
+      },
+      idOf: (row) => row.id,
+    },
     errorFallback: 'Failed to load the pipeline opportunities',
     loadMoreErrorFallback: 'Failed to load more opportunities',
   });

@@ -53,6 +53,15 @@ import type {
  * Race safety and failure semantics come from the shared primitives: every
  * query carries its own loading, error, and retry state, and a rejected
  * call fails exactly one card.
+ *
+ * Every aggregate also carries a `scopeKey`: the identity of the question it
+ * answers, built from the membership primitives (access, phase, type lens)
+ * and nothing session-side. A phase or lens change is a different question —
+ * the previous scope's answer is dropped at read time, so its figures can
+ * never render under the new label, not even while the replacement is in
+ * flight or after the replacement fails. Edit, classification, and prospect
+ * keys stay in `queryKey` only: those are the same question with new
+ * session input, so their refreshes keep the last good answer on screen.
  */
 
 /** Rows of the review queue fetched at once: the card shows one page. */
@@ -98,6 +107,7 @@ export function useHomeQueries({
   const summary = useScopedQuery({
     provider,
     queryKey: `perf-summary|access:${accessKey}|${phase}|type:${oppType}|rev:${revKey}|prospects:${rosterKey}`,
+    scopeKey: `perf-summary|access:${accessKey}|${phase}|type:${oppType}`,
     run: (context) =>
       provider.getPerformanceSummary(access, { phase, oppType, edits, prospects }, context),
     errorFallback: 'Failed to load the performance summary',
@@ -106,6 +116,7 @@ export function useHomeQueries({
   const funnel = useScopedQuery({
     provider,
     queryKey: `reg-funnel|access:${accessKey}|${phase}`,
+    scopeKey: `reg-funnel|access:${accessKey}|${phase}`,
     run: (context) => provider.getRegistrationFunnel(access, { phase }, context),
     errorFallback: 'Failed to load the registration funnel',
   });
@@ -113,6 +124,7 @@ export function useHomeQueries({
   const stages = useScopedQuery({
     provider,
     queryKey: `stage-breakdown|access:${accessKey}|${phase}|type:${oppType}|rev:${revKey}`,
+    scopeKey: `stage-breakdown|access:${accessKey}|${phase}|type:${oppType}`,
     run: (context) => provider.getStageBreakdown(access, { phase, oppType, edits }, context),
     errorFallback: 'Failed to load the pipeline by stage',
   });
@@ -120,6 +132,7 @@ export function useHomeQueries({
   const types = useScopedQuery({
     provider,
     queryKey: `type-breakdown|access:${accessKey}|${phase}|rev:${revKey}`,
+    scopeKey: `type-breakdown|access:${accessKey}|${phase}`,
     run: (context) => provider.getTypeBreakdown(access, { phase, edits }, context),
     errorFallback: 'Failed to load the pipeline by type',
   });
@@ -127,6 +140,7 @@ export function useHomeQueries({
   const trend = useScopedQuery({
     provider,
     queryKey: `quarterly-revenue|access:${accessKey}|type:${oppType}|rev:${revKey}`,
+    scopeKey: `quarterly-revenue|access:${accessKey}|type:${oppType}`,
     run: (context) => provider.getQuarterlyRevenueTrend(access, { oppType, edits }, context),
     errorFallback: 'Failed to load the revenue trend',
   });
@@ -134,6 +148,7 @@ export function useHomeQueries({
   const activity = useScopedQuery({
     provider,
     queryKey: `weekly-activity|access:${accessKey}|cls:${clsKey}`,
+    scopeKey: `weekly-activity|access:${accessKey}`,
     run: (context) => provider.getWeeklyActivitySeries(access, { classifications }, context),
     errorFallback: 'Failed to load the weekly activity',
   });
@@ -153,6 +168,7 @@ export function useHomeQueries({
   const leaderboard = useScopedQuery({
     provider,
     queryKey: `top-partner-leaders|access:${accessKey}|${phase}|type:${oppType}|rev:${revKey}|prospects:${rosterKey}`,
+    scopeKey: `top-partner-leaders|access:${accessKey}|${phase}|type:${oppType}`,
     run: (context) =>
       provider.getTopPartnerLeaders(access, { phase, oppType, edits, prospects }, context),
     errorFallback: 'Failed to load the partner leaderboard',

@@ -50,6 +50,27 @@ import type {
  * loaded windows in place — the pipeline's only when the edit touches a
  * loaded row, the leaderboard's always, because an edit can re-rank any
  * row.
+ *
+ * Every aggregate also carries a `scopeKey`: the identity of the question it
+ * answers, built from the membership primitives (access, phase, manager,
+ * partner) and nothing session-side. A drill-down or phase change is a
+ * different question — the previous scope's answer is dropped at read time,
+ * so one scope's figures can never render under another scope's label, not
+ * even while the replacement is in flight or after it fails. Edit,
+ * classification, and prospect keys stay in `queryKey` only: same question,
+ * new session input, so those refreshes keep the last good answer.
+ *
+ * Two query-specific notes:
+ *
+ * - The activity and goal aggregates receive the session's prospects in
+ *   their provider scopes (and their keys): a meeting classified onto a
+ *   prospect is a roster-partner meeting, and it must be counted by the
+ *   same scope that counted it everywhere else — exactly once.
+ * - The certification query is disabled while the drill-down is 'all':
+ *   there is no certification answer for the whole roster, so the card
+ *   neither fires an invisible request nor discards a silent null. It
+ *   starts when a partner is selected, and its failure and retry live in
+ *   the visible card.
  */
 
 /** Rows per page of the scoped pipeline table. */
@@ -123,6 +144,7 @@ export function usePartnerPerformanceQueries({
   const summary = useScopedQuery({
     provider,
     queryKey: `perf-summary|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}|rev:${revKey}|prospects:${rosterKey}`,
+    scopeKey: `perf-summary|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}`,
     run: (context) =>
       provider.getPerformanceSummary(access, { ...drilldown, phase, edits }, context),
     errorFallback: 'Failed to load the performance summary',
@@ -131,6 +153,7 @@ export function usePartnerPerformanceQueries({
   const funnel = useScopedQuery({
     provider,
     queryKey: `reg-funnel|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}`,
+    scopeKey: `reg-funnel|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}`,
     run: (context) => provider.getRegistrationFunnel(access, { ...drilldown, phase }, context),
     errorFallback: 'Failed to load the registration funnel',
   });
@@ -138,6 +161,7 @@ export function usePartnerPerformanceQueries({
   const stages = useScopedQuery({
     provider,
     queryKey: `stage-breakdown|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}|rev:${revKey}`,
+    scopeKey: `stage-breakdown|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}`,
     run: (context) => provider.getStageBreakdown(access, { ...drilldown, phase, edits }, context),
     errorFallback: 'Failed to load the pipeline by stage',
   });
@@ -145,13 +169,15 @@ export function usePartnerPerformanceQueries({
   const trend = useScopedQuery({
     provider,
     queryKey: `quarterly-revenue|access:${accessKey}|manager:${managerId}|partner:${partnerId}|rev:${revKey}`,
+    scopeKey: `quarterly-revenue|access:${accessKey}|manager:${managerId}|partner:${partnerId}`,
     run: (context) => provider.getQuarterlyRevenueTrend(access, { ...drilldown, edits }, context),
     errorFallback: 'Failed to load the revenue trend',
   });
 
   const activity = useScopedQuery({
     provider,
-    queryKey: `weekly-activity|access:${accessKey}|manager:${managerId}|partner:${partnerId}|cls:${clsKey}`,
+    queryKey: `weekly-activity|access:${accessKey}|manager:${managerId}|partner:${partnerId}|cls:${clsKey}|prospects:${rosterKey}`,
+    scopeKey: `weekly-activity|access:${accessKey}|manager:${managerId}|partner:${partnerId}`,
     run: (context) =>
       provider.getWeeklyActivitySeries(
         access,
@@ -160,6 +186,7 @@ export function usePartnerPerformanceQueries({
           partnerId: selectedPartnerId,
           partnerFilter: 'roster',
           classifications,
+          prospects,
         },
         context,
       ),
@@ -168,7 +195,8 @@ export function usePartnerPerformanceQueries({
 
   const goal = useScopedQuery({
     provider,
-    queryKey: `weekly-goal|access:${accessKey}|manager:${managerId}|partner:${partnerId}|cls:${clsKey}`,
+    queryKey: `weekly-goal|access:${accessKey}|manager:${managerId}|partner:${partnerId}|cls:${clsKey}|prospects:${rosterKey}`,
+    scopeKey: `weekly-goal|access:${accessKey}|manager:${managerId}|partner:${partnerId}`,
     run: (context) =>
       provider.getWeeklyGoalProgress(
         access,
@@ -177,6 +205,7 @@ export function usePartnerPerformanceQueries({
           partnerId: selectedPartnerId,
           partnerFilter: 'roster',
           classifications,
+          prospects,
         },
         context,
       ),
@@ -186,6 +215,7 @@ export function usePartnerPerformanceQueries({
   const ops = useScopedQuery({
     provider,
     queryKey: `reg-ops|access:${accessKey}|manager:${managerId}|partner:${partnerId}`,
+    scopeKey: `reg-ops|access:${accessKey}|manager:${managerId}|partner:${partnerId}`,
     run: (context) => provider.getRegistrationOpsSummary(access, drilldown, context),
     errorFallback: 'Failed to load the registration ops',
   });
@@ -215,6 +245,12 @@ export function usePartnerPerformanceQueries({
   const certification = useScopedQuery({
     provider,
     queryKey: `partner-cert|access:${accessKey}|partner:${partnerId}|prospects:${rosterKey}`,
+    scopeKey: `partner-cert|access:${accessKey}|partner:${partnerId}`,
+    // 'All partners' has no certification answer: no request fires, nothing
+    // invisible can fail, and the card stays unmounted in the view. The
+    // query starts when a partner is selected, and its failure and retry
+    // render in that card.
+    enabled: partnerId !== 'all',
     run: (context) =>
       provider.getPartnerCertification(
         access,

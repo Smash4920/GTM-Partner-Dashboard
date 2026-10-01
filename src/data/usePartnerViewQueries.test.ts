@@ -6,6 +6,7 @@ import { DATA_PROVIDER_METHODS } from './DataProvider';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { SimulatedRemoteProvider } from './mock/SimulatedRemoteProvider';
+import { NO_SESSION_EDITS } from './sessionEdits';
 import { usePartnerPickerQueries, usePartnerViewQueries } from './usePartnerViewQueries';
 import type { PartnerPickerQueryInput, PartnerViewQueryInput } from './usePartnerViewQueries';
 import {
@@ -196,6 +197,7 @@ function viewInput(
     partnerId: 'partner-1',
     phase: 'fy',
     slice: 'all',
+    edits: NO_SESSION_EDITS,
     prospects: [],
     ...overrides,
   };
@@ -435,5 +437,197 @@ describe('usePartnerViewQueries (VAL-CROSS-004)', () => {
     expect(calls.filter((call) => call.method === 'getRegistrationOpsSummary')).toHaveLength(1);
     expect(calls.filter((call) => call.method === 'listRecentRegistrations')).toHaveLength(1);
     expect(calls.filter((call) => call.method === 'getPartnerCertification')).toHaveLength(1);
+  });
+
+  describe('session edits', () => {
+    it('applies a revenue edit at the seam and refreshes exactly the revenue-dependent answers', async () => {
+      const { provider, calls } = spyProvider(new MockDataProvider(makeBook()));
+      const { result, rerender } = renderHook(
+        (input: PartnerViewQueryInput) => usePartnerViewQueries(input),
+        { initialProps: viewInput(provider) },
+      );
+      await settle(result);
+      expect(result.current.summary.data?.openPipelineValue).toBe(60_000);
+
+      // The session's edit (made on Forecasting) rides into every revenue
+      // answer: the KPI aggregate and the loaded pipeline window both come
+      // back with the corrected figure applied once by the provider.
+      rerender(
+        viewInput(provider, {
+          edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-p1-open': 260_000 } },
+        }),
+      );
+      await waitFor(() => expect(result.current.summary.data?.openPipelineValue).toBe(260_000));
+
+      const count = (method: string) => calls.filter((call) => call.method === method).length;
+      expect(count('getPerformanceSummary')).toBe(2);
+      expect(count('getStageBreakdown')).toBe(2);
+      expect(count('getTypeBreakdown')).toBe(2);
+      expect(count('getQuarterlyRevenueTrend')).toBe(2);
+      // The pipeline window refreshed in place — same rows, edited value.
+      expect(count('listScopedOpportunities')).toBe(2);
+      const edited = result.current.pipeline.rows.find((row) => row.id === 'opp-p1-open');
+      expect(edited?.forecastedRevenue).toBe(260_000);
+      expect(result.current.pipeline.rows.map((row) => row.id)).toEqual([
+        'opp-p1-win',
+        'opp-p1-open',
+      ]);
+      // Registrations, certification, and ops read no opportunity revenue.
+      expect(count('getRegistrationOpsSummary')).toBe(1);
+      expect(count('getPartnerCertification')).toBe(1);
+      expect(count('listRecentRegistrations')).toBe(1);
+      expect(count('listUnconvertedRegistrations')).toBe(1);
+    });
+
+    it('refreshes only the affected pipeline window for a note or next-step edit', async () => {
+      const { provider, calls } = spyProvider(new MockDataProvider(makeBook()));
+      const { result, rerender } = renderHook(
+        (input: PartnerViewQueryInput) => usePartnerViewQueries(input),
+        { initialProps: viewInput(provider) },
+      );
+      await settle(result);
+
+      rerender(
+        viewInput(provider, {
+          edits: { ...NO_SESSION_EDITS, notes: { 'opp-p1-open': 'Called to confirm' } },
+        }),
+      );
+      await waitFor(() =>
+        expect(calls.filter((call) => call.method === 'listScopedOpportunities')).toHaveLength(2),
+      );
+
+      // The loaded row carries the session's note; no aggregate moved,
+      // because no aggregate on this route reads a note.
+      expect(result.current.pipeline.rows.find((row) => row.id === 'opp-p1-open')?.notes).toBe(
+        'Called to confirm',
+      );
+      const count = (method: string) => calls.filter((call) => call.method === method).length;
+      expect(count('getPerformanceSummary')).toBe(1);
+      expect(count('getStageBreakdown')).toBe(1);
+      expect(count('getTypeBreakdown')).toBe(1);
+      expect(count('getQuarterlyRevenueTrend')).toBe(1);
+      expect(count('getRegistrationOpsSummary')).toBe(1);
+    });
+
+    it('issues no pipeline request for an edit that touches no loaded row', async () => {
+      const { provider, calls } = spyProvider(new MockDataProvider(makeBook()));
+      const { result, rerender } = renderHook(
+        (input: PartnerViewQueryInput) => usePartnerViewQueries(input),
+        { initialProps: viewInput(provider) },
+      );
+      await settle(result);
+
+      // A revenue edit to a deal outside the loaded window still refetches
+      // the revenue aggregates (they cover the whole scope), but the window
+      // itself is unaffected and is not refetched.
+      rerender(
+        viewInput(provider, {
+          edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-not-loaded': 1 } },
+        }),
+      );
+      await waitFor(() =>
+        expect(calls.filter((call) => call.method === 'getPerformanceSummary')).toHaveLength(2),
+      );
+      expect(calls.filter((call) => call.method === 'listScopedOpportunities')).toHaveLength(1);
+      expect(result.current.pipeline.rows.map((row) => row.id)).toEqual([
+        'opp-p1-win',
+        'opp-p1-open',
+      ]);
+    });
+  });
+
+  describe('scope identity', () => {
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      let reject!: (reason: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    it('drops every phase-scoped answer the moment the phase changes — synchronously', async () => {
+      const { provider } = spyProvider(new MockDataProvider(makeBook()));
+      const { result, rerender } = renderHook(
+        (input: PartnerViewQueryInput) => usePartnerViewQueries(input),
+        { initialProps: viewInput(provider) },
+      );
+      await settle(result);
+
+      rerender(viewInput(provider, { phase: 'q3' }));
+
+      // The phase is the membership of the summary, the stages, the motion
+      // split, and the pipeline window: none of the FY figures may render
+      // under the Q3 label, not even for one frame.
+      expect(result.current.summary.data).toBeNull();
+      expect(result.current.stages.data).toBeNull();
+      expect(result.current.motions.data).toBeNull();
+      expect(result.current.pipeline.rows).toEqual([]);
+      // The trend spans every quarter and the registration cards span all
+      // history: the phase is not their membership, so their answers stay.
+      expect(result.current.trend.data).not.toBeNull();
+      expect(result.current.ops.data).not.toBeNull();
+      expect(result.current.history.rows.length).toBeGreaterThan(0);
+
+      await waitFor(() => expect(result.current.summary.data).not.toBeNull());
+    });
+
+    it('drops the lensed answers the moment the slice changes — synchronously', async () => {
+      const { provider } = spyProvider(new MockDataProvider(makeBook()));
+      const { result, rerender } = renderHook(
+        (input: PartnerViewQueryInput) => usePartnerViewQueries(input),
+        { initialProps: viewInput(provider) },
+      );
+      await settle(result);
+
+      rerender(viewInput(provider, { slice: 'sell-with' }));
+
+      expect(result.current.summary.data).toBeNull();
+      expect(result.current.stages.data).toBeNull();
+      expect(result.current.trend.data).toBeNull();
+      expect(result.current.pipeline.rows).toEqual([]);
+      // The motion split always shows the full visible book, and the
+      // registration cards carry no lens.
+      expect(result.current.motions.data).not.toBeNull();
+      expect(result.current.ops.data).not.toBeNull();
+
+      await waitFor(() => expect(result.current.summary.data).not.toBeNull());
+    });
+
+    it('never restores the prior phase’s summary when the replacement request fails', async () => {
+      const gate = deferred<unknown>();
+      const inner = new MockDataProvider(makeBook());
+      let summaryCalls = 0;
+      const provider: DataProvider = Object.assign(new MockDataProvider(makeBook()), {
+        getPerformanceSummary: (
+          ...args: Parameters<DataProvider['getPerformanceSummary']>
+        ): ReturnType<DataProvider['getPerformanceSummary']> => {
+          summaryCalls += 1;
+          if (summaryCalls === 1) return inner.getPerformanceSummary(...args);
+          return gate.promise.then(() => inner.getPerformanceSummary(...args));
+        },
+      });
+      const { result, rerender } = renderHook(
+        (input: PartnerViewQueryInput) => usePartnerViewQueries(input),
+        { initialProps: viewInput(provider) },
+      );
+      await settle(result);
+      expect(result.current.summary.data?.openPipelineValue).toBe(60_000);
+
+      rerender(viewInput(provider, { phase: 'q3' }));
+      // The new phase's summary is an initial load — never a stale frame of
+      // the FY figures under the Q3 label.
+      expect(result.current.summary.data).toBeNull();
+      expect(result.current.summary.loading).toBe(true);
+
+      await act(async () => {
+        gate.reject(new Error('boom'));
+      });
+      // The failed first fetch of the new scope is unavailable with a retry;
+      // the prior phase's numbers never come back.
+      expect(result.current.summary.data).toBeNull();
+      expect(result.current.summary.error).toBe('Failed to load the performance summary');
+    });
   });
 });

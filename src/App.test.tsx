@@ -11,6 +11,13 @@ import { createProvider } from './data/providers';
 import type { ProviderId } from './data/providers';
 import type { ProviderBook } from './data/mock/book';
 import { createFeatureFlagClient, type FeatureFlagClient } from './lib/featureFlags';
+import {
+  makeOpportunity,
+  makePartner,
+  makeProviderBook,
+  makeRegistration,
+  makeTarget,
+} from './test/fixtures';
 
 /**
  * Whole-app smoke tests against the real MockDataProvider.
@@ -598,5 +605,94 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     const region = screen.getByRole('group', { name: 'certification record' });
     expect(document.activeElement).toBe(region);
     expect(document.activeElement).not.toBe(document.body);
+  }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// Session edits are one session: an edit made on Forecasting rides the same
+// provider-scoped SessionEdits into Partner View, where the provider applies
+// it exactly once — the aggregates and the pipeline row agree, and neither
+// reverts to the committed figure.
+// ---------------------------------------------------------------------------
+
+/** One partner with one open in-quarter deal (the editable row) and one Q3 win. */
+function continuityBook(): ProviderBook {
+  return makeProviderBook({
+    partnerManagers: [{ id: 'pm-1', name: 'J. Alvarez' }],
+    partners: [
+      makePartner({ id: 'partner-1', name: 'Northwind Systems', partnerManagerId: 'pm-1' }),
+    ],
+    opportunities: [
+      makeOpportunity({
+        id: 'opp-edit',
+        partnerId: 'partner-1',
+        accountName: 'Continuity Account',
+        forecastedRevenue: 60_000,
+        createdAt: '2026-09-01T00:00:00Z',
+        expectedCloseDate: '2026-10-15T00:00:00Z',
+      }),
+      makeOpportunity({
+        id: 'opp-win',
+        partnerId: 'partner-1',
+        outcome: 'won',
+        forecastedRevenue: 100_000,
+        createdAt: '2026-08-02T00:00:00Z',
+        expectedCloseDate: '2026-08-12T00:00:00Z',
+        closedAt: '2026-08-12T00:00:00Z',
+      }),
+    ],
+    registrations: [makeRegistration({ id: 'reg-1', partnerId: 'partner-1', status: 'approved' })],
+    targets: [makeTarget({ partnerId: 'partner-1', revenueTarget: 200_000 })],
+    activities: [],
+    certifications: [],
+    teamUsers: [],
+  });
+}
+
+describe('App session edits across routes', () => {
+  it('a Forecasting revenue edit reaches Partner View — aggregate and pipeline row, exactly once', async () => {
+    const user = userEvent.setup();
+    render(<App providerFactory={() => new MockDataProvider(continuityBook())} />);
+    await screen.findByRole(
+      'heading',
+      { name: 'Partner Performance Overview', level: 1 },
+      { timeout: 10_000 },
+    );
+
+    // Edit the open in-quarter deal on Forecasting: 60,000 → 260,000.
+    await openForecasting(user);
+    const forecastTable = await screen.findByRole('region', {
+      name: 'In-quarter opportunities, scrollable',
+    });
+    const editButton = within(forecastTable).getByRole('button', {
+      name: 'Edit revenue forecast for Continuity Account',
+    });
+    await user.click(editButton);
+    const editedRow = editButton.closest('tr') as HTMLElement;
+    const input = within(editedRow).getByRole('textbox', {
+      name: 'Revenue forecast for Continuity Account',
+    });
+    await user.clear(input);
+    await user.type(input, '260000');
+    await user.click(within(editedRow).getByRole('button', { name: 'Save revenue' }));
+    await within(forecastTable).findByText('$260,000');
+
+    // Partner View default-picks the only partner. The session's edit is
+    // applied at the provider seam exactly once: the KPI aggregate reads the
+    // corrected 260,000 — not the committed 60,000, and not a double-applied
+    // 320,000 — and the pipeline row carries the same figure.
+    await user.click(nav().getByRole('button', { name: 'Partner View' }));
+    const table = await screen.findByRole('region', {
+      name: 'Pipeline opportunities, scrollable',
+    });
+    expect(within(table).getAllByText('$260,000')).toHaveLength(1);
+    expect(within(table).queryByText('$60,000')).not.toBeInTheDocument();
+    // The untouched closed-won row keeps its committed figure.
+    expect(within(table).getByText('$100,000')).toBeInTheDocument();
+
+    const kpi = screen.getByText('Open pipeline').closest('div') as HTMLElement;
+    expect(kpi).toHaveTextContent('$260K');
+    expect(kpi).not.toHaveTextContent('$60K');
+    expect(kpi).not.toHaveTextContent('$320K');
   }, 30_000);
 });

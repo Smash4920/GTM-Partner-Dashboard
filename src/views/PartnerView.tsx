@@ -36,6 +36,7 @@ import {
   usePartnerViewQueries,
   type PartnerSlice,
 } from '../data/usePartnerViewQueries';
+import type { SessionEdits } from '../data/sessionEdits';
 import type { FiscalPhase, Partner } from '../data/types';
 import { formatCoverage } from '../lib/metrics';
 import type { QuarterRevenueRow, TypeRow } from '../lib/metrics';
@@ -271,6 +272,7 @@ function PartnerViewBody({
   roster,
   phase,
   slice,
+  edits,
   prospects,
   onSelectPartner,
   onPhaseChange,
@@ -282,6 +284,9 @@ function PartnerViewBody({
   roster: Partner[];
   phase: FiscalPhase;
   slice: PartnerSlice;
+  /** The session's provider-scoped edits — an edit made on Forecasting is
+   * applied by the provider here, never re-applied in the browser. */
+  edits: SessionEdits;
   prospects: Partner[];
   onSelectPartner: (partnerId: string) => void;
   onPhaseChange: (phase: FiscalPhase) => void;
@@ -292,6 +297,7 @@ function PartnerViewBody({
     partnerId: partner.id,
     phase,
     slice,
+    edits,
     prospects,
   });
   const sliceLabel = slice === 'all' ? 'Sell With + Allocate' : OPP_TYPE_META[slice].label;
@@ -468,9 +474,12 @@ function PartnerViewBody({
  */
 export default function PartnerView({
   provider,
+  edits,
   prospects,
 }: {
   provider: DataProvider;
+  /** The session's provider-scoped edits, shared with every other route. */
+  edits: SessionEdits;
   prospects: Partner[];
 }) {
   const picker = usePartnerPickerQueries({ provider, prospects });
@@ -503,6 +512,7 @@ export default function PartnerView({
               roster={roster}
               phase={phase}
               slice={slice}
+              edits={edits}
               prospects={prospects}
               onSelectPartner={setSelectedId}
               onPhaseChange={setPhase}

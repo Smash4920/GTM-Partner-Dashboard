@@ -64,9 +64,12 @@ const ROUTES: RouteSpec[] = [
   {
     label: 'Partner Performance',
     heading: 'Partner Performance',
+    // The certification query is deliberately absent here: it is disabled
+    // while the drill-down is All partners and starts only when a partner is
+    // selected (see the certification-gating tests in
+    // usePartnerPerformanceQueries.test.ts).
     methods: [
       'getManagerDirectory',
-      'getPartnerCertification',
       'getPartnerRoster',
       'getPerformanceSummary',
       'getQuarterlyRevenueTrend',

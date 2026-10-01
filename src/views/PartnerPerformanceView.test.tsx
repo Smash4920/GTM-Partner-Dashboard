@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PartnerPerformanceView from './PartnerPerformanceView';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
+import { SimulatedRemoteProvider } from '../data/mock/SimulatedRemoteProvider';
 import { NO_SESSION_EDITS } from '../data/sessionEdits';
 import {
   makeCertification,
@@ -370,6 +371,45 @@ describe('PartnerPerformanceView', () => {
     const card = certifications.closest('section') as HTMLElement;
     expect(within(card).getAllByText('No certification data')).toHaveLength(2);
     expect(within(card).getAllByText('0/1')).toHaveLength(2);
+  });
+
+  it('shows a focused certification failure and its retry in the visible card', async () => {
+    const user = userEvent.setup();
+    // One broken certification fetch, then recovery.
+    render(
+      <PartnerPerformanceView
+        provider={
+          new SimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+            failMethods: { getPartnerCertification: 1 },
+          })
+        }
+        edits={NO_SESSION_EDITS}
+        classifications={NO_CLASSIFICATIONS}
+        prospects={[]}
+      />,
+    );
+    await screen.findByText('Scope · whole org · 3 partners');
+
+    // While the drill-down is All partners there is no certification query
+    // at all — no card, no failure, nothing on the network.
+    expect(screen.queryByRole('group', { name: 'certification profile' })).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), 'partner-1');
+
+    // The failure is the certification card's own: the same card the profile
+    // belongs in, with its own retry — and every sibling panel unaffected.
+    const failure = await screen.findByText('Failed to load the certification profile');
+    expect(failure.closest('p')).toHaveTextContent('Certification profile unavailable:');
+    // Every sibling panel is unaffected by the certification failure.
+    expect(screen.getByText('Partner sourced pipeline')).toBeInTheDocument();
+    expect(cardWith('Deal registration funnel')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry certification profile' }));
+    const region = screen.getByRole('group', { name: 'certification profile' });
+    expect(await screen.findByText('Northwind Systems certifications')).toBeInTheDocument();
+    expect(within(region).getByText('2/4')).toBeInTheDocument();
+    // Focus lands on the recovered region rather than being dropped.
+    expect(region).toHaveFocus();
   });
 
   it('switches the fiscal phase, including year-to-date and an empty quarter', async () => {

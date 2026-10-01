@@ -345,4 +345,134 @@ describe('useHomeQueries (VAL-DATA-014)', () => {
     expect(calls.filter((name) => name === 'getRegistrationFunnel')).toHaveLength(1);
     expect(calls.filter((name) => name === 'listPendingRegistrations')).toHaveLength(1);
   });
+
+  describe('scope identity', () => {
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      let reject!: (reason: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    /**
+     * A provider whose second-and-later summary answers wait on a gate the
+     * test controls, so the state between "scope changed" and "replacement
+     * answered" is directly observable.
+     */
+    function gatedSummaryProvider(gate: { promise: Promise<unknown> }) {
+      const inner = new MockDataProvider(makeBook());
+      let calls = 0;
+      const provider: DataProvider = Object.assign(new MockDataProvider(makeBook()), {
+        getPerformanceSummary: (
+          ...args: Parameters<DataProvider['getPerformanceSummary']>
+        ): ReturnType<DataProvider['getPerformanceSummary']> => {
+          calls += 1;
+          if (calls === 1) return inner.getPerformanceSummary(...args);
+          return gate.promise.then(() => inner.getPerformanceSummary(...args));
+        },
+      });
+      return provider;
+    }
+
+    it('hides every phase-scoped answer the moment the phase changes — synchronously', async () => {
+      const { provider } = spyProvider(new MockDataProvider(makeBook()));
+      const { result, rerender } = renderHook((input: HomeQueryInput) => useHomeQueries(input), {
+        initialProps: inputFor(provider),
+      });
+      await settle(result);
+
+      rerender(inputFor(provider, { phase: 'q4' }));
+
+      // The phase is the membership of these answers: under the new phase
+      // label none of the old phase's figures may render, not even for the
+      // frames while the replacement requests are in flight.
+      expect(result.current.summary.data).toBeNull();
+      expect(result.current.funnel.data).toBeNull();
+      expect(result.current.stages.data).toBeNull();
+      expect(result.current.types.data).toBeNull();
+      expect(result.current.leaderboard.data).toBeNull();
+      // The trend spans every quarter, the activity series spans weeks, and
+      // the queue spans all history: the phase is not their membership, so
+      // their answers stay.
+      expect(result.current.trend.data).not.toBeNull();
+      expect(result.current.activity.data).not.toBeNull();
+      expect(result.current.pending.rows.length).toBeGreaterThan(0);
+
+      await waitFor(() => expect(result.current.summary.data?.openCount).toBe(0));
+    });
+
+    it('hides lensed answers the moment the type lens changes — synchronously', async () => {
+      const { provider } = spyProvider(new MockDataProvider(makeBook()));
+      const { result, rerender } = renderHook((input: HomeQueryInput) => useHomeQueries(input), {
+        initialProps: inputFor(provider),
+      });
+      await settle(result);
+
+      rerender(inputFor(provider, { oppType: 'sell-with' }));
+
+      // The lens re-scopes the summary, stages, trend, and leaderboard; the
+      // type chart is the mix the lens selects from and the funnel is
+      // untyped, so those two keep their answers.
+      expect(result.current.summary.data).toBeNull();
+      expect(result.current.stages.data).toBeNull();
+      expect(result.current.trend.data).toBeNull();
+      expect(result.current.leaderboard.data).toBeNull();
+      expect(result.current.types.data).not.toBeNull();
+      expect(result.current.funnel.data).not.toBeNull();
+
+      await waitFor(() => expect(result.current.summary.data).not.toBeNull());
+    });
+
+    it('never restores the prior phase’s summary when the replacement request fails', async () => {
+      const gate = deferred<unknown>();
+      const provider = gatedSummaryProvider(gate);
+      const { result, rerender } = renderHook((input: HomeQueryInput) => useHomeQueries(input), {
+        initialProps: inputFor(provider),
+      });
+      await settle(result);
+      expect(result.current.summary.data?.openPipelineValue).toBe(250_000);
+
+      rerender(inputFor(provider, { phase: 'q4' }));
+      // While the new phase's answer is in flight the widget is the new
+      // scope's initial load — never a stale frame of Q3's figures.
+      expect(result.current.summary.data).toBeNull();
+      expect(result.current.summary.loading).toBe(true);
+
+      await act(async () => {
+        gate.reject(new Error('boom'));
+      });
+      // The failed first fetch of the new scope is unavailable, with its
+      // retry — the prior phase's numbers do not come back.
+      expect(result.current.summary.data).toBeNull();
+      expect(result.current.summary.error).toBe('Failed to load the performance summary');
+    });
+
+    it('keeps the same scope’s last good answer while an edit refresh is in flight', async () => {
+      const gate = deferred<unknown>();
+      const provider = gatedSummaryProvider(gate);
+      const { result, rerender } = renderHook((input: HomeQueryInput) => useHomeQueries(input), {
+        initialProps: inputFor(provider),
+      });
+      await settle(result);
+
+      const edits: SessionEdits = {
+        ...NO_SESSION_EDITS,
+        revenueOverrides: { 'opp-open': 400_000 },
+      };
+      rerender(inputFor(provider, { edits }));
+      // Same scope, new data: stale beats blank — the previous figures stay
+      // on screen, marked refreshing, until the edited answer lands.
+      expect(result.current.summary.data?.openPipelineValue).toBe(250_000);
+      expect(result.current.summary.refreshing).toBe(true);
+      expect(result.current.summary.error).toBeNull();
+
+      await act(async () => {
+        gate.resolve(undefined);
+      });
+      await waitFor(() => expect(result.current.summary.data?.openPipelineValue).toBe(400_000));
+    });
+  });
 });

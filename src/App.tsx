@@ -633,7 +633,7 @@ function RouteContent({
       )}
       {route === 'partner-view' && (
         <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:partner-view`}>
-          <PartnerView provider={provider} prospects={prospects} />
+          <PartnerView provider={provider} edits={forecastEdits} prospects={prospects} />
         </ErrorBoundary>
       )}
     </>
