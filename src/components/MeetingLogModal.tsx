@@ -5,7 +5,8 @@ import { formatTime } from '../lib/format';
 import { startOfWeekUtc } from '../lib/fiscal';
 import AddPartnerForm from './AddPartnerForm';
 import { XIcon } from './icons';
-import { QueryFailure, useRetryRecovery } from './QueryState';
+import { useRetryRecovery } from './QueryState';
+import PageFooter from './PageFooter';
 
 const ADD_PARTNER = '__add_partner__';
 
@@ -15,6 +16,7 @@ const ADD_PARTNER = '__add_partner__';
  * size. Absent when the caller already holds the full week.
  */
 interface MeetingCalendar {
+  totalCount?: number;
   loading: boolean;
   error: string | null;
   retry: () => void;
@@ -84,7 +86,6 @@ export default function MeetingLogModal({
   // focus whenever the failure clears, and hands it to a stable target
   // inside the dialog.
   const calendarFailed = calendar !== undefined && calendar.error !== null;
-  const loadMoreFailed = calendarFailed && meetings.length > 0;
   const calendarRecovery = useRetryRecovery('meeting calendar', calendarFailed);
 
   // Closing with unsubmitted classifications asks first. A backdrop click is
@@ -315,32 +316,19 @@ export default function MeetingLogModal({
           )}
 
           {calendar !== undefined && meetings.length > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-carbon px-5 py-3">
-              <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-                Showing {meetings.length} meetings this week
-              </p>
-              {loadMoreFailed ? (
-                // The cursor was not advanced, so the failed page is still the
-                // next one: the retry repeats only that request, and the
-                // ordinary Load more stays hidden until the cursor recovers.
-                <QueryFailure
-                  text="The next page failed"
-                  retryLabel="meeting calendar"
-                  error={calendar.error ?? ''}
-                  onRetry={calendarRecovery.armRetry(calendar.retry)}
-                />
-              ) : (
-                calendar.hasMore && (
-                  <button
-                    type="button"
-                    onClick={calendar.loadMore}
-                    disabled={calendar.loadingMore}
-                    className="rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20 disabled:opacity-50"
-                  >
-                    {calendar.loadingMore ? 'Loading…' : 'Load more meetings'}
-                  </button>
-                )
-              )}
+            <div className="border-t border-carbon px-5 py-3">
+              <PageFooter
+                state={{
+                  ...calendar,
+                  rows: meetings,
+                  totalCount: calendar.totalCount ?? meetings.length,
+                  meta: null,
+                  refreshing: false,
+                }}
+                noun="meeting calendar"
+                pageSize={25}
+                buttonLabel="Load more meetings"
+              />
             </div>
           )}
         </div>

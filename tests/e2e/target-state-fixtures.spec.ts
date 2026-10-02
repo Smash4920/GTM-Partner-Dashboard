@@ -232,7 +232,8 @@ test('VAL-CROSS-006: isolated built startup failure, partial actions, summary fa
       getActionCenterSummary: 2,
       listActionItems: 1,
     });
-    const more = page.getByRole('button', { name: 'Load 25 more', exact: true });
+    const more = items.getByRole('group', { name: 'action items pagination' }).getByRole('button');
+    await expect(more).toHaveAccessibleName('Load 25 more');
     await more.click();
     await expect(
       items.getByRole('button', { name: 'Retry action items', exact: true }),
@@ -245,7 +246,7 @@ test('VAL-CROSS-006: isolated built startup failure, partial actions, summary fa
     ).toEqual(first);
     await items.getByRole('button', { name: 'Retry action items', exact: true }).click();
     await expect(rows).toHaveCount(50);
-    await expect(items).toBeFocused();
+    await expect(more).toBeFocused();
     expect(await page.evaluate(() => window.actionResilienceFixture.calls)).toMatchObject({
       getActionCenterSummary: 2,
       listActionItems: 3,

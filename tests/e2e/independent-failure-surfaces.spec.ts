@@ -342,10 +342,10 @@ test('VAL-RES-009: a failed first calendar page is named inside Log Meetings and
 
   await dialog.getByRole('button', { name: 'Retry meeting calendar' }).click();
   await expect(dialog.getByRole('combobox', { name: /Partner for .* meeting/ })).toHaveCount(10);
-  await expect(dialog.getByText('Showing 10 meetings this week')).toBeVisible();
+  await expect(dialog.getByText('Showing 10 of 10 meeting calendar')).toBeVisible();
   // A successful retry lands focus on the calendar's region inside the
   // dialog, never drops it to the document body.
-  await expect(dialog.getByRole('group', { name: 'meeting calendar' })).toBeFocused();
+  await expect(dialog.getByRole('group', { name: 'meeting calendar', exact: true })).toBeFocused();
 
   expectSameOriginOnly(page, requests);
   // The only tolerated console error is the scripted failure itself.

@@ -3,6 +3,7 @@ import { formatPct, formatUsd } from '../lib/format';
 import type { PartnerCertification } from '../data/types';
 import type { LeaderboardRow } from '../lib/metrics';
 import Badge from './Badge';
+import TableRegion from './TableRegion';
 
 interface LeaderboardProps {
   rows: LeaderboardRow[];
@@ -25,20 +26,35 @@ export default function Leaderboard({
   );
   const showCertifications = certifications !== undefined;
   const th = 'pb-2 font-mono text-[10px] uppercase tracking-[0.06em] text-granite';
+  const label = showCertifications ? 'Partner leaderboard & enablement' : 'Partner leaderboard';
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[760px] text-sm">
+    <TableRegion label={label}>
+      <table aria-label={label} className="w-full min-w-[760px] text-sm">
         <thead>
           <tr className="border-b border-carbon">
-            <th className={`${th} pr-3 text-left`}>#</th>
-            <th className={`${th} pr-3 text-left`}>Partner</th>
-            <th className={`${th} pr-3 text-right`}>Open pipeline</th>
-            <th className={`${th} pr-3 text-right`}>{closedWonLabel}</th>
-            <th className={`${th} pr-3 text-right`}>Win rate</th>
+            <th scope="col" className={`${th} pr-3 text-left`}>
+              #
+            </th>
+            <th scope="col" className={`${th} pr-3 text-left`}>
+              Partner
+            </th>
+            <th scope="col" className={`${th} pr-3 text-right`}>
+              Open pipeline
+            </th>
+            <th scope="col" className={`${th} pr-3 text-right`}>
+              {closedWonLabel}
+            </th>
+            <th scope="col" className={`${th} pr-3 text-right`}>
+              Win rate
+            </th>
             {showCertifications && (
               <>
-                <th className={`${th} pr-3 text-right`}>Strategists</th>
-                <th className={`${th} text-right`}>Engineers</th>
+                <th scope="col" className={`${th} pr-3 text-right`}>
+                  Strategists
+                </th>
+                <th scope="col" className={`${th} text-right`}>
+                  Engineers
+                </th>
               </>
             )}
           </tr>
@@ -88,7 +104,7 @@ export default function Leaderboard({
           })}
         </tbody>
       </table>
-    </div>
+    </TableRegion>
   );
 }
 

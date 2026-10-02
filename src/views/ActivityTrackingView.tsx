@@ -317,6 +317,7 @@ export default function ActivityTrackingView({
           onAddPartner={(name) => onAddPartner(name, queries.managerId)}
           dirty={draftDirty}
           calendar={{
+            totalCount: queries.meetings.totalCount,
             loading: queries.meetings.loading,
             error: queries.meetings.error,
             retry: queries.meetings.retry,

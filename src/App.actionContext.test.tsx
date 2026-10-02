@@ -1,4 +1,4 @@
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import App from './App';
@@ -29,46 +29,49 @@ describe('Action Center contextual navigation', () => {
     );
     render(<App providerFactory={() => provider} />);
     const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
-    await user.click(nav.getByRole('button', { name: 'Forecasting' }));
-    const forecastPagination = (await screen.findByText('Showing 25 of 30')).parentElement!;
-    await user.click(within(forecastPagination).getByRole('button', { name: 'Load 25 more' }));
+    fireEvent.click(nav.getByRole('button', { name: 'Forecasting' }));
+    const forecastPagination = (await screen.findByText('Showing 25 of 30')).closest<HTMLElement>(
+      '[role="group"]',
+    )!;
+    fireEvent.click(within(forecastPagination).getByRole('button', { name: 'Load 25 more' }));
     await screen.findByText('Showing 30 of 30');
     const forecastRow = screen.getByText('Context 0').closest('tr')!;
     const rowQueries = within(forecastRow);
     const edit = rowQueries.getByRole('button', { name: 'Edit revenue forecast for Context 0' });
-    await user.click(edit);
-    await user.clear(rowQueries.getByRole('textbox', { name: 'Revenue forecast for Context 0' }));
-    await user.type(
-      rowQueries.getByRole('textbox', { name: 'Revenue forecast for Context 0' }),
-      '500000{Enter}',
-    );
+    fireEvent.click(edit);
+    fireEvent.change(rowQueries.getByRole('textbox', { name: 'Revenue forecast for Context 0' }), {
+      target: { value: '500000' },
+    });
+    await user.keyboard('{Enter}');
     await waitFor(() =>
       expect(
         rowQueries.getByRole('button', { name: 'Edit revenue forecast for Context 0' }),
       ).toHaveFocus(),
     );
-    await user.click(nav.getByRole('button', { name: 'Action Center' }));
+    fireEvent.click(nav.getByRole('button', { name: 'Action Center' }));
     await screen.findByText('30 unique items');
-    await user.click(screen.getByRole('checkbox', { name: 'Missing next step' }));
-    const actionPagination = screen
-      .getByText('Showing 25 of 30 action items')
-      .closest('p')!.parentElement!;
-    await user.click(within(actionPagination).getByRole('button', { name: 'Load 25 more' }));
+    const filters = within(screen.getByText('Filters').closest('section')!);
+    fireEvent.click(filters.getByRole('checkbox', { name: 'Missing next step' }));
+    const actionPagination = (await screen.findByText('Showing 25 of 30 action items')).closest(
+      'p',
+    )!.parentElement!;
+    fireEvent.click(within(actionPagination).getByRole('button', { name: 'Load 25 more' }));
     await screen.findByText('Showing 30 of 30 action items');
     const row = screen
       .getAllByTestId('action-item')
       .find((item) => item.dataset.actionId === 'opportunity:context-0')!;
     expect(row).toHaveTextContent('$500,000');
     const link = within(row).getByRole('link', { name: 'Open Forecasting context' });
-    await user.click(link);
+    link.focus();
+    fireEvent.click(link);
     expect(screen.getByText('Showing 30 of 30')).toBeVisible();
-    await user.click(
+    fireEvent.click(
       within(screen.getByRole('region', { name: 'Action context' })).getByRole('button', {
         name: 'Back to Action Center',
       }),
     );
     expect(screen.getByText('Showing 30 of 30 action items')).toBeVisible();
-    expect(screen.getByRole('checkbox', { name: 'Missing next step' })).toBeChecked();
+    expect(filters.getByRole('checkbox', { name: 'Missing next step' })).toBeChecked();
     expect(link).toHaveFocus();
   });
 
@@ -84,17 +87,19 @@ describe('Action Center contextual navigation', () => {
     );
     render(<App providerFactory={() => provider} />);
     const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
-    await user.click(nav.getByRole('button', { name: 'Action Center' }));
+    fireEvent.click(nav.getByRole('button', { name: 'Action Center' }));
     await screen.findByText('1 unique items');
-    await user.click(screen.getByRole('link', { name: 'Open Forecasting context' }));
+    const action = screen.getByRole('link', { name: 'Open Forecasting context' });
+    action.focus();
+    fireEvent.click(action);
     const forecastRow = (await screen.findByText('Acme Freight')).closest('tr')!;
     const rowQueries = within(forecastRow);
-    await user.click(rowQueries.getByRole('button', { name: 'Add next step for Acme Freight' }));
-    await user.type(
-      rowQueries.getByRole('textbox', { name: 'Next step for Acme Freight' }),
-      'Follow up{Enter}',
-    );
-    await user.click(
+    fireEvent.click(rowQueries.getByRole('button', { name: 'Add next step for Acme Freight' }));
+    fireEvent.change(rowQueries.getByRole('textbox', { name: 'Next step for Acme Freight' }), {
+      target: { value: 'Follow up' },
+    });
+    await user.keyboard('{Enter}');
+    fireEvent.click(
       within(screen.getByRole('region', { name: 'Action context' })).getByRole('button', {
         name: 'Back to Action Center',
       }),
@@ -110,18 +115,19 @@ describe('Action Center contextual navigation', () => {
   ])(
     'opens %s on the same origin with the selected entity and resets on primary navigation',
     async (category, link, heading) => {
-      const user = userEvent.setup();
       render(<App providerFactory={() => new MockDataProvider()} />);
       const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
-      await user.click(nav.getByRole('button', { name: 'Action Center' }));
+      fireEvent.click(nav.getByRole('button', { name: 'Action Center' }));
       await screen.findByText('85 unique items');
-      await user.click(screen.getByRole('checkbox', { name: category }));
+      const filters = within(screen.getByText('Filters').closest('section')!);
+      fireEvent.click(filters.getByRole('checkbox', { name: category }));
       const row = (await screen.findAllByTestId('action-item'))[0];
       const id = row.getAttribute('data-action-id');
       const origin = location.origin;
       const action = within(row).getByRole('link', { name: link });
       expect(new URL(action.getAttribute('href')!, location.href).origin).toBe(origin);
-      await user.click(action);
+      action.focus();
+      fireEvent.click(action);
       await screen.findByRole('heading', { name: heading, level: 1 });
       const context = screen.getByRole('region', { name: 'Action context' });
       expect(context).toHaveTextContent(`Action context: ${id}`);
@@ -129,11 +135,11 @@ describe('Action Center contextual navigation', () => {
       if (heading === 'Partner Performance') {
         expect(screen.getByLabelText('Partner')).toHaveValue(id?.split(':')[1]);
       }
-      await user.click(within(context).getByRole('button', { name: 'Back to Action Center' }));
-      expect(screen.getByRole('checkbox', { name: category })).toBeChecked();
+      fireEvent.click(within(context).getByRole('button', { name: 'Back to Action Center' }));
+      expect(filters.getByRole('checkbox', { name: category })).toBeChecked();
       expect(action).toHaveFocus();
       expect(screen.queryByRole('region', { name: 'Action context' })).not.toBeInTheDocument();
-      await user.click(nav.getByRole('button', { name: 'Home' }));
+      fireEvent.click(nav.getByRole('button', { name: 'Home' }));
       expect(screen.queryByRole('region', { name: 'Action context' })).not.toBeInTheDocument();
     },
   );

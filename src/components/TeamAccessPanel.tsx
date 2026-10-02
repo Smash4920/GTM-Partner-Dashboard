@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useId, useRef, useState, type ReactNode } from 'react';
 import FormField, { focusInvalid } from './FormField';
+import TableRegion from './TableRegion';
 import {
   NOTIFICATION_CHANNEL_META,
   NOTIFICATION_CHANNELS,
@@ -52,6 +53,12 @@ export default function TeamAccessPanel({
   onRemove,
 }: TeamAccessPanelProps) {
   const [formOpen, setFormOpen] = useState(false);
+  const formId = useId();
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const closeForm = () => {
+    setFormOpen(false);
+    toggleRef.current?.focus();
+  };
   const managerName = (id?: string) =>
     partnerManagers.find((manager) => manager.id === id)?.name ?? '—';
   const routing = users.filter((user) => user.status === 'active').length;
@@ -70,30 +77,37 @@ export default function TeamAccessPanel({
           routing
         </p>
         <button
+          ref={toggleRef}
           type="button"
           onClick={() => setFormOpen((open) => !open)}
           className="flex items-center gap-1.5 rounded border border-ash px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-bone transition-colors hover:bg-ash/30"
           aria-expanded={formOpen}
+          aria-controls={formId}
         >
           {formOpen ? <XIcon className="h-3.5 w-3.5" /> : <PlusIcon className="h-3.5 w-3.5" />}
           {formOpen ? 'Close' : 'Add user'}
         </button>
       </div>
 
-      {formOpen && (
-        <AddTeamUserForm
-          users={users}
-          partnerManagers={partnerManagers}
-          onAdd={(input) => {
-            onAdd(input);
-            setFormOpen(false);
-          }}
-          onCancel={() => setFormOpen(false)}
-        />
-      )}
+      <div id={formId} hidden={!formOpen}>
+        {formOpen && (
+          <AddTeamUserForm
+            users={users}
+            partnerManagers={partnerManagers}
+            onAdd={(input) => {
+              onAdd(input);
+              closeForm();
+            }}
+            onCancel={closeForm}
+          />
+        )}
+      </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <TableRegion label="Partner team notification routing">
+        <table
+          aria-label="Partner team notification routing"
+          className="w-full min-w-[960px] text-sm"
+        >
           <thead>
             <tr className="border-b border-carbon">
               <Th className="pr-3 text-left">User</Th>
@@ -186,7 +200,7 @@ export default function TeamAccessPanel({
             })}
           </tbody>
         </table>
-      </div>
+      </TableRegion>
     </div>
   );
 }
@@ -194,6 +208,7 @@ export default function TeamAccessPanel({
 function Th({ children, className }: { children: ReactNode; className: string }) {
   return (
     <th
+      scope="col"
       className={`pb-2 font-mono text-[10px] uppercase tracking-[0.06em] text-granite ${className}`}
     >
       {children}
@@ -206,7 +221,7 @@ function RowAction({ children, onClick }: { children: ReactNode; onClick: () => 
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1 rounded border border-ash/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/30 hover:text-bone"
+      className="flex min-h-6 min-w-6 items-center gap-1 rounded border border-ash/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/30 hover:text-bone"
     >
       {children}
     </button>
@@ -223,6 +238,7 @@ interface AddTeamUserFormProps {
 type RosterErrors = Partial<Record<'name' | 'email' | 'partnerManagerId', string>>;
 
 function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUserFormProps) {
+  const channelId = useId();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<TeamRole>('partner-manager');
@@ -363,20 +379,24 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
           {NOTIFICATION_CHANNELS.map((channel) => {
             const on = channels.includes(channel);
             return (
-              <button
-                key={channel}
-                type="button"
-                onClick={() => toggleChannel(channel)}
-                disabled={channel === 'email'}
-                aria-pressed={on}
-                title={NOTIFICATION_CHANNEL_META[channel].description}
-                className={`flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.06em] transition-colors ${
-                  on ? 'border-ash bg-ash/30 text-bone' : 'border-carbon text-granite'
-                } ${channel === 'email' ? 'cursor-default' : 'hover:border-ash'}`}
-              >
-                {on && <CheckIcon className="h-3 w-3" />}
-                {NOTIFICATION_CHANNEL_META[channel].label}
-              </button>
+              <div key={channel} className="min-w-0 max-w-[240px]">
+                <button
+                  type="button"
+                  onClick={() => toggleChannel(channel)}
+                  disabled={channel === 'email'}
+                  aria-pressed={on}
+                  aria-describedby={`${channelId}-${channel}`}
+                  className={`flex min-h-6 min-w-6 items-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.06em] transition-colors ${
+                    on ? 'border-ash bg-ash/30 text-bone' : 'border-carbon text-granite'
+                  } ${channel === 'email' ? 'cursor-default' : 'hover:border-ash'}`}
+                >
+                  {on && <CheckIcon className="h-3 w-3" />}
+                  {NOTIFICATION_CHANNEL_META[channel].label}
+                </button>
+                <p id={`${channelId}-${channel}`} className="mt-1 text-[10px] text-granite">
+                  {NOTIFICATION_CHANNEL_META[channel].description}
+                </p>
+              </div>
             );
           })}
         </div>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Card from '../components/Card';
 import ForecastTable from '../components/ForecastTable';
+import PageFooter from '../components/PageFooter';
 import KpiTile from '../components/KpiTile';
 import {
   QueryFailure,
@@ -424,28 +425,30 @@ export default function ForecastingView({
                     type="button"
                     onClick={() => toggleManager(group.managerId)}
                     aria-expanded={expanded}
-                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-ash/10"
+                    aria-controls={`manager-${group.managerId}`}
+                    aria-label={`${group.managerName} opportunities`}
+                    className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-ash/10"
                   >
                     <ChevronIcon
                       className={`h-4 w-4 shrink-0 text-granite transition-transform duration-150 ${
                         expanded ? '' : '-rotate-90'
                       }`}
                     />
-                    <span className="flex-1 truncate font-mono text-[11px] uppercase tracking-[0.08em] text-bone">
+                    <span className="min-w-0 flex-1 truncate font-mono text-[11px] uppercase tracking-[0.08em] text-bone">
                       {group.managerName}
                     </span>
                     <span className="hidden font-mono text-[10px] uppercase tracking-[0.06em] text-granite sm:inline">
                       {group.opportunityCount} opps
                     </span>
-                    <span className="w-24 text-right font-mono text-xs tabular-nums text-stone">
+                    <span className="w-24 max-sm:basis-1/3 text-right font-mono text-xs tabular-nums text-stone">
                       {formatUsdCompact(group.openValue)}
                     </span>
-                    <span className="w-24 text-right font-mono text-xs tabular-nums text-metric">
+                    <span className="w-24 max-sm:basis-1/3 text-right font-mono text-xs tabular-nums text-metric">
                       {formatUsdCompact(group.closedWon)}
                     </span>
                   </button>
                   {mounted && (
-                    <div hidden={!expanded}>
+                    <div id={`manager-${group.managerId}`} hidden={!expanded}>
                       <ManagerBook
                         provider={provider}
                         access={INTERNAL_DEMO_SCOPE}
@@ -528,6 +531,7 @@ function ManagerBook({
       ) : (
         <div className="border-t border-carbon px-4 pb-4 pt-2">
           <ForecastTable
+            tableLabel={`In-quarter opportunities · ${managerId}`}
             opportunities={book.rows}
             partnerNames={partnerNames}
             revenueOverrides={edits.revenueOverrides}
@@ -538,34 +542,12 @@ function ManagerBook({
             onSetNextStep={onSetNextStep}
             onSetForecastCall={onSetForecastCall}
           />
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-              Showing {book.rows.length} of {book.totalCount}
-              {book.refreshing && ' · updating'}
-            </p>
-            <span className="flex flex-wrap items-center gap-3">
-              {/* A failed page or refresh keeps the rows already on screen;
-                  retry repeats the failed request, not the whole book. */}
-              {book.error !== null && (
-                <QueryFailure
-                  text="The latest page failed"
-                  retryLabel="this manager’s book"
-                  error={book.error}
-                  onRetry={onRetry}
-                />
-              )}
-              {book.hasMore && (
-                <button
-                  type="button"
-                  onClick={book.loadMore}
-                  disabled={book.loadingMore}
-                  className="rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20 disabled:opacity-50"
-                >
-                  {book.loadingMore ? 'Loading…' : 'Load 25 more'}
-                </button>
-              )}
-            </span>
-          </div>
+          <PageFooter
+            state={book}
+            noun={`manager book ${managerId}`}
+            pageSize={25}
+            countNoun={false}
+          />
           {/* The rows' own provenance: which provider answered, as of when,
               and whether the answer was complete. Kept as its own line so the
               "Showing N of M" count stays a stable, exact label. */}

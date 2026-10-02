@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ForecastTable from './ForecastTable';
 import { makeOpportunity, makePartner } from '../test/fixtures';
@@ -65,8 +65,7 @@ describe('ForecastTable', () => {
     });
     await user.click(screen.getByRole('button', { name: new RegExp(`^(Add|Edit) ${from} for`) }));
     if (from !== 'forecast category') {
-      await user.clear(screen.getByRole('textbox'));
-      await user.type(screen.getByRole('textbox'), 'Unsaved');
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Unsaved' } });
     }
     await user.click(screen.getByRole('button', { name: new RegExp(`^(Add|Edit) ${to} for`) }));
     if (to === 'forecast category') {
@@ -124,8 +123,7 @@ describe('ForecastTable', () => {
         const { onSetRevenue } = renderTable();
         await user.click(screen.getByRole('button', { name: /Edit revenue forecast/ }));
         const input = screen.getByRole('textbox', { name: /Revenue forecast for Acme Freight/ });
-        await user.clear(input);
-        if (draft) await user.type(input, draft);
+        fireEvent.change(input, { target: { value: draft } });
         await user.click(screen.getByRole('button', { name: 'Save revenue' }));
 
         const error = screen.getByRole('alert');
@@ -137,8 +135,7 @@ describe('ForecastTable', () => {
         expect(input).toHaveFocus();
         expect(onSetRevenue).not.toHaveBeenCalled();
 
-        await user.clear(input);
-        await user.type(input, '0');
+        fireEvent.change(input, { target: { value: '0' } });
         expect(input).not.toHaveAttribute('aria-invalid');
         expect(input).not.toHaveAttribute('aria-describedby');
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -152,7 +149,9 @@ describe('ForecastTable', () => {
       const user = userEvent.setup();
       const { onSetRevenue } = renderTable();
       await user.click(screen.getByRole('button', { name: /Edit revenue forecast/ }));
-      await user.clear(screen.getByRole('textbox', { name: /Revenue forecast for/ }));
+      fireEvent.change(screen.getByRole('textbox', { name: /Revenue forecast for/ }), {
+        target: { value: '' },
+      });
       await user.click(screen.getByRole('button', { name: 'Save revenue' }));
       await user.click(screen.getByRole('button', { name: 'Cancel revenue edit' }));
       expect(onSetRevenue).not.toHaveBeenCalled();
@@ -166,8 +165,8 @@ describe('ForecastTable', () => {
 
       await user.click(screen.getByRole('button', { name: /Edit revenue forecast/ }));
       const input = screen.getByRole('textbox', { name: /Revenue forecast for Acme Freight/ });
-      await user.clear(input);
-      await user.type(input, '310000{Enter}');
+      fireEvent.change(input, { target: { value: '310000' } });
+      await user.keyboard('{Enter}');
 
       expect(onSetRevenue).toHaveBeenCalledWith('opp-1', 310_000);
     });
@@ -178,8 +177,8 @@ describe('ForecastTable', () => {
 
       await user.click(screen.getByRole('button', { name: /Edit revenue forecast/ }));
       const input = screen.getByRole('textbox', { name: /Revenue forecast for Acme Freight/ });
-      await user.clear(input);
-      await user.type(input, '-5{Enter}');
+      fireEvent.change(input, { target: { value: '-5' } });
+      await user.keyboard('{Enter}');
 
       expect(onSetRevenue).not.toHaveBeenCalled();
       expect(screen.getByRole('alert')).toHaveTextContent('Enter a non-negative number.');
@@ -192,8 +191,8 @@ describe('ForecastTable', () => {
 
       await user.click(screen.getByRole('button', { name: /Edit revenue forecast/ }));
       const input = screen.getByRole('textbox', { name: /Revenue forecast for Acme Freight/ });
-      await user.clear(input);
-      await user.type(input, 'soon{Enter}');
+      fireEvent.change(input, { target: { value: 'soon' } });
+      await user.keyboard('{Enter}');
 
       expect(onSetRevenue).not.toHaveBeenCalled();
       expect(screen.getByRole('alert')).toBeInTheDocument();
@@ -204,10 +203,10 @@ describe('ForecastTable', () => {
       const { onSetRevenue } = renderTable();
 
       await user.click(screen.getByRole('button', { name: /Edit revenue forecast/ }));
-      await user.type(
-        screen.getByRole('textbox', { name: /Revenue forecast for Acme Freight/ }),
-        '999{Escape}',
-      );
+      fireEvent.change(screen.getByRole('textbox', { name: /Revenue forecast for Acme Freight/ }), {
+        target: { value: '250000999' },
+      });
+      await user.keyboard('{Escape}');
 
       expect(onSetRevenue).not.toHaveBeenCalled();
       expect(screen.getByText('$250,000')).toBeInTheDocument();
@@ -223,39 +222,36 @@ describe('ForecastTable', () => {
   describe('next step editing', () => {
     // Regression: the editor used to open blank even when the provider (or an
     // earlier session edit) already held a value, so a blind save erased it.
-    it('opens with the provider next step when there is no session edit', async () => {
-      const user = userEvent.setup();
+    it('opens with the provider next step when there is no session edit', () => {
       renderTable({ opportunities: [makeOpportunity({ nextStep: 'Send pricing' })] });
 
-      await user.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
+      fireEvent.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
 
       expect(screen.getByRole('textbox', { name: /Next step for Acme Freight/ })).toHaveValue(
         'Send pricing',
       );
     });
 
-    it('opens with the session override rather than the provider next step', async () => {
-      const user = userEvent.setup();
+    it('opens with the session override rather than the provider next step', () => {
       renderTable({
         opportunities: [makeOpportunity({ nextStep: 'Send pricing' })],
         nextSteps: { 'opp-1': 'Escalate to the AD' },
       });
 
-      await user.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
+      fireEvent.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
 
       expect(screen.getByRole('textbox', { name: /Next step for Acme Freight/ })).toHaveValue(
         'Escalate to the AD',
       );
     });
 
-    it('opens empty when the session edit is an explicit clear', async () => {
-      const user = userEvent.setup();
+    it('opens empty when the session edit is an explicit clear', () => {
       renderTable({
         opportunities: [makeOpportunity({ nextStep: 'Send pricing' })],
         nextSteps: { 'opp-1': '' },
       });
 
-      await user.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
+      fireEvent.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
 
       expect(screen.getByRole('textbox', { name: /Next step for Acme Freight/ })).toHaveValue('');
     });
@@ -268,8 +264,7 @@ describe('ForecastTable', () => {
 
       await user.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
       const input = screen.getByRole('textbox', { name: /Next step for Acme Freight/ });
-      await user.clear(input);
-      await user.type(input, 'Book the security review');
+      fireEvent.change(input, { target: { value: 'Book the security review' } });
       await user.click(screen.getByRole('button', { name: 'Cancel next step edit' }));
 
       expect(onSetNextStep).not.toHaveBeenCalled();
@@ -284,8 +279,8 @@ describe('ForecastTable', () => {
 
       await user.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
       const input = screen.getByRole('textbox', { name: /Next step for Acme Freight/ });
-      await user.clear(input);
-      await user.type(input, 'Book the security review{Escape}');
+      fireEvent.change(input, { target: { value: 'Book the security review' } });
+      await user.keyboard('{Escape}');
 
       expect(onSetNextStep).not.toHaveBeenCalled();
       expect(screen.getByText('Send pricing')).toBeInTheDocument();
@@ -296,10 +291,10 @@ describe('ForecastTable', () => {
       const { onSetNextStep } = renderTable();
 
       await user.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
-      await user.type(
-        screen.getByRole('textbox', { name: /Next step for Acme Freight/ }),
-        'Book the security review{Enter}',
-      );
+      fireEvent.change(screen.getByRole('textbox', { name: /Next step for Acme Freight/ }), {
+        target: { value: 'Book the security review' },
+      });
+      await user.keyboard('{Enter}');
 
       expect(onSetNextStep).toHaveBeenCalledWith('opp-1', 'Book the security review');
     });
@@ -312,8 +307,8 @@ describe('ForecastTable', () => {
 
       await user.click(screen.getByRole('button', { name: /next step for Acme Freight/ }));
       const input = screen.getByRole('textbox', { name: /Next step for Acme Freight/ });
-      await user.clear(input);
-      await user.type(input, '{Enter}');
+      fireEvent.change(input, { target: { value: '' } });
+      await user.keyboard('{Enter}');
 
       expect(onSetNextStep).toHaveBeenCalledWith('opp-1', '');
     });
@@ -390,25 +385,23 @@ describe('ForecastTable', () => {
     // Regression: the note editor used to open blank even when the provider
     // (or an earlier session edit) already held a note, so a blind save
     // erased it with an accidental clear tombstone.
-    it('opens with the provider note when there is no session edit', async () => {
-      const user = userEvent.setup();
+    it('opens with the provider note when there is no session edit', () => {
       renderTable({ opportunities: [makeOpportunity({ notes: 'Champion is on leave' })] });
 
-      await user.click(screen.getByRole('button', { name: 'Edit note for Acme Freight' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Edit note for Acme Freight' }));
 
       expect(screen.getByRole('textbox', { name: /Note for Acme Freight/ })).toHaveValue(
         'Champion is on leave',
       );
     });
 
-    it('opens with the session override rather than the provider note', async () => {
-      const user = userEvent.setup();
+    it('opens with the session override rather than the provider note', () => {
       renderTable({
         opportunities: [makeOpportunity({ notes: 'Champion is on leave' })],
         notes: { 'opp-1': 'New champion found' },
       });
 
-      await user.click(screen.getByRole('button', { name: 'Edit note for Acme Freight' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Edit note for Acme Freight' }));
 
       expect(screen.getByRole('textbox', { name: /Note for Acme Freight/ })).toHaveValue(
         'New champion found',
@@ -435,7 +428,7 @@ describe('ForecastTable', () => {
 
       await user.click(screen.getByRole('button', { name: 'Edit note for Acme Freight' }));
       const input = screen.getByRole('textbox', { name: /Note for Acme Freight/ });
-      await user.clear(input);
+      fireEvent.change(input, { target: { value: '' } });
       await user.click(screen.getByRole('button', { name: 'Cancel note edit' }));
 
       expect(onSetNote).not.toHaveBeenCalled();
@@ -453,8 +446,8 @@ describe('ForecastTable', () => {
 
       await user.click(screen.getByRole('button', { name: 'Edit note for Acme Freight' }));
       const input = screen.getByRole('textbox', { name: /Note for Acme Freight/ });
-      await user.clear(input);
-      await user.type(input, '{Escape}');
+      fireEvent.change(input, { target: { value: '' } });
+      await user.keyboard('{Escape}');
 
       expect(onSetNote).not.toHaveBeenCalled();
       expect(
@@ -470,8 +463,8 @@ describe('ForecastTable', () => {
 
       await user.click(screen.getByRole('button', { name: 'Edit note for Acme Freight' }));
       const input = screen.getByRole('textbox', { name: /Note for Acme Freight/ });
-      await user.clear(input);
-      await user.type(input, '{Enter}');
+      fireEvent.change(input, { target: { value: '' } });
+      await user.keyboard('{Enter}');
 
       expect(onSetNote).toHaveBeenCalledWith('opp-1', '');
     });
@@ -494,10 +487,10 @@ describe('ForecastTable', () => {
       const { onSetNote } = renderTable();
 
       await user.click(screen.getByRole('button', { name: /note for Acme Freight/ }));
-      await user.type(
-        screen.getByRole('textbox', { name: /Note for Acme Freight/ }),
-        'Procurement is the blocker{Enter}',
-      );
+      fireEvent.change(screen.getByRole('textbox', { name: /Note for Acme Freight/ }), {
+        target: { value: 'Procurement is the blocker' },
+      });
+      await user.keyboard('{Enter}');
 
       expect(onSetNote).toHaveBeenCalledWith('opp-1', 'Procurement is the blocker');
       expect(screen.queryByText('Procurement is the blocker')).not.toBeInTheDocument();
@@ -508,10 +501,10 @@ describe('ForecastTable', () => {
       const { onSetNote } = renderTable();
 
       await user.click(screen.getByRole('button', { name: /note for Acme Freight/ }));
-      await user.type(
-        screen.getByRole('textbox', { name: /Note for Acme Freight/ }),
-        '   spaced   {Enter}',
-      );
+      fireEvent.change(screen.getByRole('textbox', { name: /Note for Acme Freight/ }), {
+        target: { value: '   spaced   ' },
+      });
+      await user.keyboard('{Enter}');
 
       expect(onSetNote).toHaveBeenCalledWith('opp-1', 'spaced');
     });

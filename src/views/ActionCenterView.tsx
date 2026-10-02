@@ -145,7 +145,7 @@ export default function ActionCenterView({
         </div>
       </Card>
       <Card title="Action items">
-        {renderQueryState('action items', pageWindowAsQuery(items), (rows) => (
+        {renderQueryState('action items', pageWindowAsQuery(items, true), (rows) => (
           <>
             <ul className="divide-y divide-ash">
               {rows.map((item) => (

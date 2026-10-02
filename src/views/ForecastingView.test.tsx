@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ForecastingView from './ForecastingView';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
@@ -112,7 +112,6 @@ describe('ForecastingView', () => {
   });
 
   it('fetches one page per expanded manager, and pages on request', async () => {
-    const user = userEvent.setup();
     renderView();
 
     // The first manager opens by default, and only their first page is
@@ -121,36 +120,37 @@ describe('ForecastingView', () => {
     expect(await screen.findByText('Showing 25 of 27')).toBeInTheDocument();
     expect(screen.queryByText('Acme 9')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Load 25 more' }));
+    const pagination = screen.getByText('Showing 25 of 27').closest<HTMLElement>('[role="group"]')!;
+    fireEvent.click(within(pagination).getByRole('button', { name: 'Load 25 more' }));
     expect(await screen.findByText('Showing 27 of 27')).toBeInTheDocument();
     expect(screen.getByText('Acme 9')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Load 25 more' })).not.toBeInTheDocument();
+    expect(within(pagination).getByRole('button', { name: 'Load 25 more' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
   it('loads a manager when their group is expanded', async () => {
-    const user = userEvent.setup();
     renderView();
     await screen.findByText('Showing 25 of 27');
 
-    await user.click(await screen.findByRole('button', { name: /R\. Diaz/ }));
+    fireEvent.click(screen.getByLabelText('R. Diaz opportunities', { selector: 'button' }));
 
     // The second manager's book, including the partner name from the
     // directory the view fetches rather than the whole partner collection.
+    const row = (await screen.findByText('Contoso Freight')).closest('tr')!;
     expect(
-      await screen.findByRole('button', {
-        name: 'Edit revenue forecast for Contoso Freight',
-      }),
+      within(row).getByRole('button', { name: 'Edit revenue forecast for Contoso Freight' }),
     ).toBeInTheDocument();
     expect(screen.getAllByText('Contoso Partners').length).toBeGreaterThan(0);
   });
 
   it('filters to one manager and opens their group without refetching hidden books', async () => {
-    const user = userEvent.setup();
     const { provider } = renderView();
     const bookSpy = vi.spyOn(provider, 'listQuarterOpportunities');
 
     await screen.findByText('Showing 25 of 27');
-    await user.selectOptions(screen.getByLabelText('Partner manager'), 'pm-2');
+    fireEvent.change(screen.getByLabelText('Partner manager'), { target: { value: 'pm-2' } });
 
     expect(await screen.findByText('Showing 1 of 1')).toBeInTheDocument();
     // The filtered-out book stays mounted but hidden: the filter is a
@@ -158,13 +158,12 @@ describe('ForecastingView', () => {
     expect(screen.getByText('Showing 25 of 27')).not.toBeVisible();
     const calls = bookSpy.mock.calls.length;
 
-    await user.selectOptions(screen.getByLabelText('Partner manager'), 'all');
+    fireEvent.change(screen.getByLabelText('Partner manager'), { target: { value: 'all' } });
     expect(screen.getByText('Showing 25 of 27')).toBeVisible();
     expect(bookSpy.mock.calls.length).toBe(calls);
   });
 
   it('scopes the summary to the selected manager’s own targets (VAL-DATA-001)', async () => {
-    const user = userEvent.setup();
     // Disjoint targets, small enough to verify by hand: pm-1's partner
     // carries a 100k target with 40k won and 120k open; pm-2's carries 300k
     // with 150k won and 90k open. The org answer is the sum of both.
@@ -242,7 +241,7 @@ describe('ForecastingView', () => {
 
     // Selecting a manager re-asks the summary for that manager's partner
     // set: pm-2 alone is 300k target, 150k won, 90k open over a 150k gap.
-    await user.selectOptions(screen.getByLabelText('Partner manager'), 'pm-2');
+    fireEvent.change(screen.getByLabelText('Partner manager'), { target: { value: 'pm-2' } });
     expect(await within(await coverageTile()).findByText('0.6x')).toBeInTheDocument();
     expect(within(await coverageTile()).getByText('$150K goal remaining')).toBeInTheDocument();
     expect(within(await closedWonTile()).getByText('$150K')).toBeInTheDocument();
@@ -250,7 +249,7 @@ describe('ForecastingView', () => {
     expect(summarySpy.mock.calls.at(-1)?.[1]).toMatchObject({ partnerManagerId: 'pm-2' });
 
     // Switching back to all managers restores the organization scope.
-    await user.selectOptions(screen.getByLabelText('Partner manager'), 'all');
+    fireEvent.change(screen.getByLabelText('Partner manager'), { target: { value: 'all' } });
     expect(await within(await coverageTile()).findByText('1.0x')).toBeInTheDocument();
     expect(within(await closedWonTile()).getByText('$190K')).toBeInTheDocument();
     expect(summarySpy.mock.calls.at(-1)?.[1]?.partnerManagerId).toBeUndefined();
@@ -261,25 +260,29 @@ describe('ForecastingView', () => {
 
     const cell = await screen.findByText('$2,000,000');
     expect(cell).toBeInTheDocument();
-    expect(cell).toHaveAttribute('title', 'Edited — differs from Salesforce forecast');
+    expect(cell.closest('td')).toHaveTextContent('Edited — differs from Salesforce forecast');
   });
 
   it('commits an inline revenue edit and a forecast call through the handlers', async () => {
     const user = userEvent.setup();
     const { onSetRevenue, onSetForecastCall } = renderView();
 
+    const revenueRow = (await screen.findByText('Acme 0')).closest('tr')!;
     await user.click(
-      await screen.findByRole('button', { name: 'Edit revenue forecast for Acme 0' }),
+      within(revenueRow).getByRole('button', { name: 'Edit revenue forecast for Acme 0' }),
     );
-    const input = screen.getByRole('textbox', { name: 'Revenue forecast for Acme 0' });
-    await user.clear(input);
-    await user.type(input, '310000{Enter}');
+    const input = within(revenueRow).getByRole('textbox', { name: 'Revenue forecast for Acme 0' });
+    fireEvent.change(input, { target: { value: '310000' } });
+    await user.keyboard('{Enter}');
     expect(onSetRevenue).toHaveBeenCalledWith('opp-a0', 310_000);
 
-    await user.click(screen.getByRole('button', { name: 'Edit forecast category for Acme 1' }));
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: 'Forecast category for Acme 1' }),
-      'commit',
+    const categoryRow = screen.getByText('Acme 1').closest('tr')!;
+    fireEvent.click(
+      within(categoryRow).getByRole('button', { name: 'Edit forecast category for Acme 1' }),
+    );
+    fireEvent.change(
+      within(categoryRow).getByRole('combobox', { name: 'Forecast category for Acme 1' }),
+      { target: { value: 'commit' } },
     );
     expect(onSetForecastCall).toHaveBeenCalledWith('opp-a1', 'commit');
   });
@@ -354,7 +357,6 @@ describe('ForecastingView', () => {
   });
 
   it('fails one widget without taking the page down, and retries only that query', async () => {
-    const user = userEvent.setup();
     const provider = new MockDataProvider(makeBook());
     // The sentinel stands in for raw provider prose: the widget must render
     // its stable operation copy, never the rejection's own message.
@@ -374,7 +376,8 @@ describe('ForecastingView', () => {
     expect(screen.getByText('Week-over-week pipeline')).toBeInTheDocument();
     expect(await screen.findByText('Showing 25 of 27')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Retry forecast summary' }));
+    const failedRegion = screen.getByRole('group', { name: 'forecast summary' });
+    fireEvent.click(within(failedRegion).getByRole('button', { name: 'Retry forecast summary' }));
     expect(await screen.findByText('28 open Q3 opps')).toBeInTheDocument();
     // The retry repeated the failed query only — and a successful retry
     // lands focus on the recovered widget's named region, not the body.
@@ -384,7 +387,6 @@ describe('ForecastingView', () => {
   });
 
   it('a failed weighted forecast leaves the rest of the page up and retries alone', async () => {
-    const user = userEvent.setup();
     const provider = new MockDataProvider(makeBook());
     const weightedSpy = vi
       .spyOn(provider, 'getWeightedForecast')
@@ -401,14 +403,14 @@ describe('ForecastingView', () => {
     expect(screen.getByText('Week-over-week pipeline')).toBeInTheDocument();
     expect(await screen.findByText('Showing 25 of 27')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Retry weighted forecast' }));
+    const failedRegion = screen.getByRole('group', { name: 'weighted forecast' });
+    fireEvent.click(within(failedRegion).getByRole('button', { name: 'Retry weighted forecast' }));
     expect(await screen.findByText('open Q3 pipeline × category probability')).toBeInTheDocument();
     expect(weightedSpy).toHaveBeenCalledTimes(2);
     expect(summarySpy).toHaveBeenCalledTimes(1);
   });
 
   it('a failed manager-groups query leaves the aggregates up and retries alone', async () => {
-    const user = userEvent.setup();
     const provider = new MockDataProvider(makeBook());
     const groupsSpy = vi
       .spyOn(provider, 'getManagerForecastGroups')
@@ -421,14 +423,14 @@ describe('ForecastingView', () => {
     expect(await screen.findByText('28 open Q3 opps')).toBeInTheDocument();
     expect(screen.getByText('Week-over-week pipeline')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Retry manager groups' }));
+    const failedRegion = screen.getByRole('group', { name: 'manager groups' });
+    fireEvent.click(within(failedRegion).getByRole('button', { name: 'Retry manager groups' }));
     expect(await screen.findByText('Showing 25 of 27')).toBeInTheDocument();
     expect(groupsSpy).toHaveBeenCalledTimes(2);
     expect(summarySpy).toHaveBeenCalledTimes(1);
   });
 
   it('a failed partner directory falls back to opaque ids and recovers on retry', async () => {
-    const user = userEvent.setup();
     const provider = new MockDataProvider(makeBook());
     const directorySpy = vi
       .spyOn(provider, 'getPartnerDirectory')
@@ -445,7 +447,8 @@ describe('ForecastingView', () => {
     expect(row).not.toBeNull();
     expect(within(row!).getByText('partner-1')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Retry partner directory' }));
+    const failedRegion = screen.getByRole('group', { name: 'partner directory' });
+    fireEvent.click(within(failedRegion).getByRole('button', { name: 'Retry partner directory' }));
     expect(await within(row!).findByText('Northwind Systems')).toBeInTheDocument();
     expect(directorySpy).toHaveBeenCalledTimes(2);
     // The recovered answer's envelope renders beside the table it feeds…
@@ -492,7 +495,6 @@ describe('ForecastingView', () => {
   });
 
   it('one manager’s failed book leaves the other managers alone', async () => {
-    const user = userEvent.setup();
     const provider = new MockDataProvider(makeBook());
     const real = provider.listQuarterOpportunities.bind(provider);
     let failPm2 = true;
@@ -507,7 +509,7 @@ describe('ForecastingView', () => {
     renderView({ provider });
     await screen.findByText('Showing 25 of 27');
 
-    await user.click(screen.getByRole('button', { name: /R\. Diaz/ }));
+    fireEvent.click(screen.getByLabelText('R. Diaz opportunities', { selector: 'button' }));
     expect(await screen.findByText('This book did not load:')).toBeInTheDocument();
     // Stable copy, never the rejection's prose.
     expect(screen.getByText('Failed to load this manager’s book')).toBeInTheDocument();
@@ -516,7 +518,8 @@ describe('ForecastingView', () => {
     expect(screen.getByText('Showing 25 of 27')).toBeInTheDocument();
 
     failPm2 = false;
-    await user.click(screen.getByRole('button', { name: 'Retry this manager’s book' }));
+    const failedBook = screen.getByRole('group', { name: 'manager book pm-2' });
+    fireEvent.click(within(failedBook).getByRole('button', { name: 'Retry this manager’s book' }));
     expect(await screen.findByText('Showing 1 of 1')).toBeInTheDocument();
     // The failed manager retried alone: pm-1's book was never refetched.
     const pm1Calls = bookSpy.mock.calls.filter(([, scope]) => scope.partnerManagerId === 'pm-1');

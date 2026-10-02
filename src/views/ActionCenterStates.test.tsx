@@ -103,7 +103,7 @@ describe('Action Center evidence and independent query states', () => {
     retry.focus();
     fireEvent.click(retry);
     await screen.findByText('Showing 50 of 85 action items');
-    await waitFor(() => expect(screen.getByRole('group', { name: 'action items' })).toHaveFocus());
+    await waitFor(() => expect(more).toHaveFocus());
     expect(ids().slice(0, 25)).toEqual(initial);
     expect(new Set(ids()).size).toBe(50);
     expect(list).toHaveBeenCalledTimes(3);

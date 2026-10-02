@@ -306,7 +306,10 @@ describe('PartnerPerformanceView', () => {
     expect(within(card).getAllByRole('row')).toHaveLength(31);
     expect(within(card).getByText('Partner 26')).toBeInTheDocument();
     expect(within(card).getByText('Partner 30')).toBeInTheDocument();
-    expect(within(card).queryByRole('button', { name: 'Load 25 more' })).not.toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Load 25 more' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
   it('describes the registration SLA breach boundary as inclusive (VAL-DATA-007)', async () => {
@@ -369,8 +372,11 @@ describe('PartnerPerformanceView', () => {
       name: 'Beacon Consulting certifications',
     });
     const card = certifications.closest('section') as HTMLElement;
-    expect(within(card).getAllByText('No certification data')).toHaveLength(2);
-    expect(within(card).getAllByText('0/1')).toHaveLength(2);
+    expect(within(card).getAllByText('No certification data', { selector: 'span' })).toHaveLength(
+      2,
+    );
+    expect(within(card).queryByText('0/1')).not.toBeInTheDocument();
+    expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
   it('shows a focused certification failure and its retry in the visible card', async () => {

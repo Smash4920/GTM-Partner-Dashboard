@@ -75,7 +75,7 @@ test('VAL-DATA-015: Deal Reg Ops renders the exact scoped registration answers',
   const loadMore = queue.getByRole('button', { name: 'Load 10 more' });
   await loadMore.click();
   await expect(queue.getByText('Showing 18 of 18 pending')).toBeVisible();
-  await expect(loadMore).toHaveCount(0);
+  await expect(loadMore).toHaveAttribute('aria-disabled', 'true');
 
   // The exclusivity watch and the internal conflict table answer with their
   // own scoped totals.
@@ -139,7 +139,10 @@ test('VAL-DATA-015: Activity Tracking renders scoped aggregates and a bounded ca
   const dialog = page.getByRole('dialog', { name: 'Log meetings' });
   await expect(dialog.getByText('Log meetings · Alex Morgan')).toBeVisible();
   await expect(dialog.getByRole('combobox', { name: /Partner for .* meeting/ })).toHaveCount(10);
-  await expect(dialog.getByRole('button', { name: /Load more meetings/ })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: /Load more meetings/ })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
 
   // Registering a prospect inside the modal drafts it onto the call;
   // submitting commits once and the roster-reading surfaces pick the

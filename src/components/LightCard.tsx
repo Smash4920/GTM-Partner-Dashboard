@@ -13,7 +13,9 @@ interface LightCardProps {
  */
 export default function LightCard({ title, subtitle, children, className = '' }: LightCardProps) {
   return (
-    <section className={`rounded-card bg-bone p-5 ${className}`}>
+    <section
+      className={`rounded-card bg-bone p-5 [&_.text-granite]:text-graphite [&_.text-signal]:text-carbon [&_.text-metric]:text-carbon ${className}`}
+    >
       <h2 className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.08em] text-canvas">
         <span className="h-1.5 w-1.5 rounded-full bg-signal" />
         {title}

@@ -1,6 +1,7 @@
 import { STAGE_META } from '../data/constants';
 import type { Opportunity } from '../data/types';
 import { formatDate, formatUsd } from '../lib/format';
+import TableRegion from './TableRegion';
 
 interface OpportunityTableProps {
   opportunities: Opportunity[];
@@ -14,28 +15,38 @@ export default function OpportunityTable({
   emptyMessage = 'No opportunities in this phase.',
 }: OpportunityTableProps) {
   return (
-    <div
-      className="max-h-[440px] overflow-auto rounded-card focus:outline-none focus-visible:ring-1 focus-visible:ring-ash"
-      tabIndex={0}
-      role="region"
-      aria-label="Pipeline opportunities, scrollable"
-    >
-      <table className="w-full min-w-[720px] text-sm">
+    <TableRegion label="Pipeline opportunities" className="max-h-[440px]">
+      <table aria-label="Pipeline opportunities" className="w-full min-w-[720px] text-sm">
         <thead className="sticky top-0 bg-canvas">
           <tr className="border-b border-carbon">
-            <th className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+            <th
+              scope="col"
+              className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+            >
               Client
             </th>
-            <th className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+            <th
+              scope="col"
+              className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+            >
               Factory Account Director
             </th>
-            <th className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+            <th
+              scope="col"
+              className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+            >
               Stage
             </th>
-            <th className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+            <th
+              scope="col"
+              className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+            >
               Forecasted revenue
             </th>
-            <th className="pb-2 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+            <th
+              scope="col"
+              className="pb-2 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+            >
               Close date
             </th>
           </tr>
@@ -79,6 +90,6 @@ export default function OpportunityTable({
           )}
         </tbody>
       </table>
-    </div>
+    </TableRegion>
   );
 }

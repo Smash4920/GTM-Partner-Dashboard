@@ -294,7 +294,7 @@ function PartnerViewBody({
               ` · ${queries.history.totalCount} lifetime registrations`}
           </p>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex w-full min-w-0 flex-col items-end gap-2 sm:w-auto">
           <PartnerPicker partners={roster} value={partner.id} onChange={onSelectPartner} />
           <FilterChips
             options={PHASE_OPTIONS}
@@ -309,7 +309,7 @@ function PartnerViewBody({
             onChange={onSliceChange}
             ariaLabel="Slice pipeline by revenue motion"
           />
-          <p className="max-w-xs text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+          <p className="w-full max-w-xs text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
             Demo selector — client filtering is not authorization; external use requires trusted
             sign-in and server-enforced row access
           </p>
@@ -326,18 +326,22 @@ function PartnerViewBody({
       />
 
       <Card title="Deal registrations" subtitle="Most recent first · all statuses">
-        {renderQueryState('registration history', pageWindowAsQuery(queries.history), (rows) => (
-          <>
-            <RegistrationsTable
-              registrations={rows}
-              partners={roster}
-              variant="history"
-              showPartner={false}
-              limit={rows.length}
-            />
-            <PageFooter state={queries.history} noun="registrations" pageSize={8} />
-          </>
-        ))}
+        {renderQueryState(
+          'registration history',
+          pageWindowAsQuery(queries.history, true),
+          (rows) => (
+            <>
+              <RegistrationsTable
+                registrations={rows}
+                partners={roster}
+                variant="history"
+                showPartner={false}
+                limit={rows.length}
+              />
+              <PageFooter state={queries.history} noun="registrations" pageSize={8} />
+            </>
+          ),
+        )}
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -361,7 +365,7 @@ function PartnerViewBody({
         >
           {renderQueryState(
             'exclusivity window',
-            pageWindowAsQuery(queries.exclusivity),
+            pageWindowAsQuery(queries.exclusivity, true),
             (rows) => (
               <>
                 <ExclusivityTable
@@ -389,17 +393,21 @@ function PartnerViewBody({
             : `${queries.pipeline.totalCount} opportunities · Salesforce fields shown as mock data`
         }
       >
-        {renderQueryState('pipeline opportunities', pageWindowAsQuery(queries.pipeline), (rows) => (
-          <>
-            <OpportunityTable
-              opportunities={rows}
-              emptyMessage={`No ${
-                slice === 'all' ? '' : `${sliceLabel} `
-              }${FISCAL_PHASE_META[phase].label} opportunities.`}
-            />
-            <PageFooter state={queries.pipeline} noun="opportunities" pageSize={25} />
-          </>
-        ))}
+        {renderQueryState(
+          'pipeline opportunities',
+          pageWindowAsQuery(queries.pipeline, true),
+          (rows) => (
+            <>
+              <OpportunityTable
+                opportunities={rows}
+                emptyMessage={`No ${
+                  slice === 'all' ? '' : `${sliceLabel} `
+                }${FISCAL_PHASE_META[phase].label} opportunities.`}
+              />
+              <PageFooter state={queries.pipeline} noun="opportunities" pageSize={25} />
+            </>
+          ),
+        )}
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

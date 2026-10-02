@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import ForecastingView from '../views/ForecastingView';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { NO_SESSION_EDITS } from './sessionEdits';
@@ -74,7 +73,6 @@ describe('VAL-RES-007 edit invalidation is narrow', () => {
       timeout: 20_000,
     },
     async () => {
-      const user = userEvent.setup();
       const provider = new MockDataProvider(makeBook());
       const spies = {
         summary: vi.spyOn(provider, 'getForecastSummary'),
@@ -126,8 +124,10 @@ describe('VAL-RES-007 edit invalidation is narrow', () => {
       });
 
       // Load page two so the tests below can prove the pages survive edits.
-      const pagination = screen.getByText('Showing 25 of 27').parentElement!;
-      await user.click(within(pagination).getByRole('button', { name: 'Load 25 more' }));
+      const pagination = screen
+        .getByText('Showing 25 of 27')
+        .closest<HTMLElement>('[role="group"]')!;
+      fireEvent.click(within(pagination).getByRole('button', { name: 'Load 25 more' }));
       expect(await screen.findByText('Showing 27 of 27')).toBeInTheDocument();
       expect(counts().book).toBe(2);
 
@@ -135,9 +135,7 @@ describe('VAL-RES-007 edit invalidation is narrow', () => {
       // through its disclosure — reading it needs no refetch.
       commit({ ...edits, notes: { 'opp-a0': 'Called the CFO' } });
       const noteRow = screen.getByText('Acme 0').closest('tr')!;
-      await user.click(
-        await within(noteRow).findByRole('button', { name: 'View note for Acme 0' }),
-      );
+      fireEvent.click(await within(noteRow).findByRole('button', { name: 'View note for Acme 0' }));
       expect(screen.getByText('Called the CFO')).toBeInTheDocument();
       expect(counts()).toEqual({
         summary: 1,
@@ -213,22 +211,23 @@ describe('VAL-RES-007 edit invalidation is narrow', () => {
       // The manager filter hides and restores groups without touching their
       // books, and the hidden book keeps its loaded pages. The summary alone
       // refetches: the manager is its query scope, not a presentation.
-      await user.selectOptions(screen.getByLabelText('Partner manager'), 'pm-2');
+      fireEvent.change(screen.getByLabelText('Partner manager'), { target: { value: 'pm-2' } });
       expect(await screen.findByText('Showing 1 of 1')).toBeInTheDocument();
       // pm-2's first page is a legitimately new question, not a refetch.
       expect(counts()).toEqual({ ...before, summary: before.summary + 1, book: before.book + 1 });
       expect(spies.summary.mock.calls.at(-1)?.[1]).toMatchObject({ partnerManagerId: 'pm-2' });
-      await user.selectOptions(screen.getByLabelText('Partner manager'), 'all');
+      fireEvent.change(screen.getByLabelText('Partner manager'), { target: { value: 'all' } });
       expect(screen.getByText('Showing 27 of 27')).toBeVisible();
       expect(counts()).toEqual({ ...before, summary: before.summary + 2, book: before.book + 1 });
       expect(spies.summary.mock.calls.at(-1)?.[1].partnerManagerId).toBeUndefined();
 
       // Collapsing and reopening a group is presentation-only: no query,
       // and the loaded pages are still there.
-      const groupToggle = screen.getByRole('button', { name: /J\. Alvarez/, expanded: true });
-      await user.click(groupToggle);
+      const groupToggle = screen.getByLabelText('J. Alvarez opportunities', { selector: 'button' });
+      expect(groupToggle).toHaveAttribute('aria-expanded', 'true');
+      fireEvent.click(groupToggle);
       expect(screen.getByText('Showing 27 of 27')).not.toBeVisible();
-      await user.click(groupToggle);
+      fireEvent.click(groupToggle);
       expect(screen.getByText('Showing 27 of 27')).toBeVisible();
       expect(counts()).toEqual({ ...before, summary: before.summary + 2, book: before.book + 1 });
     },

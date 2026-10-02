@@ -160,7 +160,7 @@ async function saveOutcome(
 }
 
 async function editRevenue(page: Page, value = '987654321') {
-  const table = page.getByRole('region', { name: 'In-quarter opportunities, scrollable' });
+  const table = page.getByRole('region', { name: /^In-quarter opportunities/ });
   const openOpportunity = table
     .getByRole('button', { name: /^Edit forecast category for / })
     .first();
@@ -574,7 +574,7 @@ test('VAL-CROSS-002 VAL-RES-003: failed readiness retains session state and retr
   await expect(records(page).getByRole('listitem')).toHaveCount(0);
   await expect(changes(page).getByRole('listitem')).toHaveCount(0);
   await expect(page.getByText('$123,456,789', { exact: true })).toHaveCount(0);
-  const table = page.getByRole('region', { name: 'In-quarter opportunities, scrollable' });
+  const table = page.getByRole('region', { name: /^In-quarter opportunities/ });
   await expect(table.getByRole('row')).toHaveCount(26);
   await expect(table.getByText(/· copy \d+/).first()).toBeVisible();
   await expect(page.getByText(/As of .* · provider (local|remote) ·/)).toHaveCount(0);

@@ -58,7 +58,7 @@ test('VAL-RES-010: switching local → failed remote → retried remote → scal
   // and a revenue edit.
   const managerFilter = page.getByLabel('Partner manager');
   await managerFilter.selectOption({ index: 1 });
-  const table = page.getByRole('region', { name: 'In-quarter opportunities, scrollable' });
+  const table = page.getByRole('region', { name: /^In-quarter opportunities/ });
   // Anchor on the row position, not the edit button: once the editor opens
   // the button unmounts, and a locator chained off it would re-resolve to the
   // next row.

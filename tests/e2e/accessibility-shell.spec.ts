@@ -163,7 +163,7 @@ test('VAL-A11Y-002: query refresh, edits, metadata and focused retry never repea
   await settle(page);
   await expect(manager).toBeFocused();
   const row = page
-    .getByRole('region', { name: 'In-quarter opportunities, scrollable' })
+    .getByRole('region', { name: /^In-quarter opportunities/ })
     .getByRole('row')
     .nth(1);
   await row.getByRole('button', { name: /^Edit revenue forecast/ }).click();
@@ -240,10 +240,14 @@ for (const { id, label } of ROUTES) {
           .filter((element) => {
             const control = element as HTMLElement;
             const style = getComputedStyle(control);
+            const closedDetails = control.closest('details:not([open])');
+            const hiddenByDetails =
+              closedDetails && !closedDetails.querySelector(':scope > summary')?.contains(control);
             return (
               control.tabIndex >= 0 &&
               !control.matches(':disabled') &&
               !control.closest('[hidden], [inert]') &&
+              !hiddenByDetails &&
               style.visibility !== 'hidden' &&
               control.getClientRects().length > 0
             );
@@ -316,7 +320,7 @@ test('VAL-A11Y-004: forecast, roster, policy and notification errors are linked,
   await page.goto('/');
   await navigate(page, 'Forecasting');
   const row = page
-    .getByRole('region', { name: 'In-quarter opportunities, scrollable' })
+    .getByRole('region', { name: /^In-quarter opportunities/ })
     .getByRole('row')
     .nth(1);
   await row.getByRole('button', { name: /^Edit revenue forecast/ }).click();

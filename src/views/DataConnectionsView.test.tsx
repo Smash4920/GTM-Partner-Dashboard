@@ -774,7 +774,7 @@ describe('DataConnectionsView', () => {
     );
     // The chip carries the count the node derives from the alert rule.
     expect(chip('J.')).toHaveAttribute(
-      'title',
+      'aria-label',
       'J. Alvarez · j.alvarez@example.com · 2 SLA alerts',
     );
   });

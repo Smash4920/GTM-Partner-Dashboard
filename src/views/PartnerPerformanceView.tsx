@@ -151,30 +151,24 @@ function PipelineOpportunitiesCard({
           : `${opportunities.totalCount} Salesforce-shaped opportunities in scope`
       }
     >
-      {renderQueryState('pipeline opportunities', pageWindowAsQuery(opportunities), (rows) => (
-        <>
-          <OpportunityTable
-            opportunities={rows}
-            emptyMessage={`No ${FISCAL_PHASE_META[phase].label} opportunities for this scope.`}
-          />
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-              Showing {rows.length} of {opportunities.totalCount}
-              {opportunities.refreshing && ' · updating'}
-            </p>
-            {opportunities.hasMore && (
-              <button
-                type="button"
-                onClick={opportunities.loadMore}
-                disabled={opportunities.loadingMore}
-                className="rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/20 disabled:opacity-50"
-              >
-                {opportunities.loadingMore ? 'Loading…' : 'Load 25 more'}
-              </button>
-            )}
-          </div>
-        </>
-      ))}
+      {renderQueryState(
+        'pipeline opportunities',
+        pageWindowAsQuery(opportunities, true),
+        (rows) => (
+          <>
+            <OpportunityTable
+              opportunities={rows}
+              emptyMessage={`No ${FISCAL_PHASE_META[phase].label} opportunities for this scope.`}
+            />
+            <PageFooter
+              state={opportunities}
+              noun="opportunities"
+              pageSize={25}
+              countNoun={false}
+            />
+          </>
+        ),
+      )}
     </Card>
   );
 }
@@ -230,7 +224,7 @@ function LeaderboardCard({
           : `${leaderboard.totalCount} partner${leaderboard.totalCount === 1 ? '' : 's'} in this scope · certification counts show attainment below`
       }
     >
-      {renderQueryState('partner leaderboard', pageWindowAsQuery(leaderboard), (rows) => (
+      {renderQueryState('partner leaderboard', pageWindowAsQuery(leaderboard, true), (rows) => (
         <>
           <Leaderboard
             rows={rows}

@@ -1,32 +1,7 @@
 import type { PaginationState } from '../data/paginationState';
 import type { ActionItem } from '../data/types';
+import PageFooter from './PageFooter';
 
 export default function ActionPagination({ state }: { state: PaginationState<ActionItem> }) {
-  return (
-    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-      <p role="status" aria-live="polite" className="font-mono text-xs text-granite">
-        <span>
-          Showing {state.rows.length} of {state.totalCount} action items
-        </span>
-        {state.loadingMore
-          ? ' · loading more'
-          : state.refreshing
-            ? ' · updating'
-            : !state.hasMore
-              ? ' · end of results'
-              : ''}
-      </p>
-      <button
-        type="button"
-        onClick={() => {
-          if (state.hasMore && !state.loadingMore && !state.refreshing) state.loadMore();
-        }}
-        aria-label="Load 25 more"
-        aria-disabled={state.loadingMore || state.refreshing || !state.hasMore}
-        className="rounded border border-ash px-3 py-2 text-xs text-stone aria-disabled:opacity-40"
-      >
-        {state.loadingMore ? 'Loading…' : 'Load 25 more'}
-      </button>
-    </div>
-  );
+  return <PageFooter state={state} noun="action items" pageSize={25} />;
 }

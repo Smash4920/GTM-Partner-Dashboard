@@ -43,7 +43,7 @@ function ReviewQueueCard({
           : `${pending.totalCount} pending · day counter is green inside the ${REGISTRATION_SLA_BUSINESS_DAYS}-business-day SLA, red outside it`
       }
     >
-      {renderQueryState('review queue', pageWindowAsQuery(pending), (rows) => (
+      {renderQueryState('review queue', pageWindowAsQuery(pending, true), (rows) => (
         <>
           <RegistrationsTable
             registrations={rows}
@@ -84,18 +84,22 @@ function ExclusivityCard({
           : `${ops.data.approvedNotConverted} approved registrations still without an opportunity · ${REGISTRATION_EXCLUSIVITY_DAYS}-day window from approval`
       }
     >
-      {renderQueryState('unconverted registrations', pageWindowAsQuery(unconverted), (rows) => (
-        <>
-          <ExclusivityTable registrations={rows} partners={roster} limit={rows.length} />
-          {ops.data !== null && (
-            <p className="mt-4 text-xs text-granite">
-              {ops.data.exclusivityLapsed} of {ops.data.approvedNotConverted} have passed the{' '}
-              {REGISTRATION_EXCLUSIVITY_DAYS}-day window and are flagged "Exclusivity lapsed".
-            </p>
-          )}
-          <PageFooter state={unconverted} noun="unconverted" pageSize={8} />
-        </>
-      ))}
+      {renderQueryState(
+        'unconverted registrations',
+        pageWindowAsQuery(unconverted, true),
+        (rows) => (
+          <>
+            <ExclusivityTable registrations={rows} partners={roster} limit={rows.length} />
+            {ops.data !== null && (
+              <p className="mt-4 text-xs text-granite">
+                {ops.data.exclusivityLapsed} of {ops.data.approvedNotConverted} have passed the{' '}
+                {REGISTRATION_EXCLUSIVITY_DAYS}-day window and are flagged "Exclusivity lapsed".
+              </p>
+            )}
+            <PageFooter state={unconverted} noun="unconverted" pageSize={8} />
+          </>
+        ),
+      )}
     </Card>
   );
 }
@@ -118,17 +122,21 @@ function DuplicatesCard({
           : `${duplicates.totalCount} clients registered by more than one partner · submission dates show who registered first · internal only`
       }
     >
-      {renderQueryState('duplicate registrations', pageWindowAsQuery(duplicates), (groups) => (
-        <>
-          <DuplicateRegistrationsTable
-            groups={groups}
-            partners={roster}
-            limit={groups.length}
-            onWorkflow={onWorkflow}
-          />
-          <PageFooter state={duplicates} noun="duplicate groups" pageSize={8} />
-        </>
-      ))}
+      {renderQueryState(
+        'duplicate registrations',
+        pageWindowAsQuery(duplicates, true),
+        (groups) => (
+          <>
+            <DuplicateRegistrationsTable
+              groups={groups}
+              partners={roster}
+              limit={groups.length}
+              onWorkflow={onWorkflow}
+            />
+            <PageFooter state={duplicates} noun="duplicate groups" pageSize={8} />
+          </>
+        ),
+      )}
       <p className="mt-4 text-xs text-granite">
         When multiple partners register the same client, the overlap and the earliest submission
         decide exclusivity. This view is never exposed in the partner portal.

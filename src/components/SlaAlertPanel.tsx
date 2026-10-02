@@ -6,6 +6,7 @@ import type { DashboardNotification, TeamUser } from '../data/types';
 import { formatDate, formatTime } from '../lib/format';
 import type { RegistrationSlaAlert } from '../lib/metrics';
 import { SendIcon } from './icons';
+import TableRegion from './TableRegion';
 
 /**
  * The rule the notification service runs, the registrations it fires on right
@@ -90,26 +91,47 @@ export default function SlaAlertPanel({
         </button>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <TableRegion label="Deal-registration SLA alert queue">
+        <table
+          aria-label="Deal-registration SLA alert queue"
+          className="w-full min-w-[800px] text-sm"
+        >
           <thead>
             <tr className="border-b border-carbon">
-              <th className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              <th
+                scope="col"
+                className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+              >
                 Registration
               </th>
-              <th className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              <th
+                scope="col"
+                className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+              >
                 Owner
               </th>
-              <th className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              <th
+                scope="col"
+                className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+              >
                 Submitted
               </th>
-              <th className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              <th
+                scope="col"
+                className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+              >
                 Due
               </th>
-              <th className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              <th
+                scope="col"
+                className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+              >
                 Clock
               </th>
-              <th className="pb-2 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              <th
+                scope="col"
+                className="pb-2 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+              >
                 Action
               </th>
             </tr>
@@ -154,7 +176,7 @@ export default function SlaAlertPanel({
                     type="button"
                     onClick={() => onNotify(alert)}
                     disabled={!alert.owner}
-                    className="rounded border border-ash/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/30 hover:text-bone disabled:opacity-40"
+                    className="min-h-6 min-w-6 rounded border border-ash/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/30 hover:text-bone disabled:opacity-40"
                   >
                     Notify owner
                   </button>
@@ -170,7 +192,7 @@ export default function SlaAlertPanel({
             )}
           </tbody>
         </table>
-      </div>
+      </TableRegion>
       {totalCount > shown.length && (
         <p className="text-xs text-granite">
           Showing the {shown.length} most urgent of {totalCount} registrations flagged against the

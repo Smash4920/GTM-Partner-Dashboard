@@ -10,6 +10,7 @@ import type { ForecastCategory, Opportunity } from '../data/types';
 import { formatDate, formatUsd } from '../lib/format';
 import { forecastCategoryOf } from '../lib/metrics';
 import { CheckIcon, CommentIcon, PencilIcon, XIcon } from './icons';
+import TableRegion from './TableRegion';
 
 interface ForecastTableProps {
   opportunities: Opportunity[];
@@ -30,6 +31,7 @@ interface ForecastTableProps {
   onSetNextStep: (opportunityId: string, nextStep: string) => void;
   onSetForecastCall: (opportunityId: string, category: ForecastCategory) => void;
   emptyMessage?: string;
+  tableLabel?: string;
 }
 
 /** Commit first: managers read their book from most to least confident. */
@@ -114,12 +116,18 @@ function ForecastCategoryCell({
         <PencilIcon className="h-3.5 w-3.5" />
       </button>
       {offStage && (
-        <span
-          className="shrink-0 font-mono text-[10px] uppercase tracking-[0.05em] text-signal"
-          title={`Called ${categoryMeta.label} while the deal sits in ${STAGE_META[opportunity.stage].label}, which implies ${FORECAST_CATEGORY_META[impliedByStage].label}.`}
-        >
-          Off stage
-        </span>
+        <details className="text-xs text-signal">
+          <summary
+            aria-label={`Off stage explanation for ${opportunity.accountName}`}
+            className="cursor-pointer"
+          >
+            Off stage
+          </summary>
+          <p className="max-w-64 whitespace-normal">
+            Called {categoryMeta.label} while the deal sits in {STAGE_META[opportunity.stage].label}
+            , which implies {FORECAST_CATEGORY_META[impliedByStage].label}.
+          </p>
+        </details>
       )}
     </span>
   );
@@ -178,6 +186,7 @@ export default function ForecastTable({
   onSetNextStep,
   onSetForecastCall,
   emptyMessage = 'No in-quarter opportunities for this partner manager.',
+  tableLabel = 'In-quarter opportunities',
 }: ForecastTableProps) {
   const [editor, setEditor] = useState<Partial<
     Record<'revenue' | 'note' | 'nextStep' | 'category', string>
@@ -356,10 +365,6 @@ export default function ForecastTable({
 
   return (
     <div
-      className="max-h-[480px] overflow-auto rounded-card"
-      tabIndex={0}
-      role="region"
-      aria-label="In-quarter opportunities, scrollable"
       onKeyDownCapture={(event) => {
         if (event.key === 'Enter' && (event.target as Element).tagName === 'INPUT') {
           event.preventDefault();
@@ -372,125 +377,147 @@ export default function ForecastTable({
         if (cell) invoker.current = cell;
       }}
     >
-      <table className="w-full min-w-[1180px] text-sm">
-        <thead className="sticky top-0 z-[1] bg-canvas">
-          <tr className="border-b border-carbon">
-            <th className={th}>Client</th>
-            <th className={th}>Partner</th>
-            <th className={`${th} text-right`}>Revenue forecast</th>
-            <th className={th}>Opportunity type</th>
-            <th className={th}>Stage</th>
-            <th className={th}>Forecast category</th>
-            <th className={`${th} text-right`}>Close date</th>
-            <th className={th}>Next step</th>
-            <th className={`${th} text-right`}>Notes</th>
-          </tr>
-        </thead>
-        <tbody>
-          {opportunities.map((opportunity) => {
-            const revenue = revenueOverrides[opportunity.id] ?? opportunity.forecastedRevenue;
-            const edited = revenueOverrides[opportunity.id] !== undefined;
-            const note = notes[opportunity.id] ?? opportunity.notes;
-            const nextStep = nextSteps[opportunity.id] ?? opportunity.nextStep;
-
-            return (
-              <tr
-                key={opportunity.id}
-                data-opportunity-id={opportunity.id}
-                className="border-b border-carbon last:border-0"
-              >
-                <td className="py-3 pr-3">
-                  <p className="text-bone">{opportunity.accountName}</p>
-                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.05em] text-granite">
-                    AD {opportunity.factoryAccountDirector}
-                  </p>
-                </td>
-                <td className="py-3 pr-3 text-granite">
-                  {partnerNames[opportunity.partnerId] ?? opportunity.partnerId}
-                </td>
-                <td className="py-3 pr-3 text-right">
-                  {editor?.revenue === opportunity.id ? (
-                    <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                      {renderEditor(opportunity, 'revenue')}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center justify-end gap-1.5">
-                      <span
-                        className={`tabular-nums ${edited ? 'text-signal' : 'text-bone'}`}
-                        title={edited ? 'Edited — differs from Salesforce forecast' : undefined}
-                      >
-                        {formatUsd(revenue)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => startEdit(opportunity.id, 'revenue', revenue)}
-                        className="rounded p-0.5 text-granite transition-colors hover:text-stone"
-                        title="Edit revenue forecast"
-                        aria-label={`Edit revenue forecast for ${opportunity.accountName}`}
-                      >
-                        <PencilIcon className="h-3.5 w-3.5" />
-                      </button>
-                    </span>
-                  )}
-                </td>
-                <td className="py-3 pr-3 font-mono text-[11px] uppercase tracking-[0.05em] text-stone">
-                  {OPP_TYPE_META[opportunity.oppType].label}
-                </td>
-                <td className="py-3 pr-3">{renderStage(opportunity)}</td>
-                <td className="py-3 pr-3">
-                  <ForecastCategoryCell
-                    opportunity={opportunity}
-                    editing={editor?.category === opportunity.id}
-                    onStartEdit={() => startEdit(opportunity.id, 'category')}
-                    onCommit={(category) => commitCategory(opportunity.id, category)}
-                    onCancel={cancelEdit}
-                  />
-                </td>
-                <td className="py-3 pr-3 text-right font-mono text-xs tabular-nums text-granite">
-                  {formatDate(opportunity.closedAt ?? opportunity.expectedCloseDate)}
-                </td>
-                <td className="py-3 pr-3">
-                  {editor?.nextStep === opportunity.id ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      {renderEditor(opportunity, 'next step')}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5">
-                      <span
-                        className={
-                          nextStep
-                            ? 'text-stone'
-                            : 'font-mono text-[10px] uppercase tracking-[0.05em] text-graphite'
-                        }
-                      >
-                        {/* `||`, not `??`: a cleared next step is '' and still reads as "none". */}
-                        {nextStep || '—'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => startEdit(opportunity.id, 'nextStep', nextStep)}
-                        className="rounded p-0.5 text-granite transition-colors hover:text-stone"
-                        title={nextStep ? 'Edit next step' : 'Add a next step'}
-                        aria-label={`${nextStep ? 'Edit' : 'Add'} next step for ${opportunity.accountName}`}
-                      >
-                        <PencilIcon className="h-3.5 w-3.5" />
-                      </button>
-                    </span>
-                  )}
-                </td>
-                {renderNotes(opportunity, note)}
-              </tr>
-            );
-          })}
-          {opportunities.length === 0 && (
-            <tr>
-              <td colSpan={9} className="py-8 text-center text-sm text-granite">
-                {emptyMessage}
-              </td>
+      <TableRegion label={tableLabel} className="max-h-[480px]">
+        <table aria-label={tableLabel} className="w-full min-w-[1180px] text-sm">
+          <thead className="sticky top-0 z-[1] bg-canvas">
+            <tr className="border-b border-carbon">
+              <th scope="col" className={th}>
+                Client
+              </th>
+              <th scope="col" className={th}>
+                Partner
+              </th>
+              <th scope="col" className={`${th} text-right`}>
+                Revenue forecast
+              </th>
+              <th scope="col" className={th}>
+                Opportunity type
+              </th>
+              <th scope="col" className={th}>
+                Stage
+              </th>
+              <th scope="col" className={th}>
+                Forecast category
+              </th>
+              <th scope="col" className={`${th} text-right`}>
+                Close date
+              </th>
+              <th scope="col" className={th}>
+                Next step
+              </th>
+              <th scope="col" className={`${th} text-right`}>
+                Notes
+              </th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {opportunities.map((opportunity) => {
+              const revenue = revenueOverrides[opportunity.id] ?? opportunity.forecastedRevenue;
+              const edited = revenueOverrides[opportunity.id] !== undefined;
+              const note = notes[opportunity.id] ?? opportunity.notes;
+              const nextStep = nextSteps[opportunity.id] ?? opportunity.nextStep;
+
+              return (
+                <tr
+                  key={opportunity.id}
+                  data-opportunity-id={opportunity.id}
+                  className="border-b border-carbon last:border-0"
+                >
+                  <td className="py-3 pr-3">
+                    <p className="text-bone">{opportunity.accountName}</p>
+                    <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.05em] text-granite">
+                      AD {opportunity.factoryAccountDirector}
+                    </p>
+                  </td>
+                  <td className="py-3 pr-3 text-granite">
+                    {partnerNames[opportunity.partnerId] ?? opportunity.partnerId}
+                  </td>
+                  <td className="py-3 pr-3 text-right">
+                    {editor?.revenue === opportunity.id ? (
+                      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                        {renderEditor(opportunity, 'revenue')}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        <span className={`tabular-nums ${edited ? 'text-signal' : 'text-bone'}`}>
+                          <span>{formatUsd(revenue)}</span>
+                          {edited && (
+                            <span className="block text-xs">
+                              Edited — differs from Salesforce forecast
+                            </span>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => startEdit(opportunity.id, 'revenue', revenue)}
+                          className="rounded p-0.5 text-granite transition-colors hover:text-stone"
+                          title="Edit revenue forecast"
+                          aria-label={`Edit revenue forecast for ${opportunity.accountName}`}
+                        >
+                          <PencilIcon className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-3 pr-3 font-mono text-[11px] uppercase tracking-[0.05em] text-stone">
+                    {OPP_TYPE_META[opportunity.oppType].label}
+                  </td>
+                  <td className="py-3 pr-3">{renderStage(opportunity)}</td>
+                  <td className="py-3 pr-3">
+                    <ForecastCategoryCell
+                      opportunity={opportunity}
+                      editing={editor?.category === opportunity.id}
+                      onStartEdit={() => startEdit(opportunity.id, 'category')}
+                      onCommit={(category) => commitCategory(opportunity.id, category)}
+                      onCancel={cancelEdit}
+                    />
+                  </td>
+                  <td className="py-3 pr-3 text-right font-mono text-xs tabular-nums text-granite">
+                    {formatDate(opportunity.closedAt ?? opportunity.expectedCloseDate)}
+                  </td>
+                  <td className="py-3 pr-3">
+                    {editor?.nextStep === opportunity.id ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        {renderEditor(opportunity, 'next step')}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className={
+                            nextStep
+                              ? 'text-stone'
+                              : 'font-mono text-[10px] uppercase tracking-[0.05em] text-graphite'
+                          }
+                        >
+                          {/* `||`, not `??`: a cleared next step is '' and still reads as "none". */}
+                          {nextStep || '—'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => startEdit(opportunity.id, 'nextStep', nextStep)}
+                          className="rounded p-0.5 text-granite transition-colors hover:text-stone"
+                          title={nextStep ? 'Edit next step' : 'Add a next step'}
+                          aria-label={`${nextStep ? 'Edit' : 'Add'} next step for ${opportunity.accountName}`}
+                        >
+                          <PencilIcon className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    )}
+                  </td>
+                  {renderNotes(opportunity, note)}
+                </tr>
+              );
+            })}
+            {opportunities.length === 0 && (
+              <tr>
+                <td colSpan={9} className="py-8 text-center text-sm text-granite">
+                  {emptyMessage}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </TableRegion>
     </div>
   );
 }

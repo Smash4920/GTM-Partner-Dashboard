@@ -98,7 +98,6 @@ function NotificationChannels({
           user.channels.map((channel) => (
             <label
               key={channel}
-              title={NOTIFICATION_CHANNEL_META[channel].description}
               className="rounded border border-ash bg-ash/30 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-bone"
             >
               <input
@@ -118,6 +117,9 @@ function NotificationChannels({
                 className="mr-1"
               />
               <span>{NOTIFICATION_CHANNEL_META[channel].label}</span>
+              <span className="block normal-case tracking-normal">
+                {NOTIFICATION_CHANNEL_META[channel].description}
+              </span>
             </label>
           ))
         ) : (
@@ -245,7 +247,6 @@ export default function NotificationComposer({
             value={state.template}
             onChange={(event) => setTemplate(event.target.value as NotificationTemplateId)}
             className={`${selectClass} mt-1`}
-            title={template?.description}
           >
             {templates.map((item) => (
               <option key={item.id} value={item.id}>
@@ -255,6 +256,7 @@ export default function NotificationComposer({
           </select>
         </FormField>
       </div>
+      <p className="text-xs text-granite">{template?.description}</p>
 
       {action ? (
         <p className="text-xs text-stone">Entity: {action.id}</p>

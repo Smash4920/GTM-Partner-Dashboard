@@ -91,7 +91,12 @@ export default function WireDiagram({
   return (
     <div className="space-y-3">
       <Legend />
-      <div className="overflow-x-auto">
+      <div
+        className="max-w-full overflow-x-auto"
+        role="region"
+        tabIndex={0}
+        aria-label="Data connection map, scrollable"
+      >
         <div
           className="relative"
           style={{ width: canvasWidth, height: canvasHeight }}
@@ -242,7 +247,7 @@ function NodeCard({
         type="button"
         onClick={onSelect}
         aria-pressed={selected}
-        className={`h-full w-full rounded border px-3 py-2 text-left transition-colors duration-150 ${
+        className={`${users ? 'h-20' : 'h-full'} w-full rounded border px-3 py-2 text-left transition-colors duration-150 ${
           selected ? 'border-bone bg-carbon' : 'border-ash/50 bg-carbon/40 hover:border-ash'
         }`}
       >
@@ -261,7 +266,12 @@ function NodeCard({
       </button>
 
       {users && (
-        <div className="absolute inset-x-3 bottom-3">
+        <div
+          className="absolute inset-x-3 bottom-3 top-24 overflow-auto"
+          role="region"
+          tabIndex={0}
+          aria-label="Notification roster, scrollable"
+        >
           <p className="font-mono text-[9px] uppercase tracking-[0.06em] text-granite">
             Partner team · pick one to notify
           </p>
@@ -275,15 +285,18 @@ function NodeCard({
                   key={user.id}
                   type="button"
                   onClick={() => onSelectUser(user.id)}
-                  title={`${user.name} · ${user.email}${alerts ? ` · ${alerts} SLA alerts` : ''}`}
+                  aria-label={`${user.name} · ${user.email} · ${alerts} SLA alerts`}
                   aria-pressed={selectedUser}
-                  className={`flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px] transition-colors ${
+                  className={`flex min-h-6 items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px] transition-colors ${
                     selectedUser
                       ? 'border-bone bg-ash/40 text-bone'
                       : 'border-ash/50 text-stone hover:border-ash'
                   }`}
                 >
-                  {user.name.split(' ')[0]}
+                  <span>
+                    {user.name}
+                    <span className="block text-[9px]">{user.email}</span>
+                  </span>
                   {alerts > 0 && <span className="text-signal">{alerts}</span>}
                 </button>
               );

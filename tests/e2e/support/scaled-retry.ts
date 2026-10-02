@@ -38,8 +38,7 @@ interface ScaledFailure {
 
 const pipeline = (page: Page) =>
   page.getByRole('group', { name: 'pipeline opportunities', exact: true });
-const book = (page: Page) =>
-  page.getByRole('region', { name: 'In-quarter opportunities, scrollable' });
+const book = (page: Page) => page.getByRole('region', { name: /^In-quarter opportunities/ });
 const queue = (page: Page) => page.getByRole('group', { name: 'review queue', exact: true });
 const actions = (page: Page) => page.getByTestId('action-item');
 const funnel = (page: Page) =>

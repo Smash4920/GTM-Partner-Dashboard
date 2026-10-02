@@ -242,7 +242,7 @@ async function openForecasting(user: ReturnType<typeof userEvent.setup>) {
 /** Types a revenue override into the first editable row of the manager book. */
 async function editFirstRowRevenue(user: ReturnType<typeof userEvent.setup>, value: string) {
   const table = await screen.findByRole('region', {
-    name: 'In-quarter opportunities, scrollable',
+    name: /^In-quarter opportunities/,
   });
   const row = within(table).getAllByRole('row')[1]!;
   const editButton = within(row).getByRole('button', {
@@ -814,7 +814,7 @@ describe('App session edits across routes', () => {
     // Edit the open in-quarter deal on Forecasting: 60,000 → 260,000.
     await openForecasting(user);
     const forecastTable = await screen.findByRole('region', {
-      name: 'In-quarter opportunities, scrollable',
+      name: /^In-quarter opportunities/,
     });
     const editButton = within(forecastTable).getByRole('button', {
       name: 'Edit revenue forecast for Continuity Account',

@@ -36,3 +36,17 @@ html {
 ::selection {
   background: rgb(238 96 24 / 0.35);
 }
+
+[role='region'] {
+  scroll-padding-top: 3rem;
+}
+
+[role='region'] :is(button, summary) {
+  min-width: 24px;
+  min-height: 24px;
+  scroll-margin-block: 5rem;
+}
+
+.bg-bone :focus-visible {
+  outline-color: theme('colors.carbon') !important;
+}

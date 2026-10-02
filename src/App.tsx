@@ -550,7 +550,7 @@ export default function App({
         {routeLabel(route)} page
       </p>
       <header className="sticky top-0 z-20 border-b border-carbon bg-canvas">
-        <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
+        <div className="flex h-16 items-center gap-2 px-4 sm:gap-3 sm:px-6">
           <button
             type="button"
             onClick={() => (desktop ? setSidebarOpen : setMobileNavOpen)((open) => !open)}
@@ -569,9 +569,9 @@ export default function App({
           >
             <MenuIcon />
           </button>
-          <div className="flex items-center gap-3">
-            <span className="inline-block h-2 w-2 rounded-full bg-signal" />
-            <span className="font-mono text-xs uppercase tracking-[0.08em] text-bone">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="hidden h-2 w-2 shrink-0 rounded-full bg-signal sm:inline-block" />
+            <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-bone sm:text-xs">
               GTM Partner Dashboard
             </span>
           </div>
@@ -579,7 +579,7 @@ export default function App({
             Mock data · snapshot {formatDate(SNAPSHOT_DATE.toISOString())}
           </p>
           <label className="ml-auto flex items-center gap-2 md:ml-4">
-            <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+            <span className="hidden font-mono text-[10px] uppercase tracking-[0.06em] text-granite sm:inline">
               Provider
             </span>
             <select

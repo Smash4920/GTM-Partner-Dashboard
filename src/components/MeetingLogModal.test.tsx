@@ -260,7 +260,7 @@ describe('MeetingLogModal', () => {
 
       // Stable failure copy and the targeted retry replace the ordinary
       // Load more — the failed cursor is still the next page.
-      expect(within(dialog).getByText('The next page failed:')).toBeInTheDocument();
+      expect(within(dialog).getByRole('status')).toHaveTextContent('meeting calendar failed');
       expect(within(dialog).getByText('Failed to load more meetings')).toBeInTheDocument();
       expect(
         within(dialog).queryByRole('button', { name: /Load more meetings/ }),
@@ -281,14 +281,12 @@ describe('MeetingLogModal', () => {
       await user.click(within(dialog).getByRole('button', { name: 'Retry meeting calendar' }));
       rerender(modal.element(calendarFor()));
 
-      // The retry's success unmounts the failure UI it lived in; the
-      // recovery region claims the orphaned focus back inside the dialog.
+      // The same control survives recovery, so focus stays at the invoker.
       expect(
         within(dialog).getByRole('button', { name: 'Load more meetings' }),
       ).toBeInTheDocument();
-      expect(within(dialog).queryByText('The next page failed:')).not.toBeInTheDocument();
-      const region = within(dialog).getByRole('group', { name: 'meeting calendar' });
-      expect(document.activeElement).toBe(region);
+      expect(within(dialog).getByRole('status')).not.toHaveTextContent('failed');
+      expect(within(dialog).getByRole('button', { name: 'Load more meetings' })).toHaveFocus();
       expect(dialog.contains(document.activeElement)).toBe(true);
     });
 

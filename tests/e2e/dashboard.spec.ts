@@ -21,7 +21,7 @@ test('editing an open forecast updates live pipeline and weighted metrics', asyn
   const initialPipeline = await pipelineValue.textContent();
 
   const table = page.getByRole('region', {
-    name: 'In-quarter opportunities, scrollable',
+    name: /^In-quarter opportunities/,
   });
   const openOpportunityRow = table
     .getByRole('button', { name: /^Edit forecast category for / })

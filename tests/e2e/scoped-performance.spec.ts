@@ -70,9 +70,10 @@ test('VAL-DATA-014: Home renders the exact scoped aggregates with a bounded tren
   const trendCard = page
     .getByRole('heading', { name: 'Revenue vs. partner sourced target' })
     .locator('xpath=ancestor::*[contains(@class,"rounded-card")][1]');
-  await expect(trendCard.getByText('FY27-Q1', { exact: true })).toBeVisible();
-  await expect(trendCard.getByText('FY27-Q4', { exact: true })).toBeVisible();
-  await expect(trendCard.getByText(/FY27-Q\d/, { exact: true })).toHaveCount(4);
+  const trendAxis = trendCard.locator('svg');
+  await expect(trendAxis.getByText('FY27-Q1', { exact: true })).toBeVisible();
+  await expect(trendAxis.getByText('FY27-Q4', { exact: true })).toBeVisible();
+  await expect(trendAxis.getByText(/FY27-Q\d/, { exact: true })).toHaveCount(4);
 
   // The review queue reports its scoped total, not a browser-reduced count.
   await expect(
@@ -102,12 +103,14 @@ test('VAL-DATA-014: Partner Performance paginates the pipeline by cursor', async
   // more cursor page from the provider, never a re-slice of a whole list.
   await expect(page.getByText('65 Salesforce-shaped opportunities in scope')).toBeVisible();
   await expect(page.getByText('Showing 25 of 65')).toBeVisible();
-  const loadMore = page.getByRole('button', { name: 'Load 25 more' });
+  const loadMore = page
+    .getByRole('group', { name: 'opportunities pagination' })
+    .getByRole('button', { name: 'Load 25 more' });
   await loadMore.click();
   await expect(page.getByText('Showing 50 of 65')).toBeVisible();
   await loadMore.click();
   await expect(page.getByText('Showing 65 of 65')).toBeVisible();
-  await expect(loadMore).toHaveCount(0);
+  await expect(loadMore).toHaveAttribute('aria-disabled', 'true');
 
   // Scoped siblings on the same route render their own answers.
   await expect(

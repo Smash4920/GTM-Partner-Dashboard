@@ -162,7 +162,7 @@ const FAILURE_ROUTES: FailureRoute[] = [
     retry: 'Retry weekly series',
     sibling: async (page) => {
       await expect(page.getByText('Weighted forecast', { exact: true }).first()).toBeVisible();
-      const book = page.getByRole('region', { name: 'In-quarter opportunities, scrollable' });
+      const book = page.getByRole('region', { name: /^In-quarter opportunities/ });
       await expect(book.locator('tbody tr').first()).toBeVisible();
       const toggle = page.getByRole('button', { expanded: true }).filter({ hasText: /opps/ });
       await toggle.click();
@@ -227,7 +227,7 @@ const FAILURE_ROUTES: FailureRoute[] = [
       await expect(page.getByText('30 meetings in scope')).toBeVisible();
       await page.getByRole('button', { name: 'Log Meetings', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Log meetings', exact: true });
-      await expect(dialog.getByText('Showing 10 meetings this week')).toBeVisible();
+      await expect(dialog.getByText('Showing 10 of 10 meeting calendar')).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
     },
@@ -398,7 +398,7 @@ test('VAL-RES-011: Scaled 100× settles all nine routes, filters and appends uni
       await expect(actionRows(page)).toHaveCount(0);
       await expect(page.getByText('No matching action items.', { exact: true })).toBeVisible();
     } else if (spec.route === 'Forecasting') {
-      const table = page.getByRole('region', { name: 'In-quarter opportunities, scrollable' });
+      const table = page.getByRole('region', { name: /^In-quarter opportunities/ });
       const rows = table.locator('tbody tr');
       await expect(rows).toHaveCount(25);
       // Identity must come from the domain id, not customer text or row position.
@@ -546,7 +546,7 @@ test('VAL-CROSS-006: remote startup ping, Action Center summary and second-page 
   await items.getByRole('button', { name: 'Retry action items', exact: true }).click();
   await expect(actionRows(page)).toHaveCount(50);
   await expect(items.getByText('Showing 50 of 85 action items')).toBeVisible();
-  await expect(items).toBeFocused();
+  await expect(items.getByRole('button', { name: 'Load 25 more', exact: true })).toBeFocused();
   await settle(page, observations);
   await expectOnlyCalls(observations, before, ['listActionItems']);
   expect((await ids(actionRows(page), 'data-action-id')).slice(0, 25)).toEqual(first);

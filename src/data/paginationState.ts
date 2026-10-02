@@ -159,13 +159,16 @@ function isSkippableEditRun<T>(args: {
  * A failed refresh keeps the loaded rows with the error riding alongside,
  * exactly like an aggregate's stale-beats-blank.
  */
-export function pageWindowAsQuery<T>(state: PaginationState<T>): QueryState<T[]> {
+export function pageWindowAsQuery<T>(
+  state: PaginationState<T>,
+  footerHandlesError = false,
+): QueryState<T[]> {
   return {
     data: state.meta === null ? null : state.rows,
     meta: state.meta,
     loading: state.loading,
     refreshing: state.refreshing,
-    error: state.error,
+    error: footerHandlesError && state.meta !== null ? null : state.error,
     retry: state.retry,
   };
 }

@@ -5,14 +5,19 @@ import {
   ComposedChart,
   Line,
   ResponsiveContainer,
-  Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
-import { FORECAST_CATEGORIES, FORECAST_CATEGORY_META, TARGET_COLOR } from '../data/constants';
+import {
+  FORECAST_CATEGORIES,
+  FORECAST_CATEGORY_META,
+  SNAPSHOT_DATE,
+  TARGET_COLOR,
+} from '../data/constants';
 import type { ForecastCategory } from '../data/types';
-import { formatDayShort, formatUsdCompact } from '../lib/format';
+import { formatDate, formatDayShort, formatUsd, formatUsdCompact } from '../lib/format';
 import type { WeeklyForecastRow } from '../lib/metrics';
+import ChartFigure from './ChartFigure';
 
 const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
 
@@ -38,104 +43,21 @@ function withAlpha(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-const TOOLTIP_STYLE: React.CSSProperties = {
-  background: '#1d1a18',
-  border: '1px solid #3d3a39',
-  borderRadius: 3,
-  fontSize: 12,
-  color: '#eeeeee',
-  padding: '8px 10px',
-};
-
-function WowDelta({ delta }: { delta: number | null }) {
-  if (delta === null) {
-    return <span style={{ color: '#8a8380' }}>first week</span>;
-  }
+function wowDelta(delta: number | null): string {
+  if (delta === null) return 'first week';
   const rounded = Math.round(delta);
-  if (rounded === 0) {
-    return <span style={{ color: '#8a8380' }}>flat WoW</span>;
-  }
-  const up = rounded > 0;
-  return (
-    <span style={{ color: up ? '#a0ca92' : '#ee6018' }}>
-      {up ? '+' : '−'}
-      {formatUsdCompact(Math.abs(rounded))} WoW
-    </span>
-  );
+  if (rounded === 0) return 'flat WoW';
+  return `${rounded > 0 ? '+' : '−'}${formatUsd(Math.abs(rounded))} WoW`;
 }
 
-interface TooltipEntry {
-  payload?: ChartRow;
-}
-
-function WeekTooltip({ active, payload }: { active?: boolean; payload?: TooltipEntry[] }) {
-  const row = payload?.[0]?.payload;
-  if (!active || !row) return null;
-  if (!row.hasStarted) {
-    return (
-      <div style={TOOLTIP_STYLE}>
-        <p
-          style={{
-            fontFamily: MONO,
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            color: '#b8b3b0',
-          }}
-        >
-          Week of {row.label}
-        </p>
-        <p style={{ marginTop: 4, color: '#8a8380' }}>Hasn't started yet.</p>
-      </div>
-    );
-  }
-  const valueStyle: React.CSSProperties = {
-    float: 'right',
-    marginLeft: 16,
-    fontVariantNumeric: 'tabular-nums',
-  };
-  return (
-    <div style={TOOLTIP_STYLE}>
-      <p
-        style={{
-          fontFamily: MONO,
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          color: '#b8b3b0',
-        }}
-      >
-        Week of {row.label}
-      </p>
-      <p style={{ marginTop: 6 }}>
-        Total pipeline
-        <span style={valueStyle}>{formatUsdCompact(row.total)}</span>
-      </p>
-      <p style={{ marginTop: 2, color: '#8a8380', fontSize: 11 }}>
-        <WowDelta delta={row.wowTotal} />
-      </p>
-      <p style={{ marginTop: 6 }}>
-        Weighted forecast
-        <span style={valueStyle}>{formatUsdCompact(row.weightedTotal)}</span>
-      </p>
-      <p style={{ marginTop: 2, color: '#8a8380', fontSize: 11 }}>
-        <WowDelta delta={row.wowWeighted} />
-      </p>
-      {row.goal !== undefined && (
-        <p
-          style={{ marginTop: 6, borderTop: '1px solid #3d3a39', paddingTop: 6, color: '#8a8380' }}
-        >
-          Revenue goal
-          <span style={valueStyle}>{formatUsdCompact(row.goal)}</span>
-        </p>
-      )}
-      <p style={{ marginTop: 4, fontSize: 11, color: '#8a8380' }}>
-        {row.recordedAt
-          ? `Snapshot recorded ${formatDayShort(row.recordedAt)}`
-          : 'Live book · moves with edits'}
-      </p>
-    </div>
-  );
+function weekSource(row: WeeklyForecastRow): string {
+  if (!row.hasStarted) return "Hasn't started yet";
+  if (row.recordedAt) return `Snapshot recorded ${formatDate(row.recordedAt)}`;
+  // Only the bucket containing the deterministic reporting snapshot is live;
+  // a past week without a recording is reconstructed, not immutable history.
+  return new Date(row.weekStart) <= SNAPSHOT_DATE && new Date(row.weekEnd) > SNAPSHOT_DATE
+    ? 'Live book · moves with session edits'
+    : 'Reconstructed from current book';
 }
 
 /** A four-color strip standing in for one stacked bar: solid = raw, faded = weighted. */
@@ -164,7 +86,7 @@ function StackSwatch({ faded }: { faded: boolean }) {
  * point appears as each week starts.
  *
  * Closed weeks come from recorded snapshots and the in-progress week from the
- * live book, a distinction the tooltip states outright: it decides whether a
+ * live book, a distinction the adjacent data table states outright: it decides whether a
  * week-over-week move is history or an edit made minutes ago.
  *
  * The goal line is optional: the weekly series and the summary are separate
@@ -201,95 +123,136 @@ export default function WeeklyForecastChart({
   }, [rows, goal]);
 
   return (
-    <div>
-      <div className="h-80 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
-            <CartesianGrid stroke="#1d1a18" vertical={false} />
-            <XAxis
-              dataKey="label"
-              interval={0}
-              tick={{ fontSize: 10, fill: '#8a8380', fontFamily: MONO }}
-              tickLine={false}
-              axisLine={{ stroke: '#1d1a18' }}
-            />
-            <YAxis
-              tickFormatter={(value) => formatUsdCompact(Number(value))}
-              tick={{ fontSize: 11, fill: '#8a8380', fontFamily: MONO }}
-              tickLine={false}
-              axisLine={false}
-              width={64}
-              domain={[0, 'auto']}
-            />
-            <Tooltip content={<WeekTooltip />} cursor={{ fill: 'rgba(238, 96, 24, 0.06)' }} />
-            {/* Solid stack: the raw pipeline by forecast category, commit at the base. */}
-            {STACK_ORDER.map((category) => (
-              <Bar
-                key={`raw-${category}`}
-                dataKey={`raw.${category}`}
-                stackId="total"
-                fill={FORECAST_CATEGORY_META[category].color}
-                maxBarSize={16}
-                isAnimationActive={false}
+    <ChartFigure
+      name="Week-over-week pipeline"
+      summary={`Raw and probability-weighted pipeline by week in USD. WoW compares the previous started week. Future weeks have no values.${
+        goal === undefined ? ' Revenue goal unavailable.' : ` Revenue goal ${formatUsd(goal)}.`
+      }`}
+      headers={[
+        'Week (end exclusive)',
+        'Source / state',
+        ...FORECAST_CATEGORIES.flatMap((category) => [
+          `${FORECAST_CATEGORY_META[category].label} raw (USD)`,
+          `${FORECAST_CATEGORY_META[category].label} weighted (USD)`,
+        ]),
+        'Total pipeline (USD)',
+        'Weighted forecast (USD)',
+        'Total pipeline WoW (USD)',
+        'Weighted forecast WoW (USD)',
+        ...(goal === undefined ? [] : ['Revenue goal (USD)']),
+      ]}
+      rows={data.map((row) => [
+        `${formatDate(row.weekStart)}–${formatDate(row.weekEnd)}`,
+        weekSource(row),
+        ...FORECAST_CATEGORIES.flatMap((category) =>
+          row.hasStarted
+            ? [formatUsd(row.raw[category]), formatUsd(row.weighted[category])]
+            : ['Not started', 'Not started'],
+        ),
+        ...(row.hasStarted
+          ? [
+              formatUsd(row.total),
+              formatUsd(row.weightedTotal),
+              wowDelta(row.wowTotal),
+              wowDelta(row.wowWeighted),
+            ]
+          : ['Not started', 'Not started', 'Not started', 'Not started']),
+        ...(goal === undefined ? [] : [formatUsd(goal)]),
+      ])}
+    >
+      <div>
+        <div className="h-80 w-full" aria-hidden="true">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart
+              data={data}
+              accessibilityLayer={false}
+              margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+            >
+              <CartesianGrid stroke="#1d1a18" vertical={false} />
+              <XAxis
+                dataKey="label"
+                interval={0}
+                tick={{ fontSize: 10, fill: '#8a8380', fontFamily: MONO }}
+                tickLine={false}
+                axisLine={{ stroke: '#1d1a18' }}
               />
-            ))}
-            {/* Faded twin: the same book × each category's close probability. */}
-            {STACK_ORDER.map((category) => (
-              <Bar
-                key={`weighted-${category}`}
-                dataKey={`weighted.${category}`}
-                stackId="weighted"
-                fill={withAlpha(FORECAST_CATEGORY_META[category].color, 0.5)}
-                maxBarSize={16}
-                isAnimationActive={false}
+              <YAxis
+                tickFormatter={(value) => formatUsdCompact(Number(value))}
+                tick={{ fontSize: 11, fill: '#8a8380', fontFamily: MONO }}
+                tickLine={false}
+                axisLine={false}
+                width={64}
+                domain={[0, 'auto']}
               />
-            ))}
-            {goal !== undefined && (
-              <Line
-                dataKey="goal"
-                stroke={TARGET_COLOR}
-                strokeDasharray="4 4"
-                strokeWidth={1.5}
-                dot={false}
-                isAnimationActive={false}
-              />
-            )}
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="mt-4 space-y-2">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-          <span className="flex items-center gap-2">
-            <StackSwatch faded={false} />
-            Total pipeline
-          </span>
-          <span className="flex items-center gap-2">
-            <StackSwatch faded />
-            Weighted forecast
-          </span>
-          {goal !== undefined && (
+              {/* Solid stack: the raw pipeline by forecast category, commit at the base. */}
+              {STACK_ORDER.map((category) => (
+                <Bar
+                  key={`raw-${category}`}
+                  dataKey={`raw.${category}`}
+                  stackId="total"
+                  fill={FORECAST_CATEGORY_META[category].color}
+                  maxBarSize={16}
+                  isAnimationActive={false}
+                />
+              ))}
+              {/* Faded twin: the same book × each category's close probability. */}
+              {STACK_ORDER.map((category) => (
+                <Bar
+                  key={`weighted-${category}`}
+                  dataKey={`weighted.${category}`}
+                  stackId="weighted"
+                  fill={withAlpha(FORECAST_CATEGORY_META[category].color, 0.5)}
+                  maxBarSize={16}
+                  isAnimationActive={false}
+                />
+              ))}
+              {goal !== undefined && (
+                <Line
+                  dataKey="goal"
+                  stroke={TARGET_COLOR}
+                  strokeDasharray="4 4"
+                  strokeWidth={1.5}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              )}
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="mt-4 space-y-2">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
             <span className="flex items-center gap-2">
-              <span
-                className="h-0 w-5 border-t-2 border-dashed"
-                style={{ borderColor: TARGET_COLOR }}
-              />
-              Revenue goal
+              <StackSwatch faded={false} />
+              Total pipeline
             </span>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-[10px] text-granite">
-          {FORECAST_CATEGORIES.map((category) => (
-            <span key={category} className="flex items-center gap-1.5">
-              <span
-                className="h-2.5 w-2.5 rounded-[1px]"
-                style={{ backgroundColor: FORECAST_CATEGORY_META[category].color }}
-              />
-              {FORECAST_CATEGORY_META[category].label}{' '}
-              {Math.round(FORECAST_CATEGORY_META[category].weight * 100)}%
+            <span className="flex items-center gap-2">
+              <StackSwatch faded />
+              Weighted forecast
             </span>
-          ))}
+            {goal !== undefined && (
+              <span className="flex items-center gap-2">
+                <span
+                  className="h-0 w-5 border-t-2 border-dashed"
+                  style={{ borderColor: TARGET_COLOR }}
+                />
+                Revenue goal
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-[10px] text-granite">
+            {FORECAST_CATEGORIES.map((category) => (
+              <span key={category} className="flex items-center gap-1.5">
+                <span
+                  className="h-2.5 w-2.5 rounded-[1px]"
+                  style={{ backgroundColor: FORECAST_CATEGORY_META[category].color }}
+                />
+                {FORECAST_CATEGORY_META[category].label}{' '}
+                {Math.round(FORECAST_CATEGORY_META[category].weight * 100)}%
+              </span>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+    </ChartFigure>
   );
 }

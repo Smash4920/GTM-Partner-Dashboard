@@ -226,7 +226,10 @@ describe('DealRegistrationOpsView', () => {
     await user.click(within(queue).getByRole('button', { name: 'Load 10 more' }));
 
     await within(queue).findByText('Showing 12 of 12 pending');
-    expect(within(queue).queryByRole('button', { name: /Load \d+ more/ })).not.toBeInTheDocument();
+    expect(within(queue).getByRole('button', { name: /Load \d+ more/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     // No duplicate rows across the page boundary.
     await waitFor(() => {
       const cells = within(queue).getAllByRole('row');

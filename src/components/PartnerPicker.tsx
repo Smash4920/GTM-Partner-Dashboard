@@ -17,14 +17,14 @@ export default function PartnerPicker({
 }) {
   const sorted = [...partners].sort((a, b) => a.name.localeCompare(b.name));
   return (
-    <label className="flex items-center gap-2">
-      <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-granite">
+    <label className="flex w-full max-w-full items-center gap-2">
+      <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.08em] text-granite">
         Viewing as
       </span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="rounded border border-ash bg-carbon px-3 py-1.5 text-sm text-bone focus:border-signal focus:outline-none"
+        className="min-w-0 flex-1 rounded border border-ash bg-carbon px-3 py-1.5 text-sm text-bone focus:border-signal focus:outline-none"
       >
         {sorted.map((partner) => (
           <option key={partner.id} value={partner.id}>
