@@ -97,25 +97,53 @@ interface Page<T> {
 
 interface ScopedQueryProvider {
   // Aggregates: computed behind the seam, returned small.
-  getForecastSummary(scope: ForecastScope): Promise<QueryResult<ForecastSummary>>;
-  getWeightedForecast(scope: ForecastScope): Promise<QueryResult<WeightedForecastSummary>>;
+  getForecastSummary(
+    access: DemoAccessScope,
+    scope: ForecastScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<ForecastSummary>>;
+  getWeightedForecast(
+    access: DemoAccessScope,
+    scope: ForecastScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<WeightedForecastSummary>>;
   getForecastQuality(
+    access: DemoAccessScope,
     scope: ForecastScope,
     sampleSize: number,
+    context?: QueryContext,
   ): Promise<QueryResult<ForecastQualitySummary>>;
-  getManagerForecastGroups(scope: ForecastScope): Promise<QueryResult<ManagerForecastGroup[]>>;
-  getWeeklyForecastSeries(scope: ForecastScope): Promise<QueryResult<WeeklySeriesRow[]>>;
+  getManagerForecastGroups(
+    access: DemoAccessScope,
+    scope: ForecastScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<ManagerForecastGroup[]>>;
+  getWeeklyForecastSeries(
+    access: DemoAccessScope,
+    scope: ForecastScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<WeeklySeriesRow[]>>;
 
   // Rows: cursor-paginated, server-sorted, server-filtered. Invalid limits
   // and invalid, foreign-query, or expired cursors are typed errors, never
   // a quiet page one (src/data/pagination.ts).
   listQuarterOpportunities(
+    access: DemoAccessScope,
     scope: ForecastScope,
     page: PageRequest,
+    context?: QueryContext,
   ): Promise<QueryResult<Page<Opportunity>>>;
-  getPartnerDirectory(): Promise<QueryResult<PartnerRef[]>>;
+  getPartnerDirectory(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerRef[]>>;
 }
 ```
+
+This is the Forecasting subset of the current contract, not a second
+interface. All data methods require non-authoritative demo access scope
+before aggregation and accept cancellation context; see `DataProvider.ts`
+for the complete route and Action Center methods.
 
 Every scoped answer is a `QueryResult<T>`: the data plus a `QueryMeta`
 envelope carrying the committed provider's id, a deterministic ISO as-of (the
@@ -142,10 +170,10 @@ tests rather than by thinking about it:
   deal was in. Filtering the live weeks by manager while the recorded weeks kept
   everyone's deals would draw a cliff into the chart that never happened, so the
   series stays quarter-level and the contract says so.
-- **Aggregates are scoped, and the Forecasting view asks unscoped.** Its tiles
-  are statements about the quarter, so it passes a quarter-only scope to the
-  aggregate hook and a manager scope to the row list. The filtering is the
-  caller's decision, not a hidden property of the method.
+- **Forecasting scopes the summary to the selected manager's own targets.**
+  Weighted forecast, quality, and groups remain quarter-level; the selection
+  narrows displayed groups and row pages. The weekly series stays
+  organization-level and omits the goal comparison for manager scope.
 
 `listPipelineSnapshots()` is already gone from the client contract, replaced by
 `getWeeklyForecastSeries()` returning ~13 rows instead of millions — the one
@@ -294,9 +322,12 @@ The weekly snapshot job must be **idempotent**: a unique key on
   SLA digest enforces its exported window of 8 with a typed rejection rather
   than a clamp. Table virtualization remains not started — comfort, not
   survival, now that the contract bounds what reaches the client.
-- Route-level `React.lazy` so the ~485 KB Recharts chunk stops loading for users
-  who only open Data Connections. _Not started._ Measured after Phase 1: 193 KB
-  app + 484 KB Recharts + 63 KB charts vendor, raw.
+- Route-level `React.lazy`. _Partially implemented:_ Data Connections and
+  Production Requirements share a lazy operational chunk; Action Center and
+  the workflow panel are lazy too. Daily chart routes still load eagerly, so
+  avoiding Recharts on first visit is not complete. Current compressed
+  measurements come from `npm run bundle:check`, not the original Phase 1
+  raw-size checkpoint.
 - **Keep edits feeling instant.** _Partly done:_ rows render the session's
   override immediately and the aggregates hold their previous figures during the
   refetch, so an edit never flashes the page. The full optimistic delta is Phase
@@ -304,10 +335,10 @@ The weekly snapshot job must be **idempotent**: a unique key on
 
 ## What is kept
 
-This is the payoff of the existing seam. Effectively unchanged: all eight views,
-all components, the design system, `types.ts`, `fiscal.ts`, and the business
-rules encoded in `metrics.ts`. The `DataProvider` abstraction was the right
-decision; it has the wrong method signatures.
+The seam preserves the design system and fiscal/business specification while
+views use focused hooks instead of a whole book. The contract rewrite,
+Action Center, independent query state, and accessibility improvements are
+implemented and tested; production enforcement remains absent.
 
 The existing tests become a **conformance suite**: run them against the
 TypeScript implementation and against fixtures served by the server
@@ -343,6 +374,12 @@ the assertion was matching the em dash in a neighbouring column. It only became
 a test after mutation-testing the fix — reverting the `||` to `??` and watching
 it fail.
 
+Those are historical Phase 0 measurements, not the final suite. Current CI
+uses `test:coverage:ci` with JUnit and effective coverage floors of 95%
+statements, 90% branches, 96% functions, and 96% lines. Read the fresh
+coverage/JUnit, `build-metrics/test-performance.json`, and bundle reports for
+run-specific results; `quality:check` prevents weakening the checked-in limits.
+
 ### Phase 1 — Contract rewrite against the mock
 
 Reshape `DataProvider` to the scope/page/aggregate contract and implement it in
@@ -375,12 +412,14 @@ input, the Log Meetings calendar is a cursor-paginated week of raw calls, the
 partner presentation reads only its own partner-audience projection, the
 connection catalog is static while its roster and alert panels carry their own
 query states, and every card carries its own loading, error, retry, and
-metadata state. With all eight routes reading the scoped contract, the legacy
+metadata state. Action Center adds its own bounded summary and cursor pages.
+All eight data-bearing routes use the scoped contract; Production Requirements
+is static and makes no business-data request. The legacy
 `LegacyBookProvider` interface, its eight list-everything methods, and the
 `useDashboardData` loader were deleted: `DataProvider` _is_ the scoped contract
-now, and the connection map covers every remaining method. Measured
-on the built demo,
-which is honest about what the mock can and cannot show. Medians over five runs
+now, and the connection map covers every remaining method. The following
+measurements are the historical Phase 1 checkpoint, not current performance
+guarantees. Medians over five runs
 at 100× — 2,500 partners, 21,300 opportunities, 191,000 snapshot rows, ~45 MB of
 JSON:
 
@@ -407,9 +446,10 @@ hardware at it.
 
 Three things came out of building it that the plan did not predict:
 
-- Pagination forced a real decision about where a manager's book lives. It is a
-  component per expanded group, so collapsing and reopening restarts from page
-  one, and one manager's failed page cannot take the others down.
+- Pagination forced a real decision about where a manager's book lives.
+  Current hooks preserve loaded manager pages across collapse/reopen and
+  retained Forecasting/Action Center navigation in the provider session.
+  One manager's failed page cannot take the others down.
 - `ForecastTable` was taking the entire `Partner[]` collection to render one
   column. It now takes a `Record<id, name>` from `getPartnerDirectory()` — a
   dimension, not a fact.
@@ -419,25 +459,38 @@ Three things came out of building it that the plan did not predict:
   change to the affected tiles immediately) is still Phase 5 work, because it
   needs the write path to reconcile against.
 
-### Phase 2 — Warehouse and `dim_date`
+### Mandatory production prerequisite — IdP and trusted claims
+
+Production: Prod Only. Before Phases 2–5 expose real data, authenticate
+internal and partner subjects and map trusted roles, manager/partner scope,
+and approver claims. The demo picker and actor selection do not fulfill this.
+
+### Phase 2 — Warehouse and `dim_date` (Prod Only)
 
 Fact and dimension model, week-partitioned immutable snapshots, idempotent
 weekly snapshot job, `dim_date` generated from `fiscal.ts`.
 
-### Phase 3 — API with row-level authorization
+### Phase 3 — API with row-level authorization (Prod Only)
 
 Serve the Phase 1 contract for real. The `metrics.ts` tests become the
 conformance suite against the server implementation.
 
-### Phase 4 — Incremental ingestion
+### Phase 4 — Incremental ingestion (Prod Only)
 
 Salesforce watermark sync, Calendar OAuth, enablement records, reconciliation
 and dead-letter handling.
 
-### Phase 5 — Write path and audit
+### Phase 5 — Write path and audit (Prod Only)
 
 Persist overrides with provenance, resolve conflicts against the source system,
 wire optimistic client updates.
+
+### Production operations continuation (Prod Only)
+
+After trusted identity, warehouse/scoped API, ingestion, and durable writes:
+approved telemetry and private symbols, backups with restore evidence,
+retention, separate environments, incident ownership, and monitored
+rollout/rollback. Local checks do not verify these services or remote settings.
 
 ## Rough sizing
 

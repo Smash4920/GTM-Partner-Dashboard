@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import prettier from 'prettier';
+import { QUALITY_GATE, collectQualityPolicy } from './check-quality-policy.mjs';
 
 export const GENERATED_DIRECTORY = 'docs/generated';
 
@@ -113,6 +114,11 @@ export function collectRepositoryFacts(repositoryRoot) {
       'package.json',
       '.github/workflows/ci.yml',
       'config/*.json',
+      'vite.config.ts',
+      'eslint.config.js',
+      '.jscpd.json',
+      'scripts/check-file-limits.mjs',
+      'scripts/build-with-metrics.mjs',
       'docs/runbooks/*',
       '.skills/*',
     ],
@@ -123,6 +129,7 @@ export function collectRepositoryFacts(repositoryRoot) {
     bundleBudgets: readJson(resolve(repositoryRoot, 'config/bundle-budgets.json')),
     dependencyBudgets: readJson(resolve(repositoryRoot, 'config/dependency-budgets.json')),
     testPerformance: readJson(resolve(repositoryRoot, 'config/test-performance.json')),
+    qualityPolicy: collectQualityPolicy(pathToFileURL(`${repositoryRoot}/`)),
     workflows: listDirectory(resolve(repositoryRoot, '.github/workflows'))
       .filter((entry) => entry.isFile())
       .map((entry) => entry.name)
@@ -203,13 +210,38 @@ export function renderRepositoryMap(facts) {
 }
 
 export function renderQualityGates(facts) {
-  const { bundleBudgets, dependencyBudgets, testPerformance } = facts;
+  const { bundleBudgets, dependencyBudgets, testPerformance, qualityPolicy } = facts;
   const formatBytes = (bytes) => `${(bytes / 1024).toFixed(1)} KiB`;
 
   return [
     '# Quality gates',
     '',
-    'Budgets and thresholds enforced in CI, generated from the files under `config/`.',
+    'Effective limits from checked-in configuration and policy scripts. Never weaken',
+    'a ratchet to make a failing check pass. `npm run quality:check` checks gate parity',
+    'and preserves these floors and ceilings; it also runs inside `docs:check`.',
+    '',
+    '## Complete ordered gate',
+    '',
+    '```bash',
+    ...QUALITY_GATE,
+    '```',
+    '',
+    '## Coverage and static ratchets',
+    '',
+    `- Statements: ${qualityPolicy.coverage.statements}%`,
+    `- Branches: ${qualityPolicy.coverage.branches}%`,
+    `- Functions: ${qualityPolicy.coverage.functions}%`,
+    `- Lines: ${qualityPolicy.coverage.lines}%`,
+    `- File bytes: ${qualityPolicy.maxFileBytes} (1 MiB); text lines: ${qualityPolicy.maxTextLines}`,
+    '- Only documented generated lockfiles are exempt from the text-line limit.',
+    `- Complexity: ${qualityPolicy.complexity}`,
+    `- Duplication: ${qualityPolicy.duplication}%`,
+    '- Formatting, module boundaries, strict TypeScript, Knip, and linked debt stay blocking.',
+    '',
+    '## Build and size-limit ceilings',
+    '',
+    `- Build: ${qualityPolicy.buildBudgetMs.toLocaleString('en-US')} ms (TypeScript plus Vite)`,
+    ...qualityPolicy.sizeLimits.map((budget) => `- ${budget.name}: ${budget.limit} (size-limit)`),
     '',
     '## Bundle budgets',
     '',
@@ -254,7 +286,7 @@ export function renderGeneratedReadme() {
     '',
     '- [`npm-scripts.md`](./npm-scripts.md) — every `package.json` script and whether CI runs it.',
     '- [`repository-map.md`](./repository-map.md) — source layout, workflows, runbooks, and skills.',
-    '- [`quality-gates.md`](./quality-gates.md) — bundle, dependency, and test budgets.',
+    '- [`quality-gates.md`](./quality-gates.md) — ordered gate, coverage/static ratchets, build, bundle, dependency, and test budgets.',
     '',
   ].join('\n');
 }

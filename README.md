@@ -163,6 +163,8 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
 
 Action Center queries derive five alert categories behind the provider seam,
 merge reasons by entity, and count unique items separately from category reasons.
+The categories are **Stale high-value deal**, **Missing next step**,
+**Slipping close date**, **Registration SLA**, and **Partner-health deterioration**.
 Rows use stable severity/due-date/exposure/ID ordering, category-OR plus
 owner/severity-AND filters, and opaque cursor pages of 25. Local defaults produce
 85 unique items; 100× produces 8,500 without enlarging summary or page bounds.
@@ -299,9 +301,11 @@ feature-delivery governance). The
 **Migration Path** sequences that foundation into six phases. The first two
 needed no infrastructure and no production data, and both have landed in demo
 mode against `MockDataProvider`: Phase 0 is the test infrastructure (27.88% →
-91.72% statements, gated in CI) and Phase 1 is the contract rewrite, with
-Forecasting migrated end to end, weekly history off the client contract, and the
-provider switcher in the header. They are what make the later phases safe. Full
+91.72% statements at that historical checkpoint) and Phase 1 is the contract
+rewrite, with every data-bearing route migrated, weekly history off the
+client contract, and the provider switcher in the header. Current coverage
+floors are 95% statements, 90% branches, 96% functions, and 96% lines.
+They are what make the later phases safe. Full
 reasoning — where the current design breaks at volume, the contract change
 everything else follows from, what shipped and what it measured, and rough
 sizing — lives in
@@ -377,6 +381,7 @@ instead of rolling onto a future release automatically.
 ```bash
 npm ci
 npm run dev             # http://localhost:5173
+npm run agents:check    # validate contributor commands and paths
 npm run check:file-limits # reject files over 1 MiB or 1,200 text lines
 npm run client-boundary:check # reject server, database, auth, warehouse, connector, durable-store, sender, or credential additions
 npm run format          # format source, configuration, and documentation
@@ -384,19 +389,56 @@ npm run format:check    # verify formatting without changing files
 npm run dead-code       # find unused files, exports, and dependencies with Knip
 npm run lint            # lint source and enforce module boundaries
 npm run debt:check      # require source debt markers to link to GitHub issues
-npm run lint
 npm run lint:duplicates # jscpd: fail if source duplication exceeds 1.5%
+npm run docs:generate   # synchronize generated documentation
+npm run docs:check      # generated docs, truth, effective limits, and gate parity
+npm run quality:check   # enforce effective ratchets and blocking gate order
+npm run workflows:check # enforce workflow security and preview parity
 npm test                # vitest: fiscal/metric helpers, the data contract, the provider seam, the view layer
 npm run test:build-metrics # verify build timing, budgets, and output measurements
 npm run test:debt       # verify the technical-debt policy scanner
+npm run test:sentry-sync # verify the offline issue-sync policy
 npm run test:coverage   # the same suite with coverage, enforcing the thresholds in vite.config.ts
 npm run test:coverage:ci # coverage plus the per-test timing report used by CI
+npm run test:performance # enforce 90-second total and 8-second individual limits
 npm run test:e2e        # playwright: browser workflows and partner-data boundaries
 npm run test:list       # collect and list tests without running them
 npm run build           # type-checks, bundles to dist/, and records build performance
 npm run bundle:check    # build, enforce compressed JS budgets, and create a treemap report
 npm run preview
 ```
+
+Before handoff, run the complete blocking gate in this order:
+
+```bash
+npm run agents:check
+npm run check:file-limits
+npm run format:check
+npm run test:debt
+npm run test:build-metrics
+npm run test:sentry-sync
+npm run debt:check
+npm run lint
+npm run dead-code
+npm run lint:duplicates
+npm run docs:check
+npm run client-boundary:check
+npm run test:coverage:ci
+npm run test:performance
+npm run bundle:check
+npm run workflows:check
+npm run test:e2e
+```
+
+Playwright builds the local production artifact for production preview with
+`BASE_PATH=/` and serves
+it using `vite preview --host 127.0.0.1 --port 4173 --strictPort`, with no HMR.
+The route and modal-state inventories drive axe checks at desktop and mobile
+widths, alongside keyboard journeys, focus restoration, chart alternatives,
+narrow tables, provider failures/retries, and session workflows. These checks
+cover registered test states, not WCAG certification or a deployed system.
+Remote branch protection, hosted scanners, deployment settings, and production
+services remain unverified. No local environment file or credential is needed.
 
 For the complete four-route, three-state target matrix, run
 `npm run test:e2e -- --grep VAL-DATA-002`. See
@@ -426,8 +468,8 @@ SHA in CI, and whether the exact TypeScript incremental-cache key was restored.
 It also creates `build-metrics/bundle-report.html`, an interactive treemap that
 shows each module's raw, gzip, and Brotli contribution to the production chunks.
 
-The build has a 60-second performance budget. Set `BUILD_BUDGET_MS` to tune it
-for a known environment; exceeding the budget fails the build so regressions
+The build has a 60-second performance budget. The release gate keeps
+`BUILD_BUDGET_MS=60000`; do not widen it to pass a regression. Exceeding the budget fails the build so regressions
 cannot pass unnoticed. `npm run bundle:check` additionally enforces the
 compressed JavaScript budgets in `package.json`, both for the whole bundle and
 for the application, Recharts, and chart dependency chunks. CI runs that check,
@@ -442,7 +484,8 @@ satisfies the telemetry endpoint policy: HTTPS on a host in the checked-in
 `APPROVED_TELEMETRY_HOSTS` list (currently empty, so production stays
 local-only until a host is approved in a reviewed change), with plain HTTP
 accepted only for loopback development. Set
-`VITE_METRICS_ENDPOINT` at build time to enable collection. The app observes
+`VITE_METRICS_ENDPOINT` at build time, with the master telemetry switch enabled,
+after a reviewed host approval. The app observes
 CLS, FCP, INP, LCP, and TTFB with the maintained
 [`web-vitals`](https://github.com/GoogleChrome/web-vitals) library and delivers
 each measurement with `navigator.sendBeacon`, falling back to a keepalive
@@ -450,11 +493,15 @@ each measurement with `navigator.sendBeacon`, falling back to a keepalive
 
 ```bash
 VITE_METRICS_ENDPOINT=https://metrics.example.com/v1/browser \
+VITE_FLAG_TELEMETRY_ENABLED=true \
 VITE_METRICS_SAMPLE_RATE=0.25 \
 VITE_DEPLOYMENT_ENV=production \
 VITE_RELEASE="$GIT_SHA" \
 npm run build
 ```
+
+This is illustrative Prod Only configuration, not a connected collector.
+The example host is not approved and therefore cannot receive production events.
 
 `VITE_METRICS_SAMPLE_RATE` is the fraction of page loads to observe, from `0`
 through `1`, and defaults to `1`. The JSON payload includes a schema version,
@@ -483,10 +530,12 @@ unlinked marker cannot silently become permanent.
 The app logs through [`src/lib/logging.ts`](src/lib/logging.ts): every event
 is one structured record — `time`, `level`, `msg`, and flat context fields —
 written to the browser console, so DevTools filters by level and reads fields
-without parsing prose. `Error` values serialize to name, message, and stack;
-circular or oversized values are cut off, never thrown on. Data loads, session
-edits, notification sends, and render crashes (caught by
-`src/components/ErrorBoundary.tsx`) all leave records.
+without parsing prose. The generic local logger can serialize errors, but
+application reporting uses stable technical classifications and identifiers,
+not names, notes, reasons, raw provider records, or exception prose.
+Outbound telemetry independently allowlists fields before queueing.
+Data loads, session edits, notification records, and render crashes have
+structured technical events, subject to the configured minimum log level.
 
 The minimum level defaults to `debug` in development and `warn` in production
 builds; `VITE_LOG_LEVEL` (`debug` / `info` / `warn` / `error`) overrides it.
@@ -588,8 +637,8 @@ Production builds may set these Vite variables:
 - `VITE_TELEMETRY_ENDPOINT` — collector URL for batched logs, metrics, events,
   traces, errors, alerts, and health envelopes. Subject to the HTTPS and
   approved-host policy above.
-- `VITE_TELEMETRY_DASHBOARD_URL` — operator dashboard link stamped on batches
-  and used by the deployment runbook.
+- `VITE_TELEMETRY_DASHBOARD_URL` — optional operator dashboard link used by
+  health diagnostics and the deployment runbook; it does not enable transport.
 - `VITE_RELEASE` — git SHA or release tag; Vercel's commit SHA is the fallback.
 - `VITE_GA_MEASUREMENT_ID` — optional GA4 measurement ID for product events.
   Inert unless both telemetry and analytics switches are on.
@@ -750,8 +799,9 @@ is pinned in `src/data/accessScope.test.ts` and enforced by the module
 boundary that keeps flag code out of the data layer.
 
 `MockDataProvider` fills it with deterministic, seeded data. To go live,
-implement the interface against your CRM (HubSpot, Salesforce) or warehouse
-(Snowflake, Looker) and swap the provider — no view code changes. The scoped
+implement the interface behind trusted identity and a server-enforced scoped
+API backed by your CRM or warehouse, then swap the provider. Never connect
+protected sources or credentials directly from the browser. The scoped
 side is where a server does the arithmetic: `src/lib/metrics.ts` is the
 implementation today and the _specification_ a server implementation has to
 match, which is what makes its test suite a conformance check rather than a
@@ -773,7 +823,7 @@ server pipeline could call them unchanged.
 **Swap the provider from the header** to see the claim performed:
 
 - **Local mock** — the deterministic in-memory book, answering on the next
-  microtask. Fast, and it hides every loading state.
+  microtask. Loading states usually resolve before they are noticeable.
 - **Simulated remote** — the same book behind ~250 ms round trips with a 15%
   simulated failure rate, so the per-widget loading, error, and retry paths are
   exercised rather than theoretical. Seeded, so a failing run can be replayed.
@@ -799,8 +849,8 @@ entirely and leaves through `getWeeklyForecastSeries()` as ~13 buckets. A
 — an `Opportunity` holds one amount and one call, so reading the past off
 current state backdates every later change — and it is still what makes forecast
 accuracy measurable, since a call can only be scored against an outcome if the
-call as made was kept. It lives in `ProviderBook` (provider-side) rather than
-`DashboardData` (client-side), and in Salesforce it is `OpportunityHistory` and
+call as made was kept. It lives only in `ProviderBook` (provider-side); the old
+client-side `DashboardData` loader is gone. In Salesforce it corresponds to `OpportunityHistory` and
 `OpportunityFieldHistory`; a warehouse would model it as a weekly fact table
 written by a scheduled job.
 

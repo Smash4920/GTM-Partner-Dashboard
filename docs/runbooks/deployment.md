@@ -29,13 +29,15 @@ build.
    - the provider selector defaults to the local mock;
    - the Home KPIs render and the fiscal phase toggles switch quarters;
    - the Forecasting week-over-week chart draws the current quarter.
-5. In DevTools, confirm one structured log record per data load and no
-   error-level records.
-6. If `VITE_TELEMETRY_DASHBOARD_URL` is configured, open that dashboard and
-   confirm the release SHA, provider, route, error, and health streams are
-   receiving the deployment. If it is not configured, inspect the Vercel
-   deployment logs and run `window.GTM_HEALTH.refresh()` in the deployed page.
-7. If the repository is public or on Vercel Pro, optionally publish GitHub Pages
+5. In DevTools, confirm no unexpected warning or error records. Production
+   defaults to `warn`; successful loads need not appear in the console.
+6. Only if approved transport and the master telemetry switch are enabled,
+   use the configured `VITE_TELEMETRY_DASHBOARD_URL` to verify technical release,
+   provider, error, and health events. The URL alone does not enable collection.
+   Default builds remain local-only; inspect
+   `await window.GTM_HEALTH.refresh()` instead. No collector is connected here.
+7. If the repository is public or has a GitHub plan supporting private Pages,
+   optionally publish GitHub Pages
    by running `.github/workflows/deploy-pages.yml` via `workflow_dispatch` and
    selecting the current `main`. Never run it from a private Free-plan repo; the
    deploy step fails with a 404.

@@ -10,8 +10,9 @@ A required check in `.github/workflows/ci.yml` is red on a pull request or on
 1. Read the first failing step in the job log, not the last. Later failures are
    often cascade failures.
 2. Reproduce locally with the same command the step runs.
-3. Fix the cause, not the symptom. Do not lower a coverage threshold, widen a
-   budget, or skip a check to make the build green without a written reason.
+3. Fix the cause, not the symptom. Never lower a coverage threshold, widen a
+   budget, or skip a check to make the build green. Report a blocker if the
+   regression cannot be fixed within the existing limits.
 
 ## Step-by-step
 
@@ -33,7 +34,23 @@ limit but not the size limit.
 Run `npm run format`, then review the diff. Prettier owns line wrapping; do not
 hand-wrap to taste.
 
-### `test:debt` / `debt:check`
+### `test:debt`
+
+Reproduce with `npm run test:debt`. Fix the policy-scanner regression without
+relaxing linked-issue requirements.
+
+### `test:build-metrics`
+
+Reproduce with `npm run test:build-metrics`. Check deterministic stage timing,
+failed-build reporting, and the 60,000 ms budget; never widen the ceiling.
+
+### `test:sentry-sync`
+
+Reproduce with `npm run test:sentry-sync`. These are local mocked API tests,
+not a connected Sentry service. Restore idempotency, trust, and bounded issue
+creation behavior without introducing credentials.
+
+### `debt:check`
 
 A source debt marker is not linked to an issue. Use
 `MARKER(#123): reason`, where the number is an issue in this repository, and
@@ -50,7 +67,9 @@ explain the removal condition.
 
 ### `docs:check`
 
-Two failures are possible. Generated documentation under `docs/generated/` is
+Three failures are possible. `quality:check` rejects weakened effective
+ratchets or missing/reordered/non-blocking gate steps and handoff checklists.
+Restore the policy, never reduce it. Generated documentation under `docs/generated/` is
 stale: run `npm run docs:generate` and commit the result (the pages are derived
 from `package.json`, the workflows, the `config/` budgets, the runbooks, and
 the skills). Or the documentation consistency check
@@ -88,15 +107,23 @@ the same pull request.
 ### `test:performance`
 
 `npm run test:performance` fails when the suite total or the slowest single test
-exceeds `config/test-performance.json`. Remove real waiting, split the slow
-test, or raise the budget with a written reason.
+exceeds `config/test-performance.json` (90,000 ms total, 8,000 ms per test).
+Remove unnecessary waiting or repeated setup while preserving assertions.
+If that cannot restore the budget, report the blocker.
 
 ### `bundle:check`
 
 `npm run build` runs the bundle budget after bundling. A failure names the
-budget and the measured size. Shrink the bundle, or raise the limit in
-`config/bundle-budgets.json` with a reason. The dependency weight check compares
+budget and the measured size. Shrink the bundle without changing behavior or
+report the blocker; never widen `config/bundle-budgets.json`. The dependency weight check compares
 installed package sizes against `config/dependency-budgets.json`.
+
+### `workflows:check`
+
+Reproduce with `npm run workflows:check`. Restore immutable action revisions,
+least privilege, trusted write triggers, finite timeouts, blocking scans,
+reviewed ZAP rules, and local/CI production-preview parity. This static policy
+does not verify remote repository settings or execute hosted scanners.
 
 ### Playwright job
 

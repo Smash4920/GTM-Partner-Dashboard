@@ -36,6 +36,7 @@ npm run agents:check # validate this file's commands and repository paths
 npm run check:file-limits # reject oversized files before review
 npm run client-boundary:check # reject server, database, auth, warehouse, connector, durable-store, sender, or credential additions
 npm run docs:check # verify generated docs and documentation consistency
+npm run quality:check # enforce effective ratchets and ordered blocking gate parity
 npm run workflows:check # enforce the GitHub workflow security policy
 npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
@@ -45,7 +46,9 @@ npm run lint      # lint TypeScript/TSX and enforce module boundaries
 npm run lint:duplicates # detect source duplication with jscpd
 npm test          # run the Vitest suite once
 npm run test:debt # test the technical-debt policy scanner
+npm run test:build-metrics # test build measurements and budget enforcement
 npm run test:sentry-sync # test Sentry-to-GitHub issue synchronization
+npm run test:performance # enforce total and per-test timing budgets from JUnit
 npm run test:coverage # run Vitest with coverage, enforcing the thresholds in vite.config.ts
 npm run test:coverage:ci # also write per-test JUnit timings for CI reporting
 npm run test:e2e  # run the Playwright browser suite
@@ -68,6 +71,7 @@ npm run agents:check
 npm run check:file-limits
 npm run format:check
 npm run test:debt
+npm run test:build-metrics
 npm run test:sentry-sync
 npm run debt:check
 npm run lint
@@ -75,7 +79,8 @@ npm run dead-code
 npm run lint:duplicates
 npm run docs:check
 npm run client-boundary:check
-npm run test:coverage
+npm run test:coverage:ci
+npm run test:performance
 npm run bundle:check
 npm run workflows:check
 npm run test:e2e

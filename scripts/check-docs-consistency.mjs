@@ -56,6 +56,23 @@ const RUNBOOKS = [
 const PRODUCT_DOCS = [README, MIGRATION, SECURITY];
 
 export const REQUIRED_CLAIMS = [
+  ...[
+    ['action-stale-category', /Stale high-value deal/i],
+    ['action-next-step-category', /Missing next step/i],
+    ['action-slip-category', /Slipping close date/i],
+    ['action-registration-category', /Registration SLA/],
+    ['action-health-category', /Partner-health deterioration/i],
+    ['workflow-actor-boundary', /not\s+authenticated/],
+    ['production-preview-testing', /production\s+preview/],
+    ['browser-base-path', /BASE_PATH=\//],
+    ['no-hmr-testing', /no\s+HMR/],
+    ['accessibility-inventories', /route\s+and\s+modal-state\s+inventories/],
+  ].map(([id, pattern]) => ({
+    id,
+    pattern,
+    files: [README],
+    description: `retain the final ${id} fact`,
+  })),
   {
     id: 'client-only-boundary',
     files: [...PRODUCT_DOCS, 'docs/runbooks/README.md'],
@@ -156,6 +173,18 @@ export const REQUIRED_CLAIMS = [
 ];
 
 export const PROHIBITED_CLAIMS = [
+  {
+    id: 'accessibility-certification-claim',
+    files: PRODUCT_DOCS,
+    pattern: /(?:is|are)\s+WCAG\s+(?:certified|conformant|compliant)/i,
+    reason: 'local axe and keyboard checks do not certify WCAG conformance',
+  },
+  {
+    id: 'ratchet-weakening-advice',
+    files: ['docs/runbooks/ci-failure.md'],
+    pattern: /raise\s+the\s+(?:budget|limit)\s+with/i,
+    reason: 'fix the regression or report a blocker; do not recommend weakening a ratchet',
+  },
   {
     id: 'roster-authorization-language',
     files: [README],

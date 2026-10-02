@@ -26,6 +26,11 @@ const CLAIMS_PARAGRAPH = [
   'Flags are local and non-authoritative with a safe default fallback.',
   'The production continuation runs in a fixed order.',
   'Analytics is off by default, and VITE_FLAG_TELEMETRY_ENABLED is the master switch.',
+  'Action Center includes Stale high-value deal, Missing next step, Slipping close date,',
+  'Registration SLA, and Partner-health deterioration.',
+  'Workflow actors are not authenticated; refresh loses every session record.',
+  'Browser tests use production preview with BASE_PATH=/ and no HMR.',
+  'Axe checks the route and modal-state inventories; this is not WCAG certification.',
 ].join('\n');
 
 const RUNBOOK_PARAGRAPH = 'The app is client-only. State lives for the session only.';
@@ -102,6 +107,30 @@ describe('checkDocsConsistency required claims', () => {
     );
   });
 
+  it('requires every named Action Center category and final browser-testing fact', () => {
+    const cases = [
+      ['Stale high-value deal', 'action-stale-category'],
+      ['Missing next step', 'action-next-step-category'],
+      ['Slipping close date', 'action-slip-category'],
+      ['Registration SLA', 'action-registration-category'],
+      ['Partner-health deterioration', 'action-health-category'],
+      ['not authenticated', 'workflow-actor-boundary'],
+      ['production preview', 'production-preview-testing'],
+      ['BASE_PATH=/', 'browser-base-path'],
+      ['no HMR', 'no-hmr-testing'],
+      ['route and modal-state inventories', 'accessibility-inventories'],
+    ];
+    for (const [phrase, id] of cases) {
+      const files = completeFiles().map((file) =>
+        file.path === 'README.md' ? { ...file, text: file.text.replace(phrase, 'omitted') } : file,
+      );
+      assert.ok(
+        scan({ files }).some((violation) => violation.id === id),
+        id,
+      );
+    }
+  });
+
   it('requires every VITE_* key the source reads to be documented', () => {
     const violations = scan({
       sourceEnvKeys: ['VITE_FLAG_TELEMETRY_ENABLED', 'VITE_NEW_UNDOCUMENTED'],
@@ -175,6 +204,7 @@ describe('checkDocsConsistency prohibited claims', () => {
       ['the flag control plane is available', 'remote-flag-claim'],
       ['the forecast-quality trend is now complete', 'trend-complete-claim'],
       ['the dashboard is production-ready', 'production-ready-claim'],
+      ['the dashboard is WCAG certified', 'accessibility-certification-claim'],
     ];
     for (const [claim, id] of cases) {
       const violations = scan({ files: withClaim('docs/security.md', claim) });
@@ -182,6 +212,18 @@ describe('checkDocsConsistency prohibited claims', () => {
         violations.some((violation) => violation.id === id),
         `${claim} should trip ${id}`,
       );
+    }
+  });
+
+  it('rejects runbook advice to widen performance or bundle budgets', () => {
+    for (const phrase of [
+      'raise the budget with a written reason',
+      'raise the limit with a reason',
+    ]) {
+      const violations = scan({
+        files: withClaim('docs/runbooks/ci-failure.md', phrase),
+      });
+      assert.ok(violations.some((violation) => violation.id === 'ratchet-weakening-advice'));
     }
   });
 
