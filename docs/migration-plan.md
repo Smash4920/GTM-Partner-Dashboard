@@ -196,7 +196,7 @@ Facts: `fct_opportunity`, `fct_registration`, `fct_pipeline_snapshot`,
 `fct_activity`. Dimensions: `dim_partner`, `dim_partner_manager`, `dim_date`.
 
 Snapshots partitioned by week and **write-once**, with no UPDATE grant on the
-table. `src/data/types.ts` already states the invariant — "a snapshot already
+table. `src/data/mock/book.ts` already states the invariant — "a snapshot already
 written must never change" — because reading the past off current state
 backdates every later change. In production that invariant is a database
 permission, not a comment.

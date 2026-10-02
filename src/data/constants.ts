@@ -353,4 +353,4 @@ export const ROADMAP_STATUS_META: Record<
  * A fixed UTC calendar date, like SNAPSHOT_DATE, so the render is deterministic
  * and never depends on the wall clock.
  */
-export const ROADMAP_LAST_UPDATED = new Date('2026-09-29T00:00:00Z');
+export const ROADMAP_LAST_UPDATED = new Date('2026-10-02T00:00:00Z');

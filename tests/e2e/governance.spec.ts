@@ -1,5 +1,46 @@
 import { expect, test } from '@playwright/test';
 
+// Closed inventory from VAL-GOV-002. Production dependencies remain separate.
+const FINAL_MIXED_SCOPE_ROWS = [
+  'Enforce role, manager, and partner access on the server',
+  'Normalize source records into a canonical partner',
+  'Expose source lineage, last-refresh time',
+  'Add approvals and SLAs for deal registrations',
+  'Serve aggregated, paginated API responses',
+  'Add observability for sync health',
+  'Add automated unit, integration, end-to-end, accessibility, and security tests',
+  'Deploy through separate development, staging, and production environments',
+  'Define a feature-flag methodology',
+  'Alerts for stale high-value deals',
+  'Owner, due date, disposition, and workflow links',
+  'Optimistic client updates',
+] as const;
+
+test('VAL-GOV-002: every approved demo outcome is Complete and production stays Prod Only', async ({
+  page,
+}, testInfo) => {
+  await page.goto('/');
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('button', { name: 'Production Requirements', exact: true })
+    .click();
+  const evidence = [];
+  for (const text of FINAL_MIXED_SCOPE_ROWS) {
+    const row = page.locator('main li').filter({ hasText: text });
+    await expect(row).toHaveCount(1);
+    await expect(row.getByText('Demo: Complete', { exact: true })).toBeVisible();
+    await expect(row.getByText('Production: Prod Only', { exact: true })).toBeVisible();
+    await expect(row).toContainText('Demo today:');
+    await expect(row).toContainText('Production blocker:');
+    evidence.push({ text, rendered: await row.innerText() });
+  }
+  await expect(page.locator('main li').getByText('Demo: WIP', { exact: true })).toHaveCount(0);
+  await testInfo.attach('final-mixed-scope-roadmap', {
+    body: JSON.stringify(evidence, null, 2),
+    contentType: 'application/json',
+  });
+});
+
 /**
  * VAL-GOV-008: the Partner View picker is documented — in the product, on the
  * roadmap, and in prose — as an untrusted demo presentation selector. Client

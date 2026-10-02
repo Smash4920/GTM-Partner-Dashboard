@@ -147,10 +147,29 @@ describe('ProductionRequirementsView', () => {
       expect(demoChips, 'every roadmap row carries exactly one Demo status').toHaveLength(1);
     }
 
-    // No demo status may fall out of use, or the legend sells a vocabulary the
-    // board does not speak.
-    for (const status of ROADMAP_DEMO_STATUSES) {
+    // WIP remains a valid legend value, but the final approved demo work is
+    // complete. Pending production/deferred work must still remain visible.
+    for (const status of ['complete', 'pending'] as const) {
       expect(screen.getAllByText(demoLabel(status)).length).toBeGreaterThan(1);
+    }
+  });
+
+  it('VAL-GOV-002 completes every approved mixed-scope demo while retaining Prod Only blockers', () => {
+    render(<ProductionRequirementsView />);
+    const items = [...REQUIREMENTS, ...UTILITY_REQUIREMENTS, ...MIGRATION_PHASES].flatMap(
+      (group) => group.items,
+    );
+    const mixed = items.filter(
+      (item) => item.demoScope && item.production && item.demo !== 'pending',
+    );
+    expect(mixed).toHaveLength(12);
+    expect(items.filter((item) => item.demo === 'wip')).toEqual([]);
+    for (const item of mixed) {
+      expect(item.demo, item.text).toBe('complete');
+      const row = within(screen.getByText(item.text).closest('li') as HTMLElement);
+      expect(row.getByText(demoLabel('complete'))).toBeInTheDocument();
+      expect(row.getByText(prodOnlyLabel)).toBeInTheDocument();
+      expect(row.getByText(item.production?.blocker ?? '')).toBeInTheDocument();
     }
   });
 
@@ -209,14 +228,14 @@ describe('ProductionRequirementsView', () => {
     render(<ProductionRequirementsView />);
 
     const paginated = itemRow(/Serve aggregated, paginated API responses/);
-    expect(paginated.getByText(demoLabel('wip'))).toBeInTheDocument();
+    expect(paginated.getByText(demoLabel('complete'))).toBeInTheDocument();
     expect(paginated.getByText(prodOnlyLabel)).toBeInTheDocument();
     // The usable demo portion and the exact production blocker are both named.
     expect(paginated.getByText(/Demo today:/)).toBeInTheDocument();
     expect(paginated.getByText(/Production blocker:/)).toBeInTheDocument();
 
     const optimistic = itemRow(/Optimistic client updates/);
-    expect(optimistic.getByText(demoLabel('wip'))).toBeInTheDocument();
+    expect(optimistic.getByText(demoLabel('complete'))).toBeInTheDocument();
     expect(optimistic.getByText(prodOnlyLabel)).toBeInTheDocument();
   });
 

@@ -40,7 +40,7 @@ function roadmapItems(
  * code actually does today, not against intent. Each row carries a Demo status
  * for its verified client behavior and, where a production dependency is
  * intentionally paused, a separate Production status. A finished demo therefore
- * never reads as a finished production step: mixed rows render `Demo: WIP`
+ * never reads as a finished production step: verified mixed rows render `Demo: Complete`
  * beside `Production: Prod Only` and name both the usable demo portion and the
  * exact production blocker.
  */
@@ -55,8 +55,8 @@ export const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
       [
         'Enforce role, manager, and partner access on the server, with row-level authorization for every query.',
         'Server-side row-level authorization needs a trusted API and identity claims; client filtering is presentation, not authorization.',
-        'wip',
-        'Client-side partner boundaries are enforced and e2e-tested, and the scoped contract carries the manager scope.',
+        'complete',
+        'Every data query applies tested demo scope before aggregation and pagination; client filtering is not authorization.',
       ],
       // Excluded from this mission: the picker itself is unchanged and its
       // client-only limitation is documented rather than implemented, so
@@ -92,8 +92,8 @@ export const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
       [
         'Normalize source records into a canonical partner, opportunity, registration, target, activity, and certification model.',
         'Normalizing real source records into it waits on live ingestion and source credentials.',
-        'wip',
-        'The canonical model in src/data/types.ts is the app-wide contract and is pinned by tests.',
+        'complete',
+        'Pure, strict source-shaped adapters validate canonical records and preserve provenance without connecting a source.',
       ],
       [
         'Validate stages, statuses, revenue motions, target periods, dates, and foreign-key relationships at ingestion.',
@@ -103,8 +103,8 @@ export const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
       [
         'Expose source lineage, last-refresh time, and incomplete-data errors in the product.',
         'Live last-refresh times and real incomplete-data errors need connected source systems.',
-        'wip',
-        'The Data Connections map exposes per-node source, auth, cadence, and gaps, and Forecasting has per-widget errors.',
+        'complete',
+        'Scoped answers expose deterministic as-of, lineage, completeness, warnings, and independent widget errors and retries.',
       ],
     ]),
   },
@@ -119,8 +119,8 @@ export const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
       [
         'Add approvals and SLAs for deal registrations, partner conflicts, and forecast changes where required.',
         'Enforced approver identity and durable approvals for conflicts and forecast changes need trusted identity and a write path.',
-        'wip',
-        'Registration SLAs and rejection reasons landed with the ops view.',
+        'complete',
+        'Business-day SLAs and session-only decisions, conflict dispositions, and forecast reviews record actor, reason, and time; actors are not authenticated.',
       ],
     ]),
   },
@@ -147,26 +147,26 @@ export const REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
       [
         'Serve aggregated, paginated API responses rather than loading the entire ecosystem into the browser.',
         'Serving these responses for real needs a production API with warehouse rollups.',
-        'wip',
-        'Forecasting, Home, Partner Performance, Deal Reg Ops, and Activity Tracking read the scoped, cursor-paginated contract against the mock provider; Partner View is mid-migration.',
+        'complete',
+        'Every data-bearing route uses bounded scoped answers and cursor pages; the whole-book interface and loader are deleted.',
       ],
       [
         'Add observability for sync health, data freshness, API errors, performance, and authorization failures.',
         'Sync health, data freshness, and authorization-failure signals need the production systems they describe.',
-        'wip',
-        'Structured logging and per-widget error states have landed.',
+        'complete',
+        'Local shell/provider health survives startup failure; technical events are allowlisted and every outbound path obeys the telemetry master switch.',
       ],
       [
         'Add automated unit, integration, end-to-end, accessibility, and security tests, plus backups and recovery procedures.',
         'Backups and recovery procedures need production infrastructure.',
-        'wip',
-        'Unit, seam, and Playwright suites are gated in CI.',
+        'complete',
+        'Unit, provider, and policy suites are CI-gated; keyboard and route/modal axe suites run against production preview; recovery runbooks document session reset and Prod Only blockers.',
       ],
       [
         'Deploy through separate development, staging, and production environments with CI/CD and monitored rollbacks.',
         'Separate staging and production environments with monitored rollbacks need deployment accounts and infrastructure.',
-        'wip',
-        'CI gates every pull request and Vercel serves per-PR previews.',
+        'complete',
+        'Blocking CI policy checks enforce immutable actions, least privilege, finite timeouts, and local production-preview parity; remote settings are unverified.',
       ],
     ]),
   },
@@ -246,14 +246,14 @@ export const UTILITY_REQUIREMENTS: { title: string; items: RoadmapItem[] }[] = [
       [
         'Alerts for stale high-value deals, missing next steps, slipping close dates, pending registrations beyond SLA, and deteriorating partner health.',
         'Continuous production alerting needs connected source data and scheduled server-side evaluation and delivery.',
-        'wip',
-        'Registration SLA warnings and breaches are live with owner routing.',
+        'complete',
+        'All five alert categories have deterministic evidence, configurable session-only policy, merged items, routing, filters, and cursor pages.',
       ],
       [
         'Owner, due date, disposition, and workflow links back to Salesforce/HubSpot, PRM, Slack, and calendar.',
         'Workflow links back to Salesforce/HubSpot, PRM, Slack, and calendar need those connected systems.',
-        'wip',
-        'Owner, due date, and disposition ride the session-only notification flow.',
+        'complete',
+        'Owner, due date, session-only workflows, internal context links, and simulated/local-only notification records are available; no external delivery or write-back occurs.',
       ],
       'Saved views and scheduled executive/manager reporting.',
     ]),
@@ -317,7 +317,7 @@ export const MIGRATION_PHASES: MigrationPhase[] = [
     title: 'Test infrastructure',
     subtitle: 'No infrastructure required · landed in demo mode',
     demoMode: true,
-    status: 'Done · 202 tests, 91.7% statements, gated in CI',
+    status: 'Done · coverage floors 95/90/96/96%, gated in CI',
     items: roadmapItems(
       [
         'jsdom, Testing Library, and a coverage provider, with the thresholds in vite.config.ts as a ratchet and CI running coverage rather than a bare test run.',
@@ -418,7 +418,7 @@ export const MIGRATION_PHASES: MigrationPhase[] = [
       [
         'Optimistic client updates, so an edited forecast still moves every metric instantly instead of waiting on a round trip.',
         'The full optimistic delta needs the write path to reconcile against.',
-        'wip',
+        'complete',
         "Rows render the session's override immediately and aggregates hold their previous figures during a refetch.",
       ],
     ]),
@@ -539,7 +539,9 @@ export default function ProductionRequirementsView() {
             The order the architecture work gets built in. The first two phases need no
             infrastructure and no production data — they are done in demo mode against the mock
             provider, and they are what make every phase after them safe. Full reasoning in{' '}
-            <span className="font-mono text-[11px] text-stone">docs/migration-plan.md</span>.
+            <span className="font-mono text-[11px] text-stone">docs/migration-plan.md</span>.{' '}
+            Production continuation requires trusted identity first, then warehouse and scoped
+            API/RLS, ingestion, persisted writes/audit, and operations; all remain Prod Only.
           </p>
         </div>
         <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -581,8 +583,8 @@ export default function ProductionRequirementsView() {
           <p className="mt-1 max-w-3xl text-sm text-granite">
             The decisions the GTM Partnerships leader needs the tool to make easy. The demo's live
             sketch covers forecast quality (a weighted forecast driven by manager-editable category
-            calls) and deal-registration operations; the rest of this backlog turns raw pipeline
-            data into those decisions.
+            calls), deal-registration operations, and the session-only Action Center; the rest of
+            this backlog turns raw pipeline data into those decisions.
           </p>
         </div>
         <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">

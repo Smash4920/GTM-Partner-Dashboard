@@ -1,6 +1,6 @@
 /**
- * Test-only snapshot captured from the object-based roadmap before tuple encoding.
- * Keep independent of the production decoder so every field and omission is pinned.
+ * Independent object-based final roadmap fixture. Final demo outcomes replace
+ * the original WIP checkpoint; unchanged rows, blockers, and omissions stay pinned.
  */
 export const ROADMAP_BASELINE = {
   REQUIREMENTS: [
@@ -18,9 +18,9 @@ export const ROADMAP_BASELINE = {
         },
         {
           text: 'Enforce role, manager, and partner access on the server, with row-level authorization for every query.',
-          demo: 'wip',
+          demo: 'complete',
           demoScope:
-            'Client-side partner boundaries are enforced and e2e-tested, and the scoped contract carries the manager scope.',
+            'Every data query applies tested demo scope before aggregation and pagination; client filtering is not authorization.',
           production: {
             status: 'prod-only',
             blocker:
@@ -74,9 +74,9 @@ export const ROADMAP_BASELINE = {
       items: [
         {
           text: 'Normalize source records into a canonical partner, opportunity, registration, target, activity, and certification model.',
-          demo: 'wip',
+          demo: 'complete',
           demoScope:
-            'The canonical model in src/data/types.ts is the app-wide contract and is pinned by tests.',
+            'Pure, strict source-shaped adapters validate canonical records and preserve provenance without connecting a source.',
           production: {
             status: 'prod-only',
             blocker:
@@ -97,9 +97,9 @@ export const ROADMAP_BASELINE = {
         },
         {
           text: 'Expose source lineage, last-refresh time, and incomplete-data errors in the product.',
-          demo: 'wip',
+          demo: 'complete',
           demoScope:
-            'The Data Connections map exposes per-node source, auth, cadence, and gaps, and Forecasting has per-widget errors.',
+            'Scoped answers expose deterministic as-of, lineage, completeness, warnings, and independent widget errors and retries.',
           production: {
             status: 'prod-only',
             blocker:
@@ -126,8 +126,9 @@ export const ROADMAP_BASELINE = {
         },
         {
           text: 'Add approvals and SLAs for deal registrations, partner conflicts, and forecast changes where required.',
-          demo: 'wip',
-          demoScope: 'Registration SLAs and rejection reasons landed with the ops view.',
+          demo: 'complete',
+          demoScope:
+            'Business-day SLAs and session-only decisions, conflict dispositions, and forecast reviews record actor, reason, and time; actors are not authenticated.',
           production: {
             status: 'prod-only',
             blocker:
@@ -171,9 +172,9 @@ export const ROADMAP_BASELINE = {
       items: [
         {
           text: 'Serve aggregated, paginated API responses rather than loading the entire ecosystem into the browser.',
-          demo: 'wip',
+          demo: 'complete',
           demoScope:
-            'Forecasting, Home, Partner Performance, Deal Reg Ops, and Activity Tracking read the scoped, cursor-paginated contract against the mock provider; Partner View is mid-migration.',
+            'Every data-bearing route uses bounded scoped answers and cursor pages; the whole-book interface and loader are deleted.',
           production: {
             status: 'prod-only',
             blocker:
@@ -182,8 +183,9 @@ export const ROADMAP_BASELINE = {
         },
         {
           text: 'Add observability for sync health, data freshness, API errors, performance, and authorization failures.',
-          demo: 'wip',
-          demoScope: 'Structured logging and per-widget error states have landed.',
+          demo: 'complete',
+          demoScope:
+            'Local shell/provider health survives startup failure; technical events are allowlisted and every outbound path obeys the telemetry master switch.',
           production: {
             status: 'prod-only',
             blocker:
@@ -192,8 +194,9 @@ export const ROADMAP_BASELINE = {
         },
         {
           text: 'Add automated unit, integration, end-to-end, accessibility, and security tests, plus backups and recovery procedures.',
-          demo: 'wip',
-          demoScope: 'Unit, seam, and Playwright suites are gated in CI.',
+          demo: 'complete',
+          demoScope:
+            'Unit, provider, and policy suites are CI-gated; keyboard and route/modal axe suites run against production preview; recovery runbooks document session reset and Prod Only blockers.',
           production: {
             status: 'prod-only',
             blocker: 'Backups and recovery procedures need production infrastructure.',
@@ -201,8 +204,9 @@ export const ROADMAP_BASELINE = {
         },
         {
           text: 'Deploy through separate development, staging, and production environments with CI/CD and monitored rollbacks.',
-          demo: 'wip',
-          demoScope: 'CI gates every pull request and Vercel serves per-PR previews.',
+          demo: 'complete',
+          demoScope:
+            'Blocking CI policy checks enforce immutable actions, least privilege, finite timeouts, and local production-preview parity; remote settings are unverified.',
           production: {
             status: 'prod-only',
             blocker:
@@ -313,8 +317,9 @@ export const ROADMAP_BASELINE = {
       items: [
         {
           text: 'Alerts for stale high-value deals, missing next steps, slipping close dates, pending registrations beyond SLA, and deteriorating partner health.',
-          demo: 'wip',
-          demoScope: 'Registration SLA warnings and breaches are live with owner routing.',
+          demo: 'complete',
+          demoScope:
+            'All five alert categories have deterministic evidence, configurable session-only policy, merged items, routing, filters, and cursor pages.',
           production: {
             status: 'prod-only',
             blocker:
@@ -323,8 +328,9 @@ export const ROADMAP_BASELINE = {
         },
         {
           text: 'Owner, due date, disposition, and workflow links back to Salesforce/HubSpot, PRM, Slack, and calendar.',
-          demo: 'wip',
-          demoScope: 'Owner, due date, and disposition ride the session-only notification flow.',
+          demo: 'complete',
+          demoScope:
+            'Owner, due date, session-only workflows, internal context links, and simulated/local-only notification records are available; no external delivery or write-back occurs.',
           production: {
             status: 'prod-only',
             blocker:
@@ -404,7 +410,7 @@ export const ROADMAP_BASELINE = {
       title: 'Test infrastructure',
       subtitle: 'No infrastructure required · landed in demo mode',
       demoMode: true,
-      status: 'Done · 202 tests, 91.7% statements, gated in CI',
+      status: 'Done · coverage floors 95/90/96/96%, gated in CI',
       items: [
         {
           text: 'jsdom, Testing Library, and a coverage provider, with the thresholds in vite.config.ts as a ratchet and CI running coverage rather than a bare test run.',
@@ -563,7 +569,7 @@ export const ROADMAP_BASELINE = {
         },
         {
           text: 'Optimistic client updates, so an edited forecast still moves every metric instantly instead of waiting on a round trip.',
-          demo: 'wip',
+          demo: 'complete',
           demoScope:
             "Rows render the session's override immediately and aggregates hold their previous figures during a refetch.",
           production: {

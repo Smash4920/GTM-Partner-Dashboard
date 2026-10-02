@@ -293,6 +293,8 @@ exact blocker (connecting the CRM, identity provider, or warehouse happens at
 go-live, not before), so a finished demo never reads as a finished production
 step. A "statuses last updated" date records the day the stamps were last
 reviewed against the code, so a Complete that has gone stale is visibly stale.
+All twelve approved mixed-scope demo outcomes are Complete, with their
+production continuations still Prod Only. Other Pending rows remain deferred.
 The **Architecture
 roadmap** documents the server-side foundation required before connecting
 protected systems (identity and row-level authorization, source-system
