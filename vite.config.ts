@@ -60,7 +60,7 @@ export default defineConfig({
     },
   },
   build: {
-    // Safe two-pass compression keeps the full Action Center contract inside
+    // Safe two-pass compression keeps the accessible shell/forms inside
     // the existing budgets; retaining shared function bodies compresses better
     // than injecting their variables into callers. No unsafe transforms or property mangling.
     minify: 'terser',
@@ -112,7 +112,10 @@ export default defineConfig({
           // application code only, as its reason states. Merging it into the
           // recharts chunk measured worse: the cross-chunk export wiring cost
           // more than the boundary it removed.
-          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) {
+          if (
+            /node_modules\/(react|react-dom|scheduler)\//.test(id) ||
+            id.includes('commonjsHelpers')
+          ) {
             return 'react-core';
           }
           // These operational routes and their exclusive dependencies remain
@@ -125,7 +128,7 @@ export default defineConfig({
             /\/src\/views\/(system|DataConnectionsView|ProductionRequirementsView|ActionCenterView)\.tsx?$/.test(
               id,
             ) ||
-            /\/src\/components\/(WorkflowPanel|NotificationComposer|ActionNotificationPanel|SlaAlertPanel|TeamAccessPanel|WireDiagram|ActionPolicyForm|ActionItemRow|ActionPagination)\.tsx$/.test(
+            /\/src\/components\/(FormField|WorkflowPanel|NotificationComposer|ActionNotificationPanel|SlaAlertPanel|TeamAccessPanel|WireDiagram|ActionPolicyForm|ActionItemRow|ActionPagination)\.tsx$/.test(
               id,
             ) ||
             /\/src\/data\/(connections|useDataConnectionsQueries|useActionCenterQueries|actionCenter|mock\/actionCenterQueries)\.ts$/.test(

@@ -708,16 +708,20 @@ describe('DataConnectionsView', () => {
 
     await user.clear(screen.getByLabelText('Subject'));
     const send = screen.getByRole('button', { name: 'Send to J. Alvarez' });
-    expect(send).toBeDisabled();
     await user.click(send);
+    expect(screen.getByLabelText('Subject')).toHaveFocus();
+    expect(screen.getByLabelText('Subject')).toHaveAccessibleDescription('A subject is required.');
 
     // Whitespace is not copy either.
     await user.type(screen.getByLabelText('Subject'), '   ');
-    expect(screen.getByRole('button', { name: 'Send to J. Alvarez' })).toBeDisabled();
+    await user.click(send);
+    expect(screen.getByLabelText('Subject')).toHaveFocus();
 
     await user.type(screen.getByLabelText('Subject'), 'Nudge');
     await user.clear(screen.getByLabelText('Message'));
-    expect(screen.getByRole('button', { name: 'Send to J. Alvarez' })).toBeDisabled();
+    await user.click(send);
+    expect(screen.getByLabelText('Message')).toHaveFocus();
+    expect(screen.getByLabelText('Message')).toHaveAccessibleDescription('A message is required.');
 
     expect(onSendNotification).not.toHaveBeenCalled();
   });

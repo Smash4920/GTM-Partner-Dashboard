@@ -106,11 +106,13 @@ describe('Action Center local notification integration', () => {
     );
     await screen.findByLabelText('Subject');
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: ' ' } });
-    expect(screen.getByRole('button', { name: /Send to/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /Send to/ }));
+    expect(screen.getByLabelText('Message')).toHaveFocus();
+    expect(screen.getByLabelText('Message')).toHaveAccessibleDescription('A message is required.');
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Demo message' } });
     for (const checkbox of screen.getAllByRole('checkbox')) fireEvent.click(checkbox);
-    expect(screen.getByRole('button', { name: /Send to/ })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: /Send to/ }));
+    expect(screen.getAllByRole('checkbox')[0]).toHaveFocus();
     expect(send).not.toHaveBeenCalled();
   });
 

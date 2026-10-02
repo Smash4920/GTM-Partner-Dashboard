@@ -46,7 +46,8 @@ test('VAL-ACT-016: all five categories create selected-channel simulated local r
     await expect(panel.getByText(/session-only.*Refresh clears/)).toBeVisible();
     // Select one configured channel; neither email nor Slack is forced.
     for (const checkbox of await panel.getByRole('checkbox').all()) await checkbox.uncheck();
-    await expect(panel.getByRole('button', { name: /Send to/ })).toBeDisabled();
+    await panel.getByRole('button', { name: /Send to/ }).click();
+    await expect(panel.getByRole('checkbox').first()).toBeFocused();
     await expect(panel.getByText('Select at least one configured channel.')).toBeVisible();
     await panel.getByRole('checkbox', { name: 'Use Email' }).check();
     await panel.getByRole('button', { name: /Send to/ }).focus();

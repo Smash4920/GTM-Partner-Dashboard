@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import {
   FORECAST_CATEGORIES,
   FORECAST_CATEGORY_FOR_STAGE,
@@ -137,6 +137,75 @@ function OpportunityStage({ opportunity }: { opportunity: Opportunity }) {
   );
 }
 
+/** Shared native keyboard and action controls for the three text editors. */
+function InlineEditor({
+  field,
+  label,
+  draft,
+  onChange,
+  onCommit,
+  onCancel,
+  inputRef,
+  error,
+  errorId,
+}: {
+  field: 'revenue' | 'note' | 'next step';
+  label: string;
+  draft: string;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+  inputRef?: RefObject<HTMLInputElement>;
+  error?: string | null;
+  errorId?: string;
+}) {
+  return (
+    <>
+      <input
+        ref={inputRef}
+        autoFocus
+        value={draft}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') onCommit();
+          if (event.key === 'Escape') onCancel();
+        }}
+        aria-label={label}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        inputMode={field === 'revenue' ? 'decimal' : undefined}
+        placeholder={
+          field === 'note' ? 'Add a note…' : field === 'next step' ? 'Next action…' : undefined
+        }
+        className={`rounded border border-ash bg-carbon px-2 py-1 text-sm text-bone placeholder:text-graphite focus:border-signal focus:outline-none ${
+          field === 'revenue' ? 'w-28 text-right tabular-nums' : field === 'note' ? 'w-44' : 'w-56'
+        }`}
+      />
+      <button
+        type="button"
+        onClick={onCommit}
+        aria-label={`Save ${field}`}
+        className="rounded p-0.5 text-metric hover:bg-ash/30"
+      >
+        <CheckIcon className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        aria-label={`Cancel ${field} edit`}
+        className="rounded p-0.5 text-granite hover:bg-ash/30"
+      >
+        <XIcon className="h-3.5 w-3.5" />
+      </button>
+      {error && (
+        <span id={errorId} className="w-full text-right text-xs text-signal" role="alert">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
 /**
  * The Notes cell: an inline editor, or the pencil plus — when a note exists —
  * a disclosure that reveals the note on demand. The note itself never renders
@@ -173,34 +242,14 @@ function NotesCell({
     <td className="py-3 text-right">
       {editing ? (
         <span className="inline-flex items-center justify-end gap-1.5">
-          <input
-            autoFocus
-            value={draft}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') onCommit();
-              if (event.key === 'Escape') onCancel();
-            }}
-            placeholder="Add a note…"
-            aria-label={`Note for ${opportunity.accountName}`}
-            className="w-44 rounded border border-ash bg-carbon px-2 py-1 text-sm text-bone placeholder:text-graphite focus:border-signal focus:outline-none"
+          <InlineEditor
+            field="note"
+            label={`Note for ${opportunity.accountName}`}
+            draft={draft}
+            onChange={onDraftChange}
+            onCommit={onCommit}
+            onCancel={onCancel}
           />
-          <button
-            type="button"
-            onClick={onCommit}
-            aria-label="Save note"
-            className="rounded p-0.5 text-metric hover:bg-ash/30"
-          >
-            <CheckIcon className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            aria-label="Cancel note edit"
-            className="rounded p-0.5 text-granite hover:bg-ash/30"
-          >
-            <XIcon className="h-3.5 w-3.5" />
-          </button>
         </span>
       ) : (
         <span className="inline-flex items-center justify-end gap-1.5">
@@ -286,6 +335,8 @@ export default function ForecastTable({
   const [noteDraft, setNoteDraft] = useState('');
   const [nextStepDraft, setNextStepDraft] = useState('');
   const [revenueError, setRevenueError] = useState<string | null>(null);
+  const revenueErrorId = useId();
+  const revenueInput = useRef<HTMLInputElement>(null);
   const invoker = useRef<Element | null>(null);
   useEffect(() => {
     if (editingRevenue || editingNotes || editingNextStep || editingCategory) return;
@@ -321,6 +372,7 @@ export default function ForecastTable({
     const value = Number(revenueDraft);
     if (revenueDraft.trim() === '' || !Number.isFinite(value) || value < 0) {
       setRevenueError('Enter a non-negative number.');
+      revenueInput.current?.focus();
       return;
     }
     onSetRevenue(opportunityId, value);
@@ -452,43 +504,20 @@ export default function ForecastTable({
                 <td className="py-3 pr-3 text-right">
                   {editingRevenue === opportunity.id ? (
                     <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                      <input
-                        autoFocus
-                        value={revenueDraft}
-                        onChange={(event) => {
-                          setRevenueDraft(event.target.value);
+                      <InlineEditor
+                        field="revenue"
+                        inputRef={revenueInput}
+                        draft={revenueDraft}
+                        onChange={(value) => {
+                          setRevenueDraft(value);
                           setRevenueError(null);
                         }}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') commitRevenue(opportunity.id);
-                          if (event.key === 'Escape') cancelRevenueEdit();
-                        }}
-                        aria-label={`Revenue forecast for ${opportunity.accountName}`}
-                        aria-invalid={revenueError ? true : undefined}
-                        inputMode="decimal"
-                        className="w-28 rounded border border-ash bg-carbon px-2 py-1 text-right text-sm tabular-nums text-bone focus:border-signal focus:outline-none"
+                        onCommit={() => commitRevenue(opportunity.id)}
+                        onCancel={cancelRevenueEdit}
+                        label={`Revenue forecast for ${opportunity.accountName}`}
+                        error={revenueError}
+                        errorId={revenueErrorId}
                       />
-                      <button
-                        type="button"
-                        onClick={() => commitRevenue(opportunity.id)}
-                        aria-label="Save revenue"
-                        className="rounded p-0.5 text-metric hover:bg-ash/30"
-                      >
-                        <CheckIcon className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelRevenueEdit}
-                        aria-label="Cancel revenue edit"
-                        className="rounded p-0.5 text-granite hover:bg-ash/30"
-                      >
-                        <XIcon className="h-3.5 w-3.5" />
-                      </button>
-                      {revenueError && (
-                        <span className="w-full text-right text-xs text-signal" role="alert">
-                          {revenueError}
-                        </span>
-                      )}
                     </span>
                   ) : (
                     <span className="inline-flex items-center justify-end gap-1.5">
@@ -531,34 +560,14 @@ export default function ForecastTable({
                 <td className="py-3 pr-3">
                   {editingNextStep === opportunity.id ? (
                     <span className="inline-flex items-center gap-1.5">
-                      <input
-                        autoFocus
-                        value={nextStepDraft}
-                        onChange={(event) => setNextStepDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') commitNextStep(opportunity.id);
-                          if (event.key === 'Escape') setEditingNextStep(null);
-                        }}
-                        placeholder="Next action…"
-                        aria-label={`Next step for ${opportunity.accountName}`}
-                        className="w-56 rounded border border-ash bg-carbon px-2 py-1 text-sm text-bone placeholder:text-graphite focus:border-signal focus:outline-none"
+                      <InlineEditor
+                        field="next step"
+                        label={`Next step for ${opportunity.accountName}`}
+                        draft={nextStepDraft}
+                        onChange={setNextStepDraft}
+                        onCommit={() => commitNextStep(opportunity.id)}
+                        onCancel={() => setEditingNextStep(null)}
                       />
-                      <button
-                        type="button"
-                        onClick={() => commitNextStep(opportunity.id)}
-                        aria-label="Save next step"
-                        className="rounded p-0.5 text-metric hover:bg-ash/30"
-                      >
-                        <CheckIcon className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingNextStep(null)}
-                        aria-label="Cancel next step edit"
-                        className="rounded p-0.5 text-granite hover:bg-ash/30"
-                      >
-                        <XIcon className="h-3.5 w-3.5" />
-                      </button>
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1.5">

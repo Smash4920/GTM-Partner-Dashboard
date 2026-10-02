@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import FormField, { focusInvalid } from './FormField';
 import {
   NOTIFICATION_CHANNEL_META,
   NOTIFICATION_CHANNELS,
@@ -219,13 +220,18 @@ interface AddTeamUserFormProps {
   onCancel: () => void;
 }
 
+type RosterErrors = Partial<Record<'name' | 'email' | 'partnerManagerId', string>>;
+
 function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUserFormProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<TeamRole>('partner-manager');
   const [partnerManagerId, setPartnerManagerId] = useState(partnerManagers[0]?.id ?? '');
   const [channels, setChannels] = useState<NotificationChannel[]>(['email', 'slack', 'in-app']);
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<RosterErrors>({});
+
+  const clearError = (field: keyof RosterErrors) =>
+    setErrors((previous) => ({ ...previous, [field]: undefined }));
 
   const aligned = TEAM_ROLE_META[role].aligned;
 
@@ -237,17 +243,21 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
     );
   };
 
-  const submit = () => {
+  const submit = (form: HTMLFormElement) => {
     const trimmedName = name.trim();
     const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedName) return setError('A name is required.');
-    if (!EMAIL_PATTERN.test(trimmedEmail)) return setError('Enter a valid work email address.');
-    if (users.some((user) => user.email.toLowerCase() === trimmedEmail)) {
-      return setError('That email is already on the roster.');
+    const nextErrors: RosterErrors = {};
+    if (!trimmedName) nextErrors.name = 'A name is required.';
+    if (!EMAIL_PATTERN.test(trimmedEmail)) {
+      nextErrors.email = 'Enter a valid work email address.';
+    } else if (users.some((user) => user.email.toLowerCase() === trimmedEmail)) {
+      nextErrors.email = 'That email is already on the roster.';
     }
-    if (aligned && !partnerManagerId) {
-      return setError('A partner manager needs an aligned partner manager.');
+    if (aligned && !partnerManagers.some((manager) => manager.id === partnerManagerId)) {
+      nextErrors.partnerManagerId = 'A partner manager needs an aligned partner manager.';
     }
+    setErrors(nextErrors);
+    if (focusInvalid(form, nextErrors)) return;
     onAdd({
       name: trimmedName,
       email: trimmedEmail,
@@ -258,40 +268,59 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
   };
 
   return (
-    <div
+    <form
       className="rounded border border-ash bg-carbon p-4"
       role="dialog"
       aria-label="Add internal user"
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit(event.currentTarget);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        onCancel();
+      }}
     >
       <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
         Add to the notification roster · routing starts off
       </p>
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Name">
+        <FormField label="Name" error={errors.name}>
           <input
+            name="name"
             autoFocus
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+              clearError('name');
+            }}
             placeholder="Jordan Fields"
             className={inputClass}
           />
-        </Field>
-        <Field label="Work email">
+        </FormField>
+        <FormField label="Work email" error={errors.email}>
           <input
+            name="email"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') submit();
-              if (event.key === 'Escape') onCancel();
+            onChange={(event) => {
+              setEmail(event.target.value);
+              clearError('email');
             }}
             placeholder="jordan.fields@factory.ai"
             className={inputClass}
           />
-        </Field>
-        <Field label="Role">
+        </FormField>
+        <FormField label="Role">
           <select
             value={role}
-            onChange={(event) => setRole(event.target.value as TeamRole)}
+            onChange={(event) => {
+              const nextRole = event.target.value as TeamRole;
+              setRole(nextRole);
+              if (!TEAM_ROLE_META[nextRole].aligned) clearError('partnerManagerId');
+            }}
             className={inputClass}
           >
             {TEAM_ROLES.map((option) => (
@@ -300,11 +329,15 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
               </option>
             ))}
           </select>
-        </Field>
-        <Field label="Aligned manager">
+        </FormField>
+        <FormField label="Aligned manager" error={errors.partnerManagerId}>
           <select
+            name="partnerManagerId"
             value={partnerManagerId}
-            onChange={(event) => setPartnerManagerId(event.target.value)}
+            onChange={(event) => {
+              setPartnerManagerId(event.target.value);
+              clearError('partnerManagerId');
+            }}
             disabled={!aligned}
             className={`${inputClass} disabled:opacity-40`}
           >
@@ -314,7 +347,7 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
               </option>
             ))}
           </select>
-        </Field>
+        </FormField>
       </div>
 
       <p className="mt-3 text-[10px] leading-snug text-granite">
@@ -350,12 +383,9 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
         </div>
       </div>
 
-      {error && <p className="mt-3 text-xs text-signal">{error}</p>}
-
       <div className="mt-4 flex items-center gap-2">
         <button
-          type="button"
-          onClick={submit}
+          type="submit"
           className="flex items-center gap-1.5 rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-bone transition-colors hover:bg-ash/30"
         >
           <PlusIcon className="h-3.5 w-3.5" />
@@ -369,18 +399,7 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
           Cancel
         </button>
       </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="block">
-      <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-        {label}
-      </span>
-      <span className="mt-1 block">{children}</span>
-    </label>
+    </form>
   );
 }
 

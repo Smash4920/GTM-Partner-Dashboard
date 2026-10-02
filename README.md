@@ -28,6 +28,13 @@ left expands and collapses it to an icon rail. The header also carries a
 **provider selector** — local mock, simulated remote, or a 100× book — which is
 the demo of the integration seam described under Data contract below.
 
+The mobile menu starts closed and does not change the desktop collapse
+preference. First Tab reveals **Skip to main content**. Route changes update
+the document title, announce the destination, and focus its heading; ordinary
+widget updates do not move route focus. Keyboard controls share a visible
+outline, and rejected form submissions link specific errors and focus the
+first invalid field.
+
 ## Pages
 
 ### Home

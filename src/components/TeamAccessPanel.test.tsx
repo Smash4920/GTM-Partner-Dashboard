@@ -276,6 +276,107 @@ describe('TeamAccessPanel row actions', () => {
 });
 
 describe('AddTeamUserForm', () => {
+  it('links every invalid field to its error and focuses the first invalid field (VAL-A11Y-004)', async () => {
+    const user = userEvent.setup();
+    const { onAdd } = renderPanel({ partnerManagers: [] });
+    await openForm(user);
+
+    await user.click(screen.getByRole('button', { name: 'Add to roster' }));
+
+    for (const [label, message] of [
+      ['Name', 'A name is required.'],
+      ['Work email', 'Enter a valid work email address.'],
+      ['Aligned manager', 'A partner manager needs an aligned partner manager.'],
+    ]) {
+      const field = screen.getByLabelText(label);
+      const error = screen.getByText(message);
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      expect(field).toHaveAttribute('aria-describedby', error.id);
+      expect(error.id).not.toBe('');
+      expect(error).toBeVisible();
+    }
+    expect(screen.getByLabelText('Name')).toHaveFocus();
+    expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  it('clears corrected field errors and disabled manager associations', async () => {
+    const user = userEvent.setup();
+    const { onAdd } = renderPanel({ partnerManagers: [] });
+    await openForm(user);
+    await user.click(screen.getByRole('button', { name: 'Add to roster' }));
+    await user.type(screen.getByLabelText('Name'), 'Riley Chen');
+    await user.type(screen.getByLabelText('Work email'), 'riley@example.com');
+    await user.selectOptions(screen.getByLabelText('Role'), 'analyst');
+
+    for (const label of ['Name', 'Work email', 'Aligned manager']) {
+      expect(screen.getByLabelText(label)).not.toHaveAttribute('aria-invalid');
+      expect(screen.getByLabelText(label)).not.toHaveAttribute('aria-describedby');
+    }
+    expect(screen.getByLabelText('Aligned manager')).toBeDisabled();
+    expect(screen.queryByText('A name is required.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Enter a valid work email address.')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('A partner manager needs an aligned partner manager.'),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Add to roster' }));
+    expect(onAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it('links duplicate email errors and moves focus to email until corrected', async () => {
+    const user = userEvent.setup();
+    const { onAdd } = renderPanel({ users: [makeTeamUser({ email: 'riley@example.com' })] });
+    await openForm(user);
+    await user.type(screen.getByLabelText('Name'), 'Riley Chen');
+    const email = screen.getByLabelText('Work email');
+    await user.type(email, 'RILEY@example.com');
+    await user.click(screen.getByRole('button', { name: 'Add to roster' }));
+
+    expect(email).toHaveFocus();
+    expect(email).toHaveAttribute('aria-invalid', 'true');
+    expect(email).toHaveAccessibleDescription('That email is already on the roster.');
+    expect(onAdd).not.toHaveBeenCalled();
+    await user.clear(email);
+    await user.type(email, 'new@example.com');
+    expect(email).not.toHaveAttribute('aria-describedby');
+    expect(email).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByText('That email is already on the roster.')).not.toBeInTheDocument();
+  });
+
+  it('focuses the aligned manager when it is the only invalid field', async () => {
+    const user = userEvent.setup();
+    const { onAdd } = renderPanel({ partnerManagers: [] });
+    await openForm(user);
+    await user.type(screen.getByLabelText('Name'), 'Riley Chen');
+    await user.type(screen.getByLabelText('Work email'), 'riley@example.com');
+    await user.click(screen.getByRole('button', { name: 'Add to roster' }));
+    expect(screen.getByLabelText('Aligned manager')).toHaveFocus();
+    expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  it('uses a native noValidate form and submits once on Enter from name', async () => {
+    const user = userEvent.setup();
+    const { onAdd } = renderPanel();
+    const form = await openForm(user);
+    expect(form.tagName).toBe('FORM');
+    expect(form).toHaveAttribute('novalidate');
+    await user.type(screen.getByLabelText('Work email'), 'riley@example.com');
+    await user.type(screen.getByLabelText('Name'), 'Riley Chen{Enter}');
+    expect(onAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['Name', 'Role', 'Aligned manager'])(
+    'cancels safely on Escape from %s',
+    async (label) => {
+      const user = userEvent.setup();
+      const { onAdd } = renderPanel();
+      await openForm(user);
+      screen.getByLabelText(label).focus();
+      await user.keyboard('{Escape}');
+      expect(onAdd).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog', { name: 'Add internal user' })).not.toBeInTheDocument();
+    },
+  );
+
   it('requires a name', async () => {
     const user = userEvent.setup();
     const { onAdd } = renderPanel();

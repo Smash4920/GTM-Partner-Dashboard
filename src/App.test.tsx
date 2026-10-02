@@ -246,8 +246,8 @@ async function editFirstRowRevenue(user: ReturnType<typeof userEvent.setup>, val
   const editButton = within(table).getAllByRole('button', {
     name: /^Edit revenue forecast for /,
   })[0]!;
-  await user.click(editButton);
   const row = editButton.closest('tr')!;
+  await user.click(editButton);
   const input = within(row).getByRole('textbox', { name: /^Revenue forecast for / });
   await user.clear(input);
   await user.type(input, value);
@@ -804,8 +804,8 @@ describe('App session edits across routes', () => {
     const editButton = within(forecastTable).getByRole('button', {
       name: 'Edit revenue forecast for Continuity Account',
     });
-    await user.click(editButton);
     const editedRow = editButton.closest('tr') as HTMLElement;
+    await user.click(editButton);
     const input = within(editedRow).getByRole('textbox', {
       name: 'Revenue forecast for Continuity Account',
     });

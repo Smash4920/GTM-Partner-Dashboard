@@ -12,6 +12,8 @@ import ErrorBoundary from './components/ErrorBoundary';
 import ProviderTransitionNotice from './components/ProviderTransitionNotice';
 import { QueryLoading } from './components/QueryState';
 import Sidebar, { type Route } from './components/Sidebar';
+import { useRouteContext } from './components/useRouteContext';
+import { routeLabel } from './data/routes';
 import { MenuIcon } from './components/icons';
 import { SNAPSHOT_DATE } from './data/constants';
 import type { DataProvider, TeamRosterScope } from './data/DataProvider';
@@ -67,19 +69,6 @@ const log = logger.child({ component: 'App' });
 const PRODUCTION_REQUIREMENTS_ROUTE: readonly Route[] = ['production-requirements'];
 const NO_HIDDEN_ROUTES: readonly Route[] = [];
 
-/** Route names for the chunk-loading fallback, matching the navigation labels. */
-const ROUTE_LOADING_LABEL: Record<Route, string> = {
-  home: 'Home',
-  partners: 'Partner Performance',
-  forecasting: 'Forecasting',
-  'registration-ops': 'Deal Reg Ops',
-  activity: 'Activity Tracking',
-  'partner-view': 'Partner View',
-  'production-requirements': 'Production Requirements',
-  'data-connections': 'Data Connections',
-  'action-center': 'Action Center',
-};
-
 interface AppProps {
   flagClient?: FeatureFlagClient;
   /**
@@ -106,6 +95,8 @@ export default function App({
   probeProvider,
 }: AppProps) {
   const [route, setRoute] = useState<Route>('home');
+  const main = useRef<HTMLElement>(null);
+  useRouteContext(route, main);
   const [actionContext, setActionContext] = useState<ActionItem | null>(null);
   const contextHeading = useRef<HTMLHeadingElement | null>(null);
   const contextInvoker = useRef<HTMLElement | null>(null);
@@ -121,6 +112,18 @@ export default function App({
   }, [actionContext]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [desktop, setDesktop] = useState(
+    () => window.matchMedia?.('(min-width: 640px)').matches ?? true,
+  );
+  useEffect(() => {
+    const breakpoint = window.matchMedia?.('(min-width: 640px)');
+    const closeMobile = () => {
+      setDesktop(breakpoint!.matches);
+      setMobileNavOpen(false);
+    };
+    breakpoint?.addEventListener('change', closeMobile);
+    return () => breakpoint?.removeEventListener('change', closeMobile);
+  }, []);
   const [flagSubject] = useState(getFeatureFlagSubject);
   const productionRequirementsEnabled = flagClient.isEnabled('productionRequirements', {
     subjectKey: flagSubject,
@@ -532,18 +535,37 @@ export default function App({
 
   return (
     <div className="min-h-screen bg-canvas font-sans text-bone">
+      <a
+        href="#main-content"
+        className="skip-link"
+        onClick={(event) => {
+          event.preventDefault();
+          setMobileNavOpen(false);
+          main.current?.focus();
+        }}
+      >
+        Skip to main content
+      </a>
+      <p role="status" aria-label="Route announcement" className="sr-only" aria-atomic="true">
+        {routeLabel(route)} page
+      </p>
       <header className="sticky top-0 z-20 border-b border-carbon bg-canvas">
         <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
           <button
             type="button"
-            onClick={() => {
-              setSidebarOpen((open) => !open);
-              setMobileNavOpen((open) => !open);
-            }}
-            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-            aria-expanded={sidebarOpen}
+            onClick={() => (desktop ? setSidebarOpen : setMobileNavOpen)((open) => !open)}
+            aria-label={
+              desktop
+                ? sidebarOpen
+                  ? 'Collapse sidebar'
+                  : 'Expand sidebar'
+                : mobileNavOpen
+                  ? 'Close navigation menu'
+                  : 'Open navigation menu'
+            }
+            aria-expanded={desktop ? sidebarOpen : mobileNavOpen}
+            aria-controls="primary-navigation"
             className="rounded p-2 text-granite transition-colors hover:bg-ash/20 hover:text-stone"
-            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
             <MenuIcon />
           </button>
@@ -590,7 +612,12 @@ export default function App({
           }}
         />
 
-        <main className="min-w-0 flex-1 px-4 py-8 sm:px-6">
+        <main
+          id="main-content"
+          ref={main}
+          tabIndex={-1}
+          className="min-w-0 flex-1 px-4 py-8 sm:px-6"
+        >
           {/* A requested provider is not the provider. While the candidate's
               readiness probe runs — or after it fails — the committed provider
               keeps the screen, and the notice says so out loud. The banner
@@ -783,7 +810,7 @@ function RouteContent({
   // same way. It replaces only the route area — header, navigation, and the
   // provider transition notice stay put while the chunk downloads.
   return (
-    <Suspense fallback={<QueryLoading label={ROUTE_LOADING_LABEL[route]} />}>
+    <Suspense fallback={<QueryLoading label={routeLabel(route)} />}>
       {(route === 'action-center' || retained.includes('action-center')) && (
         <div hidden={route !== 'action-center'}>
           <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:action-center`}>

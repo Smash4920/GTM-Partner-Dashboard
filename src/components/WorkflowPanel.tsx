@@ -12,6 +12,7 @@ import type {
 import { recordWorkflow, WORKFLOW_OUTCOMES } from '../lib/workflows';
 import Card from './Card';
 import { renderQueryState } from './QueryState';
+import FormField, { focusInvalid } from './FormField';
 
 const CONTROL_CLASS =
   'rounded border border-ash px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-bone disabled:opacity-40';
@@ -51,12 +52,12 @@ export default function WorkflowPanel(props: WorkflowPanelProps) {
     <Card title="Session workflows">
       <p className="mb-3 text-xs text-granite">{NOTICE}</p>
       <p className="text-xs text-stone" aria-live="polite">
-        Registration decisions:{' '}
-        {props.records.filter((record) => record.kind === 'registration').length}
-        {' · '}Conflict dispositions:{' '}
-        {props.records.filter((record) => record.kind === 'conflict').length}
-        {' · '}Forecast reviews:{' '}
-        {props.records.filter((record) => record.kind === 'forecast').length}
+        {(['registration', 'conflict', 'forecast'] as const)
+          .map(
+            (kind, index) =>
+              `${['Registration decisions', 'Conflict dispositions', 'Forecast reviews'][index]}: ${props.records.filter((record) => record.kind === kind).length}`,
+          )
+          .join(' · ')}
       </p>
       <p className="mt-2 text-xs text-granite">
         Outcomes update this session projection only. Source queues, metrics and fixtures stay
@@ -217,9 +218,7 @@ function WorkflowDialog({
                   const result = recordWorkflow(target, draft, users, now());
                   if (!result.ok) {
                     setErrors(result.errors);
-                    dialog.current
-                      ?.querySelector<HTMLElement>(`[name="${Object.keys(result.errors)[0]}"]`)
-                      ?.focus();
+                    focusInvalid(event.currentTarget, result.errors);
                     return;
                   }
                   onRecord(result.record);
@@ -227,33 +226,30 @@ function WorkflowDialog({
                 }}
               >
                 {(['actorId', 'outcome', 'reason'] as const).map((field) => (
-                  <div key={field}>
-                    <label htmlFor={`workflow-${field}`} className="mb-1 block text-sm">
-                      {field === 'actorId'
+                  <FormField
+                    key={field}
+                    label={
+                      field === 'actorId'
                         ? 'Demo actor (not authenticated)'
                         : field === 'outcome'
                           ? 'Outcome'
-                          : 'Reason'}
-                    </label>
+                          : 'Reason'
+                    }
+                    error={errors[field]}
+                  >
                     {field === 'reason' ? (
                       <textarea
-                        id={`workflow-${field}`}
                         name={field}
                         className={`w-full bg-carbon ${CONTROL_CLASS}`}
                         rows={3}
                         value={draft[field]}
-                        aria-invalid={Boolean(errors[field])}
-                        aria-describedby={errors[field] ? `workflow-${field}-error` : undefined}
                         onChange={(event) => update(field, event.target.value)}
                       />
                     ) : (
                       <select
-                        id={`workflow-${field}`}
                         name={field}
                         className={`w-full bg-carbon ${CONTROL_CLASS}`}
                         value={draft[field]}
-                        aria-invalid={Boolean(errors[field])}
-                        aria-describedby={errors[field] ? `workflow-${field}-error` : undefined}
                         onChange={(event) => update(field, event.target.value)}
                       >
                         <option value="">
@@ -274,12 +270,7 @@ function WorkflowDialog({
                             ))}
                       </select>
                     )}
-                    {errors[field] && (
-                      <p id={`workflow-${field}-error`} className="mt-1 text-xs text-signal">
-                        {errors[field]}
-                      </p>
-                    )}
-                  </div>
+                  </FormField>
                 ))}
                 {errors.target && <p role="alert">{errors.target}</p>}
                 <div className="flex flex-wrap gap-3">

@@ -202,7 +202,7 @@ async function conflictTarget(page: Page) {
   return { opener, ids };
 }
 
-test('VAL-ACT-017: required registration decisions are session projections from both entry points', async ({
+test('VAL-A11Y-004 VAL-ACT-017: required registration decisions are session projections from both entry points', async ({
   page,
 }) => {
   const audit = observe(page);
@@ -251,7 +251,7 @@ test('VAL-ACT-017: required registration decisions are session projections from 
   await audit();
 });
 
-test('VAL-ACT-017: a validated conflict disposition records every contender without changing claims', async ({
+test('VAL-A11Y-004 VAL-ACT-017: a validated conflict disposition records every contender without changing claims', async ({
   page,
 }) => {
   const audit = observe(page);
@@ -275,7 +275,7 @@ test('VAL-ACT-017: a validated conflict disposition records every contender with
   await audit();
 });
 
-test('VAL-ACT-018 VAL-ACT-019 VAL-CROSS-005: all workflow, policy, notification and forecast effects stay private and reload away', async ({
+test('VAL-A11Y-004 VAL-ACT-018 VAL-ACT-019 VAL-CROSS-005: all workflow, policy, notification and forecast effects stay private and reload away', async ({
   page,
 }) => {
   test.setTimeout(90_000);

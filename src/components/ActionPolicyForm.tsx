@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ActionPolicy } from '../data/types';
 import { ACTION_POLICY_FIELDS, validateActionPolicy } from '../lib/actionPolicy';
 import type { ActionPolicyErrors } from '../lib/actionPolicy';
+import FormField, { focusInvalid } from './FormField';
 
 export default function ActionPolicyForm({
   policy,
@@ -23,8 +24,7 @@ export default function ActionPolicyForm({
         setErrors(result.errors);
         if (result.policy !== undefined) onApply(result.policy);
         else {
-          const first = ACTION_POLICY_FIELDS.find(({ key }) => result.errors[key] !== undefined);
-          document.getElementById(`policy-${first?.key}`)?.focus();
+          focusInvalid(event.currentTarget, result.errors);
         }
       }}
     >
@@ -35,29 +35,19 @@ export default function ActionPolicyForm({
       </p>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {ACTION_POLICY_FIELDS.map(({ key, label }) => (
-          <div key={key}>
-            <label htmlFor={`policy-${key}`} className="block text-xs text-stone">
-              {label}
-            </label>
+          <FormField key={key} label={label} error={errors[key]}>
             <input
-              id={`policy-${key}`}
+              name={key}
               type="text"
               inputMode="numeric"
               value={String(draft[key])}
-              aria-invalid={errors[key] !== undefined ? true : undefined}
-              aria-describedby={errors[key] !== undefined ? `policy-error-${key}` : undefined}
               className="mt-1 w-full rounded border border-ash bg-canvas px-3 py-2 font-mono text-sm text-bone"
               onChange={(event) => {
                 setDraft((current) => ({ ...current, [key]: event.target.value }));
                 setErrors((current) => ({ ...current, [key]: undefined }));
               }}
             />
-            {errors[key] !== undefined && (
-              <p id={`policy-error-${key}`} className="mt-1 text-xs text-signal">
-                {errors[key]}
-              </p>
-            )}
-          </div>
+          </FormField>
         ))}
       </div>
       <button

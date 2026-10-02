@@ -58,6 +58,49 @@ describe('ForecastTable', () => {
   );
 
   describe('revenue editing', () => {
+    it.each(['', '-5', 'soon', 'Infinity'])(
+      'links an invalid %j Save to revenue, refocuses it, and clears stale errors on correction (VAL-A11Y-004)',
+      async (draft) => {
+        const user = userEvent.setup();
+        const { onSetRevenue } = renderTable();
+        await user.click(screen.getByRole('button', { name: /Edit revenue forecast/ }));
+        const input = screen.getByRole('textbox', { name: /Revenue forecast for Acme Freight/ });
+        await user.clear(input);
+        if (draft) await user.type(input, draft);
+        await user.click(screen.getByRole('button', { name: 'Save revenue' }));
+
+        const error = screen.getByRole('alert');
+        expect(input).toHaveAttribute('aria-invalid', 'true');
+        expect(error.id).not.toBe('');
+        expect(input).toHaveAttribute('aria-describedby', error.id);
+        expect(input).toHaveAccessibleDescription('Enter a non-negative number.');
+        expect(error).toBeVisible();
+        expect(input).toHaveFocus();
+        expect(onSetRevenue).not.toHaveBeenCalled();
+
+        await user.clear(input);
+        await user.type(input, '0');
+        expect(input).not.toHaveAttribute('aria-invalid');
+        expect(input).not.toHaveAttribute('aria-describedby');
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Save revenue' }));
+        expect(onSetRevenue).toHaveBeenCalledExactlyOnceWith('opp-1', 0);
+        expect(screen.getByRole('button', { name: /Edit revenue forecast/ })).toHaveFocus();
+      },
+    );
+
+    it('restores the revenue invoker after cancelling an invalid Save', async () => {
+      const user = userEvent.setup();
+      const { onSetRevenue } = renderTable();
+      await user.click(screen.getByRole('button', { name: /Edit revenue forecast/ }));
+      await user.clear(screen.getByRole('textbox', { name: /Revenue forecast for/ }));
+      await user.click(screen.getByRole('button', { name: 'Save revenue' }));
+      await user.click(screen.getByRole('button', { name: 'Cancel revenue edit' }));
+      expect(onSetRevenue).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Edit revenue forecast/ })).toHaveFocus();
+    });
+
     it('commits a valid figure on Enter', async () => {
       const user = userEvent.setup();
       const { onSetRevenue } = renderTable();

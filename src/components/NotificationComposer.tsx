@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { NOTIFICATION_CHANNEL_META, TEAM_ROLE_META } from '../data/constants';
 import { ACTION_CATEGORY_LABELS } from '../data/actionCenter';
 import type {
@@ -13,6 +13,7 @@ import { formatDate, formatTime } from '../lib/format';
 import { NOTIFICATION_TEMPLATES, type NotificationTemplateId } from '../lib/notifications';
 import type { RegistrationSlaAlert } from '../lib/metrics';
 import { SendIcon } from './icons';
+import FormField, { focusInvalid } from './FormField';
 
 /** Everything the composer holds; the view owns it so alerts can pre-fill it. */
 export interface ComposerState {
@@ -102,7 +103,10 @@ function NotificationChannels({
             >
               <input
                 type="checkbox"
+                name="channels"
                 aria-label={`Use ${NOTIFICATION_CHANNEL_META[channel].label}`}
+                aria-invalid={invalid || undefined}
+                aria-describedby={invalid ? errorId : undefined}
                 checked={channels.includes(channel)}
                 onChange={(event) =>
                   onChange(
@@ -135,6 +139,19 @@ function NotificationChannels({
   );
 }
 
+function composerErrors(
+  user: TeamUser | null,
+  state: ComposerState,
+  channels: NotificationChannel[],
+) {
+  return {
+    recipient: user ? undefined : 'Select an active teammate.',
+    subject: state.subject.trim() ? undefined : 'A subject is required.',
+    body: state.body.trim() ? undefined : 'A message is required.',
+    channels: channels.length > 0 ? undefined : 'Select at least one configured channel.',
+  };
+}
+
 /**
  * Send a notification to one named person, from inside the connection map:
  * picking a teammate in the notification node lands here, and the SLA queue
@@ -153,6 +170,7 @@ export default function NotificationComposer({
   describe,
   action,
 }: NotificationComposerProps) {
+  const [submitted, setSubmitted] = useState(false);
   // Only a teammate with notifications on can be messaged; a paused or
   // not-yet-routing one cannot.
   const notifiableUsers = users.filter((user) => user.status === 'active');
@@ -173,11 +191,8 @@ export default function NotificationComposer({
   const channels = (state.channels ?? user?.channels ?? []).filter((channel) =>
     user?.channels.includes(channel),
   );
-  const canSend =
-    Boolean(user) &&
-    channels.length > 0 &&
-    state.subject.trim().length > 0 &&
-    state.body.trim().length > 0;
+  const errors = composerErrors(user, state, channels);
+  const shownErrors: Partial<Record<keyof typeof errors, string>> = submitted ? errors : {};
 
   const setUser = (userId: string) => onChange({ ...state, userId, channels: undefined });
 
@@ -196,11 +211,20 @@ export default function NotificationComposer({
   };
 
   return (
-    <div className="space-y-3">
+    <form
+      noValidate
+      className="space-y-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        setSubmitted(true);
+        if (focusInvalid(event.currentTarget, errors)) return;
+        onSend();
+      }}
+    >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label className="block">
-          <span className={labelClass}>To</span>
+        <FormField label="To" error={shownErrors.recipient}>
           <select
+            name="recipient"
             value={state.userId ?? ''}
             onChange={(event) => setUser(event.target.value)}
             className={`${selectClass} mt-1`}
@@ -215,9 +239,8 @@ export default function NotificationComposer({
               </option>
             ))}
           </select>
-        </label>
-        <label className="block">
-          <span className={labelClass}>Template</span>
+        </FormField>
+        <FormField label="Template">
           <select
             value={state.template}
             onChange={(event) => setTemplate(event.target.value as NotificationTemplateId)}
@@ -230,14 +253,13 @@ export default function NotificationComposer({
               </option>
             ))}
           </select>
-        </label>
+        </FormField>
       </div>
 
       {action ? (
         <p className="text-xs text-stone">Entity: {action.id}</p>
       ) : (
-        <label className="block">
-          <span className={labelClass}>Registration</span>
+        <FormField label="Registration">
           <select
             value={state.registrationId ?? ''}
             onChange={(event) => setRegistration(event.target.value)}
@@ -253,32 +275,32 @@ export default function NotificationComposer({
               </option>
             ))}
           </select>
-        </label>
+        </FormField>
       )}
 
       <RegistrationStatus registration={registration} alert={alert} partner={partner} />
 
-      <label className="block">
-        <span className={labelClass}>Subject</span>
+      <FormField label="Subject" error={shownErrors.subject}>
         <input
+          name="subject"
           autoFocus={Boolean(action)}
           value={state.subject}
           onChange={(event) => onChange({ ...state, subject: event.target.value })}
           placeholder="What this is about"
           className={`${selectClass} mt-1`}
         />
-      </label>
+      </FormField>
 
-      <label className="block">
-        <span className={labelClass}>Message</span>
+      <FormField label="Message" error={shownErrors.body}>
         <textarea
+          name="body"
           value={state.body}
           onChange={(event) => onChange({ ...state, body: event.target.value })}
           rows={5}
           placeholder="Pick a template or write the note"
           className={`${selectClass} mt-1 resize-y leading-relaxed`}
         />
-      </label>
+      </FormField>
 
       <NotificationChannels
         user={user}
@@ -288,9 +310,8 @@ export default function NotificationComposer({
 
       <div className="flex flex-wrap items-center gap-3 border-t border-carbon pt-3">
         <button
-          type="button"
-          onClick={onSend}
-          disabled={!canSend}
+          type="submit"
+          disabled={!user}
           className="flex items-center gap-1.5 rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-bone transition-colors hover:bg-ash/30 disabled:opacity-40"
         >
           <SendIcon className="h-3.5 w-3.5" />
@@ -315,6 +336,6 @@ export default function NotificationComposer({
           {user.partnerManagerId ? '' : ' · not aligned to one manager'}
         </p>
       )}
-    </div>
+    </form>
   );
 }

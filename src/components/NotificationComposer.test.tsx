@@ -64,6 +64,42 @@ function mount(users = [active], item: ActionItem | null = action) {
 }
 
 describe('generalized notification composer', () => {
+  it('links multi-field errors, focuses the first invalid field and clears corrected associations', () => {
+    const { send } = mount();
+    const subject = screen.getByLabelText('Subject');
+    const message = screen.getByLabelText('Message');
+    fireEvent.change(subject, { target: { value: ' ' } });
+    fireEvent.change(message, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Demo owner' }));
+    expect(send).not.toHaveBeenCalled();
+    expect(subject).toHaveFocus();
+    expect(subject).toHaveAttribute('aria-invalid', 'true');
+    expect(subject).toHaveAccessibleDescription('A subject is required.');
+    expect(message).toHaveAccessibleDescription('A message is required.');
+    fireEvent.change(subject, { target: { value: 'Corrected subject' } });
+    expect(subject).not.toHaveAttribute('aria-describedby');
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Demo owner' }));
+    expect(message).toHaveFocus();
+    fireEvent.change(message, { target: { value: 'Corrected message' } });
+    expect(message).not.toHaveAttribute('aria-describedby');
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Demo owner' }));
+    expect(send).toHaveBeenCalledOnce();
+  });
+
+  it('focuses and describes the first configured channel after an invalid submission', () => {
+    const { send } = mount();
+    const email = screen.getByRole('checkbox', { name: 'Use Email' });
+    const slack = screen.getByRole('checkbox', { name: 'Use Slack' });
+    fireEvent.click(email);
+    fireEvent.click(slack);
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Demo owner' }));
+    expect(send).not.toHaveBeenCalled();
+    expect(email).toHaveFocus();
+    expect(email).toHaveAttribute('aria-invalid', 'true');
+    expect(email).toHaveAccessibleDescription('Select at least one configured channel.');
+    fireEvent.click(email);
+    expect(email).not.toHaveAttribute('aria-describedby');
+  });
   it('prefills an action entity and locked routed owner, allowing configured channel selection', () => {
     const { send, changed } = mount();
     expect(screen.getByLabelText('To')).toBeDisabled();
@@ -76,7 +112,8 @@ describe('generalized notification composer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send to Demo owner' }));
     expect(send).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Use Email' }));
-    expect(screen.getByRole('button', { name: 'Send to Demo owner' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Demo owner' }));
+    expect(send).toHaveBeenCalledOnce();
     expect(screen.getByText('Select at least one configured channel.')).toBeInTheDocument();
   });
 
@@ -90,13 +127,17 @@ describe('generalized notification composer', () => {
   );
 
   it('updates custom recipients and blocks blank subject or message', () => {
-    const { changed } = mount([active, { ...active, id: 'other', name: 'Other' }], null);
+    const { changed, send } = mount([active, { ...active, id: 'other', name: 'Other' }], null);
     fireEvent.change(screen.getByLabelText('To'), { target: { value: 'other' } });
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ userId: 'other' }));
     fireEvent.change(screen.getByLabelText('Subject'), { target: { value: ' ' } });
-    expect(screen.getByRole('button', { name: 'Send to Other' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Other' }));
+    expect(screen.getByLabelText('Subject')).toHaveFocus();
+    expect(send).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Note' } });
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: '' } });
-    expect(screen.getByRole('button', { name: 'Send to Other' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Other' }));
+    expect(screen.getByLabelText('Message')).toHaveFocus();
+    expect(send).not.toHaveBeenCalled();
   });
 });

@@ -42,7 +42,7 @@ describe('session workflow dialog', () => {
     const actor = screen.getByLabelText('Demo actor (not authenticated)');
     expect(actor).toHaveFocus();
     expect(actor).toHaveAttribute('aria-invalid', 'true');
-    expect(actor).toHaveAttribute('aria-describedby', 'workflow-actorId-error');
+    expect(actor).toHaveAccessibleDescription('Select an active demo actor.');
     expect(onRecord).not.toHaveBeenCalled();
     await user.selectOptions(actor, 'user-01');
     await user.selectOptions(screen.getByLabelText('Outcome'), 'approved');
