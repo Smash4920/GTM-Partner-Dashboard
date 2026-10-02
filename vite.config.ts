@@ -62,9 +62,10 @@ export default defineConfig({
   build: {
     // Safe two-pass compression keeps the accessible shell/forms inside
     // the existing budgets; retaining shared function bodies compresses better
-    // than injecting their variables into callers. No unsafe transforms or property mangling.
+    // than injecting their variables into callers. ES2020 syntax is within
+    // Vite's default browser target; no unsafe transforms or property mangling.
     minify: 'terser',
-    terserOptions: { compress: { passes: 2, inline: 1 } },
+    terserOptions: { ecma: 2020, compress: { passes: 2, inline: 1 } },
     // No public source maps in production: a published .map hands anyone the
     // full original source and pairs with stack traces to expose internals.
     // This app ships nothing to an error collector, so maps would exist only

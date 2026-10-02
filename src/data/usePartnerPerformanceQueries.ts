@@ -129,6 +129,8 @@ export function usePartnerPerformanceQueries({
   prospects,
 }: PartnerPerformanceQueryInput): PartnerPerformanceQueries {
   const accessKey = demoScopeKey(access);
+  const drilldownKey = `access:${accessKey}|manager:${managerId}|partner:${partnerId}`;
+  const phaseKey = `access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}`;
   const revKey = editMapKey(edits.revenueOverrides);
   const clsKey = classificationsKey(classifications);
   const rosterKey = prospectsKey(prospects);
@@ -143,8 +145,8 @@ export function usePartnerPerformanceQueries({
 
   const summary = useScopedQuery({
     provider,
-    queryKey: `perf-summary|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}|rev:${revKey}|prospects:${rosterKey}`,
-    scopeKey: `perf-summary|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}`,
+    queryKey: `perf-summary|${phaseKey}|rev:${revKey}|prospects:${rosterKey}`,
+    scopeKey: `perf-summary|${phaseKey}`,
     run: (context) =>
       provider.getPerformanceSummary(access, { ...drilldown, phase, edits }, context),
     errorFallback: 'Failed to load the performance summary',
@@ -152,32 +154,32 @@ export function usePartnerPerformanceQueries({
 
   const funnel = useScopedQuery({
     provider,
-    queryKey: `reg-funnel|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}`,
-    scopeKey: `reg-funnel|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}`,
+    queryKey: `reg-funnel|${phaseKey}`,
+    scopeKey: `reg-funnel|${phaseKey}`,
     run: (context) => provider.getRegistrationFunnel(access, { ...drilldown, phase }, context),
     errorFallback: 'Failed to load the registration funnel',
   });
 
   const stages = useScopedQuery({
     provider,
-    queryKey: `stage-breakdown|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}|rev:${revKey}`,
-    scopeKey: `stage-breakdown|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}`,
+    queryKey: `stage-breakdown|${phaseKey}|rev:${revKey}`,
+    scopeKey: `stage-breakdown|${phaseKey}`,
     run: (context) => provider.getStageBreakdown(access, { ...drilldown, phase, edits }, context),
     errorFallback: 'Failed to load the pipeline by stage',
   });
 
   const trend = useScopedQuery({
     provider,
-    queryKey: `quarterly-revenue|access:${accessKey}|manager:${managerId}|partner:${partnerId}|rev:${revKey}`,
-    scopeKey: `quarterly-revenue|access:${accessKey}|manager:${managerId}|partner:${partnerId}`,
+    queryKey: `quarterly-revenue|${drilldownKey}|rev:${revKey}`,
+    scopeKey: `quarterly-revenue|${drilldownKey}`,
     run: (context) => provider.getQuarterlyRevenueTrend(access, { ...drilldown, edits }, context),
     errorFallback: 'Failed to load the revenue trend',
   });
 
   const activity = useScopedQuery({
     provider,
-    queryKey: `weekly-activity|access:${accessKey}|manager:${managerId}|partner:${partnerId}|cls:${clsKey}|prospects:${rosterKey}`,
-    scopeKey: `weekly-activity|access:${accessKey}|manager:${managerId}|partner:${partnerId}`,
+    queryKey: `weekly-activity|${drilldownKey}|cls:${clsKey}|prospects:${rosterKey}`,
+    scopeKey: `weekly-activity|${drilldownKey}`,
     run: (context) =>
       provider.getWeeklyActivitySeries(
         access,
@@ -195,8 +197,8 @@ export function usePartnerPerformanceQueries({
 
   const goal = useScopedQuery({
     provider,
-    queryKey: `weekly-goal|access:${accessKey}|manager:${managerId}|partner:${partnerId}|cls:${clsKey}|prospects:${rosterKey}`,
-    scopeKey: `weekly-goal|access:${accessKey}|manager:${managerId}|partner:${partnerId}`,
+    queryKey: `weekly-goal|${drilldownKey}|cls:${clsKey}|prospects:${rosterKey}`,
+    scopeKey: `weekly-goal|${drilldownKey}`,
     run: (context) =>
       provider.getWeeklyGoalProgress(
         access,
@@ -214,8 +216,8 @@ export function usePartnerPerformanceQueries({
 
   const ops = useScopedQuery({
     provider,
-    queryKey: `reg-ops|access:${accessKey}|manager:${managerId}|partner:${partnerId}`,
-    scopeKey: `reg-ops|access:${accessKey}|manager:${managerId}|partner:${partnerId}`,
+    queryKey: `reg-ops|${drilldownKey}`,
+    scopeKey: `reg-ops|${drilldownKey}`,
     run: (context) => provider.getRegistrationOpsSummary(access, drilldown, context),
     errorFallback: 'Failed to load the registration ops',
   });
@@ -226,7 +228,7 @@ export function usePartnerPerformanceQueries({
     // Prospects are membership here — the ranking is one row per roster
     // partner — so a new prospect resets the walk, exactly like a drill-down
     // change does.
-    resetKey: `partner-leaderboard|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}|prospects:${rosterKey}|${LEADERBOARD_PAGE_SIZE}`,
+    resetKey: `partner-leaderboard|${phaseKey}|prospects:${rosterKey}|${LEADERBOARD_PAGE_SIZE}`,
     // An edit re-ranks rows but changes no membership: refresh the loaded
     // window in place. No rowEdits narrowing — the ranking's rows key on
     // partner ids while edits key on opportunity ids, so every revenue edit
@@ -263,7 +265,7 @@ export function usePartnerPerformanceQueries({
   const opportunities = usePaginatedRows({
     provider,
     enabled: true,
-    resetKey: `scoped-opps|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}|${PIPELINE_PAGE_SIZE}`,
+    resetKey: `scoped-opps|${phaseKey}|${PIPELINE_PAGE_SIZE}`,
     refreshKey: `rev:${revKey}`,
     pageSize: PIPELINE_PAGE_SIZE,
     fetchPage: (page, context) =>
@@ -279,7 +281,7 @@ export function usePartnerPerformanceQueries({
   const pending = usePaginatedRows({
     provider,
     enabled: true,
-    resetKey: `pending-regs|access:${accessKey}|${phase}|manager:${managerId}|partner:${partnerId}|${QUEUE_PAGE_SIZE}`,
+    resetKey: `pending-regs|${phaseKey}|${QUEUE_PAGE_SIZE}`,
     refreshKey: '',
     pageSize: QUEUE_PAGE_SIZE,
     fetchPage: (page, context) =>
@@ -291,7 +293,7 @@ export function usePartnerPerformanceQueries({
   const unconverted = usePaginatedRows({
     provider,
     enabled: true,
-    resetKey: `unconverted-regs|access:${accessKey}|manager:${managerId}|partner:${partnerId}|${UNCONVERTED_PAGE_SIZE}`,
+    resetKey: `unconverted-regs|${drilldownKey}|${UNCONVERTED_PAGE_SIZE}`,
     refreshKey: '',
     pageSize: UNCONVERTED_PAGE_SIZE,
     fetchPage: (page, context) =>
@@ -303,7 +305,7 @@ export function usePartnerPerformanceQueries({
   const duplicates = usePaginatedRows({
     provider,
     enabled: true,
-    resetKey: `dup-groups|access:${accessKey}|manager:${managerId}|partner:${partnerId}|${DUPLICATE_PAGE_SIZE}`,
+    resetKey: `dup-groups|${drilldownKey}|${DUPLICATE_PAGE_SIZE}`,
     refreshKey: '',
     pageSize: DUPLICATE_PAGE_SIZE,
     fetchPage: (page, context) =>

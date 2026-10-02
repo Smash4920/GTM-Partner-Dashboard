@@ -251,7 +251,7 @@ test('VAL-CROSS-006: isolated built startup failure, partial actions, summary fa
       listActionItems: 3,
     });
     await expect(items).toContainText('partial');
-    await expect(page.getByRole('status')).toContainText('Showing 50 of 85 action items');
+    await expect(items.getByRole('status')).toContainText('Showing 50 of 85 action items');
     await expect(page.getByText(/PRIVATE|failed in transit/)).toHaveCount(0);
     expect(errors).toEqual([]);
     expect(requests.every((url) => new URL(url).origin === new URL(preview.url).origin)).toBe(true);

@@ -38,6 +38,65 @@ function renderTable(
 
 describe('ForecastTable', () => {
   it.each([
+    ['revenue forecast', 'note'],
+    ['revenue forecast', 'next step'],
+    ['revenue forecast', 'forecast category'],
+    ['note', 'revenue forecast'],
+    ['note', 'next step'],
+    ['note', 'forecast category'],
+    ['next step', 'revenue forecast'],
+    ['next step', 'note'],
+    ['next step', 'forecast category'],
+    ['forecast category', 'revenue forecast'],
+    ['forecast category', 'note'],
+    ['forecast category', 'next step'],
+  ])('replaces an unsaved %s editor with only the %s editor', async (from, to) => {
+    const user = userEvent.setup();
+    const handlers = renderTable({
+      opportunities: [
+        makeOpportunity({
+          notes: 'Provider note',
+          nextStep: 'Provider next step',
+        }),
+      ],
+      revenueOverrides: { 'opp-1': 0 },
+      notes: { 'opp-1': '' },
+      nextSteps: { 'opp-1': '' },
+    });
+    await user.click(screen.getByRole('button', { name: new RegExp(`^(Add|Edit) ${from} for`) }));
+    if (from !== 'forecast category') {
+      await user.clear(screen.getByRole('textbox'));
+      await user.type(screen.getByRole('textbox'), 'Unsaved');
+    }
+    await user.click(screen.getByRole('button', { name: new RegExp(`^(Add|Edit) ${to} for`) }));
+    if (to === 'forecast category') {
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      expect(screen.getByRole('combobox')).toHaveValue('pipeline');
+    } else {
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+      expect(screen.getAllByRole('textbox')).toHaveLength(1);
+      expect(screen.getByRole('textbox')).toHaveValue(to === 'revenue forecast' ? '0' : '');
+    }
+    await user.keyboard('{Escape}');
+    for (const handler of Object.values(handlers)) expect(handler).not.toHaveBeenCalled();
+  });
+
+  it.each(['Escape', 'Tab'])('abandons a category edit on %s without saving', async (key) => {
+    const user = userEvent.setup();
+    const { onSetForecastCall } = renderTable();
+    await user.click(screen.getByRole('button', { name: /Edit forecast category/ }));
+    expect(screen.getByRole('combobox')).toHaveFocus();
+    await user.keyboard(`{${key}}`);
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(onSetForecastCall).not.toHaveBeenCalled();
+    if (key === 'Escape') {
+      expect(screen.getByRole('button', { name: /Edit forecast category/ })).toHaveFocus();
+    } else {
+      expect(screen.getByRole('button', { name: /next step for/ })).toHaveFocus();
+    }
+  });
+
+  it.each([
     ['note', 'Enter'],
     ['note', 'Escape'],
     ['next step', 'Enter'],

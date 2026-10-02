@@ -379,6 +379,7 @@ describe('PartnerPerformanceView', () => {
     render(
       <PartnerPerformanceView
         provider={createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+          latencyMs: 0,
           failMethods: { getPartnerCertification: 1 },
         })}
         edits={NO_SESSION_EDITS}

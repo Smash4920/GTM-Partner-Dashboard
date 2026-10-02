@@ -72,11 +72,9 @@ import {
   applyTeamRosterOverlays,
   approvalRate,
   approvedNotConverted,
-  avgOpenDealSize,
   categoryStageMismatches,
   closedWonForPhase,
   closedWonPriorYearForPhase,
-  coverageState,
   currentWeekMeetings,
   daysLeftInQuarter,
   duplicateRegistrationGroups,
@@ -88,6 +86,7 @@ import {
   openPipeline,
   outcomeTotals,
   pendingRegistrations,
+  pipelineSummary,
   phaseForQuarter,
   quarterlyClosedWonAndTarget,
   registrationConversionRate,
@@ -96,9 +95,7 @@ import {
   registrationSlaAlerts,
   registrationsNewestFirst,
   registrationsPastSla,
-  remainingQuota,
   stageBreakdown,
-  targetsForPhase,
   typeBreakdown,
   weeklyActivity,
   weeklyForecastRows,
@@ -342,40 +339,6 @@ export class MockDataProvider implements DataProvider {
     );
   }
 
-  /** Inputs are already access- and selection-scoped, with the phase applied. */
-  private pipelineSummary(
-    opportunities: Opportunity[],
-    targets: Target[],
-    phase: PerformanceScope['phase'],
-  ): Pick<
-    ForecastSummary,
-    | 'openPipelineValue'
-    | 'openCount'
-    | 'closedWon'
-    | 'target'
-    | 'attainment'
-    | 'coverage'
-    | 'remainingQuota'
-    | 'avgOpenDealSize'
-  > {
-    const open = openPipeline(opportunities);
-    const closedWon = closedWonForPhase(opportunities, phase);
-    const target = targetsForPhase(targets, phase).reduce(
-      (sum, item) => sum + item.revenueTarget,
-      0,
-    );
-    return {
-      openPipelineValue: open.value,
-      openCount: open.count,
-      closedWon,
-      target,
-      coverage: coverageState(opportunities, targets, phase),
-      remainingQuota: remainingQuota(opportunities, targets, phase),
-      avgOpenDealSize: avgOpenDealSize(opportunities),
-      attainment: target > 0 ? closedWon / target : 0,
-    };
-  }
-
   /**
    * In-quarter opportunities whose partner is missing from the partner
    * dimension. They still count toward the quarter totals, but no manager
@@ -397,7 +360,7 @@ export class MockDataProvider implements DataProvider {
     const targets = this.scopedTargets(access, scope);
     return queryResult(
       {
-        ...this.pipelineSummary(inQuarter, targets, phase),
+        ...pipelineSummary(inQuarter, targets, phase),
         daysLeftInQuarter: daysLeftInQuarter(scope.quarter),
       },
       this.meta(scope.edits),
@@ -710,7 +673,7 @@ export class MockDataProvider implements DataProvider {
     const funnel = registrationFunnel(phaseRegistrations);
     return queryResult(
       {
-        ...this.pipelineSummary(phaseOpps, book.targets, scope.phase),
+        ...pipelineSummary(phaseOpps, book.targets, scope.phase),
         priorClosedWon: closedWonPriorYearForPhase(typed, scope.phase),
         winRate: winRateForPhase(phaseOpps, scope.phase),
         approvalRate: approvalRate(phaseRegistrations),

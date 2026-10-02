@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
+// This policy test does not measure the lazy chunk's cold transformation.
+import './views/ActionCenterView';
 import { MockDataProvider } from './data/mock/MockDataProvider';
 import { DATA_PROVIDER_METHODS } from './data/DataProvider';
 import type { DataProvider } from './data/DataProvider';
@@ -34,8 +36,11 @@ describe('Action Center session policy in the shell', () => {
     fireEvent.click(nav.getByRole('button', { name: 'Action Center' }));
     await screen.findByText('85 unique items');
     calls.length = 0;
-    fireEvent.change(screen.getByLabelText('Stale days (calendar)'), { target: { value: '1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply demo policy' }));
+    const staleDays = screen.getByLabelText('Stale days (calendar)');
+    fireEvent.change(staleDays, { target: { value: '1' } });
+    fireEvent.click(
+      within(staleDays.closest('form')!).getByRole('button', { name: 'Apply demo policy' }),
+    );
     await waitFor(() =>
       expect(calls.sort()).toEqual(['getActionCenterSummary', 'listActionItems']),
     );

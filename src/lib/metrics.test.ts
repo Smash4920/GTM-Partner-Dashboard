@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { CURRENT_FISCAL_QUARTER, FISCAL_PHASE_META, SNAPSHOT_DATE } from '../data/constants';
+import {
+  CURRENT_FISCAL_QUARTER,
+  FISCAL_PHASE_META,
+  OPP_TYPES,
+  SNAPSHOT_DATE,
+  STAGES,
+} from '../data/constants';
 import type {
   ActivityMeeting,
   DealRegistration,
@@ -28,6 +34,8 @@ import {
   quarterlyClosedWonAndTarget,
   registrationsNewestFirst,
   remainingQuota,
+  stageBreakdown,
+  typeBreakdown,
   weeklyActivity,
   weeklyForecastRows,
   weeklyGoalProgress,
@@ -85,6 +93,49 @@ function recorded(
 }
 
 // ---- phase windows ---------------------------------------------------------
+
+describe('open pipeline breakdown parity', () => {
+  it.each([false, true])(
+    'preserves closed exclusions, zero buckets and sum order (empty=%s)',
+    (empty) => {
+      const rows = empty
+        ? []
+        : Array.from({ length: 21 }, (_, index) =>
+            opp({
+              id: `bucket-${index}`,
+              expectedCloseDate: '2026-10-01T00:00:00Z',
+              stage: STAGES[index % STAGES.length]!,
+              oppType: OPP_TYPES[index % OPP_TYPES.length]!,
+              forecastedRevenue: index % 3 === 0 ? 0.1 : index % 3 === 1 ? 0.2 : 1e15,
+              outcome: index % 4 === 0 ? 'won' : index % 4 === 1 ? 'lost' : undefined,
+            }),
+          );
+      const before = structuredClone(rows);
+      const open = rows.filter((row) => row.outcome === undefined);
+      expect(stageBreakdown(rows)).toEqual(
+        STAGES.map((stage) => {
+          const bucket = open.filter((row) => row.stage === stage);
+          return {
+            stage,
+            count: bucket.length,
+            value: bucket.reduce((sum, row) => sum + row.forecastedRevenue, 0),
+          };
+        }),
+      );
+      expect(typeBreakdown(rows)).toEqual(
+        OPP_TYPES.map((type) => {
+          const bucket = open.filter((row) => row.oppType === type);
+          return {
+            type,
+            count: bucket.length,
+            value: bucket.reduce((sum, row) => sum + row.forecastedRevenue, 0),
+          };
+        }),
+      );
+      expect(rows).toEqual(before);
+    },
+  );
+});
 
 describe('phaseWindow', () => {
   it('truncates in-progress phases at the snapshot for closed activity only', () => {

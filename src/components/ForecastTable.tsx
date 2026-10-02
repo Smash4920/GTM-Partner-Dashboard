@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type RefObject } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   FORECAST_CATEGORIES,
   FORECAST_CATEGORY_FOR_STAGE,
@@ -125,170 +125,23 @@ function ForecastCategoryCell({
   );
 }
 
-function OpportunityStage({ opportunity }: { opportunity: Opportunity }) {
-  if (opportunity.outcome === undefined) {
-    return <span className="text-stone">{STAGE_META[opportunity.stage].label}</span>;
-  }
-
+function renderStage(opportunity: Opportunity) {
   return (
-    <span className={opportunity.outcome === 'won' ? 'text-metric' : 'text-granite'}>
-      {opportunity.outcome === 'won' ? 'Closed won' : 'Closed lost'}
+    <span
+      className={
+        opportunity.outcome === undefined
+          ? 'text-stone'
+          : opportunity.outcome === 'won'
+            ? 'text-metric'
+            : 'text-granite'
+      }
+    >
+      {opportunity.outcome === undefined
+        ? STAGE_META[opportunity.stage].label
+        : opportunity.outcome === 'won'
+          ? 'Closed won'
+          : 'Closed lost'}
     </span>
-  );
-}
-
-/** Shared native keyboard and action controls for the three text editors. */
-function InlineEditor({
-  field,
-  label,
-  draft,
-  onChange,
-  onCommit,
-  onCancel,
-  inputRef,
-  error,
-  errorId,
-}: {
-  field: 'revenue' | 'note' | 'next step';
-  label: string;
-  draft: string;
-  onChange: (value: string) => void;
-  onCommit: () => void;
-  onCancel: () => void;
-  inputRef?: RefObject<HTMLInputElement>;
-  error?: string | null;
-  errorId?: string;
-}) {
-  return (
-    <>
-      <input
-        ref={inputRef}
-        autoFocus
-        value={draft}
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') onCommit();
-          if (event.key === 'Escape') onCancel();
-        }}
-        aria-label={label}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-        inputMode={field === 'revenue' ? 'decimal' : undefined}
-        placeholder={
-          field === 'note' ? 'Add a note…' : field === 'next step' ? 'Next action…' : undefined
-        }
-        className={`rounded border border-ash bg-carbon px-2 py-1 text-sm text-bone placeholder:text-graphite focus:border-signal focus:outline-none ${
-          field === 'revenue' ? 'w-28 text-right tabular-nums' : field === 'note' ? 'w-44' : 'w-56'
-        }`}
-      />
-      <button
-        type="button"
-        onClick={onCommit}
-        aria-label={`Save ${field}`}
-        className="rounded p-0.5 text-metric hover:bg-ash/30"
-      >
-        <CheckIcon className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        onClick={onCancel}
-        aria-label={`Cancel ${field} edit`}
-        className="rounded p-0.5 text-granite hover:bg-ash/30"
-      >
-        <XIcon className="h-3.5 w-3.5" />
-      </button>
-      {error && (
-        <span id={errorId} className="w-full text-right text-xs text-signal" role="alert">
-          {error}
-        </span>
-      )}
-    </>
-  );
-}
-
-/**
- * The Notes cell: an inline editor, or the pencil plus — when a note exists —
- * a disclosure that reveals the note on demand. The note itself never renders
- * in the row body by default, and the disclosure (not hover text) is what
- * makes it available to keyboard, touch, and screen readers.
- */
-function NotesCell({
-  opportunity,
-  note,
-  editing,
-  disclosed,
-  draft,
-  onDraftChange,
-  onCommit,
-  onCancel,
-  onStartEdit,
-  onToggleDisclosure,
-}: {
-  opportunity: Opportunity;
-  /** The effective note: session override when present, else the provider's. */
-  note: string | undefined;
-  editing: boolean;
-  disclosed: boolean;
-  draft: string;
-  onDraftChange: (value: string) => void;
-  onCommit: () => void;
-  onCancel: () => void;
-  onStartEdit: () => void;
-  onToggleDisclosure: () => void;
-}) {
-  const disclosureId = `note-${opportunity.id}`;
-
-  return (
-    <td className="py-3 text-right">
-      {editing ? (
-        <span className="inline-flex items-center justify-end gap-1.5">
-          <InlineEditor
-            field="note"
-            label={`Note for ${opportunity.accountName}`}
-            draft={draft}
-            onChange={onDraftChange}
-            onCommit={onCommit}
-            onCancel={onCancel}
-          />
-        </span>
-      ) : (
-        <span className="inline-flex items-center justify-end gap-1.5">
-          {note ? (
-            <button
-              type="button"
-              onClick={onToggleDisclosure}
-              aria-expanded={disclosed}
-              aria-controls={disclosureId}
-              aria-label={`${disclosed ? 'Hide' : 'View'} note for ${opportunity.accountName}`}
-              className="rounded p-0.5 text-signal transition-colors hover:bg-ash/30"
-            >
-              <CommentIcon className="h-3.5 w-3.5" />
-            </button>
-          ) : (
-            <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-graphite">
-              —
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={onStartEdit}
-            className="rounded p-0.5 text-granite transition-colors hover:text-stone"
-            title={note ? 'Edit note' : 'Add a note'}
-            aria-label={`${note ? 'Edit' : 'Add'} note for ${opportunity.accountName}`}
-          >
-            <PencilIcon className="h-3.5 w-3.5" />
-          </button>
-        </span>
-      )}
-      {disclosed && note && (
-        <p
-          id={disclosureId}
-          className="mt-1 max-w-[16rem] text-left text-xs leading-snug text-stone"
-        >
-          {note}
-        </p>
-      )}
-    </td>
   );
 }
 
@@ -326,20 +179,17 @@ export default function ForecastTable({
   onSetForecastCall,
   emptyMessage = 'No in-quarter opportunities for this partner manager.',
 }: ForecastTableProps) {
-  const [editingRevenue, setEditingRevenue] = useState<string | null>(null);
-  const [editingNotes, setEditingNotes] = useState<string | null>(null);
-  const [editingNextStep, setEditingNextStep] = useState<string | null>(null);
-  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [editor, setEditor] = useState<Partial<
+    Record<'revenue' | 'note' | 'nextStep' | 'category', string>
+  > | null>(null);
   const [disclosedNote, setDisclosedNote] = useState<string | null>(null);
-  const [revenueDraft, setRevenueDraft] = useState('');
-  const [noteDraft, setNoteDraft] = useState('');
-  const [nextStepDraft, setNextStepDraft] = useState('');
+  const [draft, setDraft] = useState('');
   const [revenueError, setRevenueError] = useState<string | null>(null);
   const revenueErrorId = useId();
   const revenueInput = useRef<HTMLInputElement>(null);
   const invoker = useRef<Element | null>(null);
   useEffect(() => {
-    if (editingRevenue || editingNotes || editingNextStep || editingCategory) return;
+    if (editor) return;
     const saved = invoker.current;
     invoker.current = null;
     if (
@@ -350,89 +200,148 @@ export default function ForecastTable({
     // The editor invoker is the final button in each editable cell, including
     // notes where a disclosure precedes it. Its label may change Add → Edit.
     Array.from(saved.querySelectorAll('button')).at(-1)?.focus();
-  }, [editingRevenue, editingNotes, editingNextStep, editingCategory]);
+  }, [editor]);
 
-  const startRevenueEdit = (opportunityId: string) => {
-    setEditingNotes(null);
-    setEditingNextStep(null);
-    setEditingCategory(null);
-    setEditingRevenue(opportunityId);
+  const startEdit = (
+    opportunityId: string,
+    field: keyof NonNullable<typeof editor>,
+    value: string | number = '',
+  ) => {
+    setEditor({ [field]: opportunityId });
     setRevenueError(null);
-    setRevenueDraft(
-      String(
-        revenueOverrides[opportunityId] ??
-          opportunities.find((opportunity) => opportunity.id === opportunityId)
-            ?.forecastedRevenue ??
-          '',
-      ),
-    );
+    // The row supplies its effective value, including explicit '' tombstones.
+    setDraft(String(value));
   };
 
   const commitRevenue = (opportunityId: string) => {
-    const value = Number(revenueDraft);
-    if (revenueDraft.trim() === '' || !Number.isFinite(value) || value < 0) {
+    const value = Number(draft);
+    if (draft.trim() === '' || !Number.isFinite(value) || value < 0) {
       setRevenueError('Enter a non-negative number.');
       revenueInput.current?.focus();
       return;
     }
     onSetRevenue(opportunityId, value);
-    setEditingRevenue(null);
+    setEditor(null);
     setRevenueError(null);
   };
 
-  const startNoteEdit = (opportunityId: string) => {
-    setEditingRevenue(null);
-    setEditingNextStep(null);
-    setEditingCategory(null);
+  const cancelEdit = () => {
+    setEditor(null);
     setRevenueError(null);
-    setEditingNotes(opportunityId);
-    // Initialize from the effective value — the session override when one
-    // exists, else the provider's note. Opening blank would turn a blind
-    // save into an accidental clear. `??`, not `||`: an explicit '' clear is
-    // the draft to start from, not a reason to resurrect the provider value.
-    setNoteDraft(
-      notes[opportunityId] ??
-        opportunities.find((opportunity) => opportunity.id === opportunityId)?.notes ??
-        '',
+  };
+
+  const renderEditor = (opportunity: Opportunity, field: 'revenue' | 'note' | 'next step') => {
+    const revenue = field === 'revenue';
+    const note = field === 'note';
+    const error = revenue ? revenueError : null;
+    const commit = () => {
+      if (revenue) commitRevenue(opportunity.id);
+      else {
+        (note ? onSetNote : onSetNextStep)(opportunity.id, draft.trim());
+        setEditor(null);
+      }
+    };
+    return (
+      <>
+        <input
+          ref={revenue ? revenueInput : undefined}
+          autoFocus
+          value={draft}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setRevenueError(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') commit();
+            if (event.key === 'Escape') cancelEdit();
+          }}
+          aria-label={`${revenue ? 'Revenue forecast' : note ? 'Note' : 'Next step'} for ${opportunity.accountName}`}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? revenueErrorId : undefined}
+          inputMode={revenue ? 'decimal' : undefined}
+          placeholder={note ? 'Add a note…' : field === 'next step' ? 'Next action…' : undefined}
+          className={`rounded border border-ash bg-carbon px-2 py-1 text-sm text-bone placeholder:text-graphite focus:border-signal focus:outline-none ${
+            revenue ? 'w-28 text-right tabular-nums' : note ? 'w-44' : 'w-56'
+          }`}
+        />
+        <button
+          type="button"
+          onClick={commit}
+          aria-label={`Save ${field}`}
+          className="rounded p-0.5 text-metric hover:bg-ash/30"
+        >
+          <CheckIcon className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={cancelEdit}
+          aria-label={`Cancel ${field} edit`}
+          className="rounded p-0.5 text-granite hover:bg-ash/30"
+        >
+          <XIcon className="h-3.5 w-3.5" />
+        </button>
+        {error && (
+          <span id={revenueErrorId} className="w-full text-right text-xs text-signal" role="alert">
+            {error}
+          </span>
+        )}
+      </>
     );
   };
 
-  const commitNote = (opportunityId: string) => {
-    onSetNote(opportunityId, noteDraft.trim());
-    setEditingNotes(null);
-  };
-
-  const startNextStepEdit = (opportunityId: string) => {
-    setEditingRevenue(null);
-    setEditingNotes(null);
-    setEditingCategory(null);
-    setRevenueError(null);
-    setEditingNextStep(opportunityId);
-    // Same effective-value rule as the note editor: session override first,
-    // then the provider's next step; a stored '' clear stays ''.
-    setNextStepDraft(
-      nextSteps[opportunityId] ??
-        opportunities.find((opportunity) => opportunity.id === opportunityId)?.nextStep ??
-        '',
+  /** Disclosure remains independent of the mutually exclusive editor. */
+  const renderNotes = (opportunity: Opportunity, note: string | undefined) => {
+    const disclosed = disclosedNote === opportunity.id;
+    const disclosureId = `note-${opportunity.id}`;
+    return (
+      <td className="py-3 text-right">
+        {editor?.note === opportunity.id ? (
+          <span className="inline-flex items-center justify-end gap-1.5">
+            {renderEditor(opportunity, 'note')}
+          </span>
+        ) : (
+          <span className="inline-flex items-center justify-end gap-1.5">
+            {note ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setDisclosedNote((current) =>
+                    current === opportunity.id ? null : opportunity.id,
+                  )
+                }
+                aria-expanded={disclosed}
+                aria-controls={disclosureId}
+                aria-label={`${disclosed ? 'Hide' : 'View'} note for ${opportunity.accountName}`}
+                className="rounded p-0.5 text-signal transition-colors hover:bg-ash/30"
+              >
+                <CommentIcon className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <span className="font-mono text-[10px] uppercase tracking-[0.05em] text-graphite">
+                —
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => startEdit(opportunity.id, 'note', note)}
+              className="rounded p-0.5 text-granite transition-colors hover:text-stone"
+              title={note ? 'Edit note' : 'Add a note'}
+              aria-label={`${note ? 'Edit' : 'Add'} note for ${opportunity.accountName}`}
+            >
+              <PencilIcon className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        )}
+        {disclosed && note && (
+          <p
+            id={disclosureId}
+            className="mt-1 max-w-[16rem] text-left text-xs leading-snug text-stone"
+          >
+            {note}
+          </p>
+        )}
+      </td>
     );
-  };
-
-  const commitNextStep = (opportunityId: string) => {
-    onSetNextStep(opportunityId, nextStepDraft.trim());
-    setEditingNextStep(null);
-  };
-
-  const cancelRevenueEdit = () => {
-    setEditingRevenue(null);
-    setRevenueError(null);
-  };
-
-  const startCategoryEdit = (opportunityId: string) => {
-    setEditingRevenue(null);
-    setEditingNotes(null);
-    setEditingNextStep(null);
-    setRevenueError(null);
-    setEditingCategory(opportunityId);
   };
 
   // The dropdown commits on pick — a category is a single choice, so there is
@@ -440,10 +349,8 @@ export default function ForecastTable({
   // current call.
   const commitCategory = (opportunityId: string, category: ForecastCategory) => {
     onSetForecastCall(opportunityId, category);
-    setEditingCategory(null);
+    setEditor(null);
   };
-
-  const cancelCategoryEdit = () => setEditingCategory(null);
 
   const th = 'pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite';
 
@@ -459,7 +366,7 @@ export default function ForecastTable({
         }
       }}
       onClickCapture={(event) => {
-        if (editingRevenue || editingNotes || editingNextStep || editingCategory) return;
+        if (editor) return;
         const button = (event.target as Element).closest('button');
         const cell = button?.closest('td');
         if (cell) invoker.current = cell;
@@ -502,22 +409,9 @@ export default function ForecastTable({
                   {partnerNames[opportunity.partnerId] ?? opportunity.partnerId}
                 </td>
                 <td className="py-3 pr-3 text-right">
-                  {editingRevenue === opportunity.id ? (
+                  {editor?.revenue === opportunity.id ? (
                     <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                      <InlineEditor
-                        field="revenue"
-                        inputRef={revenueInput}
-                        draft={revenueDraft}
-                        onChange={(value) => {
-                          setRevenueDraft(value);
-                          setRevenueError(null);
-                        }}
-                        onCommit={() => commitRevenue(opportunity.id)}
-                        onCancel={cancelRevenueEdit}
-                        label={`Revenue forecast for ${opportunity.accountName}`}
-                        error={revenueError}
-                        errorId={revenueErrorId}
-                      />
+                      {renderEditor(opportunity, 'revenue')}
                     </span>
                   ) : (
                     <span className="inline-flex items-center justify-end gap-1.5">
@@ -529,7 +423,7 @@ export default function ForecastTable({
                       </span>
                       <button
                         type="button"
-                        onClick={() => startRevenueEdit(opportunity.id)}
+                        onClick={() => startEdit(opportunity.id, 'revenue', revenue)}
                         className="rounded p-0.5 text-granite transition-colors hover:text-stone"
                         title="Edit revenue forecast"
                         aria-label={`Edit revenue forecast for ${opportunity.accountName}`}
@@ -542,32 +436,23 @@ export default function ForecastTable({
                 <td className="py-3 pr-3 font-mono text-[11px] uppercase tracking-[0.05em] text-stone">
                   {OPP_TYPE_META[opportunity.oppType].label}
                 </td>
-                <td className="py-3 pr-3">
-                  <OpportunityStage opportunity={opportunity} />
-                </td>
+                <td className="py-3 pr-3">{renderStage(opportunity)}</td>
                 <td className="py-3 pr-3">
                   <ForecastCategoryCell
                     opportunity={opportunity}
-                    editing={editingCategory === opportunity.id}
-                    onStartEdit={() => startCategoryEdit(opportunity.id)}
+                    editing={editor?.category === opportunity.id}
+                    onStartEdit={() => startEdit(opportunity.id, 'category')}
                     onCommit={(category) => commitCategory(opportunity.id, category)}
-                    onCancel={cancelCategoryEdit}
+                    onCancel={cancelEdit}
                   />
                 </td>
                 <td className="py-3 pr-3 text-right font-mono text-xs tabular-nums text-granite">
                   {formatDate(opportunity.closedAt ?? opportunity.expectedCloseDate)}
                 </td>
                 <td className="py-3 pr-3">
-                  {editingNextStep === opportunity.id ? (
+                  {editor?.nextStep === opportunity.id ? (
                     <span className="inline-flex items-center gap-1.5">
-                      <InlineEditor
-                        field="next step"
-                        label={`Next step for ${opportunity.accountName}`}
-                        draft={nextStepDraft}
-                        onChange={setNextStepDraft}
-                        onCommit={() => commitNextStep(opportunity.id)}
-                        onCancel={() => setEditingNextStep(null)}
-                      />
+                      {renderEditor(opportunity, 'next step')}
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1.5">
@@ -583,7 +468,7 @@ export default function ForecastTable({
                       </span>
                       <button
                         type="button"
-                        onClick={() => startNextStepEdit(opportunity.id)}
+                        onClick={() => startEdit(opportunity.id, 'nextStep', nextStep)}
                         className="rounded p-0.5 text-granite transition-colors hover:text-stone"
                         title={nextStep ? 'Edit next step' : 'Add a next step'}
                         aria-label={`${nextStep ? 'Edit' : 'Add'} next step for ${opportunity.accountName}`}
@@ -593,22 +478,7 @@ export default function ForecastTable({
                     </span>
                   )}
                 </td>
-                <NotesCell
-                  opportunity={opportunity}
-                  note={note}
-                  editing={editingNotes === opportunity.id}
-                  disclosed={disclosedNote === opportunity.id}
-                  draft={noteDraft}
-                  onDraftChange={setNoteDraft}
-                  onCommit={() => commitNote(opportunity.id)}
-                  onCancel={() => setEditingNotes(null)}
-                  onStartEdit={() => startNoteEdit(opportunity.id)}
-                  onToggleDisclosure={() =>
-                    setDisclosedNote((current) =>
-                      current === opportunity.id ? null : opportunity.id,
-                    )
-                  }
-                />
+                {renderNotes(opportunity, note)}
               </tr>
             );
           })}

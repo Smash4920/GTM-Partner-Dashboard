@@ -34,6 +34,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   clearFlagOverrides();
   vi.unstubAllEnvs();
   document.getElementById('root')?.remove();
@@ -295,22 +296,26 @@ describe('data-seam ping cancellation (VAL-RES-002)', () => {
   });
 
   it('a timed-out ping stops a simulated remote before any inner provider work', async () => {
+    vi.useFakeTimers();
     const inner = new MockDataProvider();
     const innerSpy = vi.spyOn(inner, 'getForecastSummary');
     const remote = createSimulatedRemoteProvider(inner, { latencyMs: 200, failureRate: 0 });
 
-    const checks = await runReadinessChecks({ provider: remote, pingBudgetMs: 20 });
+    const pending = runReadinessChecks({ provider: remote, pingBudgetMs: 20 });
+    await vi.advanceTimersByTimeAsync(20);
+    const checks = await pending;
 
     const dataSeam = checks.find((check) => check.name === 'dataSeam');
     expect(dataSeam?.status).toBe('unavailable');
     // The wire honoured the abort during its delay: the inner provider was
     // never invoked, and letting the delay play out changes that not.
     expect(innerSpy).not.toHaveBeenCalled();
-    await sleep(250);
+    await vi.advanceTimersByTimeAsync(250);
     expect(innerSpy).not.toHaveBeenCalled();
   });
 
   it('a superseded ping cancels a simulated remote in transit', async () => {
+    vi.useFakeTimers();
     const inner = new MockDataProvider();
     const innerSpy = vi.spyOn(inner, 'getForecastSummary');
     const remote = createSimulatedRemoteProvider(inner, { latencyMs: 200, failureRate: 0 });
@@ -320,7 +325,7 @@ describe('data-seam ping cancellation (VAL-RES-002)', () => {
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
 
-    await sleep(250);
+    await vi.advanceTimersByTimeAsync(250);
     expect(innerSpy).not.toHaveBeenCalled();
   });
 

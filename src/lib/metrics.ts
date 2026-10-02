@@ -81,9 +81,9 @@ export function openPipeline(opps: Opportunity[]): { value: number; count: numbe
 }
 
 /** Closed-won revenue whose close date falls in [start, end). */
-function closedWonBetween(opps: Opportunity[], startIso: string, endIso: string): number {
-  const start = new Date(startIso).getTime();
-  const end = new Date(endIso).getTime();
+function closedWonBetween(opps: Opportunity[], startDate: Date, endDate: Date): number {
+  const start = startDate.getTime();
+  const end = endDate.getTime();
   return opps
     .filter((opp) => {
       if (opp.outcome !== 'won' || !opp.closedAt) return false;
@@ -390,7 +390,7 @@ export function closedWonPriorYearForPhase(opps: Opportunity[], phase: FiscalPha
     window.end.getTime() > window.start.getTime() ? window.end : window.pipelineEnd;
   const priorStart = shiftYear(window.start, -1);
   const priorEnd = shiftYear(currentEnd, -1);
-  return closedWonBetween(opps, priorStart.toISOString(), priorEnd.toISOString());
+  return closedWonBetween(opps, priorStart, priorEnd);
 }
 
 function isInWindow(iso: string, window: PhaseWindow): boolean {
@@ -426,9 +426,7 @@ export function targetsForPhase(targets: Target[], phase: FiscalPhase): Target[]
 
 export function closedWonForPhase(opps: Opportunity[], phase: FiscalPhase): number {
   const window = phaseWindow(phase);
-  return opps
-    .filter((opp) => opp.outcome === 'won' && opp.closedAt && isInWindow(opp.closedAt, window))
-    .reduce((sum, opp) => sum + opp.forecastedRevenue, 0);
+  return closedWonBetween(opps, window.start, window.end);
 }
 
 /** Quota still to be closed for a fiscal phase. Zero once the target is met. */
@@ -470,6 +468,34 @@ export function coverageState(
   const remaining = Math.max(target - closedWonForPhase(opps, phase), 0);
   if (remaining <= 0) return { kind: 'target-met' };
   return { kind: 'coverage', value: openPipeline(filterByPhase(opps, phase)).value / remaining };
+}
+
+/** Inputs are already access- and selection-scoped, with the phase applied. */
+export function pipelineSummary(
+  opportunities: Opportunity[],
+  targets: Target[],
+  phase: FiscalPhase,
+) {
+  const open = openPipeline(opportunities);
+  const closedWon = closedWonForPhase(opportunities, phase);
+  const target = targetsForPhase(targets, phase).reduce((sum, item) => sum + item.revenueTarget, 0);
+  const remaining = Math.max(target - closedWon, 0);
+  const coverage: CoverageState =
+    target <= 0
+      ? { kind: 'no-target' }
+      : remaining <= 0
+        ? { kind: 'target-met' }
+        : { kind: 'coverage', value: open.value / remaining };
+  return {
+    openPipelineValue: open.value,
+    openCount: open.count,
+    closedWon,
+    target,
+    coverage,
+    remainingQuota: remaining,
+    avgOpenDealSize: open.count === 0 ? 0 : open.value / open.count,
+    attainment: target > 0 ? closedWon / target : 0,
+  };
 }
 
 export function formatCoverage(state: CoverageState): string {

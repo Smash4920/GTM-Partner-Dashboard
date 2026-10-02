@@ -1,7 +1,11 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
+// Cold lazy-chunk delivery belongs to the production-preview matrix.
+import './views/system';
+import './views/ActionCenterView';
+import './components/WorkflowPanel';
 import type { DataProvider } from './data/DataProvider';
 import { MockDataProvider } from './data/mock/MockDataProvider';
 import { ScaleDataProvider } from './data/mock/ScaleDataProvider';
@@ -24,15 +28,9 @@ import { providerSessionBook } from './test/providerSessionFixtures';
 
 const nav = () => within(screen.getByRole('navigation', { name: 'Primary' }));
 
-beforeAll(async () => {
-  // Measure route queries, not Vitest's cold coverage transformation. Actual
-  // lazy-chunk delivery remains covered by the production-preview matrix.
-  await Promise.all([
-    import('./views/system'),
-    import('./views/ActionCenterView'),
-    import('./components/WorkflowPanel'),
-  ]);
-});
+// Only immutable source records are shared: each test gets fresh cursors,
+// failure controls, and call counters, independent of execution order.
+const BASE_BOOK = generateDashboardData();
 
 interface RouteSpec {
   label: string;
@@ -217,7 +215,7 @@ const ROUTES: RouteSpec[] = [
  * call of one named method — after which it serves normally, so the widget's
  * own Retry is what recovers it.
  */
-function instrumentedProvider(book = generateDashboardData()) {
+function instrumentedProvider(book = BASE_BOOK) {
   const inner = new MockDataProvider(book);
   const calls = new Map<string, number>();
   const control: { armed: boolean; failMethod: string } = {
@@ -366,7 +364,8 @@ describe('App route matrix', () => {
       expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
 
       const afterFailure = snapshot(calls);
-      await user.click(screen.getByRole('button', { name: route.failure.retry }));
+      const failure = screen.getByText(route.failure.text).closest('p')!;
+      await user.click(within(failure).getByRole('button', { name: route.failure.retry }));
 
       // Recovery: the widget's data replaces the failure copy.
       await waitFor(() => expect(screen.queryByText(route.failure.text)).not.toBeInTheDocument(), {
@@ -534,7 +533,8 @@ describe('App route matrix: optional resource failures', () => {
 
       if (spec.beforeRetry !== undefined) await spec.beforeRetry(user);
       const afterFailure = snapshot(calls);
-      await user.click(screen.getByRole('button', { name: spec.retry }));
+      const region = screen.getByRole('group', { name: spec.retry.replace(/^Retry /, '') });
+      await user.click(within(region).getByRole('button', { name: spec.retry }));
 
       await spec.expectRecovered();
       // The focused retry repeated exactly the failed method — one call of

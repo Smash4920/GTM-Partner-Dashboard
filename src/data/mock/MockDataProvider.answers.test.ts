@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_ACTION_POLICY } from '../../lib/actionRules';
-import { phaseForQuarter } from '../../lib/metrics';
+import {
+  avgOpenDealSize,
+  closedWonForPhase,
+  coverageState,
+  filterByPhase,
+  openPipeline,
+  phaseForQuarter,
+  remainingQuota,
+  targetsForPhase,
+} from '../../lib/metrics';
 import { makeOpportunity, makeProviderBook, makeTarget } from '../../test/fixtures';
 import { INTERNAL_DEMO_SCOPE } from '../accessScope';
 import type { DemoAccessScope } from '../accessScope';
-import { CURRENT_FISCAL_QUARTER, SNAPSHOT_DATE } from '../constants';
+import { CURRENT_FISCAL_QUARTER, FISCAL_PHASES, SNAPSHOT_DATE } from '../constants';
 import type { ForecastSummary, Page, PageRequest } from '../DataProvider';
 import type { QueryResult } from '../queryMetadata';
 import { NO_SESSION_EDITS } from '../sessionEdits';
@@ -30,6 +39,29 @@ function sharedFields(summary: ForecastSummary | Omit<ForecastSummary, 'daysLeft
 }
 
 describe('shared provider answer characterization', () => {
+  it.each(FISCAL_PHASES)('preserves exact scalar summary parity for %s', async (selectedPhase) => {
+    const rows = filterByPhase(book.opportunities, selectedPhase);
+    const open = openPipeline(rows);
+    const closedWon = closedWonForPhase(rows, selectedPhase);
+    const target = targetsForPhase(book.targets, selectedPhase).reduce(
+      (sum, item) => sum + item.revenueTarget,
+      0,
+    );
+    const summary = await provider.getPerformanceSummary(INTERNAL_DEMO_SCOPE, {
+      phase: selectedPhase,
+    });
+    expect(sharedFields(summary.data)).toEqual({
+      openPipelineValue: open.value,
+      openCount: open.count,
+      closedWon,
+      target,
+      attainment: target > 0 ? closedWon / target : 0,
+      coverage: coverageState(rows, book.targets, selectedPhase),
+      remainingQuota: remainingQuota(rows, book.targets, selectedPhase),
+      avgOpenDealSize: avgOpenDealSize(rows),
+    });
+  });
+
   const partner = book.partners[0]!;
   const cases: Array<[string, DemoAccessScope, string | undefined]> = [
     ['organization', INTERNAL_DEMO_SCOPE, undefined],

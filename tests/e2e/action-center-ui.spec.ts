@@ -37,7 +37,9 @@ test('VAL-ACT-001: primary navigation exposes the five-category session-only Act
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('action-item')).toHaveCount(50);
   await expect(more).toBeFocused();
-  await expect(page.getByRole('status')).toContainText('Showing 50 of 85 action items');
+  await expect(
+    page.getByRole('group', { name: 'action items', exact: true }).getByRole('status'),
+  ).toContainText('Showing 50 of 85 action items');
   expect(errors).toEqual([]);
 });
 

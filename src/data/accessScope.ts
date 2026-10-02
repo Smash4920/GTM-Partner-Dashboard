@@ -88,6 +88,23 @@ function managedPartnerIds(partners: readonly Partner[], managerId: string): Set
   );
 }
 
+function scopePartnerRows<T extends { partnerId: string }>(
+  rows: readonly T[],
+  partners: readonly Partner[],
+  access: DemoAccessScope,
+  partnerVisible?: (row: T) => boolean,
+): T[] {
+  if (access.audience === 'partner') {
+    return rows.filter(
+      (row) =>
+        row.partnerId === access.partnerId && (partnerVisible === undefined || partnerVisible(row)),
+    );
+  }
+  if (access.partnerManagerId === undefined) return [...rows];
+  const managed = managedPartnerIds(partners, access.partnerManagerId);
+  return rows.filter((row) => managed.has(row.partnerId));
+}
+
 /**
  * Registrations whose account a second partner also registered. A conflict
  * row says "another partner is on this account", which is exactly what a
@@ -137,14 +154,7 @@ export function scopeOpportunities(
   partners: readonly Partner[],
   access: DemoAccessScope,
 ): Opportunity[] {
-  if (access.audience === 'partner') {
-    return opportunities.filter(
-      (opp) => opp.partnerId === access.partnerId && opp.oppType !== 'sell-to',
-    );
-  }
-  if (access.partnerManagerId === undefined) return [...opportunities];
-  const managed = managedPartnerIds(partners, access.partnerManagerId);
-  return opportunities.filter((opp) => managed.has(opp.partnerId));
+  return scopePartnerRows(opportunities, partners, access, (opp) => opp.oppType !== 'sell-to');
 }
 
 /**
@@ -159,13 +169,9 @@ export function scopeRegistrations(
 ): DealRegistration[] {
   if (access.audience === 'partner') {
     const conflicts = conflictingRegistrationIds(registrations);
-    return registrations.filter(
-      (reg) => reg.partnerId === access.partnerId && !conflicts.has(reg.id),
-    );
+    return scopePartnerRows(registrations, partners, access, (reg) => !conflicts.has(reg.id));
   }
-  if (access.partnerManagerId === undefined) return [...registrations];
-  const managed = managedPartnerIds(partners, access.partnerManagerId);
-  return registrations.filter((reg) => managed.has(reg.partnerId));
+  return scopePartnerRows(registrations, partners, access);
 }
 
 /** Targets, scoped: a target belongs to its partner, and through the partner to the manager. */
@@ -174,12 +180,7 @@ export function scopeTargets(
   partners: readonly Partner[],
   access: DemoAccessScope,
 ): Target[] {
-  if (access.audience === 'partner') {
-    return targets.filter((target) => target.partnerId === access.partnerId);
-  }
-  if (access.partnerManagerId === undefined) return [...targets];
-  const managed = managedPartnerIds(partners, access.partnerManagerId);
-  return targets.filter((target) => managed.has(target.partnerId));
+  return scopePartnerRows(targets, partners, access);
 }
 
 /** Activities, scoped through the partner they belong to. */
@@ -188,12 +189,7 @@ export function scopeActivities(
   partners: readonly Partner[],
   access: DemoAccessScope,
 ): ActivityMeeting[] {
-  if (access.audience === 'partner') {
-    return activities.filter((activity) => activity.partnerId === access.partnerId);
-  }
-  if (access.partnerManagerId === undefined) return [...activities];
-  const managed = managedPartnerIds(partners, access.partnerManagerId);
-  return activities.filter((activity) => managed.has(activity.partnerId));
+  return scopePartnerRows(activities, partners, access);
 }
 
 /** Certification records, scoped through the partner they describe. */
@@ -202,12 +198,7 @@ export function scopeCertifications(
   partners: readonly Partner[],
   access: DemoAccessScope,
 ): PartnerCertification[] {
-  if (access.audience === 'partner') {
-    return certifications.filter((cert) => cert.partnerId === access.partnerId);
-  }
-  if (access.partnerManagerId === undefined) return [...certifications];
-  const managed = managedPartnerIds(partners, access.partnerManagerId);
-  return certifications.filter((cert) => managed.has(cert.partnerId));
+  return scopePartnerRows(certifications, partners, access);
 }
 
 /**

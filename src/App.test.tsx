@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
+// Cold system chunks are covered by production-preview tests, not this smoke suite.
+import './views/system';
+import './views/ActionCenterView';
 import type { DataProvider } from './data/DataProvider';
 import { DATA_PROVIDER_METHODS } from './data/DataProvider';
 import { MockDataProvider } from './data/mock/MockDataProvider';
@@ -72,9 +75,6 @@ describe('App', () => {
   });
 
   it('mounts every route against real generated data', async () => {
-    // Cold chunk fetches are covered by the production-preview browser suite.
-    // Avoid timing Vitest's coverage transformation as route readiness here.
-    await import('./views/system');
     const user = await renderApp();
 
     for (const [label, heading] of ROUTES) {
@@ -183,12 +183,14 @@ describe('App', () => {
 // provider's label with another provider's data.
 // ---------------------------------------------------------------------------
 
+/** Reuse immutable source records; each instance still owns its provider/cursor state. */
+const BASE_BOOK = generateDashboardData();
+
 /** A book whose rows and figures visibly belong to one provider. */
 function taggedBook(tag: string, revenueMultiplier: number): ProviderBook {
-  const base = generateDashboardData();
   return {
-    ...base,
-    opportunities: base.opportunities.map((opportunity) => ({
+    ...BASE_BOOK,
+    opportunities: BASE_BOOK.opportunities.map((opportunity) => ({
       ...opportunity,
       accountName: `${tag} ${opportunity.accountName}`,
       forecastedRevenue: opportunity.forecastedRevenue * revenueMultiplier,
@@ -197,8 +199,7 @@ function taggedBook(tag: string, revenueMultiplier: number): ProviderBook {
 }
 
 function taggedFactory(books: Partial<Record<ProviderId, ProviderBook>>) {
-  return (id: ProviderId): DataProvider =>
-    new MockDataProvider(books[id] ?? generateDashboardData());
+  return (id: ProviderId): DataProvider => new MockDataProvider(books[id] ?? BASE_BOOK);
 }
 
 interface ProbeGate {
@@ -243,10 +244,10 @@ async function editFirstRowRevenue(user: ReturnType<typeof userEvent.setup>, val
   const table = await screen.findByRole('region', {
     name: 'In-quarter opportunities, scrollable',
   });
-  const editButton = within(table).getAllByRole('button', {
+  const row = within(table).getAllByRole('row')[1]!;
+  const editButton = within(row).getByRole('button', {
     name: /^Edit revenue forecast for /,
-  })[0]!;
-  const row = editButton.closest('tr')!;
+  });
   await user.click(editButton);
   const input = within(row).getByRole('textbox', { name: /^Revenue forecast for / });
   await user.clear(input);
@@ -362,7 +363,7 @@ describe('App provider transitions', () => {
     expect(screen.getByText('$987,654,321')).toBeInTheDocument();
 
     // Cancel abandons the switch without touching the session.
-    await user.click(screen.getByRole('button', { name: 'Stay on Local mock' }));
+    await user.click(within(alert).getByRole('button', { name: 'Stay on Local mock' }));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Data provider')).toHaveValue('local');
     expect(screen.getByText('$987,654,321')).toBeInTheDocument();
@@ -376,7 +377,9 @@ describe('App provider transitions', () => {
     const retriedAlert = await screen.findByRole('alert');
     expect(retriedAlert).toHaveTextContent('The readiness check failed');
     expect(document.body.textContent ?? '').not.toContain('RAW SENTINEL');
-    await user.click(screen.getByRole('button', { name: 'Retry switch to Simulated remote' }));
+    await user.click(
+      within(retriedAlert).getByRole('button', { name: 'Retry switch to Simulated remote' }),
+    );
     // The retry re-probes the same candidate instance.
     expect(control.probes).toHaveLength(3);
     expect(control.probes[2]!.candidate).toBe(control.probes[1]!.candidate);
@@ -698,7 +701,11 @@ describe('App under total provider failure (VAL-RES-008)', () => {
 
     // Retrying one widget re-runs only its query; its sibling stays in the
     // state it was in until its own retry.
-    await user.click(screen.getByRole('button', { name: 'Retry weighted forecast' }));
+    await user.click(
+      within(screen.getByRole('group', { name: 'weighted forecast' })).getByRole('button', {
+        name: 'Retry weighted forecast',
+      }),
+    );
     await waitFor(() =>
       expect(screen.queryByText('Weighted forecast unavailable:')).not.toBeInTheDocument(),
     );
@@ -707,7 +714,11 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     // The roster section's retry recovers that section alone.
     await user.click(nav().getByRole('button', { name: 'Data Connections' }));
     await screen.findByText('The team roster unavailable:');
-    await user.click(screen.getByRole('button', { name: 'Retry The team roster' }));
+    await user.click(
+      within(screen.getByRole('group', { name: 'The team roster' })).getByRole('button', {
+        name: 'Retry The team roster',
+      }),
+    );
     await waitFor(() =>
       expect(screen.queryByText('The team roster unavailable:')).not.toBeInTheDocument(),
     );
@@ -727,12 +738,16 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     const user = userEvent.setup();
     render(<App providerFactory={() => flakyOnceProvider()} />);
 
-    await user.click(await screen.findByRole('button', { name: 'Partner View' }));
+    await user.click(nav().getByRole('button', { name: 'Partner View' }));
     // Home's mount already spent the first-call failures on the queries the
     // two routes share, so the picker gate is up; the certification query is
     // Partner View's own and is the one still failing here.
     await screen.findByText('Certification record unavailable:');
-    await user.click(screen.getByRole('button', { name: 'Retry certification record' }));
+    await user.click(
+      within(screen.getByRole('group', { name: 'certification record' })).getByRole('button', {
+        name: 'Retry certification record',
+      }),
+    );
 
     // The recovered tile renders; the failure surface is gone.
     await waitFor(() =>

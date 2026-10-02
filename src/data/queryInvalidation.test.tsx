@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ForecastingView from '../views/ForecastingView';
 import { MockDataProvider } from './mock/MockDataProvider';
@@ -126,14 +126,18 @@ describe('VAL-RES-007 edit invalidation is narrow', () => {
       });
 
       // Load page two so the tests below can prove the pages survive edits.
-      await user.click(screen.getByRole('button', { name: 'Load 25 more' }));
+      const pagination = screen.getByText('Showing 25 of 27').parentElement!;
+      await user.click(within(pagination).getByRole('button', { name: 'Load 25 more' }));
       expect(await screen.findByText('Showing 27 of 27')).toBeInTheDocument();
       expect(counts().book).toBe(2);
 
       // A note edit: no query. The row exposes the session's note immediately
       // through its disclosure — reading it needs no refetch.
       commit({ ...edits, notes: { 'opp-a0': 'Called the CFO' } });
-      await user.click(await screen.findByRole('button', { name: 'View note for Acme 0' }));
+      const noteRow = screen.getByText('Acme 0').closest('tr')!;
+      await user.click(
+        await within(noteRow).findByRole('button', { name: 'View note for Acme 0' }),
+      );
       expect(screen.getByText('Called the CFO')).toBeInTheDocument();
       expect(counts()).toEqual({
         summary: 1,
@@ -221,7 +225,7 @@ describe('VAL-RES-007 edit invalidation is narrow', () => {
 
       // Collapsing and reopening a group is presentation-only: no query,
       // and the loaded pages are still there.
-      const groupToggle = screen.getByRole('button', { name: /J\. Alvarez/ });
+      const groupToggle = screen.getByRole('button', { name: /J\. Alvarez/, expanded: true });
       await user.click(groupToggle);
       expect(screen.getByText('Showing 27 of 27')).not.toBeVisible();
       await user.click(groupToggle);
