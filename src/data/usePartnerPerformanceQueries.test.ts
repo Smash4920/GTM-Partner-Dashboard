@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor as waitForDefaultPolling } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { INTERNAL_DEMO_SCOPE } from './accessScope';
 import type { DemoAccessScope } from './accessScope';
@@ -19,6 +19,12 @@ import {
   makeTarget,
 } from '../test/fixtures';
 import type { ProviderBook } from './mock/book';
+
+// Poll immediate provider settlement without the default 50 ms pause.
+// Explicit hold/release and synchronous scope observations stay unchanged.
+function waitFor(assertion: () => void) {
+  return waitForDefaultPolling(assertion, { interval: 5 });
+}
 
 /**
  * VAL-DATA-014 (Partner Performance): the route requests exactly the scoped

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor as waitForDefaultPolling } from '@testing-library/react';
 import { CURRENT_FISCAL_QUARTER } from './constants';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { NO_SESSION_EDITS } from './sessionEdits';
@@ -18,6 +18,12 @@ import { INTERNAL_DEMO_SCOPE } from './accessScope';
 
 const quarter = CURRENT_FISCAL_QUARTER;
 const baseScope: ForecastScope = { quarter, edits: NO_SESSION_EDITS };
+
+// Immediate providers need no 50 ms polling pause; pending-state observations
+// below still use default polling, and settlement keeps its default timeout.
+function waitFor(assertion: () => void) {
+  return waitForDefaultPolling(assertion, { interval: 5 });
+}
 
 /**
  * The widget set the Forecasting view renders, composed exactly the way the
@@ -425,7 +431,7 @@ describe('useManagerBook edit scoping (two-manager matrix)', () => {
     await waitFor(() => expect(result.current.second.rows).toHaveLength(1));
 
     act(() => result.current.first.loadMore());
-    await waitFor(() => expect(result.current.first.loadingMore).toBe(true));
+    await waitForDefaultPolling(() => expect(result.current.first.loadingMore).toBe(true));
     expect(spy).toHaveBeenCalledTimes(3);
 
     // The edit lands in pm-2's loaded window while pm-1's page is flying:
@@ -472,7 +478,7 @@ describe('useManagerBook edit scoping (two-manager matrix)', () => {
     await waitFor(() => expect(result.current.second.rows).toHaveLength(1));
 
     act(() => result.current.first.loadMore());
-    await waitFor(() => expect(result.current.first.loadingMore).toBe(true));
+    await waitForDefaultPolling(() => expect(result.current.first.loadingMore).toBe(true));
 
     // opp-1 is on pm-1's screen: its edit supersedes the in-flight page —
     // cancelled at the seam, the window refetched with the edit — while
@@ -480,7 +486,7 @@ describe('useManagerBook edit scoping (two-manager matrix)', () => {
     rerender({
       scope: { quarter, edits: { ...NO_SESSION_EDITS, revenueOverrides: { 'opp-1': 7 } } },
     });
-    await waitFor(() => expect(result.current.first.refreshing).toBe(true));
+    await waitForDefaultPolling(() => expect(result.current.first.refreshing).toBe(true));
     expect(pm1Signals[1]?.aborted).toBe(true);
     expect(result.current.first.loadingMore).toBe(false);
     await waitFor(() => expect(result.current.first.refreshing).toBe(false));

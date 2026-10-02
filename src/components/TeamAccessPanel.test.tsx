@@ -94,7 +94,7 @@ describe('TeamAccessPanel roster', () => {
   });
 
   it('flips the toggle label, aria-expanded, and form visibility', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderPanel();
 
     const toggle = screen.getByRole('button', { name: 'Add user' });
@@ -207,7 +207,7 @@ describe('TeamAccessPanel roster', () => {
 
 describe('TeamAccessPanel row actions', () => {
   it('offers Pause notifications to a user with routing on', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onSetStatus, onRemove } = renderPanel({
       users: [makeTeamUser({ id: 'user-1', status: 'active' })],
     });
@@ -222,7 +222,7 @@ describe('TeamAccessPanel row actions', () => {
   });
 
   it('offers Turn on notifications to a user whose routing is not set up', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onSetStatus } = renderPanel({
       users: [makeTeamUser({ id: 'user-1', status: 'invited' })],
     });
@@ -235,7 +235,7 @@ describe('TeamAccessPanel row actions', () => {
   });
 
   it('offers Resume notifications to a paused user', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onSetStatus } = renderPanel({
       users: [makeTeamUser({ id: 'user-1', status: 'suspended' })],
     });
@@ -248,7 +248,7 @@ describe('TeamAccessPanel row actions', () => {
   });
 
   it('offers Remove only to users added this session', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onRemove, onSetStatus } = renderPanel({
       users: [
         makeTeamUser({ id: 'user-1', status: 'invited' }),
@@ -277,7 +277,7 @@ describe('TeamAccessPanel row actions', () => {
 
 describe('AddTeamUserForm', () => {
   it('links every invalid field to its error and focuses the first invalid field (VAL-A11Y-004)', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel({ partnerManagers: [] });
     await openForm(user);
 
@@ -300,7 +300,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('clears corrected field errors and disabled manager associations', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel({ partnerManagers: [] });
     await openForm(user);
     await user.click(screen.getByRole('button', { name: 'Add to roster' }));
@@ -323,7 +323,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('links duplicate email errors and moves focus to email until corrected', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel({ users: [makeTeamUser({ email: 'riley@example.com' })] });
     await openForm(user);
     await user.type(screen.getByLabelText('Name'), 'Riley Chen');
@@ -343,7 +343,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('focuses the aligned manager when it is the only invalid field', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel({ partnerManagers: [] });
     await openForm(user);
     await user.type(screen.getByLabelText('Name'), 'Riley Chen');
@@ -354,7 +354,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('uses a native noValidate form and submits once on Enter from name', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel();
     const form = await openForm(user);
     expect(form.tagName).toBe('FORM');
@@ -369,7 +369,7 @@ describe('AddTeamUserForm', () => {
   it.each(['Name', 'Role', 'Aligned manager'])(
     'cancels safely on Escape from %s',
     async (label) => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const { onAdd } = renderPanel();
       await openForm(user);
       screen.getByLabelText(label).focus();
@@ -380,7 +380,7 @@ describe('AddTeamUserForm', () => {
   );
 
   it('requires a name', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel();
     await openForm(user);
 
@@ -391,7 +391,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('treats a whitespace-only name as missing', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel();
     await openForm(user);
 
@@ -403,7 +403,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('rejects an address that is not a work email', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel();
     await openForm(user);
 
@@ -416,7 +416,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('rejects an email already on the roster regardless of case', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel({
       users: [makeTeamUser({ id: 'user-1', email: 'j.alvarez@example.com' })],
     });
@@ -431,7 +431,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('requires an aligned manager for the partner-manager role', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel({ partnerManagers: [] });
     const form = await openForm(user);
 
@@ -451,7 +451,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('trims the name and email and keeps the chosen manager and channels', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel();
     const form = await openForm(user);
 
@@ -472,7 +472,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('omits the manager for a role that is not aligned to one', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel();
     const form = await openForm(user);
 
@@ -495,7 +495,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('disables the aligned manager select for a role that is not aligned', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderPanel();
     const form = await openForm(user);
 
@@ -508,7 +508,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('toggles optional channels and submits the resulting set', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel();
     const form = await openForm(user);
 
@@ -530,7 +530,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('keeps email on because it is the channel that reaches everyone', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderPanel();
     const form = await openForm(user);
 
@@ -546,7 +546,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('submits on Enter from the email field', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel();
     const form = await openForm(user);
 
@@ -558,7 +558,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('cancels on Escape from the email field', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel();
     const form = await openForm(user);
 
@@ -570,7 +570,7 @@ describe('AddTeamUserForm', () => {
   });
 
   it('closes from Cancel without adding anyone', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAdd } = renderPanel();
     const form = await openForm(user);
 

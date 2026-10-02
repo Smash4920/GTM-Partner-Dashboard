@@ -156,7 +156,7 @@ interface SetupOptions {
 }
 
 function setup(options: SetupOptions = {}) {
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   const onSendNotification = vi.fn();
   const book = makeProviderBook({
     partners: PARTNERS,
@@ -288,7 +288,7 @@ describe('DataConnectionsView', () => {
     // unavailable state and made that queue's Retry call getTeamRoster. The
     // digest carries its own resolved owners, so the queue never needed the
     // roster to render.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const onSendNotification = vi.fn();
     const inner = new MockDataProvider(
       makeProviderBook({ partners: PARTNERS, registrations: REGISTRATIONS, teamUsers: TEAM_USERS }),
@@ -363,7 +363,7 @@ describe('DataConnectionsView', () => {
     // The regression this pins: a failed refresh with a retained answer used
     // to render exactly like a healthy panel — no failure copy, no retry,
     // and tiles that read as freshly answered.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const onSendNotification = vi.fn();
     const provider = new MockDataProvider(
       makeProviderBook({ partners: PARTNERS, registrations: REGISTRATIONS, teamUsers: TEAM_USERS }),
