@@ -7,9 +7,19 @@ const allowDependencies = (from, allowed) => ({
 });
 
 export default tseslint.config(
-  // `coverage` is a generated v8 report, not source; it is only ignored by
-  // .gitignore, which eslint does not read.
-  { ignores: ['dist', 'coverage', 'node_modules'] },
+  // ESLint does not read .gitignore. Exclude generated reports/trace assets,
+  // not the rest of build-metrics or any fixture/source files.
+  {
+    ignores: [
+      'dist',
+      'coverage',
+      'node_modules',
+      'build-metrics/target-state-fixtures/report/**',
+      'build-metrics/target-state-fixtures/results/**',
+      'playwright-report/**',
+      'test-results/**',
+    ],
+  },
   ...tseslint.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],

@@ -27,6 +27,17 @@ test('fixture selection fails rather than silently resharding the matrix', () =>
   assert.match(result.stderr, /Serial fixture E2E cannot be sharded/);
 });
 
+test('VAL-RES-011 selects both the real scaled success and isolated scaled retry cases', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['scripts/run-e2e.mjs', '--grep', 'VAL-RES-011', '--list'],
+    { cwd: root, encoding: 'utf8' },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /target-state-fixtures\.spec\.ts.*VAL-RES-011: built Scaled 100×/);
+  assert.match(result.stdout, /action-route-resilience\.spec\.ts.*VAL-RES-011: Scaled 100×/);
+});
+
 test(
   'shutdown escalates for an unresponsive owned preview and removes temporary output',
   {
