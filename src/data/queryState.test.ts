@@ -5,6 +5,7 @@ import type { QueryContext } from './queryContext';
 import { buildQueryMeta } from './queryMetadata';
 import type { QueryMeta, QueryResult } from './queryMetadata';
 import { editMapKey, useScopedQuery } from './queryState';
+import type { QueryState } from './queryState';
 import { makeProviderBook } from '../test/fixtures';
 
 /**
@@ -48,6 +49,54 @@ describe('editMapKey', () => {
 });
 
 describe('useScopedQuery', () => {
+  it.each(['scope', 'provider'])(
+    'reports initial loading on the first %s-change render before effects',
+    async (identity) => {
+      const first = provider();
+      const second = provider();
+      const gate = deferred<QueryResult<number>>();
+      const frames: QueryState<number>[] = [];
+      const { result, rerender } = renderHook(
+        ({ current, scopeKey }) => {
+          const state = useScopedQuery({
+            provider: current,
+            scopeKey,
+            queryKey: scopeKey,
+            run: () =>
+              scopeKey === 'first' && current === first
+                ? Promise.resolve(answered(1))
+                : gate.promise,
+            errorFallback: 'fallback',
+          });
+          frames.push(state);
+          return state;
+        },
+        { initialProps: { current: first, scopeKey: 'first' } },
+      );
+      await waitFor(() => expect(result.current.data).toBe(1));
+      const firstFrame = frames.length;
+      rerender({
+        current: identity === 'provider' ? second : first,
+        scopeKey: identity === 'scope' ? 'second' : 'first',
+      });
+      expect(frames[firstFrame]).toMatchObject({
+        data: null,
+        meta: null,
+        loading: true,
+        refreshing: false,
+        error: null,
+      });
+      await act(async () => gate.reject(new Error('planned failure')));
+      expect(result.current).toMatchObject({
+        data: null,
+        meta: null,
+        loading: false,
+        refreshing: false,
+        error: 'fallback',
+      });
+    },
+  );
+
   it('traces initial loading into a settled answer', async () => {
     const stableProvider = provider();
     const { result } = renderHook(() =>

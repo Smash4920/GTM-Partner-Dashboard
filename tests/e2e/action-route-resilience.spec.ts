@@ -1,5 +1,9 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { DATA_PROVIDER_METHODS } from '../../src/data/DataProvider';
+import { INTERNAL_DEMO_SCOPE } from '../../src/data/accessScope';
+import { CURRENT_FISCAL_QUARTER } from '../../src/data/constants';
+import { MockDataProvider } from '../../src/data/mock/MockDataProvider';
+import { formatUsdCompact } from '../../src/lib/format';
 
 /**
  * Run against a production preview with VITE_LOG_LEVEL=debug. This uses the
@@ -278,6 +282,65 @@ const FAILURE_ROUTES: FailureRoute[] = [
     },
   },
 ];
+
+test('VAL-DATA-001 VAL-RES-002 VAL-RES-006: Forecast manager change never relabels prior summary or metadata after failure and focused retry', async ({
+  page,
+}) => {
+  const observations = observe(page);
+  // Readiness, health refresh, org and pm-01 succeed; pm-02's first answer fails.
+  await bootOnStaticRoute(page, observations, 'getForecastSummary:4:1');
+  await remote(page);
+  await visit(page, 'Forecasting');
+  await settle(page, observations);
+  const manager = page.getByRole('combobox', { name: 'Partner manager', exact: true });
+  const summary = page.getByRole('group', { name: 'forecast summary', exact: true });
+  const weighted = page.getByRole('group', { name: 'weighted forecast', exact: true });
+  const weeks = page.getByRole('group', { name: 'weekly series', exact: true });
+  await manager.selectOption('pm-01');
+  await settle(page, observations);
+  const previousSummary = await summary.textContent();
+  const weightedText = await weighted.textContent();
+  const weeklyText = await weeks.textContent();
+  const before = observations.started.length;
+  await manager.selectOption('pm-02');
+  // Whether still pending or already failed, the prior answer has disappeared.
+  await expect(summary.getByText('Partner sourced pipeline', { exact: true })).toHaveCount(0);
+  await expect(summary.getByText(/As of .*provider remote/)).toHaveCount(0);
+  await expect(summary).not.toHaveText(previousSummary ?? '');
+  await expect(summary.getByText('Forecast summary unavailable:', { exact: true })).toBeVisible();
+  await expect(
+    summary.getByText('Latest forecast summary refresh failed:', { exact: true }),
+  ).toHaveCount(0);
+  await expect(weighted).toHaveText(weightedText ?? '');
+  await expect(weeks).toHaveText(weeklyText ?? '');
+  await settle(page, observations);
+  expect(
+    observations.started.slice(before).filter((method) => method !== 'listQuarterOpportunities'),
+  ).toEqual(['getForecastSummary']);
+
+  const retryBefore = observations.started.length;
+  await summary.getByRole('button', { name: 'Retry forecast summary', exact: true }).click();
+  await settle(page, observations);
+  const expected = (
+    await new MockDataProvider().getForecastSummary(INTERNAL_DEMO_SCOPE, {
+      quarter: CURRENT_FISCAL_QUARTER,
+      partnerManagerId: 'pm-02',
+    })
+  ).data;
+  await expect(
+    summary
+      .getByText('Partner sourced pipeline', { exact: true })
+      .locator('..')
+      .locator('p')
+      .nth(1),
+  ).toHaveText(formatUsdCompact(expected.openPipelineValue));
+  await expect(summary.getByText(/As of .*provider remote/)).toBeVisible();
+  await expect(summary).toBeFocused();
+  await expectOnlyCalls(observations, retryBefore, ['getForecastSummary']);
+  await expect(weighted).toHaveText(weightedText ?? '');
+  await expect(weeks).toHaveText(weeklyText ?? '');
+  expectSafePreview(page, observations, ['getForecastSummary']);
+});
 
 for (const spec of FAILURE_ROUTES) {
   test(`VAL-RES-009: ${spec.route} names its controlled failure, keeps siblings interactive and retries only that query with focus`, async ({

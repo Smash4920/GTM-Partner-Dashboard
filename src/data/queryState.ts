@@ -225,7 +225,8 @@ export function useScopedQuery<T>(args: {
   return {
     data,
     meta: current?.meta ?? null,
-    loading: inFlight && data === null,
+    // A new identity has no entry yet, including before its effect starts.
+    loading: (current === null || inFlight) && data === null,
     refreshing: inFlight && data !== null,
     error,
     retry,

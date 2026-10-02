@@ -42,6 +42,11 @@ import type { Opportunity } from './types';
  *   filter toggle, a collapsed group reopening — refetches nothing either,
  *   because the keys are unchanged.
  *
+ * Scope identity excludes edits: summary answers belong to access, quarter,
+ * and manager; the other aggregates belong to access and quarter, and names
+ * to access alone. A changed identity gates both data and metadata before
+ * effects, while same-identity refreshes retain their valid previous answer.
+ *
  * The manager filter scopes the summary: target, remaining quota,
  * attainment, and coverage are only honest against the targets committed to
  * the selected manager's own partners, so the manager is part of the
@@ -78,9 +83,11 @@ export function useForecastSummary(
 ): QueryState<ForecastSummary> {
   const edits = editsOf(scope);
   const managerId = scope.partnerManagerId ?? 'all';
+  const scopeKey = `access:${demoScopeKey(access)}|${scope.quarter}|manager:${managerId}`;
   return useScopedQuery({
     provider,
-    queryKey: `access:${demoScopeKey(access)}|${scope.quarter}|manager:${managerId}|rev:${editMapKey(edits.revenueOverrides)}`,
+    scopeKey,
+    queryKey: `${scopeKey}|rev:${editMapKey(edits.revenueOverrides)}`,
     run: (context) =>
       provider.getForecastSummary(
         access,
@@ -102,9 +109,11 @@ export function useWeightedForecast(
   scope: ForecastScope,
 ): QueryState<WeightedForecastSummary> {
   const edits = editsOf(scope);
+  const scopeKey = `access:${demoScopeKey(access)}|${scope.quarter}`;
   return useScopedQuery({
     provider,
-    queryKey: `access:${demoScopeKey(access)}|${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
+    scopeKey,
+    queryKey: `${scopeKey}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
     run: (context) =>
       provider.getWeightedForecast(access, { quarter: scope.quarter, edits }, context),
     errorFallback: 'Failed to load the weighted forecast',
@@ -118,9 +127,11 @@ export function useForecastQuality(
   scope: ForecastScope,
 ): QueryState<ForecastQualitySummary> {
   const edits = editsOf(scope);
+  const scopeKey = `access:${demoScopeKey(access)}|${scope.quarter}`;
   return useScopedQuery({
     provider,
-    queryKey: `access:${demoScopeKey(access)}|${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
+    scopeKey,
+    queryKey: `${scopeKey}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
     run: (context) =>
       provider.getForecastQuality(
         access,
@@ -139,9 +150,11 @@ export function useManagerGroups(
   scope: ForecastScope,
 ): QueryState<ManagerForecastGroup[]> {
   const edits = editsOf(scope);
+  const scopeKey = `access:${demoScopeKey(access)}|${scope.quarter}`;
   return useScopedQuery({
     provider,
-    queryKey: `access:${demoScopeKey(access)}|${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}`,
+    scopeKey,
+    queryKey: `${scopeKey}|rev:${editMapKey(edits.revenueOverrides)}`,
     run: (context) =>
       provider.getManagerForecastGroups(access, { quarter: scope.quarter, edits }, context),
     errorFallback: 'Failed to load the manager groups',
@@ -155,9 +168,11 @@ export function useWeeklySeries(
   scope: ForecastScope,
 ): QueryState<WeeklySeriesRow[]> {
   const edits = editsOf(scope);
+  const scopeKey = `access:${demoScopeKey(access)}|${scope.quarter}`;
   return useScopedQuery({
     provider,
-    queryKey: `access:${demoScopeKey(access)}|${scope.quarter}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
+    scopeKey,
+    queryKey: `${scopeKey}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
     run: (context) =>
       provider.getWeeklyForecastSeries(access, { quarter: scope.quarter, edits }, context),
     errorFallback: 'Failed to load the weekly series',
@@ -182,19 +197,21 @@ export interface PartnerNamesState {
  * Partner id to name, for rendering a row's partner column.
  *
  * A dimension lookup rather than data: it does not move when the forecast
- * does, so it is fetched once per provider and never invalidated by edits. A
- * failure degrades the table to opaque partner ids — legible, and clearly
- * not a name — with a retry offered alongside, instead of taking the table
- * down. On a provider switch the previous provider's names are dropped
+ * does, so it is fetched once per provider/access identity and never
+ * invalidated by edits. A failure degrades the table to opaque partner ids —
+ * legible, and clearly not a name — with a retry offered alongside, instead of taking the table
+ * down. On a provider or access switch the previous names are dropped
  * immediately: a name from another directory is a cross-source label.
  */
 export function usePartnerNames(
   provider: DataProvider,
   access: DemoAccessScope,
 ): PartnerNamesState {
+  const scopeKey = `partner-directory|access:${demoScopeKey(access)}`;
   const directory = useScopedQuery({
     provider,
-    queryKey: `partner-directory|access:${demoScopeKey(access)}`,
+    scopeKey,
+    queryKey: scopeKey,
     run: async (context) => {
       const result = await provider.getPartnerDirectory(access, context);
       return {
