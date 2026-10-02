@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { QueryMeta } from '../data/queryMetadata';
 import type { QueryState } from '../data/queryState';
 import { formatDate } from '../lib/format';
@@ -100,7 +100,9 @@ export function QueryMetaCaption({ meta, refreshing }: { meta: QueryMeta; refres
 export function useRetryRecovery(name: string, failed: boolean) {
   const regionRef = useRef<HTMLDivElement | null>(null);
   const armedRef = useRef(false);
-  useEffect(() => {
+  // Own the retry's orphaned focus during commit, before a containing Modal's
+  // mutation observer applies its generic heading fallback.
+  useLayoutEffect(() => {
     if (failed || !armedRef.current) return;
     armedRef.current = false;
     const region = regionRef.current;

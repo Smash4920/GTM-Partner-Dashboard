@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import {
   expect,
   test,
@@ -23,6 +24,7 @@ import {
   selectChip,
   settle,
 } from './support/accessibility-surfaces';
+import { observeRefreshBusy } from './support/pagination-refresh';
 
 // VAL-A11Y-010's closed inventory is PG-001..015, including five independent
 // manager books and the calendar. Oracles run in the test process; the browser
@@ -488,23 +490,26 @@ async function refreshManager(
   const value = Number(await input.inputValue()) + 1;
   await input.fill(String(value));
   const before = await observations.count(collection.method);
-  // Save through the public editor, then put focus on the already-mounted
-  // footer while the real remote refresh runs; no provider injection.
+  const refresh = await observeRefreshBusy(collection.root, collection.noun);
+  // Save through the public editor; the armed observer captures status, row
+  // and button identity, focus and duplicate activation atomically.
   await row.getByRole('button', { name: 'Save revenue', exact: true }).click();
-  await button.focus();
-  const busyActivation = await button.evaluate((element) => {
-    const busy = element.getAttribute('aria-disabled') === 'true';
-    if (busy) {
-      (element as HTMLButtonElement).click();
-      (element as HTMLButtonElement).click();
-    }
-    return busy;
+  const busy = await refresh.evaluate(({ result }) => result);
+  await refresh.dispose();
+  expect(busy).toMatchObject({
+    busy: 'true',
+    keys: originalRows,
+    sameRows: true,
+    sameButton: true,
+    focused: true,
+    duplicateActivations: 2,
   });
-  expect(busyActivation).toBe(true);
-  await expect(footer(collection).getByRole('status')).toContainText(`Updating ${collection.noun}`);
-  await expect(button).toHaveAttribute('aria-disabled', 'true');
-  expect(await collection.keys()).toEqual(originalRows);
-  await expect(button).toBeFocused();
+  expect(busy.status).toContain(`Updating ${collection.noun}`);
+  await writeFile(
+    test.info().outputPath(`${collection.id}-refresh-busy.json`),
+    JSON.stringify(busy, null, 2),
+  );
+  await evidence(test.info(), `${collection.id}-refresh-busy`, busy);
   if (fail) {
     await expect(footer(collection).getByRole('status')).toContainText(
       `${collection.noun} failed:`,
@@ -514,12 +519,24 @@ async function refreshManager(
     expect(await collection.keys()).toEqual(originalRows);
     await expect(button).toBeFocused();
     expect(await observations.count(collection.method)).toBe(before + 1);
-    await activateTwice(page, button, 'Space');
-    await expect(footer(collection).getByRole('status')).toContainText(
-      `Updating ${collection.noun}`,
+    const retry = await observeRefreshBusy(collection.root, collection.noun, false);
+    await page.keyboard.press('Space');
+    const retryBusy = await retry.evaluate(({ result }) => result);
+    await retry.dispose();
+    expect(retryBusy).toMatchObject({
+      busy: 'true',
+      keys: originalRows,
+      sameRows: true,
+      sameButton: true,
+      focused: true,
+      duplicateActivations: 2,
+    });
+    expect(retryBusy.status).toContain(`Updating ${collection.noun}`);
+    await writeFile(
+      test.info().outputPath(`${collection.id}-retry-busy.json`),
+      JSON.stringify(retryBusy, null, 2),
     );
-    await expect(button).toHaveAttribute('aria-disabled', 'true');
-    expect(await collection.keys()).toEqual(originalRows);
+    await evidence(test.info(), `${collection.id}-retry-busy`, retryBusy);
   }
   await expect(footer(collection).getByRole('status')).not.toContainText(/Updating|failed:/);
   await assertRows(collection, loaded);

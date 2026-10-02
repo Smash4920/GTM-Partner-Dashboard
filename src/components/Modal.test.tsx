@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import Modal from './Modal';
@@ -77,8 +77,9 @@ describe('modal focus contract', () => {
     );
     const { rerender } = render(element(false));
     screen.getByRole('button').focus();
-    rerender(element(true));
-    await waitFor(() => expect(screen.getByRole('heading')).toHaveFocus());
+    // Flush the observer's commit microtask instead of polling in 50 ms steps.
+    await act(async () => rerender(element(true)));
+    expect(screen.getByRole('heading')).toHaveFocus();
     await userEvent.setup({ delay: null }).tab();
     expect(screen.getByRole('heading')).toHaveFocus();
   });

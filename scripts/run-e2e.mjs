@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runWithDiagnostics } from './e2e-diagnostics.mjs';
 import { assertWorkerLimit, prepareFixtures } from './e2e-fixtures.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -14,10 +15,11 @@ const fixtureFile = 'target-state-fixtures.spec.ts';
 if (args.some((arg) => arg === '--shard' || arg.startsWith('--shard='))) {
   throw new Error('Serial fixture E2E cannot be sharded; run the combined suite without --shard.');
 }
-const policy = spawnSync(process.execPath, ['--test', 'scripts/e2e-fixtures.test.mjs'], {
-  cwd: root,
-  stdio: 'inherit',
-});
+const policy = spawnSync(
+  process.execPath,
+  ['--test', 'scripts/e2e-fixtures.test.mjs', 'scripts/e2e-diagnostics.test.mjs'],
+  { cwd: root, stdio: 'inherit' },
+);
 if (policy.status !== 0) process.exit(policy.status ?? 1);
 
 function run(extraArgs, env, capture = false) {
@@ -29,10 +31,36 @@ function run(extraArgs, env, capture = false) {
   });
 }
 
-function measured(name, extraArgs, env) {
+async function measured(name, extraArgs, env) {
   const start = performance.now();
-  const result = run(extraArgs, env);
-  phases.push({ name, durationMs: Math.round(performance.now() - start), exitCode: result.status });
+  let diagnostics;
+  let result;
+  if (args.includes('--list')) {
+    result = run(extraArgs, env);
+  } else {
+    const parent = join(root, 'build-metrics/e2e-diagnostics');
+    mkdirSync(parent, { recursive: true });
+    diagnostics = mkdtempSync(
+      join(parent, `${env.E2E_TARGET_FIXTURES === '1' ? 'serial' : 'ordinary'}-`),
+    );
+    process.stdout.write(`E2E local crash diagnostics: ${diagnostics}\n`);
+    result = await runWithDiagnostics(process.execPath, [cli, 'test', ...args, ...extraArgs], {
+      cwd: root,
+      directory: diagnostics,
+      env: {
+        ...process.env,
+        ...env,
+        // Browser process stderr, not API/protocol or application console tracing.
+        DEBUG: [process.env.DEBUG, 'pw:browser'].filter(Boolean).join(','),
+      },
+    });
+  }
+  phases.push({
+    name,
+    durationMs: Math.round(performance.now() - start),
+    exitCode: result.status,
+    diagnostics,
+  });
   return result;
 }
 
@@ -81,7 +109,7 @@ if (selected.some((file) => file.endsWith(fixtureFile))) {
     { cwd: root, stdio: 'inherit' },
   );
   if (types.status !== 0) process.exit(types.status ?? 1);
-  const result = measured('serial target fixtures', [], {
+  const result = await measured('serial target fixtures', [], {
     E2E_TARGET_FIXTURES: '1',
     E2E_DISCOVERY: '0',
   });
@@ -102,7 +130,7 @@ if (selected.some((file) => !file.endsWith(fixtureFile))) {
       durationMs: Math.round(performance.now() - preparationStarted),
       exitCode: 0,
     });
-    const result = measured('ordinary production preview', [], {
+    const result = await measured('ordinary production preview', [], {
       ...prepared.env,
       E2E_TARGET_FIXTURES: '0',
       E2E_DISCOVERY: '0',

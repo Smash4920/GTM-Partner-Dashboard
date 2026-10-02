@@ -111,7 +111,7 @@ describe('query states (VAL-DATA-006)', () => {
   });
 
   it('an unavailable answer names the widget with stable copy and offers a focused retry', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const retry = vi.fn();
     render(
       <>
@@ -184,7 +184,7 @@ describe('query states (VAL-DATA-006)', () => {
     // The Retry button unmounts with the failure UI, so without recovery the
     // keyboard user's focus would fall to document.body. The region the
     // widget renders in is the stable, named landing target.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const retry = vi.fn();
     const { rerender } = render(
       <>
@@ -218,7 +218,7 @@ describe('query states (VAL-DATA-006)', () => {
   it('a successful retry after a failed refresh lands focus on the same named region', async () => {
     // The stale-beats-blank failure shape: the figures stayed on screen, the
     // retry rode alongside them, and the recovery still owns the focus.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const retry = vi.fn();
     const failing = state({
       data: { total: 42 },
@@ -247,7 +247,7 @@ describe('query states (VAL-DATA-006)', () => {
     // Arming happens on the retry click, but focus that is verifiably the
     // user's own — on another control, connected, outside the region — is
     // never stolen back.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const retry = vi.fn();
     const { rerender } = render(
       <>
@@ -339,7 +339,7 @@ describe('query section states', () => {
   const renderRoster = () => <p>The roster is on screen</p>;
 
   it('renders retained content with a named refresh failure, retrying only the failed dependency', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const rosterRetry = vi.fn();
     const managersRetry = vi.fn();
     render(
@@ -380,7 +380,7 @@ describe('query section states', () => {
   });
 
   it('retries every failed dependency exactly once on one click', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const alertsRetry = vi.fn();
     const rosterRetry = vi.fn();
     const managersRetry = vi.fn();
@@ -427,7 +427,7 @@ describe('query section states', () => {
   });
 
   it('a mix of initial and refresh failures renders unavailable and retries every failed dependency', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const rosterRetry = vi.fn();
     const recordsRetry = vi.fn();
     render(
@@ -465,7 +465,7 @@ describe('query section states', () => {
   });
 
   it('a successful section retry lands focus on the section region, never the body', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const failing = state({
       data: { total: 4 },
       meta: meta(),
