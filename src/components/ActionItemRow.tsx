@@ -8,7 +8,7 @@ import type { ActionCenterScope } from '../data/actionCenter';
 import type { ActionItem, DashboardNotification } from '../data/types';
 import { actionEvidence } from '../lib/actionEvidence';
 import { formatDate, formatUsd } from '../lib/format';
-import type { NotificationDraft } from '../lib/notifications';
+import type { NotificationSender } from '../lib/notifications';
 import type { WorkflowActions } from '../data/workflows';
 
 const CONTROL_CLASS =
@@ -29,7 +29,7 @@ export default function ActionItemRow({
   provider: DataProvider;
   roster?: ActionCenterScope['roster'];
   notifications: DashboardNotification[];
-  onSendNotification?: (draft: NotificationDraft) => void;
+  onSendNotification?: NotificationSender;
   onOpenContext?: (item: ActionItem) => void;
 } & WorkflowActions) {
   const [expanded, setExpanded] = useState(false);

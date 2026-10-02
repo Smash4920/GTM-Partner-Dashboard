@@ -4,7 +4,8 @@ import ActionNotificationPanel from './ActionNotificationPanel';
 import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
 import { DEFAULT_ACTION_POLICY } from '../lib/actionPolicy';
-import { recordNotification } from '../lib/notificationRecords';
+import { prepareNotificationDraft, recordNotification } from '../lib/notificationRecords';
+import type { NotificationSender } from '../lib/notifications';
 
 async function fixture() {
   const provider = new MockDataProvider();
@@ -22,7 +23,11 @@ describe('Action Center local notification integration', () => {
     const { provider, action } = await fixture();
     const roster = vi.spyOn(provider, 'getTeamRoster');
     const send = vi.fn();
-    const props = { provider, action, onSend: send, notifications: [] };
+    const onSend: NotificationSender = (draft, evidence) => {
+      const prepared = prepareNotificationDraft(draft, evidence.recipient);
+      if (prepared) send(prepared, evidence);
+    };
+    const props = { provider, action, onSend, notifications: [] };
     const { rerender } = render(<ActionNotificationPanel {...props} />);
     await screen.findByLabelText('Subject');
     expect(roster).toHaveBeenCalledOnce();
@@ -40,6 +45,10 @@ describe('Action Center local notification integration', () => {
         actionCategory: category,
         subject: 'Edited subject',
         channels: ['email'],
+      }),
+      expect.objectContaining({
+        provider,
+        recipient: expect.objectContaining({ id: action.owner!.userId }),
       }),
     );
     const saved = recordNotification(
@@ -104,4 +113,42 @@ describe('Action Center local notification integration', () => {
     fireEvent.click(screen.getByRole('button', { name: /Send to/ }));
     expect(send).not.toHaveBeenCalled();
   });
+
+  it.each(['failed', 'pending'] as const)(
+    'drops obsolete Action Center recipient controls through a %s changed-roster refresh',
+    async (mode) => {
+      const { provider, action } = await fixture();
+      const read = provider.getTeamRoster.bind(provider);
+      const roster = vi.spyOn(provider, 'getTeamRoster').mockImplementationOnce(read);
+      roster.mockImplementation(
+        mode === 'failed'
+          ? () => Promise.reject(new Error('Private failure'))
+          : () => new Promise<never>(() => {}),
+      );
+      const send = vi.fn();
+      const props = { provider, action, onSend: send, notifications: [] };
+      const { rerender } = render(<ActionNotificationPanel {...props} />);
+      await screen.findByLabelText('Subject');
+      const oldButton = screen.getByRole('button', { name: /Send to/ });
+      rerender(
+        <ActionNotificationPanel
+          {...props}
+          roster={{ overrides: { [action.owner!.userId!]: { status: 'suspended' } } }}
+        />,
+      );
+      expect(screen.queryByLabelText('Subject')).not.toBeInTheDocument();
+      expect(oldButton).not.toBeInTheDocument();
+      fireEvent.click(oldButton);
+      expect(send).not.toHaveBeenCalled();
+      if (mode === 'failed') {
+        await screen.findByText('Failed to load the notification roster');
+        roster.mockImplementation(read);
+        fireEvent.click(screen.getByRole('button', { name: /Retry/ }));
+        await screen.findByText(/Unowned — no eligible active demo recipient/);
+      } else {
+        expect(screen.getByText('Loading action notification roster')).toBeInTheDocument();
+      }
+      expect(screen.queryByRole('button', { name: /Send to/ })).not.toBeInTheDocument();
+    },
+  );
 });

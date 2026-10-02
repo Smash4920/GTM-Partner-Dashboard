@@ -27,9 +27,9 @@ import type {
 } from '../data/types';
 import {
   composeCopy,
-  prepareNotificationDraft,
   slaAlertCopy,
   type NotificationDraft,
+  type NotificationSender,
 } from '../lib/notifications';
 import type { RegistrationSlaAlert } from '../lib/metrics';
 
@@ -62,7 +62,7 @@ interface DataConnectionsViewProps {
   onAddTeamUser: (input: NewTeamUserInput) => void;
   onSetTeamUserStatus: (userId: string, status: TeamUserStatus) => void;
   onRemoveTeamUser: (userId: string) => void;
-  onSendNotification: (draft: NotificationDraft) => void;
+  onSendNotification: NotificationSender;
 }
 
 export default function DataConnectionsView({
@@ -107,40 +107,39 @@ export default function DataConnectionsView({
       )
     : [];
 
-  const describe = (template: ComposerState['template'], registrationId: string | null) => {
+  const composition = (template: ComposerState['template'], registrationId: string | null) => {
     const registration = registrations.rows.find((item) => item.id === registrationId);
     const partner = registration
       ? (partners.data ?? []).find((item) => item.id === registration.partnerId)
       : undefined;
     const alert = alertList.find((item) => item.registration.id === registrationId);
-    const copy = composeCopy({ template, registration, partner, alert });
+    return composeCopy({ template, registration, partner, alert });
+  };
+
+  const describe = (template: ComposerState['template'], registrationId: string | null) => {
+    const copy = composition(template, registrationId);
     return { subject: copy.subject, body: copy.body };
+  };
+
+  const sendCandidate = (draft: NotificationDraft, recipient: TeamUser) => {
+    onSendNotification(draft, { provider, recipient });
   };
 
   const send = () => {
     const user = users.find((candidate) => candidate.id === composer.userId);
-    const registration = registrations.rows.find((item) => item.id === composer.registrationId);
     if (!user) return;
-    const copy = composeCopy({
-      template: composer.template,
-      registration,
-      partner: registration
-        ? (partners.data ?? []).find((item) => item.id === registration.partnerId)
-        : undefined,
-      alert: alertList.find((item) => item.registration.id === composer.registrationId),
-    });
-    const draft = prepareNotificationDraft(
+    const copy = composition(composer.template, composer.registrationId);
+    sendCandidate(
       {
         userId: user.id,
         kind: copy.kind,
-        subject: composer.subject.trim(),
-        body: composer.body.trim(),
+        subject: composer.subject,
+        body: composer.body,
         channels: composer.channels ?? user.channels,
         registrationId: composer.registrationId ?? undefined,
       },
       user,
     );
-    if (draft) onSendNotification(draft);
   };
 
   const notifyAlert = (registrationId: string) => {
@@ -155,14 +154,15 @@ export default function DataConnectionsView({
     for (const alert of alertList) {
       if (!alert.owner) continue;
       const copy = slaAlertCopy(alert);
-      onSendNotification({
-        userId: alert.owner.id,
-        kind: copy.kind,
-        subject: copy.subject,
-        body: copy.body,
-        channels: alert.owner.channels,
-        registrationId: alert.registration.id,
-      });
+      sendCandidate(
+        {
+          userId: alert.owner.id,
+          ...copy,
+          channels: alert.owner.channels,
+          registrationId: alert.registration.id,
+        },
+        alert.owner,
+      );
     }
   };
 

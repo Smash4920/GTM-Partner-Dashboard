@@ -17,6 +17,9 @@ import type {
   Partner,
   TeamUser,
 } from '../data/types';
+import type { DataProvider } from '../data/DataProvider';
+import { prepareNotificationDraft } from './notificationRecords';
+export { prepareNotificationDraft } from './notificationRecords';
 import { ACTION_CATEGORY_LABELS } from '../data/actionCenter';
 import { formatDate, formatUsd } from './format';
 import { actionEvidence } from './actionEvidence';
@@ -62,35 +65,11 @@ export interface NotificationDraft {
   entityId?: string;
 }
 
-/** Explicit local record allowlist, never a spread of caller/provider records. */
-export function prepareNotificationDraft(
+/** The shell prepares every save against current state; evidence alone is not eligibility. */
+export type NotificationSender = (
   draft: NotificationDraft,
-  recipient: TeamUser,
-): NotificationDraft | null {
-  const channels = [...new Set(draft.channels)].filter((channel) =>
-    recipient.channels.includes(channel),
-  );
-  if (
-    recipient.status !== 'active' ||
-    recipient.id !== draft.userId ||
-    !draft.subject.trim() ||
-    !draft.body.trim() ||
-    channels.length === 0
-  )
-    return null;
-  return {
-    userId: recipient.id,
-    kind: draft.kind,
-    subject: draft.subject.trim(),
-    body: draft.body.trim(),
-    channels,
-    ...(draft.registrationId ? { registrationId: draft.registrationId } : {}),
-    ...(draft.actionId ? { actionId: draft.actionId } : {}),
-    ...(draft.actionCategory ? { actionCategory: draft.actionCategory } : {}),
-    ...(draft.entityKind ? { entityKind: draft.entityKind } : {}),
-    ...(draft.entityId ? { entityId: draft.entityId } : {}),
-  };
-}
+  evidence: { provider: DataProvider; recipient: TeamUser },
+) => void;
 
 /** Category-specific copy uses only the reason's minimum public evidence. */
 export function actionNotificationDraft(

@@ -173,6 +173,12 @@ Missing recipients remain Unowned. Each category prefills minimum evidence,
 recommendation, and entity reference in the shared notification composer.
 Only selected configured channels are recorded, with runtime action time and
 `simulated-local` status. Confirmation says **Simulated / local only**.
+Batch and individual saves recheck scoped recipient evidence against the current
+session roster before recording anything. Paused or invited recipients, removed
+session additions, obsolete provider evidence, blank copy, and empty channel
+selections cannot save, even when a refresh fails or remains pending. Retained
+evidence and independent retries remain visible; stale owners are never rerouted
+silently at save time.
 Refresh clears all records; no transport executes. Each row exposes its merged
 evidence, per-reason recommendation, due date, exposure, routed owner or Unowned,
 and provider lineage/as-of through a keyboard/touch disclosure. Internal links

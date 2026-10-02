@@ -61,9 +61,10 @@ export default defineConfig({
   },
   build: {
     // Safe two-pass compression keeps the full Action Center contract inside
-    // the existing budgets; no unsafe transforms or property mangling.
+    // the existing budgets; retaining shared function bodies compresses better
+    // than injecting their variables into callers. No unsafe transforms or property mangling.
     minify: 'terser',
-    terserOptions: { compress: { passes: 2 } },
+    terserOptions: { compress: { passes: 2, inline: 1 } },
     // No public source maps in production: a published .map hands anyone the
     // full original source and pairs with stack traces to expose internals.
     // This app ships nothing to an error collector, so maps would exist only

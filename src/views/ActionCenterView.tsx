@@ -11,7 +11,7 @@ import type { DataProvider } from '../data/DataProvider';
 import { pageWindowAsQuery } from '../data/paginationState';
 import { useActionCenterQueries } from '../data/useActionCenterQueries';
 import type { ActionItem, ActionPolicy, DashboardNotification } from '../data/types';
-import type { NotificationDraft } from '../lib/notifications';
+import type { NotificationSender } from '../lib/notifications';
 import type { WorkflowActions } from '../data/workflows';
 
 export default function ActionCenterView({
@@ -27,7 +27,7 @@ export default function ActionCenterView({
   provider: DataProvider;
   policy: Readonly<ActionPolicy>;
   onPolicyChange: (policy: ActionPolicy) => void;
-  onSendNotification?: (draft: NotificationDraft) => void;
+  onSendNotification?: NotificationSender;
   notifications?: DashboardNotification[];
   onOpenContext?: (item: ActionItem) => void;
 } & WorkflowActions &

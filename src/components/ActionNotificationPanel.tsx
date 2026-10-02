@@ -3,11 +3,7 @@ import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
 import type { DataProvider, TeamRosterScope } from '../data/DataProvider';
 import { useScopedQuery } from '../data/queryState';
 import type { ActionCategory, ActionItem, DashboardNotification } from '../data/types';
-import {
-  actionNotificationDraft,
-  prepareNotificationDraft,
-  type NotificationDraft,
-} from '../lib/notifications';
+import { actionNotificationDraft, type NotificationSender } from '../lib/notifications';
 import NotificationComposer, { type ComposerState } from './NotificationComposer';
 import { renderQueryState } from './QueryState';
 
@@ -22,20 +18,23 @@ export default function ActionNotificationPanel({
   provider: DataProvider;
   roster?: TeamRosterScope;
   action: ActionItem;
-  onSend: (draft: NotificationDraft) => void;
+  onSend: NotificationSender;
   notifications: DashboardNotification[];
 }) {
+  const rosterKey = JSON.stringify(roster);
   const team = useScopedQuery({
     provider,
-    queryKey: `action-notification-roster:${JSON.stringify(roster)}`,
+    queryKey: `action-notification-roster:${rosterKey}`,
     // Never retain a recipient across changed routing configuration.
-    scopeKey: JSON.stringify(roster),
+    scopeKey: rosterKey,
     run: (context) => provider.getTeamRoster(INTERNAL_DEMO_SCOPE, roster, context),
     errorFallback: 'Failed to load the notification roster',
   });
   const [edited, setEdited] = useState<ComposerState | null>(null);
   return renderQueryState('action notification roster', team, (users) => {
-    const initial = actionNotificationDraft(action, action.reasons[0].category, users);
+    const compose = (category: ComposerState['template']) =>
+      actionNotificationDraft(action, category as ActionCategory, users);
+    const initial = compose(action.reasons[0].category);
     if (!initial)
       return (
         <p className="text-xs text-signal">
@@ -49,15 +48,16 @@ export default function ActionNotificationPanel({
       subject: initial.subject,
       body: initial.body,
     };
-    const draft = actionNotificationDraft(action, state.template as ActionCategory, users);
+    const recipient = users.find((user) => user.id === initial.userId)!;
+    const draft = compose(state.template);
     const describe = (category: ComposerState['template']) =>
-      actionNotificationDraft(action, category as ActionCategory, users) ?? {
+      compose(category) ?? {
         subject: '',
         body: '',
       };
     return (
       <NotificationComposer
-        users={users.filter((user) => user.id === initial.userId)}
+        users={[recipient]}
         partners={[]}
         registrations={[]}
         alerts={[]}
@@ -67,17 +67,15 @@ export default function ActionNotificationPanel({
         describe={describe}
         onSend={() => {
           if (!draft || team.error || team.refreshing) return;
-          const recipient = users.find((user) => user.id === draft.userId)!;
-          const prepared = prepareNotificationDraft(
+          onSend(
             {
               ...draft,
               subject: state.subject,
               body: state.body,
               channels: state.channels ?? recipient.channels,
             },
-            recipient,
+            { provider, recipient },
           );
-          if (prepared) onSend(prepared);
         }}
         lastSent={notifications.find((notification) => notification.actionId === action.id)}
       />

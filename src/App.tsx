@@ -14,7 +14,7 @@ import { QueryLoading } from './components/QueryState';
 import Sidebar, { type Route } from './components/Sidebar';
 import { MenuIcon } from './components/icons';
 import { SNAPSHOT_DATE } from './data/constants';
-import type { DataProvider } from './data/DataProvider';
+import type { DataProvider, TeamRosterScope } from './data/DataProvider';
 import { PROVIDER_OPTIONS, providerOption } from './data/providers';
 import type { ProviderId } from './data/providers';
 import type { SessionEdits } from './data/sessionEdits';
@@ -32,8 +32,8 @@ import type {
   TeamUser,
   TeamUserStatus,
 } from './data/types';
-import type { NotificationDraft } from './lib/notifications';
-import { recordNotification } from './lib/notificationRecords';
+import type { NotificationSender } from './lib/notifications';
+import { prepareNotificationDraft, recordNotification } from './lib/notificationRecords';
 import { formatDate } from './lib/format';
 import { DEFAULT_ACTION_POLICY } from './lib/actionPolicy';
 import { actionDestination } from './data/actionNavigation';
@@ -144,8 +144,10 @@ export default function App({
   // notifications are their own session log — the same shape as the other
   // session edits, and the same gap a live provider has to close by persisting
   // them (see Data Connections).
-  const [teamUserOverrides, setTeamUserOverrides] = useState<Record<string, Partial<TeamUser>>>({});
-  const [addedTeamUsers, setAddedTeamUsers] = useState<TeamUser[]>([]);
+  const [teamRoster, setTeamRoster] = useState<Required<TeamRosterScope>>({
+    overrides: {},
+    added: [],
+  });
   const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
   const [actionPolicy, setActionPolicy] = useState<Readonly<ActionPolicy>>(DEFAULT_ACTION_POLICY);
   const [workflowTarget, setWorkflowTarget] = useState<WorkflowTarget | null>(null);
@@ -154,6 +156,16 @@ export default function App({
   const changeSeq = useRef(0);
   const teamUserSeq = useRef(0);
   const notificationSeq = useRef(0);
+  // Synchronous fences also cover two intents dispatched before React renders.
+  const notificationSession = useRef({
+    roster: teamRoster,
+    removed: [] as string[],
+    generation: 0,
+  }).current;
+  const updateTeamRoster = (roster: typeof teamRoster) => {
+    notificationSession.roster = roster;
+    setTeamRoster(roster);
+  };
 
   // The provider is the integration seam, and the header's selector is a
   // *request*, not a switch: a candidate provider has to pass a readiness
@@ -173,8 +185,9 @@ export default function App({
     setClassifications({});
     setProspects([]);
     prospectSeq.current = 0;
-    setTeamUserOverrides({});
-    setAddedTeamUsers([]);
+    notificationSession.roster = { overrides: {}, added: [] };
+    setTeamRoster(notificationSession.roster);
+    notificationSession.removed = [];
     teamUserSeq.current = 0;
     setNotifications([]);
     setActionPolicy(DEFAULT_ACTION_POLICY);
@@ -187,6 +200,7 @@ export default function App({
 
   const handleProviderCommit = useCallback(
     (next: CommittedProvider) => {
+      notificationSession.generation = next.generation;
       log.info('Provider committed', { providerId: next.id, generation: next.generation });
       resetSessionState();
     },
@@ -444,44 +458,66 @@ export default function App({
       role: input.role,
       partnerManagerId: input.partnerManagerId,
     });
-    setAddedTeamUsers((prev) => [
-      ...prev,
+    const added = [
+      ...notificationSession.roster.added,
       {
         id: `session-user-${teamUserSeq.current}`,
         name: input.name,
         email: input.email,
         role: input.role,
         partnerManagerId: input.partnerManagerId,
-        status: 'invited',
+        status: 'invited' as const,
         channels: input.channels,
         addedAt: new Date().toISOString(),
       },
-    ]);
+    ];
+    updateTeamRoster({ ...notificationSession.roster, added });
   };
 
   const setTeamUserStatus = (userId: string, status: TeamUserStatus) => {
     log.debug('Team user status changed', { userId, status });
     const patch: Partial<TeamUser> = { status };
     if (status === 'active') patch.authorizedAt = new Date().toISOString();
-    if (addedTeamUsers.some((user) => user.id === userId)) {
-      setAddedTeamUsers((prev) =>
-        prev.map((user) => (user.id === userId ? { ...user, ...patch } : user)),
-      );
+    const roster = notificationSession.roster;
+    if (roster.added.some((user) => user.id === userId)) {
+      updateTeamRoster({
+        ...roster,
+        added: roster.added.map((user) => (user.id === userId ? { ...user, ...patch } : user)),
+      });
       return;
     }
-    setTeamUserOverrides((prev) => ({ ...prev, [userId]: { ...prev[userId], ...patch } }));
+    updateTeamRoster({
+      ...roster,
+      overrides: { ...roster.overrides, [userId]: { ...roster.overrides[userId], ...patch } },
+    });
   };
 
   const removeTeamUser = (userId: string) => {
     log.debug('Session team user removed', { userId });
-    setAddedTeamUsers((prev) => prev.filter((user) => user.id !== userId));
+    notificationSession.removed.push(userId);
+    updateTeamRoster({
+      ...notificationSession.roster,
+      added: notificationSession.roster.added.filter((user) => user.id !== userId),
+    });
   };
 
   // Sends are timestamped off the session clock, not the snapshot: the data is
   // mocked at a fixed date, but an action taken now happened now. The record
   // is simulated and local to this session — the demo has no sender behind it,
   // so nothing is ever delivered.
-  const sendNotification = (draft: NotificationDraft) => {
+  const sendNotification: NotificationSender = (candidate, evidence) => {
+    if (
+      notificationSession.generation !== committed.generation ||
+      evidence.provider !== provider ||
+      notificationSession.removed.includes(candidate.userId)
+    )
+      return;
+    const draft = prepareNotificationDraft(
+      candidate,
+      evidence.recipient,
+      notificationSession.roster,
+    );
+    if (!draft) return;
     notificationSeq.current += 1;
     const id = `notification-${notificationSeq.current}`;
     log.info('Notification sent', {
@@ -611,8 +647,7 @@ export default function App({
             forecastEdits={forecastEdits}
             classifications={classifications}
             prospects={prospects}
-            teamUserOverrides={teamUserOverrides}
-            addedTeamUsers={addedTeamUsers}
+            roster={teamRoster}
             notifications={notifications}
             actionPolicy={actionPolicy}
             onPolicyChange={setActionPolicy}
@@ -640,7 +675,7 @@ export default function App({
                 <WorkflowPanel
                   key={`${providerId}:${committed.generation}`}
                   provider={provider}
-                  roster={{ overrides: teamUserOverrides, added: addedTeamUsers }}
+                  roster={teamRoster}
                   records={workflowRecords}
                   changes={forecastChanges}
                   target={workflowTarget}
@@ -674,8 +709,7 @@ interface RouteContentProps {
   forecastEdits: SessionEdits;
   classifications: Record<string, MeetingClassification>;
   prospects: Partner[];
-  teamUserOverrides: Record<string, Partial<TeamUser>>;
-  addedTeamUsers: TeamUser[];
+  roster: Required<TeamRosterScope>;
   notifications: DashboardNotification[];
   actionPolicy: Readonly<ActionPolicy>;
   onPolicyChange: (policy: ActionPolicy) => void;
@@ -688,7 +722,7 @@ interface RouteContentProps {
   onAddTeamUser: (input: NewTeamUserInput) => void;
   onSetTeamUserStatus: (userId: string, status: TeamUserStatus) => void;
   onRemoveTeamUser: (userId: string) => void;
-  onSendNotification: (draft: NotificationDraft) => void;
+  onSendNotification: NotificationSender;
   onOpenActionContext: (item: ActionItem) => void;
   contextPartnerId?: string;
   onWorkflow: (target: WorkflowTarget) => void;
@@ -711,8 +745,7 @@ function RouteContent({
   forecastEdits,
   classifications,
   prospects,
-  teamUserOverrides,
-  addedTeamUsers,
+  roster,
   notifications,
   actionPolicy,
   onPolicyChange,
@@ -761,7 +794,7 @@ function RouteContent({
               edits={forecastEdits}
               classifications={classifications}
               prospects={prospects}
-              roster={{ overrides: teamUserOverrides, added: addedTeamUsers }}
+              roster={roster}
               onSendNotification={onSendNotification}
               notifications={notifications}
               onOpenContext={onOpenActionContext}
@@ -781,8 +814,8 @@ function RouteContent({
         <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:data-connections`}>
           <DataConnectionsView
             provider={provider}
-            teamUserOverrides={teamUserOverrides}
-            addedTeamUsers={addedTeamUsers}
+            teamUserOverrides={roster.overrides}
+            addedTeamUsers={roster.added}
             notifications={notifications}
             onAddTeamUser={onAddTeamUser}
             onSetTeamUserStatus={onSetTeamUserStatus}

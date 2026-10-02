@@ -668,14 +668,17 @@ describe('DataConnectionsView', () => {
     await user.click(screen.getByRole('button', { name: 'Send to J. Alvarez' }));
 
     expect(onSendNotification).toHaveBeenCalledTimes(1);
-    expect(onSendNotification).toHaveBeenCalledWith({
-      userId: OWNER_USER_ID,
-      kind: 'registration-sla-warning',
-      subject: 'Deal reg due next business day: Acme Freight',
-      body: slaAlertCopy(alertFor(APPROACHING_REG_ID)).body,
-      channels: ['email', 'slack'],
-      registrationId: APPROACHING_REG_ID,
-    });
+    expect(onSendNotification).toHaveBeenCalledWith(
+      {
+        userId: OWNER_USER_ID,
+        kind: 'registration-sla-warning',
+        subject: 'Deal reg due next business day: Acme Freight',
+        body: slaAlertCopy(alertFor(APPROACHING_REG_ID)).body,
+        channels: ['email', 'slack'],
+        registrationId: APPROACHING_REG_ID,
+      },
+      expect.anything(),
+    );
   });
 
   it('keeps the alert kind when the copy is edited by hand', async () => {
@@ -695,6 +698,7 @@ describe('DataConnectionsView', () => {
         subject: 'Quick nudge',
         body: 'Please approve it today.',
       }),
+      expect.anything(),
     );
   });
 
@@ -817,22 +821,30 @@ describe('DataConnectionsView', () => {
     const approaching = slaAlertCopy(alertFor(APPROACHING_REG_ID));
     const breached = slaAlertCopy(alertFor(OWNED_BREACH_REG_ID));
     expect(onSendNotification).toHaveBeenCalledTimes(2);
-    expect(onSendNotification).toHaveBeenNthCalledWith(1, {
-      userId: OWNER_USER_ID,
-      kind: approaching.kind,
-      subject: approaching.subject,
-      body: approaching.body,
-      channels: ['email', 'slack'],
-      registrationId: APPROACHING_REG_ID,
-    });
-    expect(onSendNotification).toHaveBeenNthCalledWith(2, {
-      userId: OWNER_USER_ID,
-      kind: breached.kind,
-      subject: breached.subject,
-      body: breached.body,
-      channels: ['email', 'slack'],
-      registrationId: OWNED_BREACH_REG_ID,
-    });
+    expect(onSendNotification).toHaveBeenNthCalledWith(
+      1,
+      {
+        userId: OWNER_USER_ID,
+        kind: approaching.kind,
+        subject: approaching.subject,
+        body: approaching.body,
+        channels: ['email', 'slack'],
+        registrationId: APPROACHING_REG_ID,
+      },
+      expect.anything(),
+    );
+    expect(onSendNotification).toHaveBeenNthCalledWith(
+      2,
+      {
+        userId: OWNER_USER_ID,
+        kind: breached.kind,
+        subject: breached.subject,
+        body: breached.body,
+        channels: ['email', 'slack'],
+        registrationId: OWNED_BREACH_REG_ID,
+      },
+      expect.anything(),
+    );
     expect(onSendNotification).not.toHaveBeenCalledWith(
       expect.objectContaining({ registrationId: ORPHAN_BREACH_REG_ID }),
     );
@@ -929,14 +941,17 @@ describe('DataConnectionsView', () => {
     await user.click(screen.getByRole('button', { name: 'Send to J. Alvarez' }));
 
     // No registration and no alert behind it: a manual note with no record id.
-    expect(onSendNotification).toHaveBeenCalledWith({
-      userId: OWNER_USER_ID,
-      kind: 'manual',
-      subject: 'Heads up',
-      body: 'The new partner is live.',
-      channels: ['email', 'slack'],
-      registrationId: undefined,
-    });
+    expect(onSendNotification).toHaveBeenCalledWith(
+      {
+        userId: OWNER_USER_ID,
+        kind: 'manual',
+        subject: 'Heads up',
+        body: 'The new partner is live.',
+        channels: ['email', 'slack'],
+        registrationId: undefined,
+      },
+      expect.anything(),
+    );
   });
 
   it('falls back to the partner id when the book no longer carries the partner', async () => {
