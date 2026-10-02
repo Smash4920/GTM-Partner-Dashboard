@@ -3,7 +3,11 @@ import { CURRENT_FISCAL_QUARTER } from './constants';
 import { phaseForQuarter } from '../lib/metrics';
 import { INTERNAL_DEMO_SCOPE } from './accessScope';
 import type { DemoAccessScope } from './accessScope';
-import { MAX_SLA_ALERT_DIGEST, TOP_LEADERBOARD_LIMIT } from './DataProvider';
+import {
+  MAX_FORECAST_QUALITY_SAMPLE_SIZE,
+  MAX_SLA_ALERT_DIGEST,
+  TOP_LEADERBOARD_LIMIT,
+} from './DataProvider';
 import type { DataProvider } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { ScaleDataProvider } from './mock/ScaleDataProvider';
@@ -178,6 +182,40 @@ function countStrings(value: unknown): number {
 }
 
 describe('VAL-DATA-010: response bounds at 1× and 100×', () => {
+  it('keeps maximum forecast samples fixed while full-set totals scale exactly 100×', async () => {
+    const local = await one.getForecastQuality(
+      INTERNAL_DEMO_SCOPE,
+      { quarter },
+      MAX_FORECAST_QUALITY_SAMPLE_SIZE,
+    );
+    const scaled = await hundred.getForecastQuality(
+      INTERNAL_DEMO_SCOPE,
+      { quarter },
+      MAX_FORECAST_QUALITY_SAMPLE_SIZE,
+    );
+    for (const field of [
+      'openCount',
+      'aboveCount',
+      'aboveValue',
+      'belowCount',
+      'belowValue',
+    ] as const) {
+      expect(scaled.data[field]).toBe(local.data[field] * 100);
+    }
+    for (const result of [local, scaled]) {
+      expect(result.data.sample).toHaveLength(
+        Math.min(10, result.data.aboveCount) + Math.min(10, result.data.belowCount),
+      );
+      for (const direction of ['above', 'below'] as const) {
+        expect(result.data.sample.filter((row) => row.direction === direction)).toHaveLength(
+          Math.min(10, direction === 'above' ? result.data.aboveCount : result.data.belowCount),
+        );
+      }
+      expect(JSON.stringify(result).length).toBeLessThan(6_000);
+    }
+    expect(scaled.meta).toEqual({ ...local.meta, providerId: 'scaled' });
+  });
+
   it('confirms the books differ by exactly 100×, so the comparisons below are non-vacuous', () => {
     expect(hundred.size.partners).toBe(base.partners.length * 100);
     expect(hundred.size.opportunities).toBe(base.opportunities.length * 100);

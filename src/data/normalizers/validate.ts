@@ -106,7 +106,7 @@ export function readEnum<T extends string>(
     issue(issues, 'missing-field', path, 'expected one of the declared source values');
     return undefined;
   }
-  if (typeof value !== 'string' || !(value in mapping)) {
+  if (typeof value !== 'string' || !Object.hasOwn(mapping, value)) {
     issue(
       issues,
       'unknown-enum-value',

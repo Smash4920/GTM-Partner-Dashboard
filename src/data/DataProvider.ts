@@ -198,7 +198,8 @@ export interface MismatchRow {
  *
  * Counts and exposure are aggregates; `sample` is bounded because the view
  * shows only a handful. Returning every mismatching deal would put an
- * unbounded list back on the wire for a card that renders six rows.
+ * unbounded list back on the wire for a card that renders six rows. Each
+ * direction is capped at `MAX_FORECAST_QUALITY_SAMPLE_SIZE`, twenty total.
  */
 export interface ForecastQualitySummary {
   openCount: number;
@@ -207,6 +208,33 @@ export interface ForecastQualitySummary {
   belowCount: number;
   belowValue: number;
   sample: MismatchRow[];
+}
+
+/** Maximum sampled deals per direction, independent of source-book volume. */
+export const MAX_FORECAST_QUALITY_SAMPLE_SIZE = 10;
+
+/** Invalid sample requests fail without aggregating or exposing record data. */
+export class ForecastQualitySampleSizeError extends Error {
+  readonly code = 'invalid-forecast-quality-sample-size' as const;
+
+  constructor() {
+    super(
+      `Forecast-quality sample size must be a positive integer of at most ${MAX_FORECAST_QUALITY_SAMPLE_SIZE}`,
+    );
+    this.name = 'ForecastQualitySampleSizeError';
+  }
+}
+
+/** Never clamp: an invalid request must not appear to have been honored. */
+export function resolveForecastQualitySampleSize(sampleSize: number): number {
+  if (
+    !Number.isInteger(sampleSize) ||
+    sampleSize <= 0 ||
+    sampleSize > MAX_FORECAST_QUALITY_SAMPLE_SIZE
+  ) {
+    throw new ForecastQualitySampleSizeError();
+  }
+  return sampleSize;
 }
 
 /** One partner manager's header line, without their rows. */
@@ -473,6 +501,12 @@ interface ScopedQueryProvider {
     scope: ForecastScope,
     context?: QueryContext,
   ): Promise<QueryResult<WeightedForecastSummary>>;
+  /**
+   * Full-set counts/exposure plus at most `sampleSize` deals per direction.
+   * Size must be a positive integer no greater than
+   * `MAX_FORECAST_QUALITY_SAMPLE_SIZE`; otherwise rejects before aggregation
+   * with `ForecastQualitySampleSizeError`, never a clamped sample.
+   */
   getForecastQuality(
     access: DemoAccessScope,
     scope: ForecastScope,

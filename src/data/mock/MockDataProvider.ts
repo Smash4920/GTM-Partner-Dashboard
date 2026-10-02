@@ -26,7 +26,11 @@ import type {
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from '../DataProvider';
-import { resolveSlaAlertLimit, TOP_LEADERBOARD_LIMIT } from '../DataProvider';
+import {
+  resolveForecastQualitySampleSize,
+  resolveSlaAlertLimit,
+  TOP_LEADERBOARD_LIMIT,
+} from '../DataProvider';
 import { throwIfAborted } from '../../lib/abort';
 import {
   demoScopeKey,
@@ -384,6 +388,7 @@ export class MockDataProvider implements DataProvider {
     context?: QueryContext,
   ): Promise<QueryResult<ForecastQualitySummary>> {
     throwIfAborted(context?.signal);
+    resolveForecastQualitySampleSize(sampleSize);
     const { inQuarter } = this.scopedBook(access, scope);
     const open = openOpportunities(inQuarter);
     const mismatches = categoryStageMismatches(open);

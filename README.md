@@ -781,6 +781,12 @@ typed warnings. Partial answers stay visible with their warnings next to them
 — a reconstructed weekly history or an unattributed opportunity is disclosed,
 never smoothed over.
 
+Forecast-quality counts and exposure cover the full scoped set. Its sample
+accepts a positive integer of at most ten deals per direction, twenty total;
+invalid sizes reject with `ForecastQualitySampleSizeError` and stable code
+`invalid-forecast-quality-sample-size` before aggregation, never silently clamp.
+The UI continues to request three per direction.
+
 **Every method takes a required demo access scope first**
 ([`src/data/accessScope.ts`](src/data/accessScope.ts)): `{ audience:
 'internal' }`, optionally narrowed to one partner manager, or `{ audience:
