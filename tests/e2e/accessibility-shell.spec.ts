@@ -17,6 +17,19 @@ async function navigate(page: Page, name: string) {
   await settle(page);
 }
 
+async function recordAnnouncements(page: Page) {
+  await page.evaluate(() => {
+    const region = document.querySelector('[aria-label="Route announcement"]')!;
+    const announcements: string[] = [];
+    new MutationObserver(() => announcements.push(region.textContent!)).observe(region, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    Object.assign(window, { routeAnnouncements: announcements });
+  });
+}
+
 function observe(page: Page) {
   const requests: string[] = [];
   const errors: string[] = [];
@@ -97,16 +110,7 @@ test('VAL-A11Y-002 VAL-CROSS-001: first Tab, skip, and keyboard navigation provi
   await expect(page.getByRole('main')).toBeFocused();
   await expect(page.getByRole('main')).toHaveCount(1);
   await navigate(page, 'Data Connections');
-  await page.evaluate(() => {
-    const region = document.querySelector('[aria-label="Route announcement"]')!;
-    const announcements: string[] = [];
-    new MutationObserver(() => announcements.push(region.textContent!)).observe(region, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-    Object.assign(window, { routeAnnouncements: announcements });
-  });
+  await recordAnnouncements(page);
   for (const { label } of ROUTES) {
     await navigate(page, label);
     await expect(page).toHaveTitle(`${label} | GTM Partner Dashboard`);
@@ -125,7 +129,7 @@ test('VAL-A11Y-002 VAL-CROSS-001: first Tab, skip, and keyboard navigation provi
     ROUTES.map(({ label }) => `${label} page`),
   );
   await navigate(page, 'Action Center');
-  const more = page.getByRole('button', { name: 'Load 25 more actions', exact: true });
+  const more = page.getByRole('button', { name: 'Load 25 more', exact: true });
   await more.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('action-item')).toHaveCount(50);
@@ -133,7 +137,71 @@ test('VAL-A11Y-002 VAL-CROSS-001: first Tab, skip, and keyboard navigation provi
   await expect(page.getByRole('status', { name: 'Route announcement' })).toHaveText(
     'Action Center page',
   );
+  expect(await page.evaluate(() => Reflect.get(window, 'routeAnnouncements'))).toEqual([
+    ...ROUTES.map(({ label }) => `${label} page`),
+    'Action Center page',
+  ]);
   check();
+});
+
+test('VAL-A11Y-002: query refresh, edits, metadata and focused retry never repeat route context', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  const requests: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('request', (request) => requests.push(request.url()));
+  await page.goto('/?remoteFailMethods=getActionCenterSummary:1:1');
+  await navigate(page, 'Forecasting');
+  await recordAnnouncements(page);
+  const manager = page.getByRole('combobox', { name: 'Partner manager', exact: true });
+  await manager.focus();
+  await manager.selectOption({ index: 1 });
+  await settle(page);
+  await expect(manager).toBeFocused();
+  const row = page
+    .getByRole('region', { name: 'In-quarter opportunities, scrollable' })
+    .getByRole('row')
+    .nth(1);
+  await row.getByRole('button', { name: /^Edit revenue forecast/ }).click();
+  await row.getByRole('textbox', { name: /^Revenue forecast/ }).fill('500000');
+  await row.getByRole('button', { name: 'Save revenue', exact: true }).click();
+  await settle(page);
+  await expect(row.getByRole('button', { name: /^Edit revenue forecast/ })).toBeFocused();
+  expect(await page.evaluate(() => Reflect.get(window, 'routeAnnouncements'))).toEqual([]);
+
+  await page.getByLabel('Data provider').focus();
+  await page.getByLabel('Data provider').selectOption('remote');
+  await expect(page.getByText(/round trips with a 15% simulated failure rate/)).toBeVisible();
+  await settle(page);
+  await expect(page.getByLabel('Data provider')).toBeFocused();
+  expect(await page.evaluate(() => Reflect.get(window, 'routeAnnouncements'))).toEqual([]);
+  await navigate(page, 'Action Center');
+  await expect(page.getByText('85 unique items', { exact: true })).toBeVisible();
+  await recordAnnouncements(page);
+  await page.getByLabel('High value (USD)', { exact: true }).fill('400001');
+  const apply = page.getByRole('button', { name: 'Apply demo policy', exact: true });
+  await apply.focus();
+  await page.keyboard.press('Enter');
+  const retry = page.getByRole('button', { name: 'Retry Action Center summary', exact: true });
+  await expect(retry).toBeVisible();
+  await expect(apply).toBeFocused();
+  await expect(page.getByTestId('action-item')).toHaveCount(25);
+  await retry.focus();
+  await page.keyboard.press('Enter');
+  await expect(retry).toHaveCount(0);
+  await expect(
+    page.getByRole('group', { name: 'Action Center summary', exact: true }),
+  ).toBeFocused();
+  await expect(heading(page)).not.toBeFocused();
+  expect(await page.evaluate(() => Reflect.get(window, 'routeAnnouncements'))).toEqual([]);
+  await expect(page).toHaveTitle('Action Center | GTM Partner Dashboard');
+  expect(errors).toHaveLength(1);
+  expect(errors[0]).toMatch(/component: DataProvider, operation: getActionCenterSummary/);
+  expect(requests.every((url) => new URL(url).origin === new URL(page.url()).origin)).toBe(true);
 });
 
 test('VAL-CROSS-001: static route headings and catalog remain keyboard reachable after readiness failure', async ({
@@ -191,12 +259,22 @@ for (const { id, label } of ROUTES) {
       await expect(control).toBeFocused();
       const result = await control.evaluate((element) => {
         const style = getComputedStyle(element);
+        const bounds = element.getBoundingClientRect();
+        const clippedBy: string[] = [];
+        for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+          if (!/auto|scroll|hidden|clip/.test(getComputedStyle(parent).overflowX)) continue;
+          const container = parent.getBoundingClientRect();
+          if (bounds.left < container.left - 1 || bounds.right > container.right + 1) {
+            clippedBy.push(parent.getAttribute('aria-label') ?? parent.tagName);
+          }
+        }
         return {
           positiveTabindex: (element as HTMLElement).tabIndex > 0,
           visible: element.matches(':focus-visible'),
           outline: style.outlineStyle,
           width: style.outlineWidth,
           offset: style.outlineOffset,
+          clippedBy,
         };
       });
       expect(result).toEqual({
@@ -205,11 +283,18 @@ for (const { id, label } of ROUTES) {
         outline: 'solid',
         width: '2px',
         offset: '-2px',
+        clippedBy: [],
       });
     }
     const pointer = nav(page).getByRole('button', { name: label, exact: true });
     await pointer.click();
     expect(await pointer.evaluate((element) => element.matches(':focus-visible'))).toBe(false);
+    await pointer.focus();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Shift+Tab');
+    await expect(pointer).toHaveCSS('outline-style', 'solid');
+    await pointer.click();
+    await expect(pointer).toHaveCSS('outline-style', 'none');
   });
 }
 
@@ -246,7 +331,7 @@ test('VAL-A11Y-004: forecast, roster, policy and notification errors are linked,
   await row.getByRole('button', { name: 'Cancel revenue edit' }).click();
   await navigate(page, 'Data Connections');
   await page.getByRole('button', { name: 'Add user', exact: true }).click();
-  const roster = page.getByRole('dialog', { name: 'Add internal user' });
+  const roster = page.getByRole('form', { name: 'Add internal user' });
   await roster.getByRole('button', { name: 'Add to roster' }).click();
   await expect(roster.getByLabel('Name', { exact: true })).toBeFocused();
   await associatedError(roster.getByLabel('Name', { exact: true }), 'A name is required.');

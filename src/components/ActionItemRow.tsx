@@ -12,7 +12,7 @@ import type { NotificationSender } from '../lib/notifications';
 import type { WorkflowActions } from '../data/workflows';
 
 const CONTROL_CLASS =
-  'rounded border border-ash px-3 py-2 text-xs text-stone hover:bg-ash/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bone disabled:opacity-40';
+  'rounded border border-ash px-3 py-2 text-xs text-stone hover:bg-ash/20 disabled:opacity-40';
 
 export default function ActionItemRow({
   item,

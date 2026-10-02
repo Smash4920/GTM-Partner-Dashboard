@@ -71,7 +71,7 @@ async function navigate(page: Page, name: string) {
     .getByRole('navigation', { name: 'Primary' })
     .getByRole('button', { name, exact: true });
   if (!(await button.isVisible())) {
-    await page.getByRole('button', { name: /Collapse sidebar|Expand sidebar/ }).click();
+    await page.getByRole('button', { name: 'Open navigation menu', exact: true }).click();
   }
   await button.click();
 }

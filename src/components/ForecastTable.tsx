@@ -356,7 +356,7 @@ export default function ForecastTable({
 
   return (
     <div
-      className="max-h-[480px] overflow-auto rounded-card focus:outline-none focus-visible:ring-1 focus-visible:ring-ash"
+      className="max-h-[480px] overflow-auto rounded-card"
       tabIndex={0}
       role="region"
       aria-label="In-quarter opportunities, scrollable"

@@ -48,11 +48,11 @@ function renderPanel(
 
 async function openForm(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Add user' }));
-  return screen.getByRole('dialog', { name: 'Add internal user' });
+  return screen.getByRole('form', { name: 'Add internal user' });
 }
 
-function dialog() {
-  return screen.getByRole('dialog', { name: 'Add internal user' });
+function form() {
+  return screen.getByRole('form', { name: 'Add internal user' });
 }
 
 describe('TeamAccessPanel roster', () => {
@@ -99,17 +99,17 @@ describe('TeamAccessPanel roster', () => {
 
     const toggle = screen.getByRole('button', { name: 'Add user' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByRole('dialog', { name: 'Add internal user' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Add internal user' })).not.toBeInTheDocument();
 
     await user.click(toggle);
 
     expect(screen.getByRole('button', { name: 'Close' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.queryByRole('button', { name: 'Add user' })).not.toBeInTheDocument();
-    expect(dialog()).toBeInTheDocument();
+    expect(form()).toBeInTheDocument();
     // The form names the simulation boundary: a new entry does not receive
     // notifications until routing is turned on, and nothing is authorized.
     expect(
-      within(dialog()).getByText('Add to the notification roster · routing starts off'),
+      within(form()).getByText('Add to the notification roster · routing starts off'),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Close' }));
@@ -118,7 +118,7 @@ describe('TeamAccessPanel roster', () => {
       'aria-expanded',
       'false',
     );
-    expect(screen.queryByRole('dialog', { name: 'Add internal user' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Add internal user' })).not.toBeInTheDocument();
   });
 
   it('renders the user, role, alignment, channels, dates, and access state', () => {
@@ -358,6 +358,8 @@ describe('AddTeamUserForm', () => {
     const { onAdd } = renderPanel();
     const form = await openForm(user);
     expect(form.tagName).toBe('FORM');
+    expect(form).not.toHaveAttribute('role');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(form).toHaveAttribute('novalidate');
     await user.type(screen.getByLabelText('Work email'), 'riley@example.com');
     await user.type(screen.getByLabelText('Name'), 'Riley Chen{Enter}');
@@ -373,7 +375,7 @@ describe('AddTeamUserForm', () => {
       screen.getByLabelText(label).focus();
       await user.keyboard('{Escape}');
       expect(onAdd).not.toHaveBeenCalled();
-      expect(screen.queryByRole('dialog', { name: 'Add internal user' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('form', { name: 'Add internal user' })).not.toBeInTheDocument();
     },
   );
 
@@ -466,7 +468,7 @@ describe('AddTeamUserForm', () => {
       channels: ['email', 'slack', 'in-app'],
     });
     // The panel takes over closing the form once the add is handed off.
-    expect(screen.queryByRole('dialog', { name: 'Add internal user' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Add internal user' })).not.toBeInTheDocument();
   });
 
   it('omits the manager for a role that is not aligned to one', async () => {
@@ -552,7 +554,7 @@ describe('AddTeamUserForm', () => {
     await user.type(within(form).getByLabelText('Work email'), 'ada.lin@example.com{Enter}');
 
     expect(onAdd).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('dialog', { name: 'Add internal user' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Add internal user' })).not.toBeInTheDocument();
   });
 
   it('cancels on Escape from the email field', async () => {
@@ -564,7 +566,7 @@ describe('AddTeamUserForm', () => {
     await user.type(within(form).getByLabelText('Work email'), 'ada.lin@example.com{Escape}');
 
     expect(onAdd).not.toHaveBeenCalled();
-    expect(screen.queryByRole('dialog', { name: 'Add internal user' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Add internal user' })).not.toBeInTheDocument();
   });
 
   it('closes from Cancel without adding anyone', async () => {
@@ -576,6 +578,6 @@ describe('AddTeamUserForm', () => {
     await user.click(within(form).getByRole('button', { name: 'Cancel' }));
 
     expect(onAdd).not.toHaveBeenCalled();
-    expect(screen.queryByRole('dialog', { name: 'Add internal user' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Add internal user' })).not.toBeInTheDocument();
   });
 });

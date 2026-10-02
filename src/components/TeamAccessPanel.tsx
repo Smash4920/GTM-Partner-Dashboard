@@ -270,7 +270,6 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
   return (
     <form
       className="rounded border border-ash bg-carbon p-4"
-      role="dialog"
       aria-label="Add internal user"
       noValidate
       onSubmit={(event) => {

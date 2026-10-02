@@ -109,7 +109,7 @@ export default function RegistrationsTable({
                 {reg.status === 'pending' && onWorkflow && (
                   <button
                     type="button"
-                    className="mt-2 rounded border border-ash px-3 py-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-bone"
+                    className="mt-2 rounded border border-ash px-3 py-2 text-xs"
                     aria-label={`Decide ${reg.id}`}
                     onClick={() => onWorkflow({ kind: 'registration', entityIds: [reg.id] })}
                   >

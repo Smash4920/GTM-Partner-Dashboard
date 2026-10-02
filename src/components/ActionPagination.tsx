@@ -23,7 +23,7 @@ export default function ActionPagination({ state }: { state: PaginationState<Act
         }}
         aria-label="Load 25 more"
         aria-disabled={state.loadingMore || state.refreshing || !state.hasMore}
-        className="rounded border border-ash px-3 py-2 text-xs text-stone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bone aria-disabled:opacity-40"
+        className="rounded border border-ash px-3 py-2 text-xs text-stone aria-disabled:opacity-40"
       >
         {state.loadingMore ? 'Loading…' : 'Load 25 more'}
       </button>

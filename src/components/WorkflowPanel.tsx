@@ -14,8 +14,7 @@ import Card from './Card';
 import { renderQueryState } from './QueryState';
 import FormField, { focusInvalid } from './FormField';
 
-const CONTROL_CLASS =
-  'rounded border border-ash px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-bone disabled:opacity-40';
+const CONTROL_CLASS = 'rounded border border-ash px-3 py-2 text-sm disabled:opacity-40';
 const TITLES = {
   registration: 'Registration decision',
   conflict: 'Partner-conflict disposition',

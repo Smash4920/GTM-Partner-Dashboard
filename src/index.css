@@ -8,6 +8,10 @@
   outline-offset: -2px !important;
 }
 
+.pointer :focus-visible {
+  outline: none !important;
+}
+
 main,
 h1,
 h2[tabindex] {

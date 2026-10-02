@@ -78,7 +78,7 @@ test('VAL-GOV-003: roster controls state their simulation boundary', async ({ pa
   await expect(recipient).not.toContainText(name);
 
   await page.getByRole('button', { name: 'Add user' }).click();
-  const form = page.getByRole('dialog', { name: 'Add internal user' });
+  const form = page.getByRole('form', { name: 'Add internal user' });
   await expect(form.getByText('Add to the notification roster · routing starts off')).toBeVisible();
   await form.getByLabel('Name').fill(name);
   await form.getByLabel('Work email').fill(email);

@@ -248,7 +248,7 @@ test('VAL-DATA-015: a failed Data Connections refresh keeps the last good answer
   // A session roster edit refreshes exactly the two queries that read the
   // roster — and both refreshes fail with raw transport prose.
   await roster.getByRole('button', { name: 'Add user' }).click();
-  const form = page.getByRole('dialog', { name: 'Add internal user' });
+  const form = page.getByRole('form', { name: 'Add internal user' });
   await form.getByLabel('Name').fill('E2E Teammate');
   await form.getByLabel('Work email').fill('e2e.teammate@factory.ai');
   await form.getByRole('button', { name: 'Add to roster' }).click();

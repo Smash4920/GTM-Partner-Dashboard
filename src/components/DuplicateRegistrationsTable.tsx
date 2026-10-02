@@ -50,7 +50,7 @@ export default function DuplicateRegistrationsTable({
                   {onWorkflow && (
                     <button
                       type="button"
-                      className="mt-2 block rounded border border-ash px-3 py-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-bone"
+                      className="mt-2 block rounded border border-ash px-3 py-2 text-xs"
                       aria-label={`Disposition ${group.registrations
                         .map((reg) => reg.id)
                         .sort()
