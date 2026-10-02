@@ -1,9 +1,5 @@
-import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+import { writeFile } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { WORKFLOW_OUTCOMES } from '../../src/lib/workflows';
@@ -54,7 +50,6 @@ const VIEWPORTS = [
   { width: 1280, height: 900 },
   { width: 390, height: 844 },
 ] as const;
-const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const PREFIX = '/__modal-fixture__/';
 const ENTRY = 'tests/fixtures/modals/index.html';
 const ACTOR = 'Demo actor (not authenticated)';
@@ -105,20 +100,9 @@ const HOSTS: readonly Host[] = [
     title: 'Forecast-change review',
   },
 ];
-let fixtureDir: string;
+const fixtureDir = process.env.E2E_MODAL_FIXTURE_DIR;
 test.beforeAll(async () => {
-  fixtureDir = await mkdtemp(join(tmpdir(), 'gtm-modal-a11y-'));
-  await promisify(execFile)(
-    process.execPath,
-    [fileURLToPath(new URL('../fixtures/modals/build.mjs', import.meta.url)), fixtureDir],
-    {
-      cwd: ROOT,
-      timeout: 90_000,
-    },
-  );
-});
-test.afterAll(async () => {
-  if (fixtureDir) await rm(fixtureDir, { recursive: true, force: true });
+  if (!fixtureDir) throw new Error('Run through npm run test:e2e to prepare immutable fixtures');
 });
 
 async function evidence(info: TestInfo, name: string, value: unknown) {
@@ -172,7 +156,7 @@ async function boot(page: Page, scenario?: string) {
   if (scenario !== undefined) {
     await page.route(`**${PREFIX}**`, async (request) => {
       const relative = new URL(request.request().url()).pathname.slice(PREFIX.length);
-      const path = resolve(fixtureDir, relative);
+      const path = resolve(fixtureDir!, relative);
       if (!path.startsWith(`${fixtureDir}${sep}`)) throw new Error('Fixture path escaped output');
       await request.fulfill({ path });
     });

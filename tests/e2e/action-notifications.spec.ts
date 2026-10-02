@@ -10,7 +10,9 @@ test('VAL-ACT-016: all five categories create selected-channel simulated local r
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text());
   });
-  await page.clock.install({ time: new Date('2026-10-01T12:34:56.000Z') });
+  // Keep action time deterministic even when parallel axe scans take the
+  // journey across a minute boundary. Native timers continue normally.
+  await page.clock.setFixedTime(new Date('2026-10-01T12:34:56.000Z'));
   await page.goto('/');
   await page
     .getByRole('navigation', { name: 'Primary' })

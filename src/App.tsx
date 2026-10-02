@@ -605,6 +605,7 @@ export default function App({
           route={route}
           hiddenRoutes={hiddenRoutes(productionRequirementsEnabled)}
           onNavigate={(nextRoute) => {
+            if (nextRoute === route && mobileNavOpen) main.current?.focus();
             contextInvoker.current = null;
             setActionContext(null);
             setRoute(nextRoute);

@@ -9,14 +9,19 @@ npm run test:e2e -- --grep VAL-DATA-002
 The runner uses Playwright's own test discovery to preserve grep, file, and
 project selection. The three fixture cases run before other selected E2E tests,
 serially with one worker and no retries. Existing seeded target smoke tests and
-VAL-DATA-001 remain in the ordinary suite. The ordinary suite's current server
-default is unchanged; its final production-preview migration is separate.
+VAL-DATA-001 remain in the ordinary suite. The ordinary suite builds `dist` with
+`BASE_PATH=/` and starts strict production preview on `127.0.0.1:4173`.
 The serial runner rejects `--shard` rather than silently reassigning tests when
 splitting the selected suite into two runs.
-Until that migration, `E2E_PRODUCTION_PREVIEW=1 npm run test:e2e` opts the ordinary
-suite into a strict, non-reused production preview after the fixture previews
-finish. Use this harness-only option for the full gate, so no development server
-is started. It is not a browser flag or production application control.
+Ordinary preview never overlaps the serial fixtures and never reuses a server.
+Local and CI ordinary runs use four browser workers, leaving one of the five
+validator slots for manual checks. CI retains two retries and the reviewed
+30-minute job timeout. Remote CI execution remains unverified.
+
+Modal and inline-notification static assets are built once per selected suite,
+then shared read-only across workers. Every test retains its own browser context
+and fresh session/provider state. The parent removes only its own temporary
+fixture directories after browser teardown; it never rewrites `dist`.
 
 Each case builds a test-only HTML entry in `tests/fixtures/target-states/` into
 its own system temporary directory, then starts Vite **production preview** on
@@ -52,8 +57,10 @@ Partner View's subtitle uses lowercase `no target` / `target met`.
   requests, console/page errors, runner and preview PIDs, and verified teardown.
 - Failure screenshots and traces stay beside the affected case.
 - Ordinary browser artifacts use `test-results/e2e/`, preserving the full
-  gate's `test-results/vitest-junit.xml`. The opt-in ordinary production-preview
+  gate's `test-results/vitest-junit.xml`. The ordinary production-preview
   run records its verified PID teardown in `build-metrics/e2e-preview-lifecycle.json`.
+- Full command wall time and serial/preparation/ordinary phase outcomes are
+  retained in `build-metrics/e2e-timing.json`.
 
 Fixture evidence lives outside the ordinary Playwright output directory so a
 subsequent ordinary E2E run does not erase it. These generated artifacts are
@@ -83,7 +90,7 @@ production authorization or an external deployment.
 
 ## Action Center resilience fixture
 
-`E2E_PRODUCTION_PREVIEW=1 npm run test:e2e -- --grep VAL-CROSS-006` also runs
+`npm run test:e2e -- --grep VAL-CROSS-006` also runs
 the isolated `action-resilience` input through the same serial preview harness.
 It renders the real App without StrictMode replay to make call counts exact:
 the initial health probe fails, the Action Center summary fails once, usable

@@ -1,9 +1,5 @@
-import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+import { writeFile } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { INTERNAL_DEMO_SCOPE } from '../../src/data/accessScope';
@@ -29,24 +25,15 @@ const VIEWPORTS = [
   { width: 1280, height: 900 },
   { width: 390, height: 844 },
 ] as const;
-const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const FIXTURE_PREFIX = '/__inline-notification-fixture__/';
 const FIXTURE_ENTRY = 'tests/fixtures/inline-notifications/index.html';
 const TIME = new Date('2026-10-01T12:34:56.000Z');
 type FixtureMethod = Parameters<Window['inlineNotificationFixture']['arm']>[0];
-let fixtureDir: string;
+const fixtureDir = process.env.E2E_INLINE_FIXTURE_DIR;
 let actions: ActionItem[];
 
 test.beforeAll(async () => {
-  fixtureDir = await mkdtemp(join(tmpdir(), 'gtm-inline-a11y-'));
-  await promisify(execFile)(
-    process.execPath,
-    [
-      fileURLToPath(new URL('../fixtures/inline-notifications/build.mjs', import.meta.url)),
-      fixtureDir,
-    ],
-    { cwd: ROOT, timeout: 90_000 },
-  );
+  if (!fixtureDir) throw new Error('Run through npm run test:e2e to prepare immutable fixtures');
   const provider = new MockDataProvider();
   actions = [];
   let cursor: string | undefined;
@@ -59,11 +46,6 @@ test.beforeAll(async () => {
     actions.push(...data.rows);
     cursor = data.nextCursor ?? undefined;
   } while (cursor);
-});
-
-test.afterAll(async () => {
-  // This directory was created by this worker and is wholly beneath /tmp.
-  if (fixtureDir) await rm(fixtureDir, { recursive: true, force: true });
 });
 
 async function evidence(info: TestInfo, name: string, value: unknown) {
@@ -116,7 +98,7 @@ async function route(page: Page, name: 'Action Center' | 'Data Connections') {
 async function fixture(page: Page, scenario = '') {
   await page.route(`**${FIXTURE_PREFIX}**`, async (request) => {
     const relativePath = new URL(request.request().url()).pathname.slice(FIXTURE_PREFIX.length);
-    const asset = resolve(fixtureDir, relativePath);
+    const asset = resolve(fixtureDir!, relativePath);
     if (!asset.startsWith(`${fixtureDir}${sep}`)) throw new Error('Fixture path escaped output');
     await request.fulfill({ path: asset });
   });

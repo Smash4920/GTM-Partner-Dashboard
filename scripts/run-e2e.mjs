@@ -1,16 +1,24 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertWorkerLimit, prepareFixtures } from './e2e-fixtures.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cli = fileURLToPath(new URL('../node_modules/@playwright/test/cli.js', import.meta.url));
 const args = process.argv.slice(2);
+const started = performance.now();
+const phases = [];
 const fixtureFile = 'target-state-fixtures.spec.ts';
 if (args.some((arg) => arg === '--shard' || arg.startsWith('--shard='))) {
   throw new Error('Serial fixture E2E cannot be sharded; run the combined suite without --shard.');
 }
+const policy = spawnSync(process.execPath, ['--test', 'scripts/e2e-fixtures.test.mjs'], {
+  cwd: root,
+  stdio: 'inherit',
+});
+if (policy.status !== 0) process.exit(policy.status ?? 1);
 
 function run(extraArgs, env, capture = false) {
   return spawnSync(process.execPath, [cli, 'test', ...args, ...extraArgs], {
@@ -19,6 +27,30 @@ function run(extraArgs, env, capture = false) {
     encoding: 'utf8',
     stdio: capture ? 'pipe' : 'inherit',
   });
+}
+
+function measured(name, extraArgs, env) {
+  const start = performance.now();
+  const result = run(extraArgs, env);
+  phases.push({ name, durationMs: Math.round(performance.now() - start), exitCode: result.status });
+  return result;
+}
+
+function finish(status) {
+  if (!args.includes('--list')) {
+    mkdirSync(join(root, 'build-metrics'), { recursive: true });
+    const timing = {
+      durationMs: Math.round(performance.now() - started),
+      exitCode: status,
+      ordinaryWorkers: report.config.workers,
+      serialFixtureWorkers: 1,
+      phases,
+      remoteCI: 'unverified',
+    };
+    writeFileSync(join(root, 'build-metrics/e2e-timing.json'), JSON.stringify(timing, null, 2));
+    process.stdout.write(`E2E wall time: ${timing.durationMs}ms; exit ${status}\n`);
+  }
+  process.exit(status);
 }
 
 // Ask Playwright itself to resolve grep/file/project filters. No hand-written
@@ -34,6 +66,7 @@ if (selection.status !== 0) {
   process.exit(selection.status ?? 1);
 }
 const report = JSON.parse(selection.stdout);
+assertWorkerLimit(report.config.workers);
 function files(suites) {
   return suites.flatMap((suite) => [
     ...(suite.specs?.length ? [suite.file] : []),
@@ -48,21 +81,35 @@ if (selected.some((file) => file.endsWith(fixtureFile))) {
     { cwd: root, stdio: 'inherit' },
   );
   if (types.status !== 0) process.exit(types.status ?? 1);
-  const result = run([], { E2E_TARGET_FIXTURES: '1', E2E_DISCOVERY: '0' });
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  const result = measured('serial target fixtures', [], {
+    E2E_TARGET_FIXTURES: '1',
+    E2E_DISCOVERY: '0',
+  });
+  if (result.status !== 0) finish(result.status ?? 1);
 }
 if (selected.some((file) => !file.endsWith(fixtureFile))) {
   const pidDir = mkdtempSync(join(tmpdir(), 'gtm-e2e-preview-'));
   const pidFile = join(pidDir, 'preview.pid');
   let status = 1;
+  let prepared;
   try {
-    const result = run([], {
+    const preparationStarted = performance.now();
+    prepared = args.includes('--list')
+      ? { env: {}, cleanup() {} }
+      : prepareFixtures(selected, root);
+    phases.push({
+      name: 'immutable fixture preparation',
+      durationMs: Math.round(performance.now() - preparationStarted),
+      exitCode: 0,
+    });
+    const result = measured('ordinary production preview', [], {
+      ...prepared.env,
       E2E_TARGET_FIXTURES: '0',
       E2E_DISCOVERY: '0',
       E2E_PREVIEW_PID_FILE: pidFile,
     });
     status = result.status ?? 1;
-    if (process.env.E2E_PRODUCTION_PREVIEW === '1' && !args.includes('--list')) {
+    if (!args.includes('--list') && existsSync(pidFile)) {
       const pid = Number(readFileSync(pidFile, 'utf8').trim());
       if (!Number.isInteger(pid) || pid <= 0) throw new Error('Invalid production preview PID');
       let pidStopped = false;
@@ -80,8 +127,14 @@ if (selected.some((file) => !file.endsWith(fixtureFile))) {
       if (!pidStopped) throw new Error(`Production preview PID ${pid} did not stop`);
       process.stdout.write(`Production preview PID ${pid}: verified stopped\n`);
     }
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    phases.push({ name: 'preparation or preview lifecycle failure', exitCode: 1 });
+    status = 1;
   } finally {
+    prepared?.cleanup();
     rmSync(pidDir, { recursive: true, force: true });
   }
-  process.exit(status);
+  finish(status);
 }
+finish(0);

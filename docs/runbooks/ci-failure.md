@@ -100,7 +100,12 @@ installed package sizes against `config/dependency-budgets.json`.
 
 ### Playwright job
 
-`npm run test:e2e` starts the Vite dev server on port 4173. If the browser
+`npm run test:e2e` builds production assets and starts strict Vite production
+preview on `127.0.0.1:4173`, with `BASE_PATH=/` and no HMR. Serial port-owning
+fixtures finish before ordinary preview starts. Ordinary local and CI runs use
+four workers; CI keeps two retries and its reviewed 30-minute timeout.
+Inspect `build-metrics/e2e-timing.json` for actual wall time and phase outcomes,
+and `build-metrics/e2e-preview-lifecycle.json` for verified PID teardown. If the browser
 dependency fails, re-run with `npx playwright install --with-deps chromium`. If
 a test is flaky, capture the trace artifact before changing the test.
 
