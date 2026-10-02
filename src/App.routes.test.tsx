@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
@@ -6,14 +6,15 @@ import type { DataProvider } from './data/DataProvider';
 import { MockDataProvider } from './data/mock/MockDataProvider';
 import { ScaleDataProvider } from './data/mock/ScaleDataProvider';
 import { generateDashboardData } from './data/mock/generate';
+import { providerSessionBook } from './test/providerSessionFixtures';
 
 /**
  * The provider-call matrix: what every route asks of the seam, and what one
  * failure costs it.
  *
  * - Every registered route, including Action Center, renders independently —
- *   including under the 100× provider, which is the scale the retired
- *   whole-book contract could not survive.
+ *   including a 2× component fixture. The production-preview VAL-RES-011
+ *   browser matrix separately exercises the genuine 100× provider.
  * - A route mounts with exactly its scoped queries and nothing else's; the
  *   app shell and Production Requirements issue no provider calls at all.
  * - One failed resource fails one widget: every sibling on the route keeps
@@ -22,6 +23,16 @@ import { generateDashboardData } from './data/mock/generate';
  */
 
 const nav = () => within(screen.getByRole('navigation', { name: 'Primary' }));
+
+beforeAll(async () => {
+  // Measure route queries, not Vitest's cold coverage transformation. Actual
+  // lazy-chunk delivery remains covered by the production-preview matrix.
+  await Promise.all([
+    import('./views/system'),
+    import('./views/ActionCenterView'),
+    import('./components/WorkflowPanel'),
+  ]);
+});
 
 interface RouteSpec {
   label: string;
@@ -276,7 +287,9 @@ async function visit(user: ReturnType<typeof userEvent.setup>, route: RouteSpec)
 
 describe('App route matrix', () => {
   it('renders all nine routes independently under the scaled provider', async () => {
-    const book = generateDashboardData();
+    // A populated, hand-built book keeps this a component wiring check.
+    // Production-volume generation and bounds belong to the 100× browser proof.
+    const book = providerSessionBook('SCALED');
     const user = await renderApp(new ScaleDataProvider(2, book));
 
     for (const route of [
@@ -291,7 +304,7 @@ describe('App route matrix', () => {
       await visit(user, route);
       // The boundary renders this in place of a view that threw.
       expect(screen.queryByText('Something went wrong here')).not.toBeInTheDocument();
-      // No widget failed: at 100×-per-copy volume every route still answers.
+      // No widget failed: every route answers against this 2× component fixture.
       expect(screen.queryByText(/unavailable:/)).not.toBeInTheDocument();
     }
   }, 60_000);
