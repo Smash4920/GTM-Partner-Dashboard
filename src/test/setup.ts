@@ -11,6 +11,15 @@ import '@testing-library/jest-dom/vitest';
 // between tests is wired by hand for the same reason.
 afterEach(cleanup);
 
+// Native modal behavior is exercised in Chromium; jsdom only needs the
+// open/close lifecycle so component tests can inspect its content.
+HTMLDialogElement.prototype.showModal = function () {
+  this.open = true;
+};
+HTMLDialogElement.prototype.close = function () {
+  this.open = false;
+};
+
 // Application requests emit a start and completion record in development.
 // Keep those records from flooding concurrent test-worker output; dedicated
 // logging and tracing suites use their own sinks to assert the full records.

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import MeetingLogModal from './MeetingLogModal';
 import { makeMeeting, makePartner } from '../test/fixtures';
@@ -32,13 +32,13 @@ const discardPrompt = () => screen.queryByText('Discard unsubmitted classificati
 describe('MeetingLogModal', () => {
   it('renders the week of calendar meetings', () => {
     renderModal();
-    expect(screen.getByRole('dialog', { name: 'Log meetings' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /Log meetings ·/ })).toBeInTheDocument();
     expect(screen.getByText(/Log meetings · J. Alvarez/)).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /Partner for .* meeting/ })).toBeInTheDocument();
   });
 
   it('reports a reclassification', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onChange } = renderModal();
 
     await user.selectOptions(
@@ -53,7 +53,7 @@ describe('MeetingLogModal', () => {
   });
 
   it('submits and closes', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onSubmit, onClose } = renderModal({ dirty: true });
 
     await user.click(screen.getByRole('button', { name: 'Submit classifications' }));
@@ -63,18 +63,17 @@ describe('MeetingLogModal', () => {
   });
 
   describe('with no unsubmitted work', () => {
-    it('closes on a backdrop click', async () => {
-      const user = userEvent.setup();
+    it('closes on a backdrop click', () => {
       const { onClose } = renderModal({ dirty: false });
 
-      await user.click(screen.getByRole('dialog').parentElement!);
+      fireEvent.click(screen.getByRole('dialog'), { clientX: -1, clientY: -1 });
 
       expect(onClose).toHaveBeenCalledOnce();
       expect(discardPrompt()).not.toBeInTheDocument();
     });
 
     it('closes on Escape', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const { onClose } = renderModal({ dirty: false });
 
       await user.keyboard('{Escape}');
@@ -86,18 +85,17 @@ describe('MeetingLogModal', () => {
   // Regression: a stray backdrop click used to discard a manager's whole week
   // of classifications with no confirmation and no way back.
   describe('with unsubmitted work', () => {
-    it('asks before discarding on a backdrop click', async () => {
-      const user = userEvent.setup();
+    it('asks before discarding on a backdrop click', () => {
       const { onClose } = renderModal({ dirty: true });
 
-      await user.click(screen.getByRole('dialog').parentElement!);
+      fireEvent.click(screen.getByRole('dialog'), { clientX: -1, clientY: -1 });
 
       expect(onClose).not.toHaveBeenCalled();
       expect(discardPrompt()).toBeInTheDocument();
     });
 
     it('asks before discarding on Escape', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const { onClose } = renderModal({ dirty: true });
 
       await user.keyboard('{Escape}');
@@ -107,7 +105,7 @@ describe('MeetingLogModal', () => {
     });
 
     it('asks before discarding on Cancel', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const { onClose } = renderModal({ dirty: true });
 
       await user.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -117,7 +115,7 @@ describe('MeetingLogModal', () => {
     });
 
     it('keeps the draft when the manager backs out of the prompt', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const { onClose } = renderModal({ dirty: true });
 
       await user.keyboard('{Escape}');
@@ -129,7 +127,7 @@ describe('MeetingLogModal', () => {
     });
 
     it('closes once the discard is confirmed', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const { onClose } = renderModal({ dirty: true });
 
       await user.keyboard('{Escape}');
@@ -140,9 +138,31 @@ describe('MeetingLogModal', () => {
   });
 
   describe('focus management', () => {
+    it('isolates dirty confirmation and safely cancels an inline prospect without closing', async () => {
+      const user = userEvent.setup({ delay: null });
+      const { onClose } = renderModal({ dirty: true });
+      const partner = screen.getByRole('combobox', { name: /Partner for .* meeting/ });
+      await user.selectOptions(partner, '__add_partner__');
+      expect(screen.getAllByRole('dialog')).toHaveLength(1);
+      expect(screen.getByRole('textbox', { name: 'Partner name' })).toHaveFocus();
+      await user.keyboard('{Escape}');
+      expect(onClose).not.toHaveBeenCalled();
+      expect(discardPrompt()).not.toBeInTheDocument();
+      expect(partner).toHaveFocus();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Submit classifications' }),
+      ).not.toBeInTheDocument();
+      await user.tab({ shift: true });
+      expect(screen.getByRole('button', { name: 'Discard' })).toHaveFocus();
+      await user.keyboard('{Escape}');
+      expect(partner).toHaveFocus();
+      expect(onClose).not.toHaveBeenCalled();
+    });
     it('moves focus into the dialog on open', () => {
       renderModal();
-      expect(screen.getByRole('dialog')).toHaveFocus();
+      expect(screen.getByRole('heading', { name: /Log meetings ·/ })).toHaveFocus();
     });
 
     it('returns focus to the opener on close', () => {
@@ -164,7 +184,7 @@ describe('MeetingLogModal', () => {
           onSubmit={vi.fn()}
         />,
       );
-      expect(screen.getByRole('dialog')).toHaveFocus();
+      expect(screen.getByRole('heading', { name: /Log meetings ·/ })).toHaveFocus();
 
       unmount();
       expect(opener).toHaveFocus();
@@ -172,7 +192,7 @@ describe('MeetingLogModal', () => {
     });
 
     it('keeps Tab inside the dialog', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       renderModal();
       const dialog = screen.getByRole('dialog');
 
@@ -242,11 +262,11 @@ describe('MeetingLogModal', () => {
     }
 
     it('a failed load-more keeps rows and draft controls mounted and replaces Load more with a targeted retry', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const calendar = calendarFor({ error: 'Failed to load more meetings' });
       const modal = calendarModal();
       render(modal.element(calendar));
-      const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
+      const dialog = screen.getByRole('dialog', { name: /Log meetings ·/ });
 
       // The retained row and its draft controls stay mounted and operable.
       const partnerSelect = within(dialog).getByRole('combobox', {
@@ -272,11 +292,11 @@ describe('MeetingLogModal', () => {
     });
 
     it('restores the ordinary Load more after the cursor recovers and lands focus inside the dialog', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const modal = calendarModal();
       const failing = calendarFor({ error: 'Failed to load more meetings' });
       const { rerender } = render(modal.element(failing));
-      const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
+      const dialog = screen.getByRole('dialog', { name: /Log meetings ·/ });
 
       await user.click(within(dialog).getByRole('button', { name: 'Retry meeting calendar' }));
       rerender(modal.element(calendarFor()));
@@ -298,7 +318,7 @@ describe('MeetingLogModal', () => {
           dirty: true,
         }),
       );
-      const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
+      const dialog = screen.getByRole('dialog', { name: /Log meetings ·/ });
 
       expect(within(dialog).getByRole('combobox', { name: /Partner for .* meeting/ })).toHaveValue(
         'partner-2',
@@ -310,14 +330,14 @@ describe('MeetingLogModal', () => {
     });
 
     it('names the initial calendar failure retry and lands focus on the region after recovery', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       const modal = calendarModal();
       const failing = calendarFor({
         error: 'Failed to load the week’s meetings',
         hasMore: false,
       });
       const { rerender } = render(modal.element(failing, { meetings: [] }));
-      const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
+      const dialog = screen.getByRole('dialog', { name: /Log meetings ·/ });
 
       await user.click(within(dialog).getByRole('button', { name: 'Retry meeting calendar' }));
       expect(failing.retry).toHaveBeenCalledTimes(1);

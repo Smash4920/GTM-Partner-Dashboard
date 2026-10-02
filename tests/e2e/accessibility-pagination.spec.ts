@@ -1033,7 +1033,7 @@ test('VAL-A11Y-010 PG-015: meeting calendar initial retry recovers named counts 
   await boot(page, observations, 'listWeeklyClassificationMeetings:1');
   await navigate(page, 'Activity Tracking');
   await page.getByRole('button', { name: 'Log Meetings', exact: true }).click();
-  let dialog = page.getByRole('dialog', { name: 'Log meetings', exact: true });
+  let dialog = page.getByRole('dialog', { name: /Log meetings ·/ });
   const retry = dialog.getByRole('button', { name: 'Retry meeting calendar', exact: true });
   await expect(retry).toBeVisible();
   await observations.flush();
@@ -1054,7 +1054,7 @@ test('VAL-A11Y-010 PG-015: meeting calendar initial retry recovers named counts 
         .selectOption(manager.id);
       await settle(page);
       await page.getByRole('button', { name: 'Log Meetings', exact: true }).click();
-      dialog = page.getByRole('dialog', { name: 'Log meetings', exact: true });
+      dialog = page.getByRole('dialog', { name: /Log meetings ·/ });
     }
     const rows = await collect((request) =>
       provider.listWeeklyClassificationMeetings(access, { partnerManagerId: manager.id }, request),
@@ -1089,7 +1089,7 @@ test('VAL-A11Y-010 PG-015: scaled meeting calendar loads one distinct page with 
   await navigate(page, 'Activity Tracking');
   const manager = MANAGERS[0];
   await page.getByRole('button', { name: 'Log Meetings', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Log meetings', exact: true });
+  const dialog = page.getByRole('dialog', { name: /Log meetings ·/ });
   const scaled = new ScaleDataProvider();
   const answer = await scaled.listWeeklyClassificationMeetings(
     access,

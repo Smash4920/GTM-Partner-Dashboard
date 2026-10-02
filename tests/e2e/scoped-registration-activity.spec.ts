@@ -136,7 +136,7 @@ test('VAL-DATA-015: Activity Tracking renders scoped aggregates and a bounded ca
   // Log Meetings opens the cursor-paginated calendar: the week's ten calls
   // fit one 25-row page, so there is no load-more affordance.
   await page.getByRole('button', { name: 'Log Meetings' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Log meetings' });
+  const dialog = page.getByRole('dialog', { name: /Log meetings ·/ });
   await expect(dialog.getByText('Log meetings · Alex Morgan')).toBeVisible();
   await expect(dialog.getByRole('combobox', { name: /Partner for .* meeting/ })).toHaveCount(10);
   await expect(dialog.getByRole('button', { name: /Load more meetings/ })).toHaveAttribute(
@@ -151,7 +151,7 @@ test('VAL-DATA-015: Activity Tracking renders scoped aggregates and a bounded ca
     .getByRole('combobox', { name: /Partner for .* meeting/ })
     .first()
     .selectOption('__add_partner__');
-  const form = dialog.getByRole('dialog', { name: 'Add prospective partner' });
+  const form = dialog.getByRole('group', { name: 'Add prospective partner' });
   await form.getByPlaceholder('Partner name').fill('E2E Prospect Co');
   await form.getByRole('button', { name: 'Add' }).click();
   await dialog.getByRole('button', { name: 'Submit classifications' }).click();

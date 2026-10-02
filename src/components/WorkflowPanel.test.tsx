@@ -3,6 +3,17 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
 import WorkflowPanel from './WorkflowPanel';
+import { makeProviderBook, makeTeamUser } from '../test/fixtures';
+
+// This form queries only the roster; full generated books are covered by
+// the production-preview host matrix, not needed for each field interaction.
+const BOOK = makeProviderBook({
+  teamUsers: [
+    makeTeamUser({ id: 'user-01', name: 'Alex Morgan' }),
+    makeTeamUser({ id: 'invited', status: 'invited' }),
+    makeTeamUser({ id: 'suspended', status: 'suspended' }),
+  ],
+});
 
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function () {
@@ -16,7 +27,7 @@ beforeEach(() => {
 function mount() {
   const onRecord = vi.fn();
   const onClose = vi.fn();
-  const provider = new MockDataProvider();
+  const provider = new MockDataProvider(BOOK);
   render(
     <WorkflowPanel
       provider={provider}
@@ -35,11 +46,12 @@ function mount() {
 
 describe('session workflow dialog', () => {
   it('associates errors, focuses first invalid field, and records trimmed fields', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onRecord, onClose } = mount();
     await screen.findByLabelText('Demo actor (not authenticated)');
     await user.click(screen.getByRole('button', { name: 'Record session outcome' }));
     const actor = screen.getByLabelText('Demo actor (not authenticated)');
+    expect(actor.querySelectorAll('option')).toHaveLength(2);
     expect(actor).toHaveFocus();
     expect(actor).toHaveAttribute('aria-invalid', 'true');
     expect(actor).toHaveAccessibleDescription('Select an active demo actor.');
@@ -64,7 +76,7 @@ describe('session workflow dialog', () => {
   });
 
   it('requires explicit discard for dirty Escape and supports keep editing', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onClose } = mount();
     await screen.findByLabelText('Reason');
     await user.type(screen.getByLabelText('Reason'), 'unsaved');
@@ -78,7 +90,7 @@ describe('session workflow dialog', () => {
   });
 
   it('prevents native Escape closure through repeated dirty dismissal', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onClose, onRecord } = mount();
     await screen.findByLabelText('Reason');
     await user.type(screen.getByLabelText('Reason'), 'unsaved');
@@ -94,7 +106,8 @@ describe('session workflow dialog', () => {
       });
       fireEvent(screen.getByRole('dialog'), escape);
       expect(escape.defaultPrevented).toBe(true);
-      expect(screen.getByRole('heading', { name: title })).toHaveFocus();
+      if (title === 'Registration decision') expect(screen.getByLabelText('Reason')).toHaveFocus();
+      else expect(screen.getByRole('heading', { name: title })).toHaveFocus();
       expect(screen.getByRole('dialog')).toHaveAttribute('open');
     }
     await user.click(screen.getByRole('button', { name: 'Keep editing' }));
@@ -109,7 +122,7 @@ describe('session workflow dialog', () => {
     opener.focus();
     const { unmount } = render(
       <WorkflowPanel
-        provider={new MockDataProvider()}
+        provider={new MockDataProvider(BOOK)}
         roster={{}}
         target={{ kind: 'forecast', entityIds: ['opp-1'], changeId: 'change-1' }}
         records={[]}
@@ -129,7 +142,7 @@ describe('session workflow dialog', () => {
     const onWorkflow = vi.fn();
     render(
       <WorkflowPanel
-        provider={new MockDataProvider()}
+        provider={new MockDataProvider(BOOK)}
         roster={{}}
         target={null}
         records={[
@@ -150,7 +163,9 @@ describe('session workflow dialog', () => {
       />,
     );
     expect(screen.getByText(/not source history/)).toBeInTheDocument();
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Review change-1' }));
+    await userEvent
+      .setup({ delay: null })
+      .click(screen.getByRole('button', { name: 'Review change-1' }));
     await waitFor(() =>
       expect(onWorkflow).toHaveBeenCalledWith({
         kind: 'forecast',

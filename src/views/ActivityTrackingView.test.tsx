@@ -220,7 +220,7 @@ describe('ActivityTrackingView', () => {
   });
 
   it('re-scopes the chart to one partner without shrinking the manager-wide goal', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderView();
     await settleToFirstManager();
 
@@ -239,7 +239,7 @@ describe('ActivityTrackingView', () => {
   });
 
   it('resets the partner filter when the manager changes', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderView();
     await settleToFirstManager();
 
@@ -253,7 +253,7 @@ describe('ActivityTrackingView', () => {
   });
 
   it('reflects classifications that were committed before the modal opens', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderView({
       classifications: {
         // Both of this week's calls re-pointed at partner-2, and the PIO
@@ -275,7 +275,7 @@ describe('ActivityTrackingView', () => {
   });
 
   it('commits the classifications confirmed in Log Meetings', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onCommitClassifications } = renderView({
       classifications: {
         'meeting-mon': { partnerId: 'partner-1', type: 'deal-support' },
@@ -286,7 +286,7 @@ describe('ActivityTrackingView', () => {
     const openButton = screen.getByRole('button', { name: 'Log Meetings' });
     await waitFor(() => expect(openButton).toBeEnabled());
     await user.click(openButton);
-    const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
+    const dialog = screen.getByRole('dialog', { name: /Log meetings ·/ });
     expect(within(dialog).getByText('Log meetings · J. Alvarez')).toBeInTheDocument();
     // The committed classification seeds the draft the manager edits, once
     // the calendar's page has landed.
@@ -304,7 +304,7 @@ describe('ActivityTrackingView', () => {
     expect(onCommitClassifications).not.toHaveBeenCalled();
     expect(within(dialog).getByText('Discard unsubmitted classifications?')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
-    expect(screen.getByRole('dialog', { name: 'Log meetings' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /Log meetings ·/ })).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole('button', { name: 'Submit classifications' }));
 
@@ -312,26 +312,26 @@ describe('ActivityTrackingView', () => {
       'meeting-mon': { partnerId: 'partner-1', type: 'deal-support' },
       'meeting-tue': { partnerId: 'partner-2', type: 'gtm-enablement' },
     });
-    expect(screen.queryByRole('dialog', { name: 'Log meetings' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Log meetings ·/ })).not.toBeInTheDocument();
   });
 
   it('closes Log Meetings silently when nothing was reclassified', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onCommitClassifications } = renderView();
     await settleToFirstManager();
 
     const openButton = screen.getByRole('button', { name: 'Log Meetings' });
     await waitFor(() => expect(openButton).toBeEnabled());
     await user.click(openButton);
-    await screen.findByRole('dialog', { name: 'Log meetings' });
+    await screen.findByRole('dialog', { name: /Log meetings ·/ });
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    expect(screen.queryByRole('dialog', { name: 'Log meetings' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Log meetings ·/ })).not.toBeInTheDocument();
     expect(onCommitClassifications).not.toHaveBeenCalled();
   });
 
   it('treats a re-typed call as unsubmitted work even when its partner did not move', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onCommitClassifications } = renderView({
       classifications: {
         // Identical to the calendar's own default for this call: recording it
@@ -344,7 +344,7 @@ describe('ActivityTrackingView', () => {
     const openButton = screen.getByRole('button', { name: 'Log Meetings' });
     await waitFor(() => expect(openButton).toBeEnabled());
     await user.click(openButton);
-    const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
+    const dialog = screen.getByRole('dialog', { name: /Log meetings ·/ });
     await user.selectOptions(
       await within(dialog).findByRole('combobox', { name: 'Call type for 09:00 meeting' }),
       'gtm-enablement',
@@ -356,7 +356,7 @@ describe('ActivityTrackingView', () => {
   });
 
   it('keeps the goal standing when the calendar fails, and retries only the calendar', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderView({
       provider: createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
         latencyMs: 0,
@@ -368,7 +368,7 @@ describe('ActivityTrackingView', () => {
     const openButton = screen.getByRole('button', { name: 'Log Meetings' });
     await waitFor(() => expect(openButton).toBeEnabled());
     await user.click(openButton);
-    const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
+    const dialog = screen.getByRole('dialog', { name: /Log meetings ·/ });
 
     // The calendar page failed inside the modal; the goal card is untouched.
     await within(dialog).findByText('Failed to load the week’s meetings');
@@ -386,7 +386,7 @@ describe('ActivityTrackingView', () => {
   });
 
   it('degrades the selectors when the directory fails, but keeps the aggregates', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderView({
       provider: createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
         latencyMs: 0,
@@ -414,7 +414,7 @@ describe('ActivityTrackingView', () => {
   });
 
   it('degrades the partner selector when the roster fails, but keeps the goal', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderView({
       provider: createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
         latencyMs: 0,
@@ -436,12 +436,12 @@ describe('ActivityTrackingView', () => {
   });
 
   it('registers a prospect from the partner dropdown', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAddPartner } = renderView();
     await settleToFirstManager();
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), '__add_partner__');
-    const form = screen.getByRole('dialog', { name: 'Add prospective partner' });
+    const form = screen.getByRole('group', { name: 'Add prospective partner' });
     expect(within(form).getByText('New prospective partner · J. Alvarez')).toBeInTheDocument();
 
     const input = within(form).getByPlaceholderText('Partner name');
@@ -458,12 +458,12 @@ describe('ActivityTrackingView', () => {
 
     expect(onAddPartner).toHaveBeenCalledWith('Delta Labs', 'pm-1');
     expect(
-      screen.queryByRole('dialog', { name: 'Add prospective partner' }),
+      screen.queryByRole('group', { name: 'Add prospective partner' }),
     ).not.toBeInTheDocument();
   });
 
   it('abandons the prospect form on Escape and on Cancel', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAddPartner } = renderView();
     await settleToFirstManager();
     const partnerSelect = screen.getByRole('combobox', { name: 'Partner' });
@@ -472,33 +472,33 @@ describe('ActivityTrackingView', () => {
     await user.click(screen.getByPlaceholderText('Partner name'));
     await user.keyboard('{Escape}');
     expect(
-      screen.queryByRole('dialog', { name: 'Add prospective partner' }),
+      screen.queryByRole('group', { name: 'Add prospective partner' }),
     ).not.toBeInTheDocument();
 
     await user.selectOptions(partnerSelect, '__add_partner__');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(
-      screen.queryByRole('dialog', { name: 'Add prospective partner' }),
+      screen.queryByRole('group', { name: 'Add prospective partner' }),
     ).not.toBeInTheDocument();
 
     expect(onAddPartner).not.toHaveBeenCalled();
   });
 
   it('registers a prospect from inside Log Meetings and drafts it onto the call', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAddPartner, onCommitClassifications } = renderView();
     await settleToFirstManager();
 
     const openButton = screen.getByRole('button', { name: 'Log Meetings' });
     await waitFor(() => expect(openButton).toBeEnabled());
     await user.click(openButton);
-    const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
+    const dialog = screen.getByRole('dialog', { name: /Log meetings ·/ });
 
     await user.selectOptions(
       await within(dialog).findByRole('combobox', { name: 'Partner for 15:00 meeting' }),
       '__add_partner__',
     );
-    const form = within(dialog).getByRole('dialog', { name: 'Add prospective partner' });
+    const form = within(dialog).getByRole('group', { name: 'Add prospective partner' });
     await user.type(within(form).getByPlaceholderText('Partner name'), 'Delta Labs');
     await user.keyboard('{Enter}');
 
@@ -513,31 +513,31 @@ describe('ActivityTrackingView', () => {
   });
 
   it('backs out of the inline prospect form inside Log Meetings', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { onAddPartner } = renderView();
     await settleToFirstManager();
 
     const openButton = screen.getByRole('button', { name: 'Log Meetings' });
     await waitFor(() => expect(openButton).toBeEnabled());
     await user.click(openButton);
-    const dialog = screen.getByRole('dialog', { name: 'Log meetings' });
+    const dialog = screen.getByRole('dialog', { name: /Log meetings ·/ });
     const partnerFor = await within(dialog).findByRole('combobox', {
       name: 'Partner for 15:00 meeting',
     });
 
     await user.selectOptions(partnerFor, '__add_partner__');
-    const form = within(dialog).getByRole('dialog', { name: 'Add prospective partner' });
+    const form = within(dialog).getByRole('group', { name: 'Add prospective partner' });
     await user.click(within(form).getByRole('button', { name: 'Cancel' }));
 
     expect(
-      within(dialog).queryByRole('dialog', { name: 'Add prospective partner' }),
+      within(dialog).queryByRole('group', { name: 'Add prospective partner' }),
     ).not.toBeInTheDocument();
     expect(onAddPartner).not.toHaveBeenCalled();
     expect(partnerFor).toHaveValue('partner-1');
   });
 
   it('reports an answered-empty directory explicitly instead of rendering org-wide zeroes', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const inner = new MockDataProvider(
       makeProviderBook({
         partnerManagers: [],
@@ -597,7 +597,7 @@ describe('ActivityTrackingView', () => {
     // Nobody to log against, so the calendar never opens.
     expect(screen.getByRole('button', { name: 'Log Meetings' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Log Meetings' }));
-    expect(screen.queryByRole('dialog', { name: 'Log meetings' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Log meetings ·/ })).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), '__add_partner__');
     expect(screen.getByText('New prospective partner · this manager')).toBeInTheDocument();
@@ -645,7 +645,7 @@ describe('ActivityTrackingView', () => {
   });
 
   it('keeps the org-wide fallback truthful on directory failure and commits the recovered manager under one scope', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const { provider, calls } = gatedProvider(makeBook(), [
       'getManagerDirectory',
       'getWeeklyGoalProgress',

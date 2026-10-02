@@ -29,8 +29,13 @@ h2[tabindex] {
 
 html {
   color-scheme: dark;
+  scroll-padding-block: 5rem 1rem;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+main form :is(button, input, select, textarea) {
+  scroll-margin-block: 5rem;
 }
 
 ::selection {

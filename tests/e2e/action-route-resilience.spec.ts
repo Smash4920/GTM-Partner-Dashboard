@@ -226,7 +226,7 @@ const FAILURE_ROUTES: FailureRoute[] = [
     sibling: async (page) => {
       await expect(page.getByText('30 meetings in scope')).toBeVisible();
       await page.getByRole('button', { name: 'Log Meetings', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Log meetings', exact: true });
+      const dialog = page.getByRole('dialog', { name: /Log meetings ·/ });
       await expect(dialog.getByText('Showing 10 of 10 meeting calendar')).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
@@ -440,7 +440,7 @@ test('VAL-RES-011: Scaled 100× settles all nine routes, filters and appends uni
         .selectOption({ index: 1 });
       await settle(page, observations);
       await page.getByRole('button', { name: 'Log Meetings', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Log meetings', exact: true });
+      const dialog = page.getByRole('dialog', { name: /Log meetings ·/ });
       await expect(dialog.getByRole('combobox', { name: /Partner for .* meeting/ })).toHaveCount(
         25,
       );

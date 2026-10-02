@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useRef, useState } from 'react';
 import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
 import type { DataProvider, TeamRosterScope } from '../data/DataProvider';
 import { useScopedQuery } from '../data/queryState';
@@ -13,6 +12,7 @@ import { recordWorkflow, WORKFLOW_OUTCOMES } from '../lib/workflows';
 import Card from './Card';
 import { renderQueryState } from './QueryState';
 import FormField, { focusInvalid } from './FormField';
+import Modal from './Modal';
 
 const CONTROL_CLASS = 'rounded border border-ash px-3 py-2 text-sm disabled:opacity-40';
 const TITLES = {
@@ -111,8 +111,7 @@ function WorkflowDialog({
   onClose,
   now = () => new Date().toISOString(),
 }: WorkflowPanelProps & { target: WorkflowTarget }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const heading = useRef<HTMLHeadingElement>(null);
+  const draftFocus = useRef<HTMLElement | null>(null);
   const [draft, setDraft] = useState<WorkflowDraft>({ actorId: '', outcome: '', reason: '' });
   const [errors, setErrors] = useState<Partial<Record<keyof WorkflowDraft | 'target', string>>>({});
   const [discard, setDiscard] = useState(false);
@@ -124,65 +123,29 @@ function WorkflowDialog({
     run: (context) => provider.getTeamRoster(INTERNAL_DEMO_SCOPE, roster, context),
     errorFallback: 'Workflow roster unavailable',
   });
-  useEffect(() => {
-    const opener = document.activeElement;
-    const modal = dialog.current!;
-    modal.showModal();
-    return () => {
-      modal.close();
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
-      else {
-        const routeHeading = document.querySelector<HTMLElement>('main h1');
-        routeHeading?.setAttribute('tabindex', '-1');
-        routeHeading?.focus();
-      }
-    };
-  }, []);
-  useEffect(() => {
-    heading.current!.focus();
-  }, [discard, saved]);
-  const requestClose = (event: { preventDefault: () => void }) => {
-    event.preventDefault();
-    if (!saved && Object.values(draft).some(Boolean)) setDiscard(!discard);
-    else onClose();
+  const requestClose = (draftControl?: HTMLElement) => {
+    if (discard) setDiscard(false);
+    else if (!saved && Object.values(draft).some(Boolean)) {
+      draftFocus.current = draftControl ?? (document.activeElement as HTMLElement);
+      setDiscard(true);
+    } else onClose();
   };
   const update = (field: keyof WorkflowDraft, value: string) => {
     setDraft((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
   };
-  return createPortal(
-    <dialog
-      ref={dialog}
-      aria-modal="true"
-      aria-labelledby="workflow-title"
-      onKeyDown={(event) => {
-        // Cancel alone can let repeated native Escape requests close Chromium's dialog.
-        if (event.key === 'Escape') return requestClose(event);
-        if (event.key !== 'Tab') return;
-        const controls = Array.from(
-          dialog.current!.querySelectorAll<HTMLElement>('button:not(:disabled), select, textarea'),
-        );
-        const first = controls[0];
-        const last = controls.at(-1);
-        if (
-          event.shiftKey
-            ? document.activeElement === first || document.activeElement === heading.current
-            : document.activeElement === last
-        ) {
-          event.preventDefault();
-          (event.shiftKey ? last : first)?.focus();
-        }
-      }}
-      onCancel={requestClose}
-      className="m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-card border border-ash bg-canvas p-5 text-bone backdrop:bg-canvas/80"
-    >
-      <h2 id="workflow-title" ref={heading} tabIndex={-1} className="text-lg">
-        {discard
+  return (
+    <Modal
+      title={
+        discard
           ? 'Discard unsaved workflow?'
           : saved
             ? 'Session outcome recorded'
-            : TITLES[target.kind]}
-      </h2>
+            : TITLES[target.kind]
+      }
+      onDismiss={requestClose}
+      returnFocus={!discard && !saved ? draftFocus.current : null}
+    >
       {discard ? (
         <div className="mt-4 flex flex-wrap gap-3">
           <button type="button" className={CONTROL_CLASS} onClick={() => setDiscard(false)}>
@@ -192,109 +155,107 @@ function WorkflowDialog({
             Discard
           </button>
         </div>
-      ) : (
-        <>
-          <p className="mt-3 text-xs text-granite">{NOTICE}</p>
-          <p className="my-3 break-all text-sm">
-            {target.entityIds.join(', ')}
-            {target.kind === 'forecast' && ` · ${target.changeId}`}
-          </p>
-          {saved ? (
-            <>
-              <RecordDetails record={saved} />
-              <button type="button" className={`mt-4 ${CONTROL_CLASS}`} onClick={onClose}>
-                Close
-              </button>
-            </>
-          ) : (
-            renderQueryState('workflow actor roster', team, (users) => (
-              <form
-                className="space-y-4"
-                noValidate
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (team.error || team.refreshing) return;
-                  const result = recordWorkflow(target, draft, users, now());
-                  if (!result.ok) {
-                    setErrors(result.errors);
-                    focusInvalid(event.currentTarget, result.errors);
-                    return;
-                  }
-                  onRecord(result.record);
-                  setSaved(result.record);
-                }}
-              >
-                {(['actorId', 'outcome', 'reason'] as const).map((field) => (
-                  <FormField
-                    key={field}
-                    label={
-                      field === 'actorId'
-                        ? 'Demo actor (not authenticated)'
-                        : field === 'outcome'
-                          ? 'Outcome'
-                          : 'Reason'
-                    }
-                    error={errors[field]}
-                  >
-                    {field === 'reason' ? (
-                      <textarea
-                        name={field}
-                        className={`w-full bg-carbon ${CONTROL_CLASS}`}
-                        rows={3}
-                        value={draft[field]}
-                        onChange={(event) => update(field, event.target.value)}
-                      />
-                    ) : (
-                      <select
-                        name={field}
-                        className={`w-full bg-carbon ${CONTROL_CLASS}`}
-                        value={draft[field]}
-                        onChange={(event) => update(field, event.target.value)}
-                      >
-                        <option value="">
-                          Select {field === 'actorId' ? 'active demo actor' : 'outcome'}
-                        </option>
-                        {field === 'actorId'
-                          ? users
-                              .filter((user) => user.status === 'active')
-                              .map((user) => (
-                                <option key={user.id} value={user.id}>
-                                  {user.name} · {user.id}
-                                </option>
-                              ))
-                          : WORKFLOW_OUTCOMES[target.kind].map((outcome) => (
-                              <option key={outcome} value={outcome}>
-                                {outcome}
-                              </option>
-                            ))}
-                      </select>
-                    )}
-                  </FormField>
-                ))}
-                {errors.target && <p role="alert">{errors.target}</p>}
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="submit"
-                    className={CONTROL_CLASS}
-                    disabled={Boolean(team.error) || team.refreshing}
-                  >
-                    Record session outcome
-                  </button>
-                  <button type="button" className={CONTROL_CLASS} onClick={requestClose}>
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ))
-          )}
-          {!saved && (team.data === null || team.error) && (
-            <button type="button" className={`mt-4 ${CONTROL_CLASS}`} onClick={requestClose}>
-              Cancel
+      ) : null}
+      <div hidden={discard}>
+        <p className="mt-3 text-xs text-granite">{NOTICE}</p>
+        <p className="my-3 break-all text-sm">
+          {target.entityIds.join(', ')}
+          {target.kind === 'forecast' && ` · ${target.changeId}`}
+        </p>
+        {saved ? (
+          <>
+            <RecordDetails record={saved} />
+            <button type="button" className={`mt-4 ${CONTROL_CLASS}`} onClick={onClose}>
+              Close
             </button>
-          )}
-        </>
-      )}
-    </dialog>,
-    document.body,
+          </>
+        ) : (
+          renderQueryState('workflow actor roster', team, (users) => (
+            <form
+              className="space-y-4"
+              noValidate
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (team.error || team.refreshing) return;
+                const result = recordWorkflow(target, draft, users, now());
+                if (!result.ok) {
+                  setErrors(result.errors);
+                  focusInvalid(event.currentTarget, result.errors);
+                  return;
+                }
+                onRecord(result.record);
+                setSaved(result.record);
+              }}
+            >
+              {(['actorId', 'outcome', 'reason'] as const).map((field) => (
+                <FormField
+                  key={field}
+                  label={
+                    field === 'actorId'
+                      ? 'Demo actor (not authenticated)'
+                      : field === 'outcome'
+                        ? 'Outcome'
+                        : 'Reason'
+                  }
+                  error={errors[field]}
+                >
+                  {field === 'reason' ? (
+                    <textarea
+                      name={field}
+                      className={`w-full bg-carbon ${CONTROL_CLASS}`}
+                      rows={3}
+                      value={draft[field]}
+                      onChange={(event) => update(field, event.target.value)}
+                    />
+                  ) : (
+                    <select
+                      name={field}
+                      className={`w-full bg-carbon ${CONTROL_CLASS}`}
+                      value={draft[field]}
+                      onChange={(event) => update(field, event.target.value)}
+                    >
+                      <option value="">
+                        Select {field === 'actorId' ? 'active demo actor' : 'outcome'}
+                      </option>
+                      {field === 'actorId'
+                        ? users
+                            .filter((user) => user.status === 'active')
+                            .map((user) => (
+                              <option key={user.id} value={user.id}>
+                                {user.name} · {user.id}
+                              </option>
+                            ))
+                        : WORKFLOW_OUTCOMES[target.kind].map((outcome) => (
+                            <option key={outcome} value={outcome}>
+                              {outcome}
+                            </option>
+                          ))}
+                    </select>
+                  )}
+                </FormField>
+              ))}
+              {errors.target && <p role="alert">{errors.target}</p>}
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="submit"
+                  className={CONTROL_CLASS}
+                  disabled={Boolean(team.error) || team.refreshing}
+                >
+                  Record session outcome
+                </button>
+                <button type="button" className={CONTROL_CLASS} onClick={() => requestClose()}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ))
+        )}
+        {!saved && (team.data === null || team.error) && (
+          <button type="button" className={`mt-4 ${CONTROL_CLASS}`} onClick={() => requestClose()}>
+            Cancel
+          </button>
+        )}
+      </div>
+    </Modal>
   );
 }

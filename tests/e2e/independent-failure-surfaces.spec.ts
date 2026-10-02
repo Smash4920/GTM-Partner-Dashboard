@@ -335,7 +335,7 @@ test('VAL-RES-009: a failed first calendar page is named inside Log Meetings and
   // The calendar's failure is named inside the modal it feeds, with stable
   // copy and a retry that repeats only the failed page.
   await page.getByRole('button', { name: 'Log Meetings' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Log meetings' });
+  const dialog = page.getByRole('dialog', { name: /Log meetings ·/ });
   await expect(dialog.getByText('Log meetings · Alex Morgan')).toBeVisible();
   await expect(dialog.getByText(/Failed to load the week.s meetings/)).toBeVisible();
   await expect(dialog.getByText(/failed in transit/)).toHaveCount(0);

@@ -122,7 +122,7 @@ export const SCALED_FAILURE_ROUTES: ScaledFailure[] = [
     sibling: async (page) => {
       await expect(page.getByText('3000 meetings in scope')).toBeVisible();
       await page.getByRole('button', { name: 'Log Meetings', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Log meetings', exact: true });
+      const dialog = page.getByRole('dialog', { name: /Log meetings ·/ });
       await expect(dialog.getByRole('combobox', { name: /Partner for .* meeting/ })).toHaveCount(
         25,
       );
