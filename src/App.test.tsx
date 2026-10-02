@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
@@ -79,10 +79,14 @@ describe('App', () => {
 
     for (const [label, heading] of ROUTES) {
       await user.click(nav().getByRole('button', { name: label }));
+      if (['Action Center', 'Production Requirements', 'Data Connections'].includes(label)) {
+        // Static preloads do not settle React.lazy's first-use import promises.
+        await act(async () => {
+          await vi.dynamicImportSettled();
+        });
+      }
 
       if (heading) {
-        // findBy*: the lazily loaded system routes suspend for a tick while
-        // their chunk resolves.
         expect(await screen.findByRole('heading', { name: heading, level: 1 })).toBeInTheDocument();
       } else {
         expect(await screen.findAllByRole('heading', { level: 1 })).not.toHaveLength(0);
@@ -121,6 +125,9 @@ describe('App', () => {
   it('shows the staged migration plan on Production Requirements', async () => {
     const user = await renderApp();
     await user.click(nav().getByRole('button', { name: 'Production Requirements' }));
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
 
     expect(await screen.findByRole('heading', { name: 'Migration Path' })).toBeInTheDocument();
     expect(await screen.findByText(/Phase 0 · Test infrastructure/)).toBeInTheDocument();
@@ -669,13 +676,17 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     await screen.findByText('Performance summary unavailable:');
 
     await user.click(nav().getByRole('button', { name: 'Production Requirements' }));
-    // findBy*: the system routes are a lazily loaded chunk now, so the view
-    // lands a tick after the click.
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
     expect(
       await screen.findByRole('heading', { name: 'Production Requirements', level: 1 }),
     ).toBeInTheDocument();
 
     await user.click(nav().getByRole('button', { name: 'Data Connections' }));
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
     expect(
       await screen.findByRole('heading', { name: 'Data Connections', level: 1 }),
     ).toBeInTheDocument();
@@ -713,6 +724,9 @@ describe('App under total provider failure (VAL-RES-008)', () => {
 
     // The roster section's retry recovers that section alone.
     await user.click(nav().getByRole('button', { name: 'Data Connections' }));
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
     await screen.findByText('The team roster unavailable:');
     await user.click(
       within(screen.getByRole('group', { name: 'The team roster' })).getByRole('button', {

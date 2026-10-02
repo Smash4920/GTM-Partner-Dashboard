@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 // Retention tests do not measure cold chunks; production preview owns that boundary.
 import './views/ActionCenterView';
@@ -49,6 +49,10 @@ describe('Action Center contextual navigation', () => {
       ).toHaveFocus(),
     );
     fireEvent.click(nav.getByRole('button', { name: 'Action Center' }));
+    // A preloaded module still has a pending React.lazy import promise on first use.
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
     await screen.findByText('30 unique items');
     const filters = within(screen.getByText('Filters').closest('section')!);
     fireEvent.click(filters.getByRole('checkbox', { name: 'Missing next step' }));
@@ -88,6 +92,9 @@ describe('Action Center contextual navigation', () => {
     render(<App providerFactory={() => provider} />);
     const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
     fireEvent.click(nav.getByRole('button', { name: 'Action Center' }));
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
     await screen.findByText('1 unique items');
     const action = screen.getByRole('link', { name: 'Open Forecasting context' });
     action.focus();
@@ -118,6 +125,9 @@ describe('Action Center contextual navigation', () => {
       render(<App providerFactory={() => new MockDataProvider()} />);
       const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
       fireEvent.click(nav.getByRole('button', { name: 'Action Center' }));
+      await act(async () => {
+        await vi.dynamicImportSettled();
+      });
       await screen.findByText('85 unique items');
       const filters = within(screen.getByText('Filters').closest('section')!);
       fireEvent.click(filters.getByRole('checkbox', { name: category }));
