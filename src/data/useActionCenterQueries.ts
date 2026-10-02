@@ -15,24 +15,22 @@ export function useActionCenterQueries({
   access: DemoAccessScope;
   scope: ActionCenterScope;
 }) {
-  const key = `action-center|${demoScopeKey(access)}|${actionCenterScopeKey(scope)}`;
-  // Notes invalidate the Action Center projection without changing membership
-  // or order. Keep its cursor and loaded window; never emit this local key.
-  const noteKey = editMapKey(scope.edits?.notes ?? {});
+  // UI scope changes reset depth; edits refresh it even when eligibility or
+  // global ordering changes. Provider cursors still use the full scope key.
+  const resetKey = `${demoScopeKey(access)}|${actionCenterScopeKey({ ...scope, edits: undefined })}`;
+  const refreshKey = `${actionCenterScopeKey(scope)}|${editMapKey(scope.edits?.notes ?? {})}`;
   const summary = useScopedQuery({
     provider,
-    queryKey: `${key}|${noteKey}`,
-    scopeKey: key,
+    queryKey: `${resetKey}|${refreshKey}`,
+    scopeKey: resetKey,
     run: (context) => provider.getActionCenterSummary(access, scope, context),
     errorFallback: 'Failed to load the Action Center summary',
   });
-  // Policy, filters and effective overlays can change membership or global
-  // order. Restart only this collection, never reuse its obsolete cursor.
   const items = usePaginatedRows({
     provider,
     enabled: true,
-    resetKey: key,
-    refreshKey: noteKey,
+    resetKey,
+    refreshKey,
     pageSize: 25,
     fetchPage: (page, context) => provider.listActionItems(access, scope, page, context),
     errorFallback: 'Failed to load the action items',

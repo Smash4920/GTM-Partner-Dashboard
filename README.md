@@ -192,8 +192,12 @@ context restores focus to its exact action link, or the heading if the action
 was resolved. Editors restore focus to the
 row control after Save or Escape. Revenue and category edits refresh only their
 dependent forecast queries; notes and next steps refresh Action Center without
-refetching forecast aggregates. Membership-changing revenue/next-step edits
-restart Action Center paging; note-only changes retain its loaded window.
+refetching forecast aggregates. Revenue, next-step and note edits refresh the
+existing Action Center depth under the new eligibility and ordering, capped by
+the new total. Refresh starts without a cursor and obtains a fresh continuation;
+a failed refresh retains stale rows but cannot append until retry succeeds.
+Provider, access, policy, filter, routing, classification and prospect scope
+changes reset paging. Forecast-category changes do not refetch Action Center.
 Overlays replace source values once, and customer prose never enters logs or
 telemetry. A committed provider change clears these retained views and edits.
 

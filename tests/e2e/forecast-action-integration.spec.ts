@@ -88,6 +88,7 @@ test('VAL-CROSS-003: forecast overlays apply once with narrow calls, retained pa
     await settle();
     expect(calls.slice(before).sort()).toEqual(expected.sort());
     expect(await ids()).toEqual(forecastIds);
+    await expect(page.getByTestId('action-item')).toHaveCount(50);
   };
   const editText = async (field: string, value: string) => {
     const edit = row.getByRole('button', { name: new RegExp(`^(Edit|Add) ${field} for`) });
@@ -128,10 +129,9 @@ test('VAL-CROSS-003: forecast overlays apply once with narrow calls, retained pa
     'listQuarterOpportunities',
   ]);
 
-  // After membership-changing revenue, note refresh retains the newly loaded
-  // Action Center window. Its prose must never enter the technical call key.
+  // Load 50 only once for this uninterrupted four-edit journey, including
+  // edits that change action eligibility/order. Prose stays out of call logs.
   await navigate('Action Center');
-  await more.click();
   await expect(page.getByTestId('action-item')).toHaveCount(50);
   await navigate('Forecasting');
   await matrix(() => editText('note', PROSE), ['getActionCenterSummary', 'listActionItems']);
@@ -142,9 +142,20 @@ test('VAL-CROSS-003: forecast overlays apply once with narrow calls, retained pa
   await navigate('Forecasting');
   await matrix(() => editText('next step', PROSE), ['getActionCenterSummary', 'listActionItems']);
   await expect(row).toContainText(PROSE);
+  await navigate('Action Center');
+  await expect(page.getByTestId('action-item')).toHaveCount(50);
+  expect(
+    await page
+      .getByTestId('action-item')
+      .evaluateAll(
+        (items) => new Set(items.map((item) => item.getAttribute('data-action-id'))).size,
+      ),
+  ).toBe(50);
+  await navigate('Forecasting');
   await matrix(() => editText('next step', ''), ['getActionCenterSummary', 'listActionItems']);
 
   await navigate('Action Center');
+  await expect(page.getByTestId('action-item')).toHaveCount(50);
   await page.getByRole('checkbox', { name: 'Missing next step', exact: true }).check();
   const action = page.locator(`[data-action-id="opportunity:${entityId}"]`);
   while (!(await action.count()) && (await more.getAttribute('aria-disabled')) !== 'true') {

@@ -17,8 +17,7 @@ import type { QueryState } from './queryState';
  *   twice or append the same rows twice.
  * - A failed page keeps the pages already loaded; `retry` then repeats the
  *   failed page request (same cursor), not the whole collection.
- * - A data-only change (an edit that cannot change which rows belong to the
- *   collection) refetches the loaded window in place — a chain of bounded
+ * - A data change refetches the loaded window in place — a chain of bounded
  *   page requests covering the rows on screen — instead of resetting to the
  *   first page. A failed window refresh keeps the loaded rows and reports
  *   the error alongside.
@@ -444,6 +443,9 @@ export function usePaginatedRows<T>(args: {
     // (bounded pages covering the loaded rows) instead of resetting to
     // page one.
     phase.current = 'refresh';
+    // Retained rows can be stale, but their continuation cannot be reused
+    // under new overlays, including when the replacement window fails.
+    cursor.current = undefined;
     pendingWindowMaps.current = fetchTracking?.maps ?? null;
     windowRequest.current = controller;
     setEntry((previous) =>
