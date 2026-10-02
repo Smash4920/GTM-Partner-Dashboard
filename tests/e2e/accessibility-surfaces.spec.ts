@@ -14,7 +14,7 @@ import { ACTION_CATEGORIES, ACTION_CATEGORY_LABELS } from '../../src/data/action
 import { CONNECTION_NODES, CONNECTION_EDGES } from '../../src/data/connections';
 import { MockDataProvider } from '../../src/data/mock/MockDataProvider';
 import type { PerformanceScope, RegistrationOpsSummary } from '../../src/data/DataProvider';
-import type { FiscalPhase, OpportunityType } from '../../src/data/types';
+import type { ActionItem, FiscalPhase, OpportunityType } from '../../src/data/types';
 import { DEFAULT_ACTION_POLICY } from '../../src/lib/actionPolicy';
 import { actionEvidence } from '../../src/lib/actionEvidence';
 import { NOTIFICATION_TEMPLATES } from '../../src/lib/notifications';
@@ -773,14 +773,28 @@ for (const viewport of viewports) {
   });
 }
 
-test('VAL-A11Y-005: DS-033/034/042/043 every loaded action, all five reason categories, merged reasons, evidence and eligible notification templates', async ({
-  page,
-}, testInfo) => {
-  test.setTimeout(240_000);
-  const check = observe(page);
+const ACTION_PARTITIONS = [0, 1, 2, 3] as const;
+
+function actionCoverage(items: readonly ActionItem[]) {
+  const categories = new Set<string>();
+  const notificationCategories = new Set<string>();
+  for (const item of items) {
+    for (const reason of item.reasons) {
+      categories.add(reason.category);
+      if (item.owner?.userId) notificationCategories.add(reason.category);
+    }
+  }
+  return {
+    categories: [...categories].sort(),
+    notificationCategories: [...notificationCategories].sort(),
+    merged: items.filter((item) => item.reasons.length > 1).length,
+  };
+}
+
+async function actionPopulation(page: Page) {
   await page.goto('/');
   await navigate(page, 'Action Center');
-  const fixture = [];
+  const fixture: ActionItem[] = [];
   let cursor: string | undefined;
   do {
     const result = (
@@ -800,78 +814,128 @@ test('VAL-A11Y-005: DS-033/034/042/043 every loaded action, all five reason cate
     }
   } while (cursor);
   await expect(page.getByTestId('action-item')).toHaveCount(fixture.length);
-  const seen = new Set<string>();
-  const notificationCategories = new Set<string>();
-  let merged = 0;
-  for (const item of fixture) {
-    const row = page.locator(`[data-action-id="${item.id}"]`);
-    const button = row.getByRole('button', { name: `Show evidence for ${item.id}`, exact: true });
-    const content = row.getByRole('region', { name: `Evidence for ${item.id}`, exact: true });
-    for (const method of methods) await toggle(button, content, method);
-    await activate(button, 'Enter');
-    await expect(content).toContainText('As of Sep 18, 2026');
-    await expect(content).toContainText('provider local');
-    await expect(content).toContainText('Lineage:');
-    await expect(content).toContainText('mock-book —');
-    for (const reason of item.reasons) {
-      seen.add(reason.category);
-      await expect(
-        content.getByRole('heading', {
-          name: ACTION_CATEGORY_LABELS[reason.category],
-          exact: true,
-        }),
-      ).toBeVisible();
-      await expect(content).toContainText(actionEvidence(reason));
-      await expect(content).toContainText(reason.recommendedAction);
-    }
-    if (item.reasons.length > 1) merged += 1;
-    await activate(button, 'Space');
-    await expect(content).toHaveCount(0);
-    expect(await row.ariaSnapshot()).not.toContain(`Evidence for ${item.id}`);
-    const notify = row.getByRole('button', {
-      name: /^(Notify owner|Close notification)$/,
-      exact: true,
-    });
-    if (!item.owner?.userId) {
-      await expect(notify).toBeDisabled();
-      continue;
-    }
-    for (const method of methods) {
-      await activate(notify, method);
-      await expect(notify).toHaveAttribute('aria-expanded', 'true');
-      const composer = row.getByRole('region', {
-        name: `Notification for ${item.id}`,
+  const ids = fixture.map((item) => item.id);
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(
+    await page
+      .getByTestId('action-item')
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-action-id'))),
+  ).toEqual(ids);
+  const partitions = ACTION_PARTITIONS.map((partition) =>
+    fixture.filter((_, fixtureIndex) => fixtureIndex % ACTION_PARTITIONS.length === partition),
+  );
+  const partitionIds = partitions.flat().map((item) => item.id);
+  expect(new Set(partitionIds).size).toBe(partitionIds.length);
+  expect([...partitionIds].sort()).toEqual([...ids].sort());
+  const population = actionCoverage(fixture);
+  expect(population.categories).toEqual([...ACTION_CATEGORIES].sort());
+  expect(population.notificationCategories).toEqual([...ACTION_CATEGORIES].sort());
+  expect(population.merged).toBeGreaterThan(0);
+  return { fixture, partitions, population };
+}
+
+for (const partition of ACTION_PARTITIONS) {
+  test(`VAL-A11Y-005: DS-033/034/042/043 every loaded action partition ${partition + 1}/4, merged reasons, evidence and eligible notification templates`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(240_000);
+    const check = observe(page);
+    const { fixture, partitions, population } = await actionPopulation(page);
+    const assigned = partitions[partition];
+    const expected = actionCoverage(assigned);
+    const seen = new Set<string>();
+    const notificationCategories = new Set<string>();
+    let merged = 0;
+    for (const item of assigned) {
+      const row = page.locator(`[data-action-id="${item.id}"]`);
+      const button = row.getByRole('button', { name: `Show evidence for ${item.id}`, exact: true });
+      const content = row.getByRole('region', { name: `Evidence for ${item.id}`, exact: true });
+      for (const method of methods) await toggle(button, content, method);
+      await activate(button, 'Enter');
+      await expect(content).toContainText('As of Sep 18, 2026');
+      await expect(content).toContainText('provider local');
+      await expect(content).toContainText('Lineage:');
+      await expect(content).toContainText('mock-book —');
+      for (const reason of item.reasons) {
+        seen.add(reason.category);
+        await expect(
+          content.getByRole('heading', {
+            name: ACTION_CATEGORY_LABELS[reason.category],
+            exact: true,
+          }),
+        ).toBeVisible();
+        await expect(content).toContainText(actionEvidence(reason));
+        await expect(content).toContainText(reason.recommendedAction);
+      }
+      if (item.reasons.length > 1) merged += 1;
+      await activate(button, 'Space');
+      await expect(content).toHaveCount(0);
+      expect(await row.ariaSnapshot()).not.toContain(`Evidence for ${item.id}`);
+      const notify = row.getByRole('button', {
+        name: /^(Notify owner|Close notification)$/,
         exact: true,
       });
-      await expect(composer).toBeVisible();
-      const selector = composer.getByLabel('Template', { exact: true });
-      await expect(selector.locator('option')).toHaveText(
-        item.reasons.map((reason) => ACTION_CATEGORY_LABELS[reason.category]),
-      );
-      for (const reason of item.reasons) {
-        await selector.selectOption(reason.category);
-        notificationCategories.add(reason.category);
-        await expect(composer.getByText(reason.recommendedAction, { exact: true })).toBeVisible();
-        await expect(composer.getByLabel('Subject')).not.toHaveValue('');
-        await expect(composer.getByLabel('Message')).toHaveValue(new RegExp(item.id));
+      if (!item.owner?.userId) {
+        await expect(notify).toBeDisabled();
+        continue;
       }
-      for (const checkbox of await composer.getByRole('checkbox').all()) {
-        const label = (await checkbox.getAttribute('aria-label'))!.replace('Use ', '');
-        const channel = NOTIFICATION_CHANNELS.find(
-          (candidate) => NOTIFICATION_CHANNEL_META[candidate].label === label,
-        )!;
-        await expect(checkbox.locator('..')).toContainText(
-          NOTIFICATION_CHANNEL_META[channel].description,
+      for (const method of methods) {
+        await activate(notify, method);
+        await expect(notify).toHaveAttribute('aria-expanded', 'true');
+        const composer = row.getByRole('region', {
+          name: `Notification for ${item.id}`,
+          exact: true,
+        });
+        await expect(composer).toBeVisible();
+        const selector = composer.getByLabel('Template', { exact: true });
+        await expect(selector.locator('option')).toHaveText(
+          item.reasons.map((reason) => ACTION_CATEGORY_LABELS[reason.category]),
         );
+        for (const reason of item.reasons) {
+          await selector.selectOption(reason.category);
+          notificationCategories.add(reason.category);
+          await expect(composer.getByText(reason.recommendedAction, { exact: true })).toBeVisible();
+          await expect(composer.getByLabel('Subject')).not.toHaveValue('');
+          await expect(composer.getByLabel('Message')).toHaveValue(new RegExp(item.id));
+        }
+        for (const checkbox of await composer.getByRole('checkbox').all()) {
+          const label = (await checkbox.getAttribute('aria-label'))!.replace('Use ', '');
+          const channel = NOTIFICATION_CHANNELS.find(
+            (candidate) => NOTIFICATION_CHANNEL_META[candidate].label === label,
+          )!;
+          await expect(checkbox.locator('..')).toContainText(
+            NOTIFICATION_CHANNEL_META[channel].description,
+          );
+        }
+        await activate(notify, method);
+        await expect(notify).toHaveAttribute('aria-expanded', 'false');
+        await expect(composer).toHaveCount(0);
       }
-      await activate(notify, method);
-      await expect(notify).toHaveAttribute('aria-expanded', 'false');
-      await expect(composer).toHaveCount(0);
     }
-  }
-  expect([...seen].sort()).toEqual([...ACTION_CATEGORIES].sort());
-  expect([...notificationCategories].sort()).toEqual([...ACTION_CATEGORIES].sort());
-  expect(merged).toBeGreaterThan(0);
+    expect([...seen].sort()).toEqual(expected.categories);
+    expect([...notificationCategories].sort()).toEqual(expected.notificationCategories);
+    expect(merged).toBe(expected.merged);
+    await evidence(testInfo, `DS-033/034/042/043-actions-partition-${partition + 1}`, {
+      populationIds: fixture.map((item) => item.id),
+      population,
+      partition,
+      partitionIds: partitions.map((items) => items.map((item) => item.id)),
+      ids: assigned.map((item) => item.id),
+      methods,
+      categories: [...seen].sort(),
+      notificationCategories: [...notificationCategories].sort(),
+      merged,
+    });
+    check();
+  });
+}
+
+test('VAL-A11Y-005: DS-033/034/042/043 all five category/full-page axe evidence and notification checkpoints', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const check = observe(page);
+  const { fixture, population } = await actionPopulation(page);
   for (const category of ACTION_CATEGORIES) {
     await page
       .getByRole('checkbox', { name: ACTION_CATEGORY_LABELS[category], exact: true })
@@ -887,9 +951,7 @@ test('VAL-A11Y-005: DS-033/034/042/043 every loaded action, all five reason cate
   }
   await evidence(testInfo, 'DS-033/034/042/043-all-actions', {
     ids: fixture.map((item) => item.id),
-    categories: [...seen],
-    notificationCategories: [...notificationCategories],
-    merged,
+    ...population,
   });
   check();
 });
