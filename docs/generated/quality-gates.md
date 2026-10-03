@@ -70,5 +70,5 @@ Total production dependency budget: 32768.0 KiB.
 
 ## Test performance budgets
 
-- Suite total: 90.00s
+- Suite total: 210.00s
 - Slowest single test: 8.00s

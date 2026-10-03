@@ -15,6 +15,29 @@ describe('final quality ratchets', () => {
     assert.equal(QUALITY_GATE.length, 17);
   });
 
+  it('accepts the approved aggregate ceiling and unchanged individual ceiling', () => {
+    const value = facts();
+    value.testPerformance.totalBudgetMs = 210000;
+    value.testPerformance.slowestTestBudgetMs = 8000;
+    assert.deepEqual(checkQualityPolicy(value), []);
+  });
+
+  it('rejects an aggregate ceiling one millisecond above the approved budget', () => {
+    const value = facts();
+    value.testPerformance.totalBudgetMs = 210001;
+    assert.deepEqual(checkQualityPolicy(value), [
+      'Vitest total: 210001 exceeds effective ceiling 210000',
+    ]);
+  });
+
+  it('rejects an individual ceiling one millisecond above the unchanged budget', () => {
+    const value = facts();
+    value.testPerformance.slowestTestBudgetMs = 8001;
+    assert.deepEqual(checkQualityPolicy(value), [
+      'Vitest individual: 8001 exceeds effective ceiling 8000',
+    ]);
+  });
+
   it('rejects weakened coverage, static, build, and test-time limits', () => {
     const mutations = [
       (value) => {

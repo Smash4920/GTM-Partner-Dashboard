@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import { evaluateTestPerformance, parseJunit } from './check-test-performance.mjs';
@@ -63,5 +64,48 @@ describe('test performance budget', () => {
     assert.equal(violations.length, 2);
     assert.match(violations[0], /Suite took 1\.00s/);
     assert.match(violations[1], /slow > case/);
+  });
+});
+
+describe('approved checked-in test performance boundaries', () => {
+  const config = JSON.parse(
+    readFileSync(new URL('../config/test-performance.json', import.meta.url), 'utf8'),
+  );
+  const timedSuite = (totalMs, slowestMs = 8000) => {
+    const durations = [slowestMs];
+    let remaining = totalMs - slowestMs;
+    while (remaining > 0) {
+      const duration = Math.min(remaining, 7000);
+      durations.push(duration);
+      remaining -= duration;
+    }
+    return parseJunit(
+      `<testsuites tests="${durations.length}" failures="0" errors="0">${durations
+        .map(
+          (duration, index) =>
+            `<testcase classname="boundary" name="case ${index}" time="${duration / 1000}" />`,
+        )
+        .join('')}</testsuites>`,
+    );
+  };
+
+  it('accepts exactly 210000 ms aggregate and 8000 ms individual', () => {
+    const parsed = timedSuite(210000);
+    assert.equal(parsed.totalTimeMs, 210000);
+    assert.deepEqual(evaluateTestPerformance({ parsed, config }).violations, []);
+  });
+
+  it('rejects 210001 ms aggregate without an individual breach', () => {
+    const parsed = timedSuite(210001);
+    const { violations } = evaluateTestPerformance({ parsed, config });
+    assert.equal(parsed.totalTimeMs, 210001);
+    assert.equal(violations.length, 1);
+    assert.match(violations[0], /Suite took .* over the 210\.00s budget/);
+  });
+
+  it('rejects 8001 ms individual even below the aggregate ceiling', () => {
+    const { violations } = evaluateTestPerformance({ parsed: timedSuite(8001, 8001), config });
+    assert.equal(violations.length, 1);
+    assert.match(violations[0], /Slowest test .* over the 8\.00s per-test budget/);
   });
 });

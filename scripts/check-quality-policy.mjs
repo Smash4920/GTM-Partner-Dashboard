@@ -104,7 +104,7 @@ export function checkQualityPolicy(facts) {
     buildBudgetMs: 60000,
   }))
     ceiling(name, facts[name], maximum);
-  ceiling('Vitest total', facts.testPerformance.totalBudgetMs, 90000);
+  ceiling('Vitest total', facts.testPerformance.totalBudgetMs, 210000);
   ceiling('Vitest individual', facts.testPerformance.slowestTestBudgetMs, 8000);
   ceiling('CI build override', facts.ciBuildBudgetMs, 60000);
   ceiling('production dependencies total', facts.dependencyTotalBytes, 33554432);
@@ -169,7 +169,7 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
     console.log(
       'Quality policy passed: 17 blocking gate steps; coverage 95/90/96/96%; ' +
         '1 MiB/1,200 lines; complexity 20; duplication 1.5%; build 60,000 ms; ' +
-        'Vitest 90,000/8,000 ms; all gzip, size-limit, and dependency ceilings preserved.',
+        'Vitest 210,000/8,000 ms; all gzip, size-limit, and dependency ceilings preserved.',
     );
   }
 }

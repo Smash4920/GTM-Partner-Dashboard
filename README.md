@@ -402,7 +402,7 @@ npm run test:debt       # verify the technical-debt policy scanner
 npm run test:sentry-sync # verify the offline issue-sync policy
 npm run test:coverage   # the same suite with coverage, enforcing the thresholds in vite.config.ts
 npm run test:coverage:ci # coverage plus the per-test timing report used by CI
-npm run test:performance # enforce 90-second total and 8-second individual limits
+npm run test:performance # enforce 210-second total and 8-second individual limits
 npm run test:e2e        # playwright: browser workflows and partner-data boundaries
 npm run test:list       # collect and list tests without running them
 npm run build           # type-checks, bundles to dist/, and records build performance

@@ -107,7 +107,7 @@ the same pull request.
 ### `test:performance`
 
 `npm run test:performance` fails when the suite total or the slowest single test
-exceeds `config/test-performance.json` (90,000 ms total, 8,000 ms per test).
+exceeds `config/test-performance.json` (210,000 ms total, 8,000 ms per test).
 Remove unnecessary waiting or repeated setup while preserving assertions.
 If that cannot restore the budget, report the blocker.
 

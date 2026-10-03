@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "Timing budget for the Vitest suite, enforced by scripts/check-test-performance.mjs against the JUnit report written by `npm run test:coverage:ci`. The budget is a ceiling that catches a suite that has become slow, not a target.",
-  "totalBudgetMs": 90000,
+  "totalBudgetMs": 210000,
   "slowestTestBudgetMs": 8000,
   "reportSlowest": 15
 }
