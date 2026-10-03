@@ -1,5 +1,7 @@
 import { onCLS, onFCP, onINP, onLCP, onTTFB, type MetricType } from 'web-vitals';
 import { logger } from './logging';
+import { resolveEndpoint } from './telemetry/config';
+import { isFlagEnabled } from './telemetry/flags';
 
 const log = logger.child({ component: 'performanceTelemetry' });
 const APPLICATION = 'gtm-partner-dashboard';
@@ -54,8 +56,17 @@ export function parseSampleRate(value: string | undefined): number {
 }
 
 function defaultConfig(): PerformanceTelemetryConfig {
+  // The Web Vitals destination obeys the same endpoint policy as every other
+  // telemetry egress: HTTPS, approved hosts in production, no credentials or
+  // query strings, and fail-closed to local-only on any violation.
+  const issues: string[] = [];
+  const endpoint =
+    resolveEndpoint(import.meta.env.VITE_METRICS_ENDPOINT, 'VITE_METRICS_ENDPOINT', issues, {
+      production: import.meta.env.PROD,
+    }) ?? '';
+  for (const issue of issues) log.warn(issue);
   return {
-    endpoint: import.meta.env.VITE_METRICS_ENDPOINT?.trim() ?? '',
+    endpoint,
     environment: import.meta.env.VITE_DEPLOYMENT_ENV?.trim() || import.meta.env.MODE,
     release: import.meta.env.VITE_RELEASE?.trim() || undefined,
     sampleRate: parseSampleRate(import.meta.env.VITE_METRICS_SAMPLE_RATE),
@@ -143,12 +154,18 @@ export function initializePerformanceTelemetry(
   config: PerformanceTelemetryConfig = defaultConfig(),
   dependencyOverrides: Partial<TelemetryDependencies> = {},
 ): boolean {
+  // The master telemetry switch gates this module like every other egress
+  // path: off means no observer subscriptions and no beacons or fetches.
   if (!config.endpoint || config.sampleRate <= 0) return false;
+  if (!isFlagEnabled('telemetry.enabled')) return false;
 
   const dependencies = { ...defaultDependencies(), ...dependencyOverrides };
   if (dependencies.random() >= config.sampleRate) return false;
 
   const report = (metric: MetricType) => {
+    // Web Vitals callbacks fire for the life of the page, so the switch is
+    // re-read per send: turning telemetry off stops beacons mid-session too.
+    if (!isFlagEnabled('telemetry.enabled')) return;
     sendPayload(config.endpoint, createPayload(metric, config, dependencies), dependencies);
   };
   for (const subscribe of dependencies.metricSubscribers) subscribe(report);

@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   DataProvider,
   ForecastQualitySummary,
@@ -8,21 +7,62 @@ import type {
   WeeklySeriesRow,
   WeightedForecastSummary,
 } from './DataProvider';
+import { demoScopeKey } from './accessScope';
+import type { DemoAccessScope } from './accessScope';
+import { usePaginatedRows } from './paginationState';
+import type { PaginationState } from './paginationState';
+import type { QueryMeta } from './queryMetadata';
+import { editMapKey, useScopedQuery } from './queryState';
+import type { QueryState } from './queryState';
 import { NO_SESSION_EDITS } from './sessionEdits';
 import type { Opportunity } from './types';
 
 /**
  * The Forecasting view's data, fetched the way it will be fetched in
- * production: a handful of aggregates plus one page of rows, each with its own
- * loading and error state, instead of one `Promise.all` that blanks the page
- * when any single call is slow.
+ * production: a handful of independent aggregates plus one page of rows per
+ * expanded manager, each with its own loading, error, and retry state. One
+ * rejected call fails exactly one widget; the others are not asked to
+ * re-render, let alone to refetch.
  *
- * The dependency lists deliberately name the *values* a query depends on —
- * the quarter, the manager, and each edit map — rather than the scope object.
- * A scope rebuilt on every render is a new object every time, and an effect
- * keyed on it refetches in a loop: render, fetch, setState, render again.
- * Depending on the maps means an edit refetches, and a re-render that changed
- * nothing does not.
+ * Invalidation is narrow, and it lives in the query keys. Each key is built
+ * from the primitive values its query depends on — the quarter and the edit
+ * maps that can change its answer — so:
+ *
+ * - a revenue edit refetches the summary, weighted forecast, quality, groups,
+ *   weekly series, and each loaded book window whose rows it touches;
+ * - a forecast-call edit refetches the weighted forecast, quality, weekly
+ *   series, and the touched book windows, but not the summary or the groups,
+ *   whose figures a re-call does not move;
+ * - a book window the edit does not touch refetches nothing: the pagination
+ *   primitive tracks which edit values each loaded row was fetched with, and
+ *   an edit to another manager's deals changes none of them;
+ * - a note or next-step edit refetches nothing here: the rows render the
+ *   session's value over the provider's, and no aggregate reads either field;
+ * - a re-render that changed nothing — a rebuilt-but-equal edits object, a
+ *   filter toggle, a collapsed group reopening — refetches nothing either,
+ *   because the keys are unchanged.
+ *
+ * Scope identity excludes edits: summary answers belong to access, quarter,
+ * and manager; the other aggregates belong to access and quarter, and names
+ * to access alone. A changed identity gates both data and metadata before
+ * effects, while same-identity refreshes retain their valid previous answer.
+ *
+ * The manager filter scopes the summary: target, remaining quota,
+ * attainment, and coverage are only honest against the targets committed to
+ * the selected manager's own partners, so the manager is part of the
+ * summary's query key and provider scope. The weighted forecast, quality,
+ * and groups stay quarter-level — the filter narrows which groups and books
+ * render, not the quarter's forecast. `getWeeklyForecastSeries` is the
+ * documented exception to manager scoping altogether — a snapshot row does
+ * not record whose book a deal was in, so a manager-filtered chart would
+ * draw a cliff that never happened.
+ *
+ * Race safety comes from the two shared primitives: results are tagged with
+ * the provider that produced them and gated at read time, and every request
+ * passes its AbortSignal to the provider through the query context, so
+ * obsolete work is cancelled at the seam — and a provider that ignores the
+ * signal still has its late answers dropped by the sequence guard, never
+ * rendered, not even for one frame.
  */
 
 /** How many mismatching deals the forecast-quality card shows per side. */
@@ -31,256 +71,207 @@ const MISMATCH_SAMPLE_SIZE = 3;
 /** Rows per page of one manager's book. */
 const MANAGER_BOOK_PAGE_SIZE = 25;
 
-interface ForecastAggregates {
-  summary: ForecastSummary;
-  weighted: WeightedForecastSummary;
-  quality: ForecastQualitySummary;
-  groups: ManagerForecastGroup[];
-  weeks: WeeklySeriesRow[];
+function editsOf(scope: ForecastScope) {
+  return scope.edits ?? NO_SESSION_EDITS;
 }
 
-export interface ForecastAggregatesState {
-  data: ForecastAggregates | null;
-  /** True only until the first answer arrives. */
+/** The quarter's headline numbers: moved by revenue edits and the manager scope. */
+export function useForecastSummary(
+  provider: DataProvider,
+  access: DemoAccessScope,
+  scope: ForecastScope,
+): QueryState<ForecastSummary> {
+  const edits = editsOf(scope);
+  const managerId = scope.partnerManagerId ?? 'all';
+  const scopeKey = `access:${demoScopeKey(access)}|${scope.quarter}|manager:${managerId}`;
+  return useScopedQuery({
+    provider,
+    scopeKey,
+    queryKey: `${scopeKey}|rev:${editMapKey(edits.revenueOverrides)}`,
+    run: (context) =>
+      provider.getForecastSummary(
+        access,
+        {
+          quarter: scope.quarter,
+          partnerManagerId: scope.partnerManagerId,
+          edits,
+        },
+        context,
+      ),
+    errorFallback: 'Failed to load the forecast summary',
+  });
+}
+
+/** The probability-weighted forecast: moved by revenue and re-calls. */
+export function useWeightedForecast(
+  provider: DataProvider,
+  access: DemoAccessScope,
+  scope: ForecastScope,
+): QueryState<WeightedForecastSummary> {
+  const edits = editsOf(scope);
+  const scopeKey = `access:${demoScopeKey(access)}|${scope.quarter}`;
+  return useScopedQuery({
+    provider,
+    scopeKey,
+    queryKey: `${scopeKey}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
+    run: (context) =>
+      provider.getWeightedForecast(access, { quarter: scope.quarter, edits }, context),
+    errorFallback: 'Failed to load the weighted forecast',
+  });
+}
+
+/** Stage-versus-call disagreements: moved by revenue and re-calls. */
+export function useForecastQuality(
+  provider: DataProvider,
+  access: DemoAccessScope,
+  scope: ForecastScope,
+): QueryState<ForecastQualitySummary> {
+  const edits = editsOf(scope);
+  const scopeKey = `access:${demoScopeKey(access)}|${scope.quarter}`;
+  return useScopedQuery({
+    provider,
+    scopeKey,
+    queryKey: `${scopeKey}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
+    run: (context) =>
+      provider.getForecastQuality(
+        access,
+        { quarter: scope.quarter, edits },
+        MISMATCH_SAMPLE_SIZE,
+        context,
+      ),
+    errorFallback: 'Failed to load the forecast quality',
+  });
+}
+
+/** The per-manager header lines: moved by revenue edits only. */
+export function useManagerGroups(
+  provider: DataProvider,
+  access: DemoAccessScope,
+  scope: ForecastScope,
+): QueryState<ManagerForecastGroup[]> {
+  const edits = editsOf(scope);
+  const scopeKey = `access:${demoScopeKey(access)}|${scope.quarter}`;
+  return useScopedQuery({
+    provider,
+    scopeKey,
+    queryKey: `${scopeKey}|rev:${editMapKey(edits.revenueOverrides)}`,
+    run: (context) =>
+      provider.getManagerForecastGroups(access, { quarter: scope.quarter, edits }, context),
+    errorFallback: 'Failed to load the manager groups',
+  });
+}
+
+/** The week-over-week series: moved by revenue and re-calls. */
+export function useWeeklySeries(
+  provider: DataProvider,
+  access: DemoAccessScope,
+  scope: ForecastScope,
+): QueryState<WeeklySeriesRow[]> {
+  const edits = editsOf(scope);
+  const scopeKey = `access:${demoScopeKey(access)}|${scope.quarter}`;
+  return useScopedQuery({
+    provider,
+    scopeKey,
+    queryKey: `${scopeKey}|rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
+    run: (context) =>
+      provider.getWeeklyForecastSeries(access, { quarter: scope.quarter, edits }, context),
+    errorFallback: 'Failed to load the weekly series',
+  });
+}
+
+export interface PartnerNamesState {
+  names: Record<string, string>;
+  /**
+   * The directory answer's envelope — committed provider, as-of, lineage,
+   * completeness, and warnings — preserved rather than dropped, so a partial
+   * directory can say so where its names are rendered.
+   */
+  meta: QueryMeta | null;
   loading: boolean;
-  /** True while a later answer is in flight over figures already on screen. */
   refreshing: boolean;
   error: string | null;
   retry: () => void;
-}
-
-function messageOf(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
 }
 
 /**
  * Partner id to name, for rendering a row's partner column.
  *
  * A dimension lookup rather than data: it does not move when the forecast
- * does, so it is fetched once and a failure degrades to showing raw partner
- * ids instead of taking the table down.
+ * does, so it is fetched once per provider/access identity and never
+ * invalidated by edits. A failure degrades the table to opaque partner ids —
+ * legible, and clearly not a name — with a retry offered alongside, instead of taking the table
+ * down. On a provider or access switch the previous names are dropped
+ * immediately: a name from another directory is a cross-source label.
  */
-export function usePartnerNames(provider: DataProvider): Record<string, string> {
-  const [names, setNames] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    let alive = true;
-    provider
-      .getPartnerDirectory()
-      .then((directory) => {
-        if (!alive) return;
-        setNames(Object.fromEntries(directory.map((partner) => [partner.id, partner.name])));
-      })
-      .catch(() => {
-        // Ids remain a legible fallback; the table is the view's point, not
-        // the display name.
-      });
-    return () => {
-      alive = false;
-    };
-  }, [provider]);
-
-  return names;
-}
-
-/** The five aggregate calls the Forecasting view renders. */
-export function useForecastAggregates(
+export function usePartnerNames(
   provider: DataProvider,
-  scope: ForecastScope,
-): ForecastAggregatesState {
-  const { quarter, partnerManagerId } = scope;
-  const { revenueOverrides, notes, nextSteps, forecastCalls } = scope.edits ?? NO_SESSION_EDITS;
-
-  const [data, setData] = useState<ForecastAggregates | null>(null);
-  const [refreshing, setRefreshing] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  // Answers can arrive out of order when edits land faster than the provider
-  // replies. Only the newest request is allowed to write.
-  const latest = useRef(0);
-
-  useEffect(() => {
-    const request = { id: ++latest.current };
-    let alive = true;
-    // The aggregates are always quarter-level: a manager filter narrows the
-    // rows below, not the forecast.
-    const requestScope: ForecastScope = {
-      quarter,
-      edits: { revenueOverrides, notes, nextSteps, forecastCalls },
-    };
-
-    setRefreshing(true);
-    Promise.all([
-      provider.getForecastSummary(requestScope),
-      provider.getWeightedForecast(requestScope),
-      provider.getForecastQuality(requestScope, MISMATCH_SAMPLE_SIZE),
-      provider.getManagerForecastGroups(requestScope),
-      provider.getWeeklyForecastSeries(requestScope),
-    ])
-      .then(([summary, weighted, quality, groups, weeks]) => {
-        if (!alive || request.id !== latest.current) return;
-        setData({ summary, weighted, quality, groups, weeks });
-        setError(null);
-        setRefreshing(false);
-      })
-      .catch((err: unknown) => {
-        if (!alive || request.id !== latest.current) return;
-        setError(messageOf(err, 'Failed to load the forecast'));
-        setRefreshing(false);
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [
+  access: DemoAccessScope,
+): PartnerNamesState {
+  const scopeKey = `partner-directory|access:${demoScopeKey(access)}`;
+  const directory = useScopedQuery({
     provider,
-    quarter,
-    partnerManagerId,
-    revenueOverrides,
-    notes,
-    nextSteps,
-    forecastCalls,
-    attempt,
-  ]);
-
-  const retry = useCallback(() => setAttempt((count) => count + 1), []);
-
-  return { data, loading: data === null && error === null, refreshing, error, retry };
+    scopeKey,
+    queryKey: scopeKey,
+    run: async (context) => {
+      const result = await provider.getPartnerDirectory(access, context);
+      return {
+        data: Object.fromEntries(result.data.map((partner) => [partner.id, partner.name])),
+        meta: result.meta,
+      };
+    },
+    errorFallback: 'Failed to load the partner directory',
+  });
+  return {
+    names: directory.data ?? {},
+    meta: directory.meta,
+    loading: directory.loading,
+    refreshing: directory.refreshing,
+    error: directory.error,
+    retry: directory.retry,
+  };
 }
 
-export interface ManagerBookState {
-  rows: Opportunity[];
-  /** Rows matching the manager's scope in total, not the pages fetched. */
-  totalCount: number;
-  loading: boolean;
-  loadingMore: boolean;
-  error: string | null;
-  hasMore: boolean;
-  loadMore: () => void;
-  retry: () => void;
-}
-
-type BookState = Omit<ManagerBookState, 'loadMore' | 'retry'>;
-
-const EMPTY_BOOK: BookState = {
-  rows: [],
-  totalCount: 0,
-  loading: false,
-  loadingMore: false,
-  error: null,
-  hasMore: false,
-};
+export type ManagerBookState = PaginationState<Opportunity>;
 
 /**
  * One manager's in-quarter book, a page at a time. Pass `null` for a manager
  * who has no group open: nothing is fetched until a group is expanded.
+ *
+ * Revenue and forecast-call edits refresh the loaded window in place (they
+ * cannot change which deals belong to the book, only what the rows say), and
+ * only when the edit touches a loaded row — another opened manager's book
+ * does not refetch because this one's deal was edited. Note and next-step
+ * edits do not refetch at all, because the table renders the session's value
+ * over the provider's. A different manager, quarter, or provider is a
+ * different collection and starts from the first page.
  */
 export function useManagerBook(
   provider: DataProvider,
+  access: DemoAccessScope,
   scope: ForecastScope,
   managerId: string | null,
   pageSize: number = MANAGER_BOOK_PAGE_SIZE,
 ): ManagerBookState {
   const { quarter } = scope;
-  const { revenueOverrides, notes, nextSteps, forecastCalls } = scope.edits ?? NO_SESSION_EDITS;
-
-  const [book, setBook] = useState<BookState>(EMPTY_BOOK);
-  const [attempt, setAttempt] = useState(0);
-  const latest = useRef(0);
-  const cursor = useRef<string | undefined>(undefined);
-
-  useEffect(() => {
-    // First page whenever the question changes. A stale page from the previous
-    // manager is dropped rather than shown under the new header, which is what
-    // reusing it would read as.
-    if (managerId === null) {
-      cursor.current = undefined;
-      setBook(EMPTY_BOOK);
-      return;
-    }
-    const request = { id: ++latest.current };
-    let alive = true;
-    cursor.current = undefined;
-    setBook({ ...EMPTY_BOOK, loading: true });
-
-    provider
-      .listQuarterOpportunities(
-        {
-          quarter,
-          partnerManagerId: managerId,
-          edits: { revenueOverrides, notes, nextSteps, forecastCalls },
-        },
-        { limit: pageSize },
-      )
-      .then((page) => {
-        if (!alive || request.id !== latest.current) return;
-        cursor.current = page.nextCursor;
-        setBook({
-          rows: page.rows,
-          totalCount: page.totalCount,
-          loading: false,
-          loadingMore: false,
-          error: null,
-          hasMore: page.nextCursor !== undefined,
-        });
-      })
-      .catch((err: unknown) => {
-        if (!alive || request.id !== latest.current) return;
-        setBook({ ...EMPTY_BOOK, error: messageOf(err, 'Failed to load this manager’s book') });
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [
+  const edits = editsOf(scope);
+  return usePaginatedRows({
     provider,
-    quarter,
-    managerId,
+    enabled: managerId !== null,
+    resetKey: `access:${demoScopeKey(access)}|${quarter}|${managerId ?? 'none'}|${pageSize}`,
+    refreshKey: `rev:${editMapKey(edits.revenueOverrides)}|call:${editMapKey(edits.forecastCalls)}`,
     pageSize,
-    revenueOverrides,
-    notes,
-    nextSteps,
-    forecastCalls,
-    attempt,
-  ]);
-
-  const loadMore = useCallback(() => {
-    const next = cursor.current;
-    if (managerId === null || next === undefined) return;
-    const request = { id: latest.current };
-    setBook((prev) => ({ ...prev, loadingMore: true, error: null }));
-
-    provider
-      .listQuarterOpportunities(
-        {
-          quarter,
-          partnerManagerId: managerId,
-          edits: { revenueOverrides, notes, nextSteps, forecastCalls },
-        },
-        { cursor: next, limit: pageSize },
-      )
-      .then((page) => {
-        if (request.id !== latest.current) return;
-        cursor.current = page.nextCursor;
-        setBook((prev) => ({
-          ...prev,
-          rows: [...prev.rows, ...page.rows],
-          totalCount: page.totalCount,
-          loadingMore: false,
-          hasMore: page.nextCursor !== undefined,
-        }));
-      })
-      .catch((err: unknown) => {
-        if (request.id !== latest.current) return;
-        setBook((prev) => ({
-          ...prev,
-          loadingMore: false,
-          error: messageOf(err, 'Failed to load more of this book'),
-        }));
-      });
-  }, [provider, quarter, managerId, pageSize, revenueOverrides, notes, nextSteps, forecastCalls]);
-
-  const retry = useCallback(() => setAttempt((count) => count + 1), []);
-
-  return { ...book, loadMore, retry };
+    fetchPage: (page, context) =>
+      provider.listQuarterOpportunities(
+        access,
+        { quarter, partnerManagerId: managerId ?? undefined, edits },
+        page,
+        context,
+      ),
+    rowEdits: {
+      maps: { rev: edits.revenueOverrides, call: edits.forecastCalls },
+      idOf: (row) => row.id,
+    },
+    errorFallback: 'Failed to load this manager’s book',
+    loadMoreErrorFallback: 'Failed to load more of this book',
+  });
 }

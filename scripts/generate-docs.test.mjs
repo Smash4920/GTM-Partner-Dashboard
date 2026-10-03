@@ -34,7 +34,16 @@ const facts = {
     totalLimitBytes: 33_554_432,
     budgets: [{ name: 'recharts', limitBytes: 12_582_912 }],
   },
-  testPerformance: { totalBudgetMs: 90_000, slowestTestBudgetMs: 8_000, reportSlowest: 15 },
+  testPerformance: { totalBudgetMs: 210_000, slowestTestBudgetMs: 8_000, reportSlowest: 15 },
+  qualityPolicy: {
+    coverage: { statements: 95, branches: 90, functions: 96, lines: 96 },
+    maxFileBytes: 1048576,
+    maxTextLines: 1200,
+    complexity: 20,
+    duplication: 1.5,
+    buildBudgetMs: 60000,
+    sizeLimits: [{ name: 'Total JavaScript', limit: '235 kB' }],
+  },
 };
 
 describe('generated npm scripts page', () => {
@@ -66,6 +75,14 @@ describe('generated quality gates page', () => {
     assert.match(markdown, /240\.0 KiB \(gzip, sum\)/);
     assert.match(markdown, /\| `recharts` \| 12288\.0 KiB \|/);
     assert.match(markdown, /Total production dependency budget: 32768\.0 KiB/);
-    assert.match(markdown, /Suite total: 90\.00s/);
+    assert.match(markdown, /Suite total: 210\.00s/);
+    assert.match(markdown, /Slowest single test: 8\.00s/);
+    assert.match(markdown, /Statements: 95%/);
+    assert.match(markdown, /Complexity: 20/);
+    assert.match(markdown, /Build: 60,000 ms/);
+    assert.match(markdown, /235 kB/);
+    assert.ok(
+      markdown.indexOf('npm run test:coverage:ci') < markdown.indexOf('npm run test:performance'),
+    );
   });
 });

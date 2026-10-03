@@ -10,4 +10,4 @@ npm run docs:check     # fail if the committed pages are stale
 
 - [`npm-scripts.md`](./npm-scripts.md) — every `package.json` script and whether CI runs it.
 - [`repository-map.md`](./repository-map.md) — source layout, workflows, runbooks, and skills.
-- [`quality-gates.md`](./quality-gates.md) — bundle, dependency, and test budgets.
+- [`quality-gates.md`](./quality-gates.md) — ordered gate, coverage/static ratchets, build, bundle, dependency, and test budgets.

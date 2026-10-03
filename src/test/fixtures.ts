@@ -1,15 +1,14 @@
 import type {
   ActivityMeeting,
-  DashboardData,
   DashboardNotification,
   DealRegistration,
   Opportunity,
   Partner,
   PartnerCertification,
-  ProviderBook,
   Target,
   TeamUser,
 } from '../data/types';
+import type { ProviderBook } from '../data/mock/book';
 
 /**
  * Hand-built records for component tests.
@@ -121,13 +120,13 @@ export function makeNotification(
     body: 'Acme Freight has been pending since Monday.',
     channels: ['email'],
     sentAt: '2026-09-18T12:00:00.000Z',
-    status: 'delivered',
+    status: 'simulated-local',
     ...overrides,
   };
 }
 
-/** A whole book as the client receives it, small enough to reason about. */
-export function makeDashboardData(overrides: Partial<DashboardData> = {}): DashboardData {
+/** A provider's book, small enough to reason about. */
+export function makeProviderBook(overrides: Partial<ProviderBook> = {}): ProviderBook {
   return {
     partnerManagers: [{ id: 'pm-1', name: 'J. Alvarez' }],
     partners: [makePartner()],
@@ -137,14 +136,7 @@ export function makeDashboardData(overrides: Partial<DashboardData> = {}): Dashb
     activities: [makeMeeting()],
     certifications: [makeCertification()],
     teamUsers: [],
+    snapshots: [],
     ...overrides,
   };
-}
-
-/**
- * The same book as a provider holds it: the client shape plus the weekly
- * history that never crosses the seam whole.
- */
-export function makeProviderBook(overrides: Partial<ProviderBook> = {}): ProviderBook {
-  return { ...makeDashboardData(), snapshots: [], ...overrides };
 }

@@ -1,0 +1,37 @@
+# OWASP ZAP baseline rules policy for the local production preview
+# (security.yml, job `dast`).
+#
+# The baseline scan runs with fail_action: true and WITHOUT the blanket `-I`
+# WARN suppression: any new WARN or FAIL alert fails the job. This file is the
+# only suppression mechanism, and every entry must name one exact ZAP rule ID
+# plus the rationale a reviewer accepted. `npm run workflows:check` enforces
+# both halves of that policy.
+#
+# Format (tab-separated): <rule id>\t<threshold>\t<reviewer rationale>
+#
+# To accept a new alert: reproduce it against the local preview
+# (`npm run build` then `npm run preview`), triage it, and add the exact rule
+# ID with its rationale in the same pull request. Never silence an entire
+# severity level.
+#
+# The original four entries are header-hardening alerts raised against `vite preview`.
+# The preview server is a local scan target for the static artifact, not a
+# production host: response headers are owned by the production hosts
+# (Vercel, GitHub Pages), and this client-only demo carries no authenticated
+# state, cookies, or powerful browser features. Accepting them locally does
+# not waive them for a production deployment.
+#
+# Additional acceptances reviewed on 2026-10-03 apply to the whole rule ID
+# across the localhost preview scan, not just a reported URL or instance.
+# These are policy acceptances, not vulnerability fixes or scan-pass evidence.
+# Unknown WARN/FAIL remain blocking. Re-review when the target, data sensitivity,
+# RNG provenance, integrations, or production hosting changes.
+
+10020	IGNORE	Missing Anti-clickjacking Header: the client-only demo has no authenticated or sensitive state to protect from framing; X-Frame-Options/frame-ancestors are production-host headers, not artifact defects.
+10021	IGNORE	X-Content-Type-Options Header Missing: vite preview serves the static artifact with correct content types; nosniff is a production-host header concern, reviewed for the local scan only.
+10038	IGNORE	Content Security Policy Header Not Set: CSP is delivered by the production host for this client-only demo; the artifact ships no inline scripts or third-party origins that a local preview CSP would govern.
+10063	IGNORE	Permissions Policy Header Not Set: the demo uses no powerful browser features (camera, microphone, geolocation); the header is a production-host concern for the local preview scan.
+10049	IGNORE	Reviewed 2026-10-03, local preview only: Storable but Non-Cacheable Content is informational for public CSS/sitemap SPA fallback using no-cache revalidation; no sensitive data cache leak demonstrated and no private-data cache waiver or production cache approval.
+10096	IGNORE	Reviewed 2026-10-03, local preview only: Timestamp Disclosure-Unix is a low/low-confidence false positive; 1831565813 is deterministic RNG constant 0x6d2b79f5 in src/data/mock/rng.ts, not a sensitive timestamp. Preserve the RNG.
+10109	IGNORE	Reviewed 2026-10-03, local preview only: Modern Web Application is informational and requires no code change; no rendered-dashboard or AJAX-spider coverage is established by accepting SPA identification.
+90004	IGNORE	Reviewed 2026-10-03, whole local preview rule: missing COEP, COOP and CORP subalerts are all accepted locally; no production header-compliance claim. Indiscriminate isolation headers can break resource or pop-up integrations.

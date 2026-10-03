@@ -1,53 +1,32 @@
+import { OPERATIONAL_FLAG_DEFAULTS, parseFlagValue } from '../flagRuntime';
 import type { TelemetryEnv } from './config';
+export { FLAG_DEFINITIONS } from './flagDefinitions';
+export type { FlagDefinition } from './flagDefinitions';
 
 /**
- * Explicit feature flags for the dashboard.
+ * Explicit operational flags for the dashboard's telemetry pipeline.
  *
- * A flag is a named boolean with a documented default, and every flag in
- * `FLAG_DEFINITIONS` gates real behavior in the app — none exists to be
- * decorative. Resolution order is: runtime override, then the build-time
- * environment (`VITE_FLAG_<NAME>`), then the default. Overrides live in memory
+ * These are the operational counterpart to the product flag registry in
+ * `src/lib/featureFlags.ts`; both registries carry the same lifecycle
+ * contract from `src/lib/flagGovernance.ts` (owner, purpose, environment
+ * scope, safe default, rollout/rollback triggers, review date, expiry, and
+ * removal condition), and the same deterministic policy audit rejects missing
+ * metadata or an expired flag here.
+ *
+ * Resolution order is: runtime override, then the build-time environment
+ * (`VITE_FLAG_<NAME>`), then the safe default. Overrides live in memory
  * for the session only; nothing is persisted to browser storage, so a reload
  * is always a clean slate and no flag state survives on a shared machine.
+ * Every input is local and non-authoritative: a flag suppresses telemetry
+ * execution paths but never grants a role, rows, or access.
  *
  * The set is deliberately small: a flag is a live experiment or an operational
  * switch with an owner, not a settings page.
  */
 
-export const FLAG_KEYS = [
-  'telemetry.enabled',
-  'telemetry.logShipping',
-  'analytics.enabled',
-] as const;
+export type FlagKey = keyof typeof OPERATIONAL_FLAG_DEFAULTS;
 
-export type FlagKey = (typeof FLAG_KEYS)[number];
-
-export interface FlagDefinition {
-  readonly key: FlagKey;
-  readonly description: string;
-  readonly defaultValue: boolean;
-}
-
-export const FLAG_DEFINITIONS: Record<FlagKey, FlagDefinition> = {
-  'telemetry.enabled': {
-    key: 'telemetry.enabled',
-    description:
-      'Master switch for telemetry: spans, metrics, error capture, and envelope shipping. When off, provider calls delegate straight through and nothing is recorded.',
-    defaultValue: true,
-  },
-  'telemetry.logShipping': {
-    key: 'telemetry.logShipping',
-    description:
-      'Ship structured log records at or above the configured level to the telemetry collector, redacted. Off by default: logs are chatty, and shipping them is a deliberate choice.',
-    defaultValue: false,
-  },
-  'analytics.enabled': {
-    key: 'analytics.enabled',
-    description:
-      'Emit product analytics events (route views, provider swaps, manager edits) as telemetry envelopes. Carries counts and identifiers only, never user prose.',
-    defaultValue: true,
-  },
-};
+export const FLAG_KEYS = Object.keys(OPERATIONAL_FLAG_DEFAULTS) as FlagKey[];
 
 type FlagSource = 'default' | 'env' | 'override';
 
@@ -73,13 +52,6 @@ export function flagEnvKey(key: FlagKey): string {
     .toUpperCase()}`;
 }
 
-function parseFlagValue(value: string): boolean | null {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'true' || normalized === '1' || normalized === 'on') return true;
-  if (normalized === 'false' || normalized === '0' || normalized === 'off') return false;
-  return null;
-}
-
 /**
  * Resolves one flag against the override, then the environment, then the
  * default. An env value that is not a recognized boolean is ignored and left
@@ -100,7 +72,7 @@ export function resolveFlag(key: FlagKey, env: TelemetryEnv = import.meta.env): 
       : parseFlagValue(envValue);
   if (parsed !== null) return { key, enabled: parsed, source: 'env' };
 
-  return { key, enabled: FLAG_DEFINITIONS[key].defaultValue, source: 'default' };
+  return { key, enabled: OPERATIONAL_FLAG_DEFAULTS[key], source: 'default' };
 }
 
 /** Every flag and how it resolved, for the health artifact and support conversations. */

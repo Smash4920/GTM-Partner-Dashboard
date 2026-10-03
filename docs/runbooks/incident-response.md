@@ -37,8 +37,9 @@ Almost always a base-path mismatch. Confirm the host sets `VERCEL` or that
 
 - Read the rendered fallback and the console records from
   `src/components/ErrorBoundary.tsx` and `src/lib/logging.ts`.
-- The structured record names the component and the error name, message, and
-  stack. Quote the identifiers and counts, not user prose.
+- The application record uses the component, stable technical classification,
+  and fingerprint, not raw exception prose. Capture technical identifiers and
+  counts only; never copy names, notes, raw records, messages, or stacks.
 
 ### Wrong business number
 
@@ -55,15 +56,19 @@ Almost always a base-path mismatch. Confirm the host sets `VERCEL` or that
 
 - Switch the provider to simulated remote to confirm loading, error, and retry
   paths, then back to local mock.
-- If the scaled 100x provider is slow, that is by design for the un-migrated
-  views; it demonstrates the payload problem in `docs/migration-plan.md`.
+- With Scaled 100×, generation and aggregation still happen locally, but all
+  routes now use bounded scoped answers and cursor pages. Diagnose unexpected
+  work or regressions rather than accepting a whole-book payload.
 
 ### Suspected partner-data boundary breach
 
 Treat as SEV1.
 
 1. Confirm whether Partner View rendered Sell To opportunities, conflicting
-   registrations, or another partner's records.
+   registrations, or records outside the currently selected partner.
+   Selecting another partner through the untrusted demo picker is an
+   acknowledged limitation, not a failure of that projection. Client filtering
+   is not authorization; external use remains blocked on trusted server access.
 2. Capture the partner selected and a screenshot before changing anything.
 3. Follow [`rollback.md`](./rollback.md) to remove the build from production.
 4. Escalate to the repository maintainer before any further deploy.

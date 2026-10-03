@@ -44,6 +44,10 @@ export function formatPct(value: number): string {
   return pct.format(value);
 }
 
+export function formatDays(days: number | null): string {
+  return days === null ? '—' : `${days.toFixed(1)}d`;
+}
+
 export function formatDate(iso: string): string {
   return dateFmt.format(new Date(iso));
 }

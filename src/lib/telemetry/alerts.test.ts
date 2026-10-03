@@ -152,50 +152,29 @@ describe('createAlertDispatcher', () => {
     expect(repeat).toBeNull();
   });
 
-  it('POSTs the alert to the webhook, redacted, and survives a webhook failure', async () => {
-    const fetchImpl = vi.fn().mockRejectedValue(new Error('hook down'));
-    const dispatcher = createAlertDispatcher({
-      ...BASE,
-      alertEndpoint: 'https://hooks.test/alert',
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-    });
+  it('reaches local handlers and the collector hook only — never the network directly (VAL-SEC-006)', async () => {
+    const { alerts, handler } = collect();
+    const onAlert = vi.fn();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const dispatcher = createAlertDispatcher({ ...BASE, onAlert });
+    dispatcher.registerHandler(handler);
 
-    expect(() =>
+    try {
       dispatcher.raise({
         key: 'error:1c3a5e7f',
         severity: 'critical',
         title: 'Render crashed',
         summary: 'Invite for dana@corp.example bounced',
         detail: { apiKey: 'sk-live', route: 'data-connections' },
-      }),
-    ).not.toThrow();
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // The webhook is fire-and-forget: wait for the rejected call to settle.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchImpl.mock.calls[0] as unknown as [
-      string,
-      RequestInit & { body: string },
-    ];
-    expect(url).toBe('https://hooks.test/alert');
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toMatchObject({
-      key: 'error:1c3a5e7f',
-      severity: 'critical',
-      detail: { apiKey: '[redacted]', route: 'data-connections' },
-    });
-  });
-
-  it('skips the webhook entirely when no endpoint is configured', async () => {
-    const fetchImpl = vi.fn();
-    const dispatcher = createAlertDispatcher({
-      ...BASE,
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-    });
-
-    dispatcher.raise(transportFailure);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(fetchImpl).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(alerts).toHaveLength(1);
+      expect(onAlert).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

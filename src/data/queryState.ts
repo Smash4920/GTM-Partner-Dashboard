@@ -1,0 +1,234 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { DataProvider } from './DataProvider';
+import type { QueryContext } from './queryContext';
+import type { QueryMeta, QueryResult } from './queryMetadata';
+import type { MeetingClassification, Partner } from './types';
+
+/**
+ * The independent state of one logical query — one widget's worth of data.
+ *
+ * This is the primitive behind the Forecasting view's per-widget resilience:
+ * each aggregate runs through its own `useScopedQuery`, so a rejected call
+ * fails exactly one region of the page, its retry repeats only that call, and
+ * its siblings are never asked to re-render, let alone to refetch.
+ *
+ * Semantics, per query:
+ *
+ * - `loading`: no successful answer yet and no error — the initial fetch is
+ *   in flight. Distinct from `refreshing`, which only exists over data.
+ * - `refreshing`: a later answer is in flight while the previous one stays on
+ *   screen. Stale beats blank: an edit must not flash the figures it changed.
+ * - `error`: the last attempt failed. When data exists it stays visible and
+ *   the error rides alongside it; when none does, the widget is unavailable
+ *   and exposes `retry`, which repeats only this query.
+ * - Scope identity: an answer belongs to the scope that produced it. A
+ *   change to `scopeKey` (a different manager, a resolved directory) is a
+ *   different question — the previous scope's answer is dropped at read
+ *   time, not kept on screen as a stale "refresh", so one scope's figures
+ *   can never render under another scope's label. Stale-beats-blank applies
+ *   only within one scope identity: an edit-driven key change with the same
+ *   `scopeKey` keeps the previous answer while its replacement is in flight.
+ * - Race safety: every settled value is tagged with the provider that
+ *   produced it and is gated at read time, and each request carries an
+ *   abort-tagged sequence guard, so a late answer from a superseded provider
+ *   or an abandoned render cycle is dropped — never rendered, not even for
+ *   one frame. The request's AbortSignal reaches the provider itself through
+ *   the query context, so obsolete provider work stops instead of merely
+ *   being ignored; a provider that ignores the signal is still fenced off by
+ *   the guards. An aborted request writes nothing, so aborts are silent.
+ */
+export interface QueryState<T> {
+  data: T | null;
+  /**
+   * The envelope metadata of the answer currently on screen — committed
+   * provider id, as-of, lineage, completeness, warnings. Null until the first
+   * answer lands. While `refreshing`, this is the *previous* answer's
+   * metadata, which is exactly what makes stale data honest: the as-of it
+   * exposes is the as-of of what is actually rendering.
+   */
+  meta: QueryMeta | null;
+  loading: boolean;
+  refreshing: boolean;
+  /**
+   * Stable, operation-specific failure copy — never the rejection's own
+   * prose (see `stableFailureCopy`). Null while the last attempt succeeded
+   * or none has finished.
+   */
+  error: string | null;
+  retry: () => void;
+}
+
+/**
+ * The message a query surface shows for a rejection. Deliberately *not* the
+ * rejection's own prose: a provider error can carry internal detail, source
+ * text, or user data, and none of that belongs on screen. Every surface
+ * falls back to its stable, operation-specific copy instead. The raw
+ * rejection still reaches the structured log and the allowlisted telemetry
+ * fingerprint at the instrumented seam, where it cannot leak into the
+ * product.
+ */
+export function stableFailureCopy(fallback: string): string {
+  return fallback;
+}
+
+/**
+ * A stable, content-based serialization of an edit map, for building query
+ * keys. Two maps with the same entries serialize identically no matter how
+ * the objects were rebuilt, which is what makes "a re-render that changed
+ * nothing issues no request" testable: the key changes exactly when the
+ * edits the query depends on change.
+ */
+export function editMapKey(map: Record<string, string | number>): string {
+  return Object.keys(map)
+    .sort()
+    .map((key) => `${key}=${String(map[key])}`)
+    .join('&');
+}
+
+/**
+ * A stable, content-based serialization of the session's meeting
+ * classifications, for query keys: a re-render that rebuilt but did not
+ * change the classifications issues no request, and a reclassification —
+ * which can move a meeting between partners and types — does.
+ */
+export function classificationsKey(classifications: Record<string, MeetingClassification>): string {
+  return Object.keys(classifications)
+    .sort()
+    .map((id) => `${id}=${classifications[id].type}:${classifications[id].partnerId ?? ''}`)
+    .join('&');
+}
+
+/**
+ * The session prospect roster as a key, in order: the prospects ride along
+ * with roster-reading queries, and a key change is exactly what refetches
+ * them when one is added.
+ */
+export function prospectsKey(prospects: readonly Partner[]): string {
+  return prospects
+    .map((partner) => `${partner.id}=${partner.name}:${partner.partnerManagerId}`)
+    .join('&');
+}
+
+/** A settled answer, tagged with the provider and scope that produced it. */
+interface QueryEntry<T> {
+  provider: DataProvider;
+  scopeKey: string | undefined;
+  data: T | null;
+  meta: QueryMeta | null;
+  error: string | null;
+}
+
+/**
+ * One logical query with its own loading/error/retry state.
+ *
+ * `queryKey` must be built from the primitive values the query depends on —
+ * the quarter, the manager, the relevant edit maps — never from an object
+ * rebuilt every render. The effect keys on it directly, which is both the
+ * refetch loop guard and the invalidation mechanism: a change to a value in
+ * the key refetches, and a change to anything else does not. `run` is read
+ * through a ref so it always sees the latest render's inputs without becoming
+ * a dependency itself.
+ */
+export function useScopedQuery<T>(args: {
+  provider: DataProvider;
+  queryKey: string;
+  /**
+   * Scope identity: which question the answer belongs to, as distinct from
+   * the invalidation key. `queryKey` also carries the session's edit maps,
+   * so it moves when an edit lands inside the same scope; `scopeKey` moves
+   * only when the scope itself does (a different manager, a directory that
+   * just resolved). An answer is readable only under the provider and scope
+   * identity that produced it — a scope change shows the new scope's loading
+   * state, never the previous scope's figures. Omit it and only the provider
+   * gates, which is the right default for queries with no scope to switch.
+   */
+  scopeKey?: string;
+  /**
+   * False issues no request and reports initial loading: the caller's
+   * prerequisite has not settled yet (a directory still resolving), so
+   * asking now could only produce a placeholder answer for a scope nobody
+   * selected. The first `true` render fires the query.
+   */
+  enabled?: boolean;
+  /**
+   * One scoped provider call; the answer arrives in its metadata envelope.
+   * The context carries the attempt's AbortSignal — forward it to the
+   * provider so obsolete work is cancelled, not just ignored.
+   */
+  run: (context: QueryContext) => Promise<QueryResult<T>>;
+  /** Fallback message when the rejection carries none. */
+  errorFallback: string;
+}): QueryState<T> {
+  const { provider, queryKey, scopeKey, enabled = true, errorFallback } = args;
+  const [entry, setEntry] = useState<QueryEntry<T> | null>(null);
+  const [inFlight, setInFlight] = useState(true);
+  const [attempt, setAttempt] = useState(0);
+  // Answers can arrive out of order when edits land faster than the provider
+  // replies. Only the newest request is allowed to write.
+  const latest = useRef(0);
+  const runRef = useRef(args.run);
+  runRef.current = args.run;
+  const fallbackRef = useRef(errorFallback);
+  fallbackRef.current = errorFallback;
+
+  useEffect(() => {
+    // Disabled: ask nothing. The state reports initial loading until the
+    // caller's prerequisite settles and flips this on.
+    if (!enabled) return undefined;
+    const request = ++latest.current;
+    const controller = new AbortController();
+    setInFlight(true);
+    runRef.current({ signal: controller.signal }).then(
+      (result) => {
+        if (controller.signal.aborted || request !== latest.current) return;
+        setEntry({ provider, scopeKey, data: result.data, meta: result.meta, error: null });
+        setInFlight(false);
+      },
+      () => {
+        if (controller.signal.aborted || request !== latest.current) return;
+        // Stale beats blank, within one scope identity: a failed refresh
+        // keeps the same-provider, same-scope figures already on screen and
+        // reports the error alongside them. An initial failure — including
+        // the first fetch of a new scope — leaves the widget with no data
+        // at all rather than dressed in another scope's answer.
+        setEntry((prev) => ({
+          provider,
+          scopeKey,
+          data:
+            prev !== null && prev.provider === provider && prev.scopeKey === scopeKey
+              ? prev.data
+              : null,
+          meta:
+            prev !== null && prev.provider === provider && prev.scopeKey === scopeKey
+              ? prev.meta
+              : null,
+          error: stableFailureCopy(fallbackRef.current),
+        }));
+        setInFlight(false);
+      },
+    );
+    return () => controller.abort();
+  }, [provider, queryKey, scopeKey, enabled, attempt]);
+
+  const retry = useCallback(() => setAttempt((count) => count + 1), []);
+
+  // Read-time gating: a value only exists for the provider and scope that
+  // produced it. Anything else is this scope's loading state, never another
+  // scope's stale data.
+  if (!enabled) {
+    return { data: null, meta: null, loading: true, refreshing: false, error: null, retry };
+  }
+  const current =
+    entry !== null && entry.provider === provider && entry.scopeKey === scopeKey ? entry : null;
+  const data = current?.data ?? null;
+  const error = current?.error ?? null;
+  return {
+    data,
+    meta: current?.meta ?? null,
+    // A new identity has no entry yet, including before its effect starts.
+    loading: (current === null || inFlight) && data === null,
+    refreshing: inFlight && data !== null,
+    error,
+    retry,
+  };
+}

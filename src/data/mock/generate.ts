@@ -10,7 +10,12 @@ import {
   SNAPSHOT_DATE,
   STAGES,
 } from '../constants';
-import { businessDaysBefore, quarterWindow, startOfWeekUtc } from '../../lib/fiscal';
+import {
+  businessDaysBefore,
+  fiscalQuarterOfDate,
+  quarterWindow,
+  startOfWeekUtc,
+} from '../../lib/fiscal';
 import type {
   ActivityMeeting,
   DealRegistration,
@@ -23,12 +28,11 @@ import type {
   PartnerManager,
   PartnerTier,
   PartnerType,
-  PipelineSnapshot,
-  ProviderBook,
   Region,
   Target,
   TeamUser,
 } from '../types';
+import type { PipelineSnapshot, ProviderBook } from './book';
 import { chance, mulberry32, pick, randInt, skewAmount, weightedPick } from './rng';
 
 /**
@@ -179,8 +183,9 @@ const OVERLAP_SOURCES = [9, 23, 38, 52, 67, 81, 96, 110, 125, 139, 154, 168];
 
 /**
  * How many still-pending registrations are re-dated into the SLA warning
- * window, one per partner, so the 24-hours-out alert rule has owners to reach.
- * Applied as a post-pass with no PRNG consumed (see seedSlaWarningWindow).
+ * window, one per partner, so the one-business-day-out alert rule has owners
+ * to reach. Applied as a post-pass with no PRNG consumed (see
+ * seedSlaWarningWindow).
  */
 const SLA_WARNING_ROWS = 3;
 
@@ -198,7 +203,8 @@ const TEAM_USERS: readonly (readonly [
   ['Riley Patel', 'partner-manager', 'active'],
   ['Nadia Okonkwo', 'partnership-lead', 'active'],
   ['Priya Raman', 'deal-desk-ops', 'active'],
-  // Added but not yet authorized: the flow the Access panel exists to complete.
+  // Added with notification routing not set up yet: the flow the roster panel
+  // exists to complete.
   ['Sam Whitaker', 'analyst', 'invited'],
 ];
 
@@ -471,7 +477,7 @@ function generateRegistrations(partners: Partner[]): DealRegistration[] {
 }
 
 /**
- * Seed the 24-hours-out SLA warning.
+ * Seed the one-business-day-out SLA warning.
  *
  * The warning window is one business day wide, so which submissions sit in it
  * depends on the snapshot's weekday: a natural distribution can easily contain
@@ -612,6 +618,7 @@ function generateOpportunities(
     if (opportunity.outcome) continue;
     opportunity.nextStep = seededNextStep(opportunity.id);
     opportunity.forecastCategory = seededCategoryCall(opportunity.id, opportunity.stage);
+    opportunity.lastActivityAt = seededLastActivityAt(opportunity);
   }
 
   return opportunities;
@@ -690,6 +697,20 @@ function idHash(id: string, salt: number): number {
 }
 
 /**
+ * Meaningful deal activity, independent of calendar classifications and the
+ * expected-close date: an overdue deal can still have recent activity.
+ * Leave one fifth without a recording so createdAt remains the explicit
+ * fallback baseline. No PRNG consumed; all existing book metrics stay pinned.
+ */
+function seededLastActivityAt(opportunity: Opportunity): string | undefined {
+  const hash = idHash(opportunity.id, 17);
+  if (hash % 5 === 0) return undefined;
+  const createdAt = new Date(opportunity.createdAt).getTime();
+  const daysAgo = (hash >>> 8) % 43;
+  return iso(new Date(Math.max(createdAt, SNAPSHOT.getTime() - daysAgo * DAY)));
+}
+
+/**
  * Forecasted revenue as it stood `weeksAgo` weeks before the snapshot. Most
  * deals were never re-sized; of those that were, most grew as the scope firmed
  * up and a few were cut back.
@@ -732,6 +753,15 @@ function snapshotCall(
  * Six weeks is enough movement to cross a boundary either way.
  */
 function snapshotCloseDate(opportunity: Opportunity, weeksAgo: number): string {
+  // A small open-deal cohort slipped since the latest Monday recording.
+  // Keep both dates in the same quarter so weekly totals and goals do not
+  // change, while the latest prior evidence can support the Action Center.
+  if (weeksAgo === 0 && !opportunity.closedAt && idHash(opportunity.id, 19) % 7 === 0) {
+    const prior = iso(new Date(new Date(opportunity.expectedCloseDate).getTime() - WEEK));
+    if (fiscalQuarterOfDate(prior) === fiscalQuarterOfDate(opportunity.expectedCloseDate)) {
+      return prior;
+    }
+  }
   const hash = idHash(opportunity.id, 13);
   if (hash % 5 !== 0) return opportunity.expectedCloseDate;
   const movedWeeksAgo = 1 + (hash % 4);
@@ -787,10 +817,20 @@ function generateSnapshots(opportunities: Opportunity[]): PipelineSnapshot[] {
 
 function generateTargets(partners: Partner[]): Target[] {
   const targets: Target[] = [];
+  // The most recently onboarded partner has not committed a target for the
+  // upcoming quarter yet — future-quarter targets are agreed during planning,
+  // and their book is still ramping. This keeps the "no target" coverage
+  // state real demo data rather than a fixture trick. The skip is derived
+  // from the seeded join dates, so it is deterministic and consumes no PRNG.
+  const upcomingQuarter = FISCAL_QUARTERS[FISCAL_QUARTERS.length - 1];
+  const newest = partners.reduce((latest, partner) =>
+    new Date(partner.joinedAt).getTime() > new Date(latest.joinedAt).getTime() ? partner : latest,
+  );
   for (const partner of partners) {
     for (const quarter of FISCAL_QUARTERS) {
       const jitter = 0.85 + rand() * 0.3; // plus or minus 15%
       const base = TIER_TARGET_BASE[partner.tier] * jitter;
+      if (partner.id === newest.id && quarter === upcomingQuarter) continue;
       targets.push({
         partnerId: partner.id,
         quarter,
@@ -904,7 +944,7 @@ function generateTeamUsers(partnerManagers: PartnerManager[]): TeamUser[] {
             : [...NOTIFICATION_CHANNELS],
       addedAt: iso(addedAt),
       addedBy: 'Nadia Okonkwo',
-      // Only a user who has been authorized carries the grant timestamp.
+      // Only a user with notification routing on carries the routing timestamp.
       authorizedAt: status === 'active' ? iso(new Date(addedAt.getTime() + DAY)) : undefined,
     };
   });

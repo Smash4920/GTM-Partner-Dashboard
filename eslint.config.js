@@ -7,9 +7,19 @@ const allowDependencies = (from, allowed) => ({
 });
 
 export default tseslint.config(
-  // `coverage` is a generated v8 report, not source; it is only ignored by
-  // .gitignore, which eslint does not read.
-  { ignores: ['dist', 'coverage', 'node_modules'] },
+  // ESLint does not read .gitignore. Exclude generated reports/trace assets,
+  // not the rest of build-metrics or any fixture/source files.
+  {
+    ignores: [
+      'dist',
+      'coverage',
+      'node_modules',
+      'build-metrics/target-state-fixtures/report/**',
+      'build-metrics/target-state-fixtures/results/**',
+      'playwright-report/**',
+      'test-results/**',
+    ],
+  },
   ...tseslint.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],
@@ -60,6 +70,21 @@ export default tseslint.config(
         {
           category: 'test',
           pattern: ['**/*.{test,spec}.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
+        },
+        {
+          // Feature-flag registry, governance, and evaluation — including the
+          // operational telemetry registry. These modules sit inside the
+          // domain element but carry a stricter contract, enforced by the
+          // flag-module policy below.
+          category: 'flag-module',
+          pattern: [
+            'src/lib/featureFlags.ts',
+            'src/lib/flagGovernance.ts',
+            'src/lib/flagRuntime.ts',
+            'src/lib/productFlagDefinitions.ts',
+            'src/lib/telemetry/flags.ts',
+            'src/lib/telemetry/flagDefinitions.ts',
+          ],
         },
       ],
       'boundaries/elements-single-match': true,
@@ -125,6 +150,26 @@ export default tseslint.config(
             allowDependencies('provider', ['provider', 'data', 'domain']),
             allowDependencies('domain', ['domain', 'data']),
             {
+              // Flag modules may never import access-scope, provider, or
+              // authorization logic: a flag can hide a feature but must not be
+              // able to grant a role or a row, even by accident. This deny
+              // policy must stay AFTER the element allow policies above —
+              // policies evaluate last-match-wins, so a later generic allow
+              // must not reopen this boundary.
+              from: { file: { categories: 'flag-module' } },
+              disallow: {
+                to: {
+                  element: {
+                    types: {
+                      anyOf: ['app', 'view', 'component', 'data', 'provider', 'test-support'],
+                    },
+                  },
+                },
+              },
+              message:
+                'Feature-flag modules cannot import access-scope, provider, or application logic. Flags never grant roles or rows.',
+            },
+            {
               from: { file: { categories: 'test' } },
               allow: {
                 to: {
@@ -146,6 +191,30 @@ export default tseslint.config(
             },
           ],
         },
+      ],
+    },
+  },
+  {
+    // The source adapters in src/data/normalizers model other systems'
+    // payloads — CRM `__c` custom fields, PRM snake_case. Those keys are the
+    // contract under validation; renaming them to our conventions would
+    // misdescribe the wire shape. Everything else in the directory follows
+    // the project conventions unchanged.
+    files: ['src/data/normalizers/**'],
+    rules: {
+      '@typescript-eslint/naming-convention': [
+        'error',
+        { selector: 'default', format: ['camelCase'] },
+        { selector: 'import', format: ['camelCase', 'PascalCase'] },
+        {
+          selector: 'variable',
+          modifiers: ['const'],
+          format: ['camelCase', 'PascalCase', 'UPPER_CASE'],
+        },
+        { selector: 'function', format: ['camelCase', 'PascalCase'] },
+        { selector: 'parameter', format: ['camelCase', 'PascalCase'], leadingUnderscore: 'allow' },
+        { selector: 'typeLike', format: ['PascalCase'] },
+        { selector: 'property', format: null },
       ],
     },
   },

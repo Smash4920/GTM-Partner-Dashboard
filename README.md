@@ -1,14 +1,16 @@
 # GTM Partner Dashboard
 
-Mockup of a partner revenue pipeline dashboard for the GTM team. Seven views over
-one data model, reached through a collapsible left sidebar: **Home** (ecosystem
+A client-only mockup of a partner revenue pipeline dashboard for the GTM team.
+Nine views over one deterministic mock data model, reached through a
+collapsible left sidebar: **Home** (ecosystem
 summary), **Partner Performance** (per-manager / per-partner drill-down),
 **Forecasting** (the VP's in-quarter view with a weighted forecast),
 **Deal Reg Ops** (registration SLAs, conversion time, exclusivity, and
 conflicts), **Activity Tracking** (weekly meeting goals and calendar logging),
 **Partner View** (the partner-facing sharing surface), **Production
 Requirements** (the architecture + utility roadmap), and **Data Connections**
-(the integration map, partner-team access, and registration SLA notifications).
+(the integration map, partner-team access, and registration SLA notifications),
+and **Action Center** (bounded action summaries, filters, and session-only demo policy).
 
 ![Home view](docs/screenshots/home.png)
 ![Forecasting view](docs/screenshots/forecasting.png)
@@ -21,10 +23,17 @@ metric green for positive data.
 
 ## Navigation
 
-A collapsible sidebar on the left carries the four pages; the icon in the upper
+A collapsible sidebar on the left carries the nine pages; the icon in the upper
 left expands and collapses it to an icon rail. The header also carries a
 **provider selector** — local mock, simulated remote, or a 100× book — which is
 the demo of the integration seam described under Data contract below.
+
+The mobile menu starts closed and does not change the desktop collapse
+preference. First Tab reveals **Skip to main content**. Route changes update
+the document title, announce the destination, and focus its heading; ordinary
+widget updates do not move route focus. Keyboard controls share a visible
+outline, and rejected form submissions link specific errors and focus the
+first invalid field.
 
 ## Pages
 
@@ -50,7 +59,9 @@ High-level summary statistics for the whole partner ecosystem. Always scoped to
   applies to KPIs, stages, revenue, and the leaderboard)
 - Registrations awaiting review — the actionable queue
 - Weekly partner activity tracker, fed by Activity Tracking classifications
-- Partner leaderboard
+- Partner leaderboard — the fixed top ten by closed-won for the phase, with
+  the size of the field it led; the full ranking lives on Partner
+  Performance
 
 ### Partner Performance
 
@@ -65,10 +76,11 @@ Partners aligned to that manager, or a single partner, via Salesforce-style
 - Salesforce-shaped opportunity table: client, Factory Account Director, stage,
   forecasted revenue, and close date (actual close once closed, expected close
   while open)
-- Pending registrations, scoped leaderboard, and — for a single partner —
-  Partner Strategist / Partner Engineer certification against goal. When the
-  scope includes multiple partners, the leaderboard shows each partner's
-  certified counts and attainment beneath the count.
+- Pending registrations, the scoped leaderboard paged 25 partners at a time
+  (Load 25 more appends the next page of the ranking), and — for a single
+  partner — Partner Strategist / Partner Engineer certification against
+  goal. When the scope includes multiple partners, the leaderboard shows
+  each partner's certified counts and attainment beneath the count.
 - Registrations awaiting review are colored against the **5-business-day
   response SLA**, and the waiting counter is quoted in the same unit —
   business days, not calendar days. A Friday submission is one business day
@@ -89,7 +101,12 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
 
 - Callout tiles: partner sourced pipeline, closed-won (with % attainment to the
   quarterly goal), pipeline coverage to goal, average deal size, and days left
-  in the quarter
+  in the quarter. The **Partner manager** dropdown scopes these tiles — target,
+  attainment, remaining quota, and coverage are measured against that
+  manager's own partners and their targets. The weighted forecast, the
+  stage-vs-call card, and the week-over-week chart stay organization-level:
+  weekly snapshots do not record whose book a deal was in, so the goal line
+  sits out while a manager is selected
 - **Weighted forecast call-outs**: every open deal carries a forecast category
   — Commit (90%), Best Case (50%), Pipeline (25%), Long Shot (10%) — and each
   category's probability-weighted contribution is summed into a total expected
@@ -124,7 +141,7 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
   each carry a pencil. An edited revenue forecast overrides the Salesforce
   figure and immediately updates every metric across the app, so a manager's
   number can differ from the CRM's. Notes never render inline — they are stored
-  as comments and appear on hover over the comment icon. Next Step is an
+  as comments and open through the comment disclosure. Next Step is an
   inline editable text field per row
 - **Forecast Category is an editable call, not a derived badge.** The deal's
   stage supplies a starting point (Discovery → Long Shot, Scope → Pipeline,
@@ -141,6 +158,66 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
   agree, the category adds no information, so these disagreements are the
   forecast conversation. Individual rows are tagged "off stage". Forecast
   accuracy by partner, manager, motion, and quarter remains on the roadmap
+
+### Action Center
+
+Action Center queries derive five alert categories behind the provider seam,
+merge reasons by entity, and count unique items separately from category reasons.
+The categories are **Stale high-value deal**, **Missing next step**,
+**Slipping close date**, **Registration SLA**, and **Partner-health deterioration**.
+Rows use stable severity/due-date/exposure/ID ordering, category-OR plus
+owner/severity-AND filters, and opaque cursor pages of 25. Local defaults produce
+85 unique items; 100× produces 8,500 without enlarging summary or page bounds.
+Metadata identifies the provider and deterministic reporting as-of date.
+
+**Demo policy** defaults are $400,000 high value, 14 stale calendar days,
+60-day missing-step horizon, seven close-slip calendar days, adjacent 28-day
+health windows, and at least two deteriorating drivers. Controls reject invalid
+values before querying. Applying policy resets only Action Center paging.
+Policy is session-only, survives route navigation, and resets on reload or a
+committed provider change. It is never stored in browser storage.
+Opportunity/health owners use the first active aligned manager by ID, then an
+active partnership lead; registrations fall back to active deal-desk ops.
+Missing recipients remain Unowned. Each category prefills minimum evidence,
+recommendation, and entity reference in the shared notification composer.
+Only selected configured channels are recorded, with runtime action time and
+`simulated-local` status. Confirmation says **Simulated / local only**.
+Batch and individual saves recheck scoped recipient evidence against the current
+session roster before recording anything. Paused or invited recipients, removed
+session additions, obsolete provider evidence, blank copy, and empty channel
+selections cannot save, even when a refresh fails or remains pending. Retained
+evidence and independent retries remain visible; stale owners are never rerouted
+silently at save time.
+Refresh clears all records; no transport executes. Each row exposes its merged
+evidence, per-reason recommendation, due date, exposure, routed owner or Unowned,
+and provider lineage/as-of through a keyboard/touch disclosure. Internal links
+open an explicit entity context in Forecasting, Deal Reg Ops, or the selected
+partner's Partner Performance view. The destination retains its reporting window,
+so an out-of-window entity may not be in its table.
+
+Once visited, Forecasting and Action Center retain their loaded pages and
+filters during the current provider session. Returning from an internal
+context restores focus to its exact action link, or the heading if the action
+was resolved. Editors restore focus to the
+row control after Save or Escape. Revenue and category edits refresh only their
+dependent forecast queries; notes and next steps refresh Action Center without
+refetching forecast aggregates. Revenue, next-step and note edits refresh the
+existing Action Center depth under the new eligibility and ordering, capped by
+the new total. Refresh starts without a cursor and obtains a fresh continuation;
+a failed refresh retains stale rows but cannot append until retry succeeds.
+Provider, access, policy, filter, routing, classification and prospect scope
+changes reset paging. Forecast-category changes do not refetch Action Center.
+Overlays replace source values once, and customer prose never enters logs or
+telemetry. A committed provider change clears these retained views and edits.
+
+Registration decisions are available from registration actions and Deal Reg Ops.
+Conflict dispositions name all competing registration IDs. Revenue/category
+edits create current-session change IDs for forecast reviews. Each workflow
+requires an active selected demo actor (not authenticated), outcome, and trimmed
+reason, and records runtime time. The session projection is simulated/local-only:
+source queues and metrics stay unchanged, no approver enforcement or write-back
+occurs, and refresh or provider commit clears every workflow record and change.
+Reviews are not source history or the deferred Forecast Quality trend.
 
 ### Deal Reg Ops
 
@@ -180,12 +257,18 @@ Organized by partner manager and their assigned partners, with dropdowns for
 
 In-app edits (revenue, forecast-category calls, notes, next steps,
 classifications, added prospects, roster changes, sent notifications) live in
-React state for the session; a write-capable provider is the next step.
+session-only React state and are lost on reload by design; the durable write
+path is Phase 5 of the migration plan and stays Production: Prod Only until
+then.
 
 ### Partner View
 
 The partner-facing sharing surface, designed for a future partner SSO boundary.
-The picker simulates which partner is viewing the shared platform today.
+The picker that chooses which partner the page renders is an untrusted demo
+presentation selector: client-side filtering is not authorization, and any
+visitor can select any partner. Serving external partners requires trusted
+sign-in and server-enforced row access first, so the roadmap keeps the
+picker-removal item Pending.
 
 - Sell With and Allocate opportunities only; Sell To remains internal-only
 - Partner-scoped pipeline, closed-won, win rate, awaiting-review registrations,
@@ -201,14 +284,18 @@ The picker simulates which partner is viewing the shared platform today.
 ### Production Requirements
 
 Two tracked backlogs and the order they get built in. Every item on all three
-boards carries a **status** stamped against what the code actually does today —
-**Complete** (landed and working in the demo), **WIP** (partially implemented,
-usually the client-side half), **Pending** (not started, but buildable in demo
-mode without production access), and **Prod Only** (blocked until production
-connections or infrastructure exist — connecting the CRM, identity provider, or
-warehouse happens at go-live, not before) — next to a "statuses last updated"
-date, the day the stamps were last reviewed against the code, so a Complete
-that has gone stale is visibly stale. The **Architecture
+boards carries two statuses stamped against what the code actually does today:
+a Demo status — **Complete** (landed and verified in the client-only demo),
+**WIP** (the usable demo portion works; the rest is in flight), or **Pending**
+(not built in the demo) — and, wherever a production dependency is
+intentionally paused, a separate **Production: Prod Only** status naming the
+exact blocker (connecting the CRM, identity provider, or warehouse happens at
+go-live, not before), so a finished demo never reads as a finished production
+step. A "statuses last updated" date records the day the stamps were last
+reviewed against the code, so a Complete that has gone stale is visibly stale.
+All twelve approved mixed-scope demo outcomes are Complete, with their
+production continuations still Prod Only. Other Pending rows remain deferred.
+The **Architecture
 roadmap** documents the server-side foundation required before connecting
 protected systems (identity and row-level authorization, source-system
 integration, persistence and audit, security and compliance, reliability, and
@@ -216,9 +303,11 @@ feature-delivery governance). The
 **Migration Path** sequences that foundation into six phases. The first two
 needed no infrastructure and no production data, and both have landed in demo
 mode against `MockDataProvider`: Phase 0 is the test infrastructure (27.88% →
-91.72% statements, gated in CI) and Phase 1 is the contract rewrite, with
-Forecasting migrated end to end, weekly history off the client contract, and the
-provider switcher in the header. They are what make the later phases safe. Full
+91.72% statements at that historical checkpoint) and Phase 1 is the contract
+rewrite, with every data-bearing route migrated, weekly history off the
+client contract, and the provider switcher in the header. Current coverage
+floors are 95% statements, 90% branches, 96% functions, and 96% lines.
+They are what make the later phases safe. Full
 reasoning — where the current design breaks at volume, the contract change
 everything else follows from, what shipped and what it measured, and rough
 sizing — lives in
@@ -230,6 +319,15 @@ attribution and crediting, and services delivery (which partner delivers which
 service type for which client, whether Factory revenue is attached or it is a
 long-term adoption play, and what the engagement produced) — separated from the
 architecture work so the two tracks can be prioritized independently.
+
+The production continuation runs in a fixed order — trusted identity first,
+then the warehouse and scoped API with row-level authorization, then source
+ingestion, then persisted writes and audit, then production operations — and no
+phase may be pulled ahead of identity and server-side enforcement. For the same
+reason, the per-manager and per-partner close-date-slippage, stage-aging, and
+category-confidence trend stays Pending: it needs immutable historical
+partner-manager ownership and authoritative stage-entry events, and weekly
+snapshots, partner-health alerts, and forecast reviews are not substitutes.
 
 ### Data Connections
 
@@ -249,29 +347,31 @@ team can be told about the data, and the rule that tells them.
   DataProvider method it fills, so the map and the contract in
   `DataProvider.ts` can be read against each other; a test asserts every method
   there is covered here
-- **Partner team access** — the internal roster the identity provider owns,
-  projected into the dashboard. Adding a person puts them on the roster
-  _awaiting authorization_; authorizing is a second, separate step, which is
-  the split a real IdP enforces between knowing who should have access and
-  granting it. A user is either a Partnership Lead, a Partner Manager (aligned
-  to one partner manager, which is what routes a registration to them), Deal
-  Desk Ops (the whole queue), or an Analyst; each carries the notification
-  channels they are authorized on. Access can be revoked and restored, and a
-  user added this session can be removed
+- **Partner team access** — a session-only roster that simulates how the
+  identity provider's records would project into the dashboard. Nothing here
+  provisions, authorizes, revokes, or restores sign-in or data access, and a
+  refresh resets the roster. A user is either a Partnership Lead, a Partner
+  Manager (aligned to one partner manager, which is what routes a registration
+  to them), Deal Desk Ops (the whole queue), or an Analyst; each carries the
+  notification channels configured for them this session. Notification routing
+  can be turned on, paused, or resumed per user, and a user added this session
+  can be removed
 - **Deal-registration SLA alerts** — the notification rule, the registrations
-  it fires on, and what has been sent this session. Every pending registration
-  is measured against the 5-business-day response SLA at the snapshot; one
-  business day (24 hours) before the deadline the owner is warned, and once it
-  has passed the breach is raised. The owner is the submitting partner's
-  aligned partner manager, with the deal desk catching anything unaligned, so a
-  registration never goes unowned. The 24-hour warnings lead the queue — they
-  are the ones with a working day left in them
-- **Notifications** are sent from inside the map: pick a teammate in the
+  it fires on, and what has been recorded this session. Every pending
+  registration is measured against the 5-business-day response SLA at the
+  snapshot; one business day before the deadline the owner is warned, and once
+  it has passed the breach is raised. The owner is the submitting partner's
+  aligned active partner manager, with active deal-desk fallback. A registration
+  remains unowned if no eligible recipient exists. The warnings lead the queue — they are the
+  ones with a business day left in them
+- **Notifications** are composed from inside the map: pick a teammate in the
   notification node and it loads their own most urgent alert, or pick a
-  registration from the alert queue, or write a free-form note. Delivery goes
-  out over the user's authorized channels only, and the send is logged. Sends
-  are timestamped off the session clock, not the fixed snapshot: the demo data
-  is frozen at Sep 18, but an action taken now happened now
+  registration from the alert queue, or write a free-form note. The send is
+  recorded locally for the session over the user's configured channels, and the
+  confirmation reads "Simulated / local only" — nothing is delivered or
+  persisted. Sends are timestamped off the session clock, not the fixed
+  snapshot: the demo data is frozen at Sep 18, but an action taken now happened
+  now
 
 ## Running locally
 
@@ -283,25 +383,70 @@ instead of rolling onto a future release automatically.
 ```bash
 npm ci
 npm run dev             # http://localhost:5173
+npm run agents:check    # validate contributor commands and paths
 npm run check:file-limits # reject files over 1 MiB or 1,200 text lines
+npm run client-boundary:check # reject server, database, auth, warehouse, connector, durable-store, sender, or credential additions
 npm run format          # format source, configuration, and documentation
 npm run format:check    # verify formatting without changing files
 npm run dead-code       # find unused files, exports, and dependencies with Knip
 npm run lint            # lint source and enforce module boundaries
 npm run debt:check      # require source debt markers to link to GitHub issues
-npm run lint
 npm run lint:duplicates # jscpd: fail if source duplication exceeds 1.5%
+npm run docs:generate   # synchronize generated documentation
+npm run docs:check      # generated docs, truth, effective limits, and gate parity
+npm run quality:check   # enforce effective ratchets and blocking gate order
+npm run workflows:check # enforce workflow security and preview parity
 npm test                # vitest: fiscal/metric helpers, the data contract, the provider seam, the view layer
 npm run test:build-metrics # verify build timing, budgets, and output measurements
 npm run test:debt       # verify the technical-debt policy scanner
+npm run test:sentry-sync # verify the offline issue-sync policy
 npm run test:coverage   # the same suite with coverage, enforcing the thresholds in vite.config.ts
 npm run test:coverage:ci # coverage plus the per-test timing report used by CI
+npm run test:performance # enforce 210-second total and 8-second individual limits
 npm run test:e2e        # playwright: browser workflows and partner-data boundaries
 npm run test:list       # collect and list tests without running them
 npm run build           # type-checks, bundles to dist/, and records build performance
 npm run bundle:check    # build, enforce compressed JS budgets, and create a treemap report
 npm run preview
 ```
+
+Before handoff, run the complete blocking gate in this order:
+
+```bash
+npm run agents:check
+npm run check:file-limits
+npm run format:check
+npm run test:debt
+npm run test:build-metrics
+npm run test:sentry-sync
+npm run debt:check
+npm run lint
+npm run dead-code
+npm run lint:duplicates
+npm run docs:check
+npm run client-boundary:check
+npm run test:coverage:ci
+npm run test:performance
+npm run bundle:check
+npm run workflows:check
+npm run test:e2e
+```
+
+Playwright builds the local production artifact for production preview with
+`BASE_PATH=/` and serves
+it using `vite preview --host 127.0.0.1 --port 4173 --strictPort`, with no HMR.
+The route and modal-state inventories drive axe checks at desktop and mobile
+widths, alongside keyboard journeys, focus restoration, chart alternatives,
+narrow tables, provider failures/retries, and session workflows. These checks
+cover registered test states, not WCAG certification or a deployed system.
+Remote branch protection, hosted scanners, deployment settings, and production
+services remain unverified. No local environment file or credential is needed.
+
+For the complete four-route, three-state target matrix, run
+`npm run test:e2e -- --grep VAL-DATA-002`. See
+[target-state browser evidence](docs/testing-target-states.md) for isolated
+production-built fixtures, serial preview teardown, and screenshot/report paths.
+These test entries never ship in the ordinary production build.
 
 ### Test performance
 
@@ -325,8 +470,8 @@ SHA in CI, and whether the exact TypeScript incremental-cache key was restored.
 It also creates `build-metrics/bundle-report.html`, an interactive treemap that
 shows each module's raw, gzip, and Brotli contribution to the production chunks.
 
-The build has a 60-second performance budget. Set `BUILD_BUDGET_MS` to tune it
-for a known environment; exceeding the budget fails the build so regressions
+The build has a 60-second performance budget. The release gate keeps
+`BUILD_BUDGET_MS=60000`; do not widen it to pass a regression. Exceeding the budget fails the build so regressions
 cannot pass unnoticed. `npm run bundle:check` additionally enforces the
 compressed JavaScript budgets in `package.json`, both for the whole bundle and
 for the application, Recharts, and chart dependency chunks. CI runs that check,
@@ -336,8 +481,13 @@ the workflow summary, and retains the JSON metrics and HTML treemap as a
 
 ### Runtime performance metrics
 
-Production builds can send real-user Web Vitals to any HTTP metrics collector.
-Set `VITE_METRICS_ENDPOINT` at build time to enable collection. The app observes
+Production builds can send real-user Web Vitals to a metrics collector that
+satisfies the telemetry endpoint policy: HTTPS on a host in the checked-in
+`APPROVED_TELEMETRY_HOSTS` list (currently empty, so production stays
+local-only until a host is approved in a reviewed change), with plain HTTP
+accepted only for loopback development. Set
+`VITE_METRICS_ENDPOINT` at build time, with the master telemetry switch enabled,
+after a reviewed host approval. The app observes
 CLS, FCP, INP, LCP, and TTFB with the maintained
 [`web-vitals`](https://github.com/GoogleChrome/web-vitals) library and delivers
 each measurement with `navigator.sendBeacon`, falling back to a keepalive
@@ -345,11 +495,15 @@ each measurement with `navigator.sendBeacon`, falling back to a keepalive
 
 ```bash
 VITE_METRICS_ENDPOINT=https://metrics.example.com/v1/browser \
+VITE_FLAG_TELEMETRY_ENABLED=true \
 VITE_METRICS_SAMPLE_RATE=0.25 \
 VITE_DEPLOYMENT_ENV=production \
 VITE_RELEASE="$GIT_SHA" \
 npm run build
 ```
+
+This is illustrative Prod Only configuration, not a connected collector.
+The example host is not approved and therefore cannot receive production events.
 
 `VITE_METRICS_SAMPLE_RATE` is the fraction of page loads to observe, from `0`
 through `1`, and defaults to `1`. The JSON payload includes a schema version,
@@ -378,10 +532,12 @@ unlinked marker cannot silently become permanent.
 The app logs through [`src/lib/logging.ts`](src/lib/logging.ts): every event
 is one structured record — `time`, `level`, `msg`, and flat context fields —
 written to the browser console, so DevTools filters by level and reads fields
-without parsing prose. `Error` values serialize to name, message, and stack;
-circular or oversized values are cut off, never thrown on. Data loads, session
-edits, notification sends, and render crashes (caught by
-`src/components/ErrorBoundary.tsx`) all leave records.
+without parsing prose. The generic local logger can serialize errors, but
+application reporting uses stable technical classifications and identifiers,
+not names, notes, reasons, raw provider records, or exception prose.
+Outbound telemetry independently allowlists fields before queueing.
+Data loads, session edits, notification records, and render crashes have
+structured technical events, subject to the configured minimum log level.
 
 The minimum level defaults to `debug` in development and `warn` in production
 builds; `VITE_LOG_LEVEL` (`debug` / `info` / `warn` / `error`) overrides it.
@@ -394,11 +550,41 @@ VITE_LOG_LEVEL=debug npm run dev
 
 ### Feature flags
 
-Feature flags are defined in
-[`src/lib/featureFlags.ts`](src/lib/featureFlags.ts). Each definition has an
-owner, description, safe default, explicit environment override, and optional
-percentage rollout. The Production Requirements workspace is the first
-flagged feature and is removed from navigation when disabled.
+Feature flags live in two governed registries: product flags in
+[`src/lib/featureFlags.ts`](src/lib/featureFlags.ts) and operational telemetry
+flags in [`src/lib/telemetry/flags.ts`](src/lib/telemetry/flags.ts). Every flag
+in both registries carries the full lifecycle defined in
+[`src/lib/flagGovernance.ts`](src/lib/flagGovernance.ts): owner, purpose,
+environment scope, safe default, rollout trigger, rollback trigger, review
+date, expiry, and removal condition. A deterministic policy check
+(`npm test -- src/lib/featureFlags.test.ts src/lib/telemetry/flags.test.ts`)
+fails on missing metadata, missing ownership, or an expired flag.
+
+All flag inputs are local and non-authoritative: build-time environment
+variables inlined by Vite, plus session-only in-memory overrides. There is no
+remote flag service and no privileged control UI, and the app makes no
+flag-service request. A flag can hide a feature route, but it never grants a
+role, changes which rows a partner or manager can see, or otherwise alters
+access. That separation is enforced architecturally — flag modules cannot
+import access-scope or provider logic — and pinned by an
+authorization-invariance test that verifies identical scope and row IDs in
+every evaluator state.
+
+Evaluation is fail-safe and deterministic:
+
+1. A fresh, valid configured value is used and recorded as last known good.
+2. On a timeout, an unavailable source, or a malformed value, the recorded
+   value is used only while it is younger than its configured maximum age
+   (`FLAG_CACHE_MAX_AGE_MS`, five minutes).
+3. Cold start, an absent cache, or a stale cache falls back to the registry's
+   safe default, so an outage can never turn a feature on or hold an outdated
+   value past its bound. The cache is in-memory only, so a reload is always a
+   cold start.
+4. A later valid value replaces the cache, so recovery is immediate.
+
+The full matrix — cold start, timeout, unavailable, malformed, bounded cache,
+stale cache, and recovery — is pinned by injected-clock tests in
+[`src/lib/featureFlags.test.ts`](src/lib/featureFlags.test.ts).
 
 Copy [`.env.example`](.env.example) to `.env.local` for local configuration,
 or set the variables in the deployment environment:
@@ -412,8 +598,9 @@ VITE_FEATURE_PRODUCTION_REQUIREMENTS_ROLLOUT=25 npm run build
 ```
 
 Explicit `true` or `false` overrides take precedence over percentage rollout.
-Accepted aliases are `1`/`0` and `on`/`off`. Invalid values fall back to the
-flag's safe default instead of making an accidental rollout decision.
+Accepted aliases are `1`/`0` and `on`/`off`. Invalid values are treated as
+malformed and fall back through the fail-safe policy above instead of making
+an accidental rollout decision.
 
 Percentage assignment hashes the flag key with an opaque browser identifier.
 The identifier is stored under `gtm.feature-flags.subject.v1`; it contains no
@@ -421,38 +608,55 @@ user or partner data. If browser storage is unavailable, assignment remains
 stable for the current page. Vite inlines flag configuration at build time, so
 changing a deployment flag requires a rebuild.
 
-This build-time implementation is the safe starting point, not the final
-maintainer experience. The Production Requirements roadmap calls for a
-documented flag lifecycle and an authenticated control plane where approved
-nontechnical maintainers can change flags without editing code or redeploying.
-That control plane must include separate environment settings, role-based
-access, approvals, audit history, emergency kill switches, and safe behavior
-when the flag service is unavailable. Feature flags must never replace
-authorization or data-access controls. See
+This local, build-time implementation is the safe starting point, not the
+final maintainer experience. The Production Requirements roadmap still calls
+for an authenticated control plane where approved nontechnical maintainers can
+change flags without editing code or redeploying — that capability is
+Production: Prod Only. Such a control plane must include separate environment
+settings, role-based access, approvals, audit history, emergency kill
+switches, and safe behavior when the flag service is unavailable. Feature
+flags must never replace authorization or data-access controls. See
 [`docs/migration-plan.md`](docs/migration-plan.md#feature-flag-methodology-and-maintainer-control-plane).
 
 ### Runtime observability
 
 The client includes opt-in, privacy-safe telemetry. With no telemetry
 variables configured, records remain in-process and no network request is made.
+Egress is governed by two switches: the `telemetry.enabled` master switch
+controls every request, beacon, and script load, and product analytics
+additionally requires `analytics.enabled`, which is off by default pending
+privacy approval. Every envelope passes a registered per-type field allowlist before
+it can be queued, so names, free-form prose, raw exception text, records, and
+secrets cannot leave the browser. Production collector endpoints must be
+HTTPS on a host in the checked-in `APPROVED_TELEMETRY_HOSTS` list (currently
+empty, so production telemetry stays local-only until a host is approved in a
+reviewed change); invalid configuration fails closed to local-only. There is
+no browser webhook delivery: alerts dispatch to in-app handlers only, and
+production builds emit no source maps.
+
 Production builds may set these Vite variables:
 
 - `VITE_TELEMETRY_ENDPOINT` — collector URL for batched logs, metrics, events,
-  traces, errors, alerts, and health envelopes.
-- `VITE_ALERT_ENDPOINT` — optional alert webhook for degraded health and
-  repeated errors.
-- `VITE_TELEMETRY_DASHBOARD_URL` — operator dashboard link stamped on batches
-  and used by the deployment runbook.
+  traces, errors, alerts, and health envelopes. Subject to the HTTPS and
+  approved-host policy above.
+- `VITE_TELEMETRY_DASHBOARD_URL` — optional operator dashboard link used by
+  health diagnostics and the deployment runbook; it does not enable transport.
 - `VITE_RELEASE` — git SHA or release tag; Vercel's commit SHA is the fallback.
 - `VITE_GA_MEASUREMENT_ID` — optional GA4 measurement ID for product events.
+  Inert unless both telemetry and analytics switches are on.
 - `VITE_FLAG_TELEMETRY_ENABLED` and `VITE_FLAG_ANALYTICS_ENABLED` — explicit
   build-time feature switches.
 
-The app exposes a live readiness artifact at `window.GTM_HEALTH`. Run
-`await window.GTM_HEALTH.refresh()` in the deployed page to check the shell,
-network, flags, telemetry delivery, recent errors, and the real data-provider
-seam. Production source maps are emitted so an error collector can resolve
-minified stack frames back to the stamped release.
+The app exposes a live readiness artifact at `window.GTM_HEALTH`, published
+the moment the shell mounts — before any readiness check resolves, and still
+there when every startup check fails, so its absence always means the app
+never booted rather than "healthy but quiet". The artifact names the shell,
+the committed provider, any requested-provider transition, flag and telemetry
+state, recent captured errors, and the data seam's status. Run
+`await window.GTM_HEALTH.refresh()` in the deployed page to re-probe the
+shell, network, flags, telemetry delivery, recent errors, and the committed
+provider seam. Production builds ship no public source maps: a published map
+would expose the full original source to anyone who downloads the bundle.
 
 #### Error to insight pipeline
 
@@ -466,9 +670,11 @@ prevents an initial backlog from flooding the issue tracker.
 
 Configure the repository before enabling the schedule:
 
-1. Send the telemetry collector's `error` envelopes to a Sentry project. Keep
-   the release, environment, fingerprint, breadcrumbs, route, provider, and
-   trace context fields so each GitHub issue leads to useful diagnostic data.
+1. Send the telemetry collector's `error` envelopes to a Sentry project. The
+   envelopes carry the technical classification only — error class,
+   fingerprint, category, severity, route, provider, and trace context — with
+   release and environment stamped at the batch level. Raw messages, stacks,
+   and breadcrumbs never leave the browser.
 2. Add repository variables `SENTRY_ORG` and `SENTRY_PROJECT` with that
    project's organization and project slugs.
 3. Add `SENTRY_AUTH_TOKEN` as a repository secret. Use a dedicated,
@@ -524,58 +730,122 @@ automated release history, so the first release does not claim older changes.
 ## Data contract (the integration seam)
 
 The UI only talks to the `DataProvider` interface
-([`src/data/DataProvider.ts`](src/data/DataProvider.ts)), which is mid-migration
-and deliberately reads that way. Two families:
+([`src/data/DataProvider.ts`](src/data/DataProvider.ts)): scoped aggregates and
+paginated rows. A caller states a scope (a fiscal quarter, optionally one
+partner manager, plus the session's uncommitted edits) and receives an answer
+whose size does not depend on the size of the book. **Every route is built on
+it**, and the migration is complete at the seam: the eight list-everything
+calls (`listPartners()`, `listOpportunities()`, `listRegistrations()`,
+`getTargets()`, `listPartnerManagers()`, `listActivities()`,
+`listCertifications()`, `listTeamUsers()`) and the `useDashboardData` loader
+that folded them into one `DashboardData` are deleted, so no caller — route,
+shell, or provider — can ask for the whole book any more. The cost those calls
+carried at volume is measured in [`docs/migration-plan.md`](docs/migration-plan.md).
 
-**The target shape — scoped aggregates and paginated rows.** A caller states a
-scope (a fiscal quarter, optionally one partner manager, plus the session's
-uncommitted edits) and receives an answer whose size does not depend on the size
-of the book. **Forecasting is built on this today.**
+| Method                               | Returns                                                                |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| `getForecastSummary()`               | `QueryResult<ForecastSummary>` (8 numbers + coverage state)            |
+| `getWeightedForecast()`              | `QueryResult<WeightedForecastSummary>`                                 |
+| `getForecastQuality()`               | `QueryResult<ForecastQualitySummary>` (counts, exposure, sample)       |
+| `getManagerForecastGroups()`         | `QueryResult<ManagerForecastGroup[]>` (one row per manager)            |
+| `getWeeklyForecastSeries()`          | `QueryResult<WeeklySeriesRow[]>` (13 buckets)                          |
+| `listQuarterOpportunities()`         | `QueryResult<Page<Opportunity>>` (opaque cursor, 25-row pages)         |
+| `getPartnerDirectory()`              | `QueryResult<PartnerRef[]>` (id → name)                                |
+| `getPerformanceSummary()`            | `QueryResult<PerformanceSummary>` (the KPI tiles, one aggregate)       |
+| `getRegistrationFunnel()`            | `QueryResult<RegistrationFunnel>` (counts + registered value)          |
+| `getStageBreakdown()`                | `QueryResult<StageBreakdown>` (open stages + closed outcomes)          |
+| `getTypeBreakdown()`                 | `QueryResult<TypeRow[]>` (open pipeline by revenue motion)             |
+| `getQuarterlyRevenueTrend()`         | `QueryResult<QuarterlyPoint[]>` (all FY quarters, four points)         |
+| `getWeeklyActivitySeries()`          | `QueryResult<WeeklyActivityRow[]>` (8 weeks of meetings)               |
+| `getWeeklyGoalProgress()`            | `QueryResult<WeeklyGoalProgress>` (this week vs. goal)                 |
+| `getRegistrationOpsSummary()`        | `QueryResult<RegistrationOpsSummary>` (leakage, SLA, conversion)       |
+| `getTopPartnerLeaders()`             | `QueryResult<TopPartnerLeaders>` (fixed top 10 + field size)           |
+| `listPartnerLeaderboard()`           | `QueryResult<Page<PartnerLeaderboardEntry>>` (cursor pages)            |
+| `getManagerDirectory()`              | `QueryResult<PartnerManager[]>` (internal audience only)               |
+| `getPartnerRoster()`                 | `QueryResult<Partner[]>` (the partners in scope)                       |
+| `getPartnerCertification()`          | `QueryResult<PartnerCertificationProfile \| null>`                     |
+| `listScopedOpportunities()`          | `QueryResult<Page<Opportunity>>` (opaque cursor, 25-row pages)         |
+| `listPendingRegistrations()`         | `QueryResult<Page<DealRegistration>>` (oldest first, cursor pages)     |
+| `listRecentRegistrations()`          | `QueryResult<Page<DealRegistration>>` (newest first, cursor pages)     |
+| `getTeamRoster()`                    | `QueryResult<TeamUser[]>` (internal audience only)                     |
+| `getRegistrationSlaAlerts()`         | `QueryResult<RegistrationSlaAlertDigest>` (top ≤ 8 + counts)           |
+| `listUnconvertedRegistrations()`     | `QueryResult<Page<DealRegistration>>` (exclusivity watch)              |
+| `listDuplicateRegistrationGroups()`  | `QueryResult<Page<DuplicateRegistrationGroup>>` (internal only)        |
+| `listWeeklyClassificationMeetings()` | `QueryResult<Page<ActivityMeeting>>` (one week, cursor pages)          |
+| `getActionCenterSummary()`           | `QueryResult<ActionCenterSummary>` (unique count + five reason counts) |
+| `listActionItems()`                  | `QueryResult<Page<ActionItem>>` (globally ordered, default 25 rows)    |
 
-| Method                       | Returns                                                     |
-| ---------------------------- | ----------------------------------------------------------- |
-| `getForecastSummary()`       | `ForecastSummary` (9 numbers)                               |
-| `getWeightedForecast()`      | `WeightedForecastSummary`                                   |
-| `getForecastQuality()`       | `ForecastQualitySummary` (counts, exposure, bounded sample) |
-| `getManagerForecastGroups()` | `ManagerForecastGroup[]` (one row per manager)              |
-| `getWeeklyForecastSeries()`  | `WeeklySeriesRow[]` (13 buckets)                            |
-| `listQuarterOpportunities()` | `Page<Opportunity>` (cursor, 25 rows)                       |
-| `getPartnerDirectory()`      | `PartnerRef[]` (id → name)                                  |
+Every scoped answer arrives in a `QueryResult` envelope
+([`src/data/queryMetadata.ts`](src/data/queryMetadata.ts)): the data plus
+metadata naming the committed provider, the deterministic snapshot as-of, the
+lineage the answer was computed from, whether it is complete or partial, and
+typed warnings. Partial answers stay visible with their warnings next to them
+— a reconstructed weekly history or an unattributed opportunity is disclosed,
+never smoothed over.
 
-**The shape being retired — eight list-everything calls.** `listPartners()`,
-`listOpportunities()`, `listRegistrations()`, `getTargets()`,
-`listPartnerManagers()`, `listActivities()`, `listCertifications()`,
-`listTeamUsers()`. The seven views still on this contract take the whole book
-and aggregate it in the browser.
+Forecast-quality counts and exposure cover the full scoped set. Its sample
+accepts a positive integer of at most ten deals per direction, twenty total;
+invalid sizes reject with `ForecastQualitySampleSizeError` and stable code
+`invalid-forecast-quality-sample-size` before aggregation, never silently clamp.
+The UI continues to request three per direction.
 
-`MockDataProvider` fills both with deterministic, seeded data. To go live,
-implement the interface against your CRM (HubSpot, Salesforce) or warehouse
-(Snowflake, Looker) and swap the provider — no view code changes. The scoped
+**Every method takes a required demo access scope first**
+([`src/data/accessScope.ts`](src/data/accessScope.ts)): `{ audience:
+'internal' }`, optionally narrowed to one partner manager, or `{ audience:
+'partner', partnerId }`. Providers apply it before any aggregation, ordering,
+or pagination, so a partner-audience answer is computed from that partner's
+rows alone: no Sell To opportunities (the partner is the customer there), no
+conflicting registrations (the conflict is internal), no other partner's
+rows, and no internal directories (the manager list and team roster). The
+demo's own shell asks as the internal audience. This is demonstrative
+filtering, and it is labelled that way wherever it surfaces — it is not
+authentication, authorization, or row-level security, because the browser is
+untrusted and any caller can construct any scope. Real enforcement is
+server-side row authorization behind trusted identity, which is Production:
+Prod Only. No feature flag can change what a scope returns; that invariance
+is pinned in `src/data/accessScope.test.ts` and enforced by the module
+boundary that keeps flag code out of the data layer.
+
+`MockDataProvider` fills it with deterministic, seeded data. To go live,
+implement the interface behind trusted identity and a server-enforced scoped
+API backed by your CRM or warehouse, then swap the provider. Never connect
+protected sources or credentials directly from the browser. The scoped
 side is where a server does the arithmetic: `src/lib/metrics.ts` is the
 implementation today and the _specification_ a server implementation has to
 match, which is what makes its test suite a conformance check rather than a
 unit suite.
 
+**The source side has the same shape, as pure functions.** Nothing is
+connected — no CRM, PRM, calendar, enablement, target, or certification
+system, and no credential to connect one — but the ingestion path those
+exports will one day take exists as strict adapters in
+[`src/data/normalizers/`](src/data/normalizers/). Each maps the
+representative source shape (Salesforce-flavored `__c` fields, source
+picklist labels, source-owned ids) onto the canonical records above, with
+provenance: the source system, the source record id, and the fields consumed.
+They are pure — no fetch, no storage, no clock, no mutation — and strict:
+malformed ids, unknown foreign keys, unmapped enum values, non-ISO dates, and
+bad money are typed failures with stable codes, never guessed defaults. A
+server pipeline could call them unchanged.
+
 **Swap the provider from the header** to see the claim performed:
 
 - **Local mock** — the deterministic in-memory book, answering on the next
-  microtask. Fast, and it hides every loading state.
+  microtask. Loading states usually resolve before they are noticeable.
 - **Simulated remote** — the same book behind ~250 ms round trips with a 15%
   simulated failure rate, so the per-widget loading, error, and retry paths are
   exercised rather than theoretical. Seeded, so a failing run can be replayed.
 - **Scaled 100×** — 100 copies of the book: 2,500 partners, 21,300
   opportunities, 191,000 weekly snapshot rows, ~45 MB. The scoped queries return
-  the same kilobytes (five aggregates, 25 rows a page); the load-everything path
-  is what changes. That is the argument, and it is why the default is the local
-  mock: this provider deliberately makes the un-migrated views slow.
+  the same kilobytes (a handful of aggregates, one cursor page of rows) while
+  the book grows a hundredfold. That is the argument, performed.
 
-The interface is read-only. `App.tsx` layers the session's in-app edits —
+The interface is read-only. `App.tsx` holds the session's in-app edits —
 revenue overrides, forecast-category calls, notes, next steps, meeting
-classifications, added prospects, roster changes, and sent notifications — on
-top of the provider's book before handing a single merged `DashboardData` to the
-views still on the old contract; Forecasting instead passes the edits _into_ its
-queries, so the provider aggregates the corrected book itself. Writes are the
-one thing a live provider still needs to add.
+classifications, added prospects, roster changes, and sent notifications — and
+every view passes them _into_ its queries, so the provider aggregates the
+corrected book itself. Writes are the one thing a live provider still needs to
+add.
 
 **Weekly pipeline history never crosses the seam whole.** It used to arrive as
 `listPipelineSnapshots()`: 1,911 rows in the demo and ~87% of the payload at
@@ -587,8 +857,8 @@ entirely and leaves through `getWeeklyForecastSeries()` as ~13 buckets. A
 — an `Opportunity` holds one amount and one call, so reading the past off
 current state backdates every later change — and it is still what makes forecast
 accuracy measurable, since a call can only be scored against an outcome if the
-call as made was kept. It lives in `ProviderBook` (provider-side) rather than
-`DashboardData` (client-side), and in Salesforce it is `OpportunityHistory` and
+call as made was kept. It lives only in `ProviderBook` (provider-side); the old
+client-side `DashboardData` loader is gone. In Salesforce it corresponds to `OpportunityHistory` and
 `OpportunityFieldHistory`; a warehouse would model it as a weekly fact table
 written by a scheduled job.
 
@@ -598,9 +868,9 @@ written by a scheduled job.
   and `generateDashboardData()` call
 - Fixed snapshot: 2026-09-18 (`SNAPSHOT_DATE`) so numbers never drift
 - 5 partner managers, each aligned to 5 partners through a Salesforce-style
-  account relationship, each with an authorized Partner Manager user aligned to
-  them; the 8-person roster also carries a partnership lead, a deal-desk ops
-  user, and an analyst still awaiting authorization
+  account relationship, each with a Partner Manager user aligned to them and
+  notification routing on; the 8-person roster also carries a partnership lead,
+  a deal-desk ops user, and an analyst whose routing is not set up yet
 - 25 partners, 180 registrations, 213 opportunities — the FY27 book
   (February 2026 → January 2027) plus a closed prior-year FY26 book that only
   feeds the prior-year delta tiles — and 163 mock calendar meetings: a seeded
@@ -613,6 +883,8 @@ written by a scheduled job.
   pinned volume shifts), and close-date-adjacent deals with no explicit call
   fall back to the stage heuristic. Open opportunities also carry a row-level
   next step (about half of them, seeded deterministically from the id)
+- Open opportunities have optional meaningful `lastActivityAt` timestamps
+  seeded from their IDs; missing activity uses `createdAt` as the stale-deal baseline.
 - 1,911 weekly pipeline snapshot rows: the open book recorded every Monday of
   FY27 through the snapshot date (33 recordings). Amounts, calls, stages, and
   expected close dates drift week to week — most deals never move, a minority
@@ -622,7 +894,9 @@ written by a scheduled job.
   a snapshot series is just today's numbers repeated and the week-over-week
   chart shows nothing but deals entering and closing. Drift is derived from the
   opportunity id and week index rather than the seeded PRNG, so history shifts
-  no existing volume or amount
+  no existing volume or amount. A small ID-stable cohort of open deals also
+  slipped seven days since the latest Monday recording, within the same fiscal
+  quarter, supplying minimum close-slip evidence without changing weekly totals
 - Every approved registration gets a 2–12 day document-handling dwell before
   its opportunity is created, so the submitted → approved → opportunity → win
   chain reads as real time; a fixed set of registrations deliberately shares a
@@ -630,9 +904,10 @@ written by a scheduled job.
   older approved registrations are left unconverted so the exclusivity window
   has lapsed and still-current rows
 - A few still-pending registrations are re-dated to one business day before
-  their response SLA — one per partner — so the 24-hours-out notification rule
-  has owners to reach at the snapshot. The warning window is only a day wide,
-  and a natural distribution can contain none of it; the seeded working date is
+  their response SLA — one per partner — so the one-business-day-out
+  notification rule has owners to reach at the snapshot. The warning window is
+  only a business day wide, and a natural distribution can contain none of it;
+  the seeded working date is
   derived from the snapshot, and no PRNG is consumed, so no volume shifts
 - Realized FY27 win rate: 20 of 44 closed deals won (~45%)
 - Volumes and weights are tuned in
@@ -668,7 +943,9 @@ from the environment: `/` when `VERCEL` is set (Vercel serves at a domain
 root), and `/GTM-Partner-Dashboard/` otherwise (Pages serves project sites
 under the repo name). Set `BASE_PATH` to override for any other host.
 
-CI (`ci.yml`) checks file-size limits, formatting, lint, coverage, and the
-production build on every pull request and on every push to `main`.
-CI (`ci.yml`) runs formatting + lint + duplicate-code detection + coverage +
-build on every pull request and on every push to `main`.
+CI (`ci.yml`) checks AGENTS.md freshness, file-size limits, formatting, the
+debt policy, lint and module boundaries, dead code, duplication, documentation
+consistency, the client-only boundary, coverage thresholds, test and build
+performance, bundle and dependency budgets, and the workflow security policy,
+then runs the Playwright suite — on every pull request and on every push to
+`main`.

@@ -5,6 +5,11 @@
  * interface (src/data/DataProvider.ts). A seeded mock generator fills them
  * today; a CRM-backed provider can fill the exact same shapes tomorrow
  * without any view code changing. See README "Data contract".
+ *
+ * Two shapes are deliberately NOT here: the whole-book container a
+ * provider holds and the raw weekly snapshot history rows live in
+ * `src/data/mock/book.ts`, provider-private, so no shared import can leak
+ * raw history toward the client (the boundary test scans for their names).
  */
 
 export type PartnerType = 'reseller' | 'agency' | 'msp' | 'integrator' | 'referral';
@@ -89,38 +94,13 @@ export interface Opportunity {
   /** Row-level next action; a free-form field edited in-app. */
   nextStep?: string;
   createdAt: string; // ISO 8601
+  /** Last meaningful deal activity; absent means createdAt is the labeled baseline. */
+  lastActivityAt?: string; // ISO 8601
   expectedCloseDate: string; // ISO 8601
   closedAt?: string; // set once closed (won or lost)
   outcome?: OpportunityOutcome;
   /** Free-form note left by a partner manager; edited in-app, shown on hover. */
   notes?: string;
-}
-
-/**
- * One opportunity's state as it stood at a weekly recording of the open book.
- *
- * This is append-only history, and it exists because current state cannot
- * answer a question about the past. An opportunity row carries one amount, one
- * call, and one expected close date, so reading last week's pipeline off
- * today's book silently backdates every later change: an amount raised this
- * week rewrites the weeks before it, a re-call re-colors them, and a deal that
- * slipped out of the quarter disappears from the weeks it was in rather than
- * showing the drop. A snapshot already written must never change.
- *
- * Salesforce keeps the equivalent in OpportunityHistory and
- * OpportunityFieldHistory; a warehouse would model it as a weekly fact table.
- */
-export interface PipelineSnapshot {
-  /** UTC Monday midnight the book was recorded at — the close of the prior week. */
-  takenAt: string; // ISO 8601
-  opportunityId: string;
-  /** Forecasted revenue as it stood, not today's figure. */
-  forecastedRevenue: number;
-  /** The manager's call as it stood. */
-  forecastCategory: ForecastCategory;
-  stage: OpportunityStage;
-  /** Expected close as it stood, so slips in and out of a quarter are visible. */
-  expectedCloseDate: string; // ISO 8601
 }
 
 /** Revenue target for one partner for one quarter. */
@@ -174,14 +154,16 @@ export interface PartnerCertification {
 export type TeamRole = 'partnership-lead' | 'partner-manager' | 'deal-desk-ops' | 'analyst';
 
 /**
- * Access state for an internal user:
- * - invited:   added to the roster, no access until someone authorizes it
- * - active:    authorized to sign in and receive notifications
- * - suspended: access revoked, the roster entry (and its audit trail) kept
+ * Notification-routing state for an internal roster entry, for this session
+ * only. None of these states grants, revokes, or restores sign-in or data
+ * access — production identity (Prod Only) owns that:
+ * - invited:   on the roster, notification routing not set up yet
+ * - active:    this session would route simulated notifications to them
+ * - suspended: notifications paused, the roster entry kept
  */
 export type TeamUserStatus = 'active' | 'invited' | 'suspended';
 
-/** Where a notification can be delivered. Email is the always-on channel. */
+/** Configured demo channels; each notification may select a nonempty subset. */
 export type NotificationChannel = 'email' | 'slack' | 'in-app';
 
 /**
@@ -191,7 +173,7 @@ export type NotificationChannel = 'email' | 'slack' | 'in-app';
  * identity provider owns the roster and this record is a projection of it
  * (see the Data Connections view). What lives here is the dashboard-specific
  * part — which manager a user is aligned to, and which channels they are
- * authorized to be notified on — because that is what decides who hears about
+ * configured to be notified on — because that is what decides who hears about
  * a deal registration they own.
  */
 export interface TeamUser {
@@ -207,16 +189,16 @@ export interface TeamUser {
    */
   partnerManagerId?: string;
   status: TeamUserStatus;
-  /** Channels this user is authorized to receive notifications on. */
+  /** Channels this user would receive simulated notifications on this session. */
   channels: NotificationChannel[];
   addedAt: string; // ISO 8601
-  /** Set when access was granted; the audit entry a real IdP would keep. */
+  /** Set when notification routing was switched on; never an access grant. */
   authorizedAt?: string;
   /** Who added the user to the roster. */
   addedBy?: string;
 }
 
-/** What the access form collects; the roster record is built from it. */
+/** What the roster form collects; the session-only record is built from it. */
 export interface NewTeamUserInput {
   name: string;
   email: string;
@@ -227,6 +209,7 @@ export interface NewTeamUserInput {
 }
 
 export type NotificationKind =
+  | Exclude<ActionCategory, 'registration-sla'>
   /** Owner's registration is one business day from the response SLA. */
   | 'registration-sla-warning'
   /** Owner's registration has already passed the response SLA. */
@@ -234,10 +217,18 @@ export type NotificationKind =
   /** Free-form note sent by hand from the notification panel. */
   | 'manual';
 
-/** Mock delivery states; a real sender would add retries and failures. */
-type NotificationStatus = 'queued' | 'delivered' | 'failed';
+/**
+ * Session send states. The demo records sends locally only, so the only state
+ * it can truthfully report is `simulated-local` — a record on this screen, in
+ * memory, for this session. A real sender (Prod Only) would add delivery,
+ * retry, and failure states; the demo never claims one.
+ */
+type NotificationStatus = 'simulated-local';
 
-/** One notification sent to one internal user, recorded for the session. */
+/**
+ * One simulated notification to one internal user, recorded locally for the
+ * session. Nothing is delivered; refresh clears the record.
+ */
 export interface DashboardNotification {
   id: string;
   userId: string;
@@ -249,50 +240,149 @@ export interface DashboardNotification {
   status: NotificationStatus;
   /** The registration the notification is about, when it is about one. */
   registrationId?: string;
+  actionId?: string;
+  actionCategory?: ActionCategory;
+  entityKind?: ActionItem['entityKind'];
+  entityId?: string;
 }
 
-export interface DashboardData {
-  partnerManagers: PartnerManager[];
-  partners: Partner[];
-  registrations: DealRegistration[];
-  opportunities: Opportunity[];
-  targets: Target[];
-  activities: ActivityMeeting[];
-  certifications: PartnerCertification[];
-  /** Internal partner-team roster projected from the identity provider. */
-  teamUsers: TeamUser[];
+/** Session-configurable demo reporting policy, never a production control. */
+export interface ActionPolicy {
+  highValueAmount: number;
+  staleCalendarDays: number;
+  missingNextStepHorizonDays: number;
+  closeSlipCalendarDays: number;
+  healthWindowDays: number;
+  minimumDeterioratingDrivers: number;
+}
+
+export type ActionCategory =
+  | 'stale-high-value'
+  | 'missing-next-step'
+  | 'close-date-slip'
+  | 'registration-sla'
+  | 'partner-health';
+
+export type ActionSeverity = 'critical' | 'high' | 'medium';
+
+export type MissingNextStepCause = 'within-horizon' | 'high-value' | 'overdue';
+
+export interface HealthDriverEvidence {
+  driver:
+    'partner-meetings' | 'opportunities-created' | 'registrations-submitted' | 'closed-won-revenue';
+  prior: number;
+  current: number;
+  unit: 'meetings' | 'opportunities' | 'registrations' | 'USD';
+}
+
+interface ActionReasonBase {
+  severity: ActionSeverity;
+  dueAt?: string;
+  recommendedAction: string;
+}
+
+/** Each reason carries only its own minimum, displayable evidence. */
+export type ActionReason = ActionReasonBase &
+  (
+    | {
+        category: 'stale-high-value';
+        evidence: {
+          basis: 'lastActivityAt' | 'createdAt';
+          baselineAt: string;
+          elapsedCalendarDays: number;
+        };
+      }
+    | {
+        category: 'missing-next-step';
+        evidence: { causes: MissingNextStepCause[]; daysUntilClose: number };
+      }
+    | {
+        category: 'close-date-slip';
+        evidence: { priorCloseDate: string; currentCloseDate: string; deltaCalendarDays: number };
+      }
+    | {
+        category: 'registration-sla';
+        evidence: {
+          state: 'warning' | 'breach';
+          submittedAt: string;
+          dueAt: string;
+          businessDaysWaiting: number;
+          businessDaysRemaining: number;
+        };
+      }
+    | {
+        category: 'partner-health';
+        evidence: {
+          priorWindow: { startExclusive: string; endInclusive: string };
+          currentWindow: { startExclusive: string; endInclusive: string };
+          drivers: HealthDriverEvidence[];
+        };
+      }
+  );
+
+/** Pure projection; routing and query metadata are layered on at the provider seam. */
+export interface ActionItem {
+  id: string;
+  entityKind: 'opportunity' | 'registration' | 'partner';
+  entityId: string;
+  partnerId: string;
+  reasons: ActionReason[];
+  severity: ActionSeverity;
+  dueAt?: string;
+  exposure: number;
+  /** Internal demo recommendation; omitted entirely for a partner audience. */
+  owner?: {
+    userId?: string;
+    basis: 'manager' | 'partnership-lead' | 'deal-desk' | 'unowned';
+  };
 }
 
 /**
- * What a provider holds, as distinct from what the client receives.
+ * A roadmap row carries two independent statuses so a client-only demo is never
+ * confused with a production dependency:
  *
- * The difference is `snapshots`, and it is the whole argument for the scoped
- * contract: weekly pipeline history is ~87% of the payload at production
- * volume, and no screen wants it as rows — the week-over-week chart wants
- * fourteen buckets. So it stays behind the seam, and
- * `DataProvider.getWeeklyForecastSeries()` is the only way out. A provider
- * that has no history may hold an empty array; the series then falls back to
- * what the current book can say.
+ * - The Demo status describes only verified client behavior in this deterministic
+ *   demo. It is `complete`, `wip`, or `pending`. It can never be `prod-only`.
+ * - The optional Production status marks the continuation that a real deployment
+ *   needs (trusted identity, a scoped API/RLS, a warehouse, source credentials,
+ *   durable storage, production telemetry, or deployment accounts). Its only value
+ *   is `prod-only`, so demo completion can never imply the production step is done.
+ *
+ * A mixed row therefore renders `Demo: <complete|wip|pending>` alongside
+ * `Production: Prod Only`, and names both the usable demo portion and the exact
+ * production blocker in typed text rather than in prose the render cannot check.
  */
-export interface ProviderBook extends DashboardData {
-  /** Append-only weekly recordings of the open book. Never corrected. */
-  snapshots: PipelineSnapshot[];
-}
+export type RoadmapDemoStatus = 'complete' | 'wip' | 'pending';
+
+export type RoadmapProductionStatus = 'prod-only';
+
+export type RoadmapStatus = RoadmapDemoStatus | RoadmapProductionStatus;
+
+/** The two labeled axes a roadmap badge can describe. */
+export type RoadmapScope = 'demo' | 'production';
 
 /**
- * Where a Production Requirements roadmap item stands, stamped against what the
- * code actually does today:
- * - complete:  landed and working in the demo against the mock provider
- * - wip:        partially implemented; part has landed, the rest is in flight
- * - pending:    not started, and buildable in demo mode without production access
- * - prod-only:  blocked until production connections or infrastructure exist
- *               (CRM, identity provider, warehouse, environments), so it runs
- *               at go-live rather than before it
+ * The production continuation of a row: the step is intentionally paused until a
+ * real deployment exists, with the exact blocker stated for the reader.
  */
-export type RoadmapStatus = 'complete' | 'wip' | 'pending' | 'prod-only';
+interface RoadmapProduction {
+  status: RoadmapProductionStatus;
+  /** The concrete production prerequisite this step waits on. */
+  blocker: string;
+}
 
 /** One checklist line on the Production Requirements boards. */
 export interface RoadmapItem {
   text: string;
-  status: RoadmapStatus;
+  /** State of the client-only demo portion. Never a production claim. */
+  demo: RoadmapDemoStatus;
+  /**
+   * What is usable in the demo today. Stated on a `Demo: WIP` row so the
+   * landed half is unambiguous, and on a `Demo: Pending` row when the reader
+   * needs the simulation caveat (for example, that the partner picker is an
+   * untrusted presentation selector, not authorization).
+   */
+  demoScope?: string;
+  /** Present when a production continuation is intentionally paused. */
+  production?: RoadmapProduction;
 }

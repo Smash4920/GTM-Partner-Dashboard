@@ -34,6 +34,10 @@ Run commands from the repository root.
 npm run dev       # start the Vite development server
 npm run agents:check # validate this file's commands and repository paths
 npm run check:file-limits # reject oversized files before review
+npm run client-boundary:check # reject server, database, auth, warehouse, connector, durable-store, sender, or credential additions
+npm run docs:check # verify generated docs and documentation consistency
+npm run quality:check # enforce effective ratchets and ordered blocking gate parity
+npm run workflows:check # enforce the GitHub workflow security policy
 npm run format    # format source, configuration, and documentation
 npm run format:check # verify formatting without changing files
 npm run dead-code # find unused files, exports, and dependencies with Knip
@@ -42,7 +46,9 @@ npm run lint      # lint TypeScript/TSX and enforce module boundaries
 npm run lint:duplicates # detect source duplication with jscpd
 npm test          # run the Vitest suite once
 npm run test:debt # test the technical-debt policy scanner
+npm run test:build-metrics # test build measurements and budget enforcement
 npm run test:sentry-sync # test Sentry-to-GitHub issue synchronization
+npm run test:performance # enforce total and per-test timing budgets from JUnit
 npm run test:coverage # run Vitest with coverage, enforcing the thresholds in vite.config.ts
 npm run test:coverage:ci # also write per-test JUnit timings for CI reporting
 npm run test:e2e  # run the Playwright browser suite
@@ -65,14 +71,19 @@ npm run agents:check
 npm run check:file-limits
 npm run format:check
 npm run test:debt
+npm run test:build-metrics
 npm run test:sentry-sync
 npm run debt:check
 npm run lint
 npm run dead-code
 npm run lint:duplicates
-npm run test:coverage
-npm run test:e2e
+npm run docs:check
+npm run client-boundary:check
+npm run test:coverage:ci
+npm run test:performance
 npm run bundle:check
+npm run workflows:check
+npm run test:e2e
 ```
 
 The coverage thresholds are a ratchet: raise them as coverage lands, never
@@ -89,15 +100,17 @@ survivable.
 - `src/components/`: reusable UI and domain components.
 - `src/lib/`: pure formatting, fiscal-calendar, structured logging,
   notification, and metric helpers. Unit tests are colocated as `*.test.ts`.
-- `src/data/types.ts`: shared domain types, the `DashboardData` shape the client
-  receives, and `ProviderBook`, which extends it with the provider-only history.
+- `src/data/types.ts`: shared domain types that cross the provider seam. The
+  provider-only book (collections plus weekly snapshot history) lives in
+  `src/data/mock/book.ts` and never crosses it whole.
 - `src/data/constants.ts`: fiscal dates, service levels, labels, and other
   shared domain constants.
-- `src/data/DataProvider.ts`: the read-side integration boundary used by the UI.
-  It is mid-migration between two interfaces; see below.
-- `src/data/useDashboardData.ts`: loads and combines every provider collection
-  the seven un-migrated views still need.
-- `src/data/useForecastQueries.ts`: loads the scoped contract for Forecasting,
+- `src/data/DataProvider.ts`: the read-side integration boundary used by the UI —
+  the scoped contract below, and nothing else.
+- `src/data/useForecastQueries.ts` and its siblings (`useHomeQueries.ts`,
+  `usePartnerPerformanceQueries.ts`, `useRegistrationOpsQueries.ts`,
+  `useActivityQueries.ts`, `usePartnerViewQueries.ts`,
+  `useDataConnectionsQueries.ts`): load the scoped contract for their routes,
   with per-widget loading and error state.
 - `src/data/providers.ts`: selects between the three providers the header's
   provider dropdown exposes.
@@ -114,17 +127,16 @@ survivable.
   app shell → views → components → data/domain helpers. Providers are isolated
   under `src/data/mock/`, and production views and components cannot import
   them directly. Tests may cross these boundaries to build fixtures.
-- Views consume the merged `DashboardData` passed down from `src/App.tsx`; they
-  must not import mock records directly. The one exception is Forecasting,
-  which reads the scoped contract through `src/data/useForecastQueries.ts` and passes
-  the session's edits _into_ its queries rather than receiving the folded book.
-- **`DataProvider` is two interfaces, deliberately.** `ScopedQueryProvider` is
-  the target shape — a scope in, an aggregate whose size does not depend on the
-  book or one page of rows out. `LegacyBookProvider` is the eight
-  list-everything calls still being retired. Forecasting reads only the scoped
-  side. When a view moves across, add the queries it needs to the scoped
-  interface, implement them in `MockDataProvider` by delegating to
-  `src/lib/metrics.ts`, and migrate the view onto a hook.
+- Every route reads the scoped contract through its own query hook and passes
+  the session's edits _into_ its queries rather than receiving a folded book;
+  views must not import mock records directly.
+- **`DataProvider` is one interface: the scoped contract.** A scope in, an
+  aggregate whose size does not depend on the book or one page of rows out.
+  The legacy list-everything interface and its `useDashboardData` loader were
+  deleted once every route migrated, so the whole book can no longer cross
+  the seam. New view needs are new scoped queries: add them to the interface,
+  implement them in `MockDataProvider` by delegating to `src/lib/metrics.ts`,
+  and read them through the route's hook.
 - When adding a method to `DataProvider`, list it in `DATA_PROVIDER_METHODS`
   (a compile error until you do, because the record is keyed by
   `keyof DataProvider`) and give it a wire or a box in `src/data/connections.ts`;
@@ -132,8 +144,8 @@ survivable.
 - **Weekly pipeline history never crosses the seam whole.** It is ~87% of the
   payload at production volume, so `listPipelineSnapshots()` is gone from the
   client contract and history leaves only through `getWeeklyForecastSeries()` as
-  a handful of buckets. `ProviderBook` holds the snapshot rows; `DashboardData`
-  does not.
+  a handful of buckets. `ProviderBook` in `src/data/mock/book.ts` holds the
+  snapshot rows; no client-facing type does.
 - `src/lib/metrics.ts` is the _specification_ a server implementation has to
   match, not just the current implementation. Its suite plus
   `src/data/mock/MockDataProvider.test.ts` are the conformance check.

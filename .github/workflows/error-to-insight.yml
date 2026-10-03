@@ -11,9 +11,10 @@ on:
         default: false
         type: boolean
 
+# Read-only by default; the issue write scope lives on the job, which runs
+# only on the hourly schedule or manual dispatch (both trusted contexts).
 permissions:
   contents: read
-  issues: write
 
 concurrency:
   group: error-to-insight
@@ -23,6 +24,10 @@ jobs:
   sync-sentry-errors:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      # Creates GitHub issues from unresolved Sentry errors.
+      issues: write
     env:
       SENTRY_ORG: ${{ vars.SENTRY_ORG }}
       SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
@@ -32,8 +37,8 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
       - name: Test the error-to-issue sync

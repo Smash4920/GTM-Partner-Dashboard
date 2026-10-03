@@ -19,7 +19,6 @@ import {
 } from '../data/constants';
 import type {
   ActivityMeeting,
-  DashboardData,
   DealRegistration,
   FiscalPhase,
   ForecastCategory,
@@ -29,7 +28,6 @@ import type {
   OpportunityStage,
   OpportunityType,
   Partner,
-  PipelineSnapshot,
   Target,
   TeamUser,
 } from '../data/types';
@@ -58,8 +56,20 @@ export function openOpportunities(opps: Opportunity[]): Opportunity[] {
   return opps.filter(isOpen);
 }
 
-export function filterByType(opps: Opportunity[], oppType: OpportunityType | 'all'): Opportunity[] {
-  return oppType === 'all' ? opps : opps.filter((opp) => opp.oppType === oppType);
+/**
+ * The opportunity-type lens: 'all', one type, or several types summed
+ * together. The multi-type form is the leaderboard's combined ranking lens
+ * (Sell With plus Allocate ranked as one book, not two truncated boards
+ * merged afterward). An empty array matches nothing.
+ */
+export function filterByType(
+  opps: Opportunity[],
+  oppType: OpportunityType | 'all' | readonly OpportunityType[],
+): Opportunity[] {
+  if (oppType === 'all') return opps;
+  if (typeof oppType === 'string') return opps.filter((opp) => opp.oppType === oppType);
+  const wanted = new Set(oppType);
+  return opps.filter((opp) => wanted.has(opp.oppType));
 }
 
 export function openPipeline(opps: Opportunity[]): { value: number; count: number } {
@@ -71,9 +81,9 @@ export function openPipeline(opps: Opportunity[]): { value: number; count: numbe
 }
 
 /** Closed-won revenue whose close date falls in [start, end). */
-function closedWonBetween(opps: Opportunity[], startIso: string, endIso: string): number {
-  const start = new Date(startIso).getTime();
-  const end = new Date(endIso).getTime();
+function closedWonBetween(opps: Opportunity[], startDate: Date, endDate: Date): number {
+  const start = startDate.getTime();
+  const end = endDate.getTime();
   return opps
     .filter((opp) => {
       if (opp.outcome !== 'won' || !opp.closedAt) return false;
@@ -292,12 +302,6 @@ export function quarterlyClosedWonAndTarget(
   }));
 }
 
-export function ytdTarget(targets: Target[]): number {
-  return targets
-    .filter((target) => target.quarter.startsWith(FISCAL_YEAR))
-    .reduce((sum, target) => sum + target.revenueTarget, 0);
-}
-
 export interface PhaseWindow {
   phase: FiscalPhase;
   /** Phase start (UTC midnight). */
@@ -386,7 +390,7 @@ export function closedWonPriorYearForPhase(opps: Opportunity[], phase: FiscalPha
     window.end.getTime() > window.start.getTime() ? window.end : window.pipelineEnd;
   const priorStart = shiftYear(window.start, -1);
   const priorEnd = shiftYear(currentEnd, -1);
-  return closedWonBetween(opps, priorStart.toISOString(), priorEnd.toISOString());
+  return closedWonBetween(opps, priorStart, priorEnd);
 }
 
 function isInWindow(iso: string, window: PhaseWindow): boolean {
@@ -422,9 +426,7 @@ export function targetsForPhase(targets: Target[], phase: FiscalPhase): Target[]
 
 export function closedWonForPhase(opps: Opportunity[], phase: FiscalPhase): number {
   const window = phaseWindow(phase);
-  return opps
-    .filter((opp) => opp.outcome === 'won' && opp.closedAt && isInWindow(opp.closedAt, window))
-    .reduce((sum, opp) => sum + opp.forecastedRevenue, 0);
+  return closedWonBetween(opps, window.start, window.end);
 }
 
 /** Quota still to be closed for a fiscal phase. Zero once the target is met. */
@@ -439,25 +441,67 @@ export function remainingQuota(
 }
 
 /**
- * Open pipeline scheduled anywhere in the phase, over the quota still to be
- * closed for that phase. The numerator spans the phase's full horizon — not
- * just through the snapshot — because pipeline scheduled for the rest of the
- * quarter/year is exactly what covers the remaining target. Null when the
- * target is already met, since coverage of a zero gap is not a meaningful
- * ratio.
+ * Target coverage as a three-way state, because a bare ratio cannot tell
+ * "nothing was committed" apart from "the goal is already met" — both divide
+ * by a zero gap, and neither is a coverage figure:
+ *
+ * - `no-target`: the phase carries no target rows (or only zero-value ones)
+ *   for the scope. There is nothing to cover, so there is no coverage.
+ * - `target-met`: closed-won has reached the target and the remaining gap is
+ *   zero. Coverage of a zero gap is not a meaningful ratio.
+ * - `coverage`: open in-phase pipeline over the quota still to close. The
+ *   numerator spans the phase's full horizon — not just through the snapshot —
+ *   because pipeline scheduled for the rest of the quarter/year is exactly
+ *   what covers the remaining target.
  */
-export function coverageRatio(
+export type CoverageState =
+  { kind: 'no-target' } | { kind: 'target-met' } | { kind: 'coverage'; value: number };
+
+export function coverageState(
   opps: Opportunity[],
   targets: Target[],
   phase: FiscalPhase = 'fy',
-): number | null {
-  const remaining = remainingQuota(opps, targets, phase);
-  if (remaining <= 0) return null;
-  return openPipeline(filterByPhase(opps, phase)).value / remaining;
+): CoverageState {
+  const phaseTargets = targetsForPhase(targets, phase);
+  const target = phaseTargets.reduce((sum, item) => sum + item.revenueTarget, 0);
+  if (target <= 0) return { kind: 'no-target' };
+  const remaining = Math.max(target - closedWonForPhase(opps, phase), 0);
+  if (remaining <= 0) return { kind: 'target-met' };
+  return { kind: 'coverage', value: openPipeline(filterByPhase(opps, phase)).value / remaining };
 }
 
-export function formatCoverage(coverage: number | null): string {
-  return coverage === null ? 'Target met' : `${coverage.toFixed(1)}x`;
+/** Inputs are already access- and selection-scoped, with the phase applied. */
+export function pipelineSummary(
+  opportunities: Opportunity[],
+  targets: Target[],
+  phase: FiscalPhase,
+) {
+  const open = openPipeline(opportunities);
+  const closedWon = closedWonForPhase(opportunities, phase);
+  const target = targetsForPhase(targets, phase).reduce((sum, item) => sum + item.revenueTarget, 0);
+  const remaining = Math.max(target - closedWon, 0);
+  const coverage: CoverageState =
+    target <= 0
+      ? { kind: 'no-target' }
+      : remaining <= 0
+        ? { kind: 'target-met' }
+        : { kind: 'coverage', value: open.value / remaining };
+  return {
+    openPipelineValue: open.value,
+    openCount: open.count,
+    closedWon,
+    target,
+    coverage,
+    remainingQuota: remaining,
+    avgOpenDealSize: open.count === 0 ? 0 : open.value / open.count,
+    attainment: target > 0 ? closedWon / target : 0,
+  };
+}
+
+export function formatCoverage(state: CoverageState): string {
+  if (state.kind === 'no-target') return 'No target';
+  if (state.kind === 'target-met') return 'Target met';
+  return `${state.value.toFixed(1)}x`;
 }
 
 export interface LeaderboardRow {
@@ -468,37 +512,33 @@ export interface LeaderboardRow {
   winRate: number;
 }
 
-/** Ranks partners on closed-won for the given phase, then on open pipeline. */
-export function partnerLeaderboard(
-  data: DashboardData,
-  oppType: OpportunityType | 'all',
-  partnerIds?: Set<string>,
-  phase: FiscalPhase = 'fy',
-): LeaderboardRow[] {
-  const opps = filterByType(data.opportunities, oppType);
-  const rows = data.partners
-    .filter((partner) => !partnerIds || partnerIds.has(partner.id))
-    .map((partner) => {
-      const partnerOpps = opps.filter((opp) => opp.partnerId === partner.id);
-      const pipeline = openPipeline(partnerOpps);
-      return {
-        partner,
-        openPipelineValue: pipeline.value,
-        openCount: pipeline.count,
-        closedWonValue: closedWonForPhase(partnerOpps, phase),
-        winRate: winRateForPhase(partnerOpps, phase),
-      };
-    });
-  return rows.sort(
-    (a, b) => b.closedWonValue - a.closedWonValue || b.openPipelineValue - a.openPipelineValue,
-  );
-}
-
 export interface WeeklyActivityRow {
   weekStart: string;
   weekEnd: string;
   total: number;
   byType: Record<MeetingType, number>;
+}
+
+/**
+ * Whether a meeting belongs to the requested manager/partner scope. The
+ * session's classification, when one exists, reassigns the meeting, so
+ * effective ownership is resolved FIRST: with a partner set in scope, the
+ * classified-or-original partner alone decides inclusion. Applying the raw
+ * calendar attribution on top would drop a cross-manager reclassification
+ * from BOTH scopes — the old manager's partner set rejects it and the new
+ * manager's raw manager rejects it — instead of moving it exactly once.
+ * With no partner set, the raw manager decides, exactly as before.
+ */
+function inActivityScope(
+  activity: ActivityMeeting,
+  partnerManagerId: string | undefined,
+  partnerIds: Set<string> | undefined,
+  classification: MeetingClassification | undefined,
+): boolean {
+  if (partnerIds !== undefined) {
+    return partnerIds.has(classification?.partnerId ?? activity.partnerId);
+  }
+  return partnerManagerId === undefined || activity.partnerManagerId === partnerManagerId;
 }
 
 export function weeklyActivity(
@@ -518,12 +558,10 @@ export function weeklyActivity(
     const filtered = activities.filter((activity) => {
       const occurredAt = new Date(activity.occurredAt).getTime();
       const inWeek = occurredAt >= start.getTime() && occurredAt < end.getTime();
-      const inManager = !partnerManagerId || activity.partnerManagerId === partnerManagerId;
-      // Classified meetings count toward the partner scope of the override.
-      const classification = classifications?.[activity.id];
-      const partnerId = classification?.partnerId ?? activity.partnerId;
-      const inPartner = !partnerIds || partnerIds.has(partnerId);
-      return inWeek && inManager && inPartner;
+      return (
+        inWeek &&
+        inActivityScope(activity, partnerManagerId, partnerIds, classifications?.[activity.id])
+      );
     });
     for (const activity of filtered) {
       const type = classifications?.[activity.id]?.type ?? activity.type;
@@ -556,6 +594,9 @@ export function daysLeftInQuarter(quarter: string): number {
  * Current-week meeting volume toward the weekly goal, optionally scoped to a
  * partner manager and partner. Classified meetings use the manual override for
  * both partner and call type; unclassified meetings keep their snapshot values.
+ * Membership resolves the classified partner before the manager filter — see
+ * `inActivityScope` — so a cross-manager reclassification moves the meeting
+ * exactly once.
  */
 export function weeklyGoalProgress(
   activities: ActivityMeeting[],
@@ -570,10 +611,8 @@ export function weeklyGoalProgress(
   for (const activity of activities) {
     const occurredAt = new Date(activity.occurredAt).getTime();
     if (occurredAt < weekStart || occurredAt >= weekEnd) continue;
-    if (partnerManagerId && activity.partnerManagerId !== partnerManagerId) continue;
     const classification = classifications?.[activity.id];
-    const partnerId = classification?.partnerId ?? activity.partnerId;
-    if (partnerIds && !partnerIds.has(partnerId)) continue;
+    if (!inActivityScope(activity, partnerManagerId, partnerIds, classification)) continue;
     meetings += 1;
     if ((classification?.type ?? activity.type) === 'pio-interlock') pioMeetings += 1;
   }
@@ -614,16 +653,36 @@ export function pendingRegistrations(
     .sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
 }
 
-/** Most recent registrations for one partner. */
-export function recentRegistrations(
-  registrations: DealRegistration[],
-  partnerId: string,
-  limit: number,
-): DealRegistration[] {
-  return registrations
-    .filter((reg) => reg.partnerId === partnerId)
-    .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
-    .slice(0, limit);
+/**
+ * Registrations across every status, newest submission first with the id as
+ * tiebreak: a total order over an immutable book, which is what makes a
+ * cursor walk visit every row exactly once. This is the registration
+ * history's stable order behind `listRecentRegistrations`.
+ */
+export function registrationsNewestFirst(registrations: DealRegistration[]): DealRegistration[] {
+  return [...registrations].sort((a, b) =>
+    a.submittedAt === b.submittedAt
+      ? a.id.localeCompare(b.id)
+      : new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime(),
+  );
+}
+
+/**
+ * The notification roster with the session's overlays applied: status and
+ * routing patches fold into the provider's roster by user id, and users
+ * added this session append after it. The provider's roster stays the source
+ * of truth — a patch naming an unknown id applies to nothing, and an
+ * addition is the session's own row. Pure: inputs are not mutated.
+ */
+export function applyTeamRosterOverlays(
+  users: readonly TeamUser[],
+  overrides: Record<string, Partial<TeamUser>> = {},
+  added: readonly TeamUser[] = [],
+): TeamUser[] {
+  const base = users.map((user) =>
+    overrides[user.id] ? { ...user, ...overrides[user.id] } : user,
+  );
+  return [...base, ...added];
 }
 
 // ---- forecast quality ------------------------------------------------------
@@ -691,6 +750,22 @@ export interface WeeklyForecastRow {
 }
 
 /**
+ * One recording instant of the quarter, folded to per-category open-pipeline
+ * totals. This is the most history the metrics layer ever sees: the raw
+ * snapshot rows are provider-private (they are ~87% of the payload at
+ * production volume), and the provider folds them behind its seam — the
+ * mock's `weeklyRecordingTotals` in `src/data/mock/book.ts`, a warehouse's
+ * weekly fact query in production. One entry per recording instant, sorted
+ * oldest first; the count is the quarter's week count, not the book's size.
+ */
+export interface RecordedWeekTotals {
+  /** When the recording was taken (ISO 8601, UTC). */
+  takenAt: string;
+  /** Open in-quarter pipeline per forecast category, as recorded. */
+  raw: Record<ForecastCategory, number>;
+}
+
+/**
  * Week-over-week state of one quarter's partner-sourced pipeline, one bucket
  * per week of the quarter: Monday-aligned, clipped at the quarter end, and
  * spanning the entire quarter so a new bucket lights up as each week begins.
@@ -702,21 +777,23 @@ export interface WeeklyForecastRow {
  *
  * A bucket's values are the open book as it stood at the week's close,
  * counting only deals expected to close inside the quarter. Closed weeks come
- * from recorded snapshots, so they are immutable: an amount raised, a deal
- * re-called, or a close date slipped this week moves this week's bar and
- * leaves the earlier ones alone. Without history — a provider that supplies
- * none — a week is reconstructed from the current book instead, which is only
- * faithful about deals entering and leaving, and silently backdates every
- * other change. `recordedAt` says which kind of week a caller is looking at.
+ * from the recorded weekly totals, so they are immutable: an amount raised,
+ * a deal re-called, or a close date slipped this week moves this week's bar
+ * and leaves the earlier ones alone. Without history — a provider that
+ * supplies none — a week is reconstructed from the current book instead,
+ * which is only faithful about deals entering and leaving, and silently
+ * backdates every other change. `recordedAt` says which kind of week a
+ * caller is looking at.
  *
- * The in-progress week is always reconstructed from the live book (no snapshot
- * exists yet), so it equals the forecasting tiles and moves with in-app edits.
+ * The in-progress week is always reconstructed from the live book (no
+ * recording exists yet), so it equals the forecasting tiles and moves with
+ * in-app edits.
  */
 export function weeklyForecastRows(
   opps: Opportunity[],
   quarter: string,
   asOf: Date = SNAPSHOT_DATE,
-  snapshots: PipelineSnapshot[] = [],
+  recorded: RecordedWeekTotals[] = [],
 ): WeeklyForecastRow[] {
   const { start, end } = quarterWindow(quarter);
   const qStart = start.getTime();
@@ -733,12 +810,9 @@ export function weeklyForecastRows(
     cursor += 7 * DAY;
   }
 
-  const byInstant = new Map<number, PipelineSnapshot[]>();
-  for (const snapshot of snapshots) {
-    const takenAt = new Date(snapshot.takenAt).getTime();
-    const group = byInstant.get(takenAt);
-    if (group) group.push(snapshot);
-    else byInstant.set(takenAt, [snapshot]);
+  const byInstant = new Map<number, RecordedWeekTotals>();
+  for (const recording of recorded) {
+    byInstant.set(new Date(recording.takenAt).getTime(), recording);
   }
   const instants = [...byInstant.keys()].sort((a, b) => a - b);
 
@@ -748,7 +822,7 @@ export function weeklyForecastRows(
     // State at the week's close; the in-progress week freezes at the as-of date.
     const at = Math.min(weekEnd, asOfTs);
     // The latest recording inside this bucket. Requiring it past weekStart is
-    // what keeps the in-progress week from reusing last week's snapshot.
+    // what keeps the in-progress week from reusing last week's recording.
     const recordedAt = instants.reduce<number | undefined>(
       (latest, instant) => (instant > weekStart && instant <= at ? instant : latest),
       undefined,
@@ -765,10 +839,9 @@ export function weeklyForecastRows(
     };
 
     if (hasStarted && recordedAt !== undefined) {
-      for (const snapshot of byInstant.get(recordedAt)!) {
-        const expectedClose = new Date(snapshot.expectedCloseDate).getTime();
-        if (expectedClose < qStart || expectedClose >= qEnd) continue;
-        add(snapshot.forecastCategory, snapshot.forecastedRevenue);
+      const totals = byInstant.get(recordedAt)!.raw;
+      for (const category of FORECAST_CATEGORIES) {
+        add(category, totals[category]);
       }
     } else if (hasStarted) {
       for (const opp of opps) {
@@ -927,17 +1000,18 @@ export interface RegistrationSlaAlert {
 /**
  * Pending registrations that need their owner's attention now: those already
  * past REGISTRATION_SLA_BUSINESS_DAYS, and those within
- * REGISTRATION_SLA_WARNING_BUSINESS_DAYS of it — one business day, or 24
- * hours out from the SLA, which is the heads-up the partner team asked for.
+ * REGISTRATION_SLA_WARNING_BUSINESS_DAYS of it — one business day before the
+ * deadline, which is the heads-up the partner team asked for. Business days
+ * are not hours: when the deadline is a Monday, the warning fires on Friday.
  *
  * Ownership is resolved the way the data model routes it: the submitting
  * partner's aligned partner manager, and the deal desk for anything with no
  * active manager (the queue is theirs either way). An alert with no owner is
  * still returned — it is a roster gap, not something to hide.
  *
- * The 24-hours-out warnings lead the queue: they are the ones with a working
- * day left in them, so acting on one prevents the lapse rather than reporting
- * it. Past-SLA registrations follow, most overdue first.
+ * The one-business-day-out warnings lead the queue: they are the ones with a
+ * working day left in them, so acting on one prevents the lapse rather than
+ * reporting it. Past-SLA registrations follow, most overdue first.
  */
 export function registrationSlaAlerts(
   registrations: DealRegistration[],
@@ -946,19 +1020,20 @@ export function registrationSlaAlerts(
   warningBusinessDays = REGISTRATION_SLA_WARNING_BUSINESS_DAYS,
 ): RegistrationSlaAlert[] {
   const partnerById = new Map(partners.map((partner) => [partner.id, partner]));
+  const orderedUsers = [...teamUsers].sort((left, right) =>
+    left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+  );
   const managerUserByManagerId = new Map<string, TeamUser>();
-  for (const user of teamUsers) {
+  for (const user of orderedUsers) {
     if (user.role !== 'partner-manager' || user.status !== 'active') continue;
-    // The roster is ordered, and the first active user aligned to a manager is
-    // that manager's owner. A later addition does not silently take over an
-    // existing manager's queue just by being appended.
+    // Match Action Center's stable ID ordering, independent of roster input order.
     if (user.partnerManagerId && !managerUserByManagerId.has(user.partnerManagerId)) {
       managerUserByManagerId.set(user.partnerManagerId, user);
     }
   }
   // The deal desk works the whole queue, so it catches alerts whose manager
   // has left, been suspended, or was never set.
-  const fallbackOwner = teamUsers.find(
+  const fallbackOwner = orderedUsers.find(
     (user) => user.role === 'deal-desk-ops' && user.status === 'active',
   );
 
@@ -992,20 +1067,29 @@ export function registrationSlaAlerts(
 }
 
 export interface RegistrationConversionTimes {
-  /** Avg days from submission to approval (approved registrations only). */
-  submittedToApproved: number | null;
-  /** Avg days from approval to opportunity creation (converted registrations only). */
-  approvedToOpportunity: number | null;
-  /** Avg days from opportunity creation to closed-won (converted + won only). */
-  opportunityToWin: number | null;
-  /** Avg days from submission to closed-won (converted + won only). */
-  submittedToWin: number | null;
+  /**
+   * Avg business days from submission to approval (approved registrations
+   * only). This is the hop the response SLA clocks, so it is measured in the
+   * SLA's own unit — a calendar-day average read against a 5-business-day SLA
+   * compares two different clocks.
+   */
+  submittedToApprovedBusinessDays: number | null;
+  /** Avg elapsed calendar days from approval to opportunity creation (converted registrations only). */
+  approvedToOpportunityCalendarDays: number | null;
+  /** Avg elapsed calendar days from opportunity creation to closed-won (converted + won only). */
+  opportunityToWinCalendarDays: number | null;
+  /** Avg elapsed calendar days from submission to closed-won (converted + won only). */
+  submittedToWinCalendarDays: number | null;
 }
 
 /**
  * Average conversion times across a registration book, chained as
  * submitted → approved → opportunity created → win. Every hop is averaged
  * only over the registrations that reached it; null when nothing has.
+ *
+ * Units are part of the contract and part of the field names: the approval
+ * hop is business days, so it can be read directly against the response SLA,
+ * and every other hop is elapsed calendar days.
  */
 export function registrationConversionTimes(
   registrations: DealRegistration[],
@@ -1021,7 +1105,7 @@ export function registrationConversionTimes(
     (reg) => reg.status === 'approved' && reg.decisionAt !== undefined,
   );
   const submittedToApproved = approved.map((reg) =>
-    calendarDaysBetween(reg.submittedAt, reg.decisionAt!),
+    businessDaysBetween(reg.submittedAt, reg.decisionAt!),
   );
   const converted = approved.filter(
     (reg) => reg.convertedTo !== undefined && oppById.has(reg.convertedTo),
@@ -1044,10 +1128,10 @@ export function registrationConversionTimes(
   });
 
   return {
-    submittedToApproved: average(submittedToApproved),
-    approvedToOpportunity: average(approvedToOpportunity),
-    opportunityToWin: average(opportunityToWin),
-    submittedToWin: average(submittedToWin),
+    submittedToApprovedBusinessDays: average(submittedToApproved),
+    approvedToOpportunityCalendarDays: average(approvedToOpportunity),
+    opportunityToWinCalendarDays: average(opportunityToWin),
+    submittedToWinCalendarDays: average(submittedToWin),
   };
 }
 

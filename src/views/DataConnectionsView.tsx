@@ -1,10 +1,12 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Card from '../components/Card';
 import KpiTile from '../components/KpiTile';
 import NotificationComposer, { type ComposerState } from '../components/NotificationComposer';
+import { renderQueryStates } from '../components/QueryState';
 import SlaAlertPanel from '../components/SlaAlertPanel';
 import TeamAccessPanel from '../components/TeamAccessPanel';
 import WireDiagram from '../components/WireDiagram';
+import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
 import {
   CONNECTION_EDGES,
   CONNECTION_METHOD_COVERAGE,
@@ -13,18 +15,23 @@ import {
   type ConnectionEdge,
   type ConnectionNode,
 } from '../data/connections';
-import {
-  REGISTRATION_SLA_BUSINESS_DAYS,
-  REGISTRATION_SLA_WARNING_BUSINESS_DAYS,
-} from '../data/constants';
+import { REGISTRATION_SLA_BUSINESS_DAYS } from '../data/constants';
+import type { DataProvider, TeamRosterScope } from '../data/DataProvider';
+import { pageWindowAsQuery } from '../data/paginationState';
+import { useDataConnectionsQueries } from '../data/useDataConnectionsQueries';
 import type {
-  DashboardData,
   DashboardNotification,
   NewTeamUserInput,
+  TeamUser,
   TeamUserStatus,
 } from '../data/types';
-import { composeCopy, slaAlertCopy, type NotificationDraft } from '../lib/notifications';
-import { registrationSlaAlerts } from '../lib/metrics';
+import {
+  composeCopy,
+  slaAlertCopy,
+  type NotificationDraft,
+  type NotificationSender,
+} from '../lib/notifications';
+import type { RegistrationSlaAlert } from '../lib/metrics';
 
 /**
  * Data Connections: the systems the dashboard has to be wired to, who on the
@@ -35,47 +42,63 @@ import { registrationSlaAlerts } from '../lib/metrics';
  * notification node carries the people the SLA alert rule reaches. That is
  * deliberate: authorization and alerting are not features bolted onto a
  * dashboard, they are two of the connections it needs.
+ *
+ * The catalog — the map, the coverage counts, the detail panel — is static
+ * and renders without loading business facts. The sections that do need data
+ * each run their own scoped query through `useDataConnectionsQueries`: one
+ * rejected call fails exactly one section, its retry repeats only that call,
+ * and the session's roster overlays ride the roster and alert queries
+ * because there is no write path to an identity provider (Production: Prod
+ * Only).
  */
 
 interface DataConnectionsViewProps {
-  data: DashboardData;
+  provider: DataProvider;
+  /** The session's roster overlays, ridden into the roster and alert queries. */
+  teamUserOverrides: Record<string, Partial<TeamUser>>;
   /** Users added during this session — the only removable roster entries. */
-  addedUserIds: Set<string>;
+  addedTeamUsers: TeamUser[];
   notifications: DashboardNotification[];
   onAddTeamUser: (input: NewTeamUserInput) => void;
   onSetTeamUserStatus: (userId: string, status: TeamUserStatus) => void;
   onRemoveTeamUser: (userId: string) => void;
-  onSendNotification: (draft: NotificationDraft) => void;
+  onSendNotification: NotificationSender;
 }
 
 export default function DataConnectionsView({
-  data,
-  addedUserIds,
+  provider,
+  teamUserOverrides,
+  addedTeamUsers,
   notifications,
   onAddTeamUser,
   onSetTeamUserStatus,
   onRemoveTeamUser,
   onSendNotification,
 }: DataConnectionsViewProps) {
-  const alerts = useMemo(
-    () => registrationSlaAlerts(data.registrations, data.partners, data.teamUsers),
-    [data.registrations, data.partners, data.teamUsers],
-  );
+  // This route's data is internal notification infrastructure, so it reads
+  // under the internal demo scope; a partner audience would get an empty
+  // roster and an ownerless digest from the same queries.
+  const rosterScope: TeamRosterScope = { overrides: teamUserOverrides, added: addedTeamUsers };
+  const { teamUsers, managers, alerts, registrations, partners } = useDataConnectionsQueries({
+    provider,
+    access: INTERNAL_DEMO_SCOPE,
+    roster: rosterScope,
+    prospects: [],
+  });
 
-  const alertCountByUserId = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const alert of alerts) {
-      if (!alert.owner) continue;
-      counts[alert.owner.id] = (counts[alert.owner.id] ?? 0) + 1;
-    }
-    return counts;
-  }, [alerts]);
+  const alertList = alerts.data?.alerts ?? [];
+  const users = teamUsers.data ?? [];
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>('notifications');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  // The composer opens on the most urgent alert so the panel is never a blank
-  // form; the node's roster chips and the alert queue re-target it.
-  const [composer, setComposer] = useState<ComposerState>(() => composerForAlert(alerts));
+  const [composer, setComposer] = useState<ComposerState>(() => composerForAlert([]));
+  // The composer opens on the most urgent alert once the queue lands, so the
+  // panel is never a blank form — unless the user has already typed into it.
+  const composerTouched = useRef(false);
+  useEffect(() => {
+    if (alerts.data === null || composerTouched.current) return;
+    setComposer(composerForAlert(alerts.data.alerts));
+  }, [alerts.data]);
 
   const selectedNode = CONNECTION_NODES.find((node) => node.id === selectedNodeId) ?? null;
   const selectedEdges = selectedNode
@@ -84,40 +107,43 @@ export default function DataConnectionsView({
       )
     : [];
 
-  const describe = (template: ComposerState['template'], registrationId: string | null) => {
-    const registration = data.registrations.find((item) => item.id === registrationId);
+  const composition = (template: ComposerState['template'], registrationId: string | null) => {
+    const registration = registrations.rows.find((item) => item.id === registrationId);
     const partner = registration
-      ? data.partners.find((item) => item.id === registration.partnerId)
+      ? (partners.data ?? []).find((item) => item.id === registration.partnerId)
       : undefined;
-    const alert = alerts.find((item) => item.registration.id === registrationId);
-    const copy = composeCopy({ template, registration, partner, alert });
+    const alert = alertList.find((item) => item.registration.id === registrationId);
+    return composeCopy({ template, registration, partner, alert });
+  };
+
+  const describe = (template: ComposerState['template'], registrationId: string | null) => {
+    const copy = composition(template, registrationId);
     return { subject: copy.subject, body: copy.body };
   };
 
+  const sendCandidate = (draft: NotificationDraft, recipient: TeamUser) => {
+    onSendNotification(draft, { provider, recipient });
+  };
+
   const send = () => {
-    const user = data.teamUsers.find((candidate) => candidate.id === composer.userId);
-    const registration = data.registrations.find((item) => item.id === composer.registrationId);
-    if (!user || !composer.subject.trim() || !composer.body.trim()) return;
-    const copy = composeCopy({
-      template: composer.template,
-      registration,
-      partner: registration
-        ? data.partners.find((item) => item.id === registration.partnerId)
-        : undefined,
-      alert: alerts.find((item) => item.registration.id === composer.registrationId),
-    });
-    onSendNotification({
-      userId: user.id,
-      kind: copy.kind,
-      subject: composer.subject.trim(),
-      body: composer.body.trim(),
-      channels: user.channels,
-      registrationId: composer.registrationId ?? undefined,
-    });
+    const user = users.find((candidate) => candidate.id === composer.userId);
+    if (!user) return;
+    const copy = composition(composer.template, composer.registrationId);
+    sendCandidate(
+      {
+        userId: user.id,
+        kind: copy.kind,
+        subject: composer.subject,
+        body: composer.body,
+        channels: composer.channels ?? user.channels,
+        registrationId: composer.registrationId ?? undefined,
+      },
+      user,
+    );
   };
 
   const notifyAlert = (registrationId: string) => {
-    const alert = alerts.find((item) => item.registration.id === registrationId);
+    const alert = alertList.find((item) => item.registration.id === registrationId);
     if (!alert) return;
     setSelectedNodeId('notifications');
     setSelectedUserId(alert.owner?.id ?? null);
@@ -125,17 +151,18 @@ export default function DataConnectionsView({
   };
 
   const notifyAllOwners = () => {
-    for (const alert of alerts) {
+    for (const alert of alertList) {
       if (!alert.owner) continue;
       const copy = slaAlertCopy(alert);
-      onSendNotification({
-        userId: alert.owner.id,
-        kind: copy.kind,
-        subject: copy.subject,
-        body: copy.body,
-        channels: alert.owner.channels,
-        registrationId: alert.registration.id,
-      });
+      sendCandidate(
+        {
+          userId: alert.owner.id,
+          ...copy,
+          channels: alert.owner.channels,
+          registrationId: alert.registration.id,
+        },
+        alert.owner,
+      );
     }
   };
 
@@ -146,8 +173,10 @@ export default function DataConnectionsView({
   );
   const required = CONNECTION_NODES.filter((node) => node.status === 'required').length;
   const live = CONNECTION_NODES.filter((node) => node.status === 'live').length;
-  const authorized = data.teamUsers.filter((user) => user.status === 'active').length;
-  const approaching = alerts.filter((alert) => alert.state === 'approaching').length;
+  const routingOn =
+    teamUsers.data === null
+      ? null
+      : teamUsers.data.filter((user) => user.status === 'active').length;
 
   return (
     <div className="space-y-6">
@@ -158,10 +187,13 @@ export default function DataConnectionsView({
         <h1 className="mt-2 text-3xl tracking-tight text-bone">Data Connections</h1>
         <p className="mt-1 max-w-3xl text-sm text-granite">
           Every system the dashboard has to be wired to, what each one supplies, and what is still
-          missing — the plumbing behind the read-only DataProvider seam. The partner team&apos;s
-          access lives inside the same map, because the identity provider that authorizes them is
-          one of those connections, and so is the notification service that tells a registration
-          owner their response SLA is about to lapse.
+          missing — the plumbing behind the read-only DataProvider seam. Only in-process
+          mock/provider behavior runs in this demo; identity, server row enforcement, source
+          freshness, the warehouse, durable writes, and external delivery are unconnected. The
+          partner team&apos;s notification roster lives inside the same map, because the identity
+          provider that would authorize them in production (unconnected here) is one of those
+          connections, and so is the notification service that would tell a registration owner their
+          response SLA is about to lapse.
         </p>
       </div>
 
@@ -184,16 +216,34 @@ export default function DataConnectionsView({
           } required to go live`}
         />
         <KpiTile
-          label="Team authorized"
-          value={`${authorized}/${data.teamUsers.length}`}
-          sub="internal partner-team users with access"
+          label="Receiving notifications"
+          value={routingOn === null ? '—' : `${routingOn}/${teamUsers.data?.length ?? 0}`}
+          sub={
+            teamUsers.data !== null
+              ? // A failed refresh keeps the last good roster on screen — the
+                // tile says so rather than reading as freshly answered.
+                teamUsers.error !== null
+                ? 'latest refresh failed — showing the last good roster'
+                : 'roster entries routed simulated notifications this session'
+              : teamUsers.error !== null
+                ? 'roster unavailable — the provider did not answer'
+                : 'roster loading — waiting on the provider'
+          }
         />
         <KpiTile
           label="SLA alerts due"
-          value={`${alerts.length}`}
-          sub={`${approaching} at ${REGISTRATION_SLA_WARNING_BUSINESS_DAYS * 24}h · ${
-            alerts.length - approaching
-          } past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`}
+          value={alerts.data === null ? '—' : `${alerts.data.totalCount}`}
+          sub={
+            alerts.data !== null
+              ? alerts.error !== null
+                ? 'latest refresh failed — showing the last good alert counts'
+                : `${alerts.data.approachingCount} due next business day · ${
+                    alerts.data.totalCount - alerts.data.approachingCount
+                  } past the ${REGISTRATION_SLA_BUSINESS_DAYS}-day SLA`
+              : alerts.error !== null
+                ? 'alert queue unavailable — the provider did not answer'
+                : 'alert queue loading — waiting on the provider'
+          }
         />
       </div>
 
@@ -205,21 +255,21 @@ export default function DataConnectionsView({
           <WireDiagram
             selectedNodeId={selectedNodeId}
             onSelectNode={setSelectedNodeId}
-            users={data.teamUsers}
+            users={users}
             selectedUserId={selectedUserId}
             onSelectUser={(userId) => {
               setSelectedUserId(userId);
               setSelectedNodeId('notifications');
               // Picking a teammate from the node loads their own most urgent
               // alert, so the message is about something they actually own.
-              const owned = alerts.filter((candidate) => candidate.owner?.id === userId);
+              const owned = alertList.filter((candidate) => candidate.owner?.id === userId);
               setComposer(
                 owned.length > 0
                   ? composerForAlert(owned)
-                  : (prev) => ({ ...prev, userId, subject: '', body: '' }),
+                  : (prev) => ({ ...prev, userId, channels: undefined, subject: '', body: '' }),
               );
             }}
-            alertCountByUserId={alertCountByUserId}
+            alertCountByUserId={alerts.data?.alertCountByOwner ?? {}}
           />
 
           <div className="grid grid-cols-1 gap-5 border-t border-carbon pt-5 lg:grid-cols-2">
@@ -229,21 +279,34 @@ export default function DataConnectionsView({
                 Send a notification
               </p>
               <p className="mt-1 text-xs text-granite">
-                One person, their authorized channels. Pick a teammate in the notification node, or
-                a registration from the alert queue below.
+                One person, the channels they receive on. Pick a teammate in the notification node,
+                or a registration from the alert queue below.
               </p>
               <div className="mt-4">
-                <NotificationComposer
-                  users={data.teamUsers}
-                  partners={data.partners}
-                  registrations={data.registrations}
-                  alerts={alerts}
-                  state={composer}
-                  onChange={setComposer}
-                  onSend={send}
-                  lastSent={notifications[0]}
-                  describe={describe}
-                />
+                {renderQueryStates(
+                  'The notification composer',
+                  [
+                    ['the notification roster', teamUsers],
+                    ['the partner roster', partners],
+                    ['the registration records', pageWindowAsQuery(registrations)],
+                  ],
+                  () => (
+                    <NotificationComposer
+                      users={teamUsers.data ?? []}
+                      partners={partners.data ?? []}
+                      registrations={registrations.rows}
+                      alerts={alertList}
+                      state={composer}
+                      onChange={(next) => {
+                        composerTouched.current = true;
+                        setComposer(next);
+                      }}
+                      onSend={send}
+                      lastSent={notifications[0]}
+                      describe={describe}
+                    />
+                  ),
+                )}
               </div>
             </div>
           </div>
@@ -251,40 +314,59 @@ export default function DataConnectionsView({
       </Card>
 
       <Card
-        title="Partner team access"
-        subtitle="Who is on the internal roster, which manager they are aligned to, and whether they are authorized to sign in and be notified."
+        title="Partner team notification routing"
+        subtitle="Who is on the internal roster, which manager they are aligned to, and whether this session routes simulated notifications to them. These controls do not grant sign-in or data access."
       >
-        <TeamAccessPanel
-          users={data.teamUsers}
-          partnerManagers={data.partnerManagers}
-          addedUserIds={addedUserIds}
-          onAdd={onAddTeamUser}
-          onSetStatus={onSetTeamUserStatus}
-          onRemove={onRemoveTeamUser}
-        />
+        {renderQueryStates(
+          'The team roster',
+          [
+            ['the notification roster', teamUsers],
+            ['the manager directory', managers],
+          ],
+          () => (
+            <TeamAccessPanel
+              users={teamUsers.data ?? []}
+              partnerManagers={managers.data ?? []}
+              addedUserIds={new Set(addedTeamUsers.map((user) => user.id))}
+              onAdd={onAddTeamUser}
+              onSetStatus={onSetTeamUserStatus}
+              onRemove={onRemoveTeamUser}
+            />
+          ),
+        )}
       </Card>
 
       <Card
         title="Deal-registration SLA alerts"
         subtitle="The rule the notification service runs, the registrations it fires on at snapshot, and what has been sent this session."
       >
-        <SlaAlertPanel
-          alerts={alerts}
-          users={data.teamUsers}
-          notifications={notifications}
-          onNotify={(alert) => notifyAlert(alert.registration.id)}
-          onNotifyAll={notifyAllOwners}
-        />
+        {/* The queue answers from the alert digest alone: the provider
+            resolves each alert's owner into the digest, so the KPI tile, the
+            rows, and the notify actions stay live through a roster failure.
+            The roster only names this panel's sent-log entries — its failure
+            surfaces in the roster-driven sections above, and the log falls
+            back to explicit user ids here in the meantime. */}
+        {renderQueryStates('The SLA alert queue', [['the registration SLA alerts', alerts]], () => (
+          <SlaAlertPanel
+            alerts={alertList}
+            totalCount={alerts.data?.totalCount ?? 0}
+            users={users}
+            notifications={notifications}
+            onNotify={(alert) => notifyAlert(alert.registration.id)}
+            onNotifyAll={notifyAllOwners}
+          />
+        ))}
       </Card>
     </div>
   );
 }
 
 /**
- * Opens the composer on the alert the rule exists for: the 24-hours-out warning
- * if one is waiting on an owner, else the most urgent alert, else an empty form.
+ * Opens the composer on the alert the rule exists for: the one-business-day-out
+ * warning if one is waiting on an owner, else the most urgent alert, else an
+ * empty form.
  */
-function composerForAlert(alerts: ReturnType<typeof registrationSlaAlerts>): ComposerState {
+function composerForAlert(alerts: RegistrationSlaAlert[]): ComposerState {
   const alert =
     alerts.find((candidate) => candidate.state === 'approaching' && candidate.owner) ??
     alerts.find((candidate) => candidate.owner) ??

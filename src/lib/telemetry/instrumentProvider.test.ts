@@ -7,6 +7,7 @@ import type { MetricAttributes } from './metrics';
 import { instrumentProvider, type ProviderTelemetry } from './instrumentProvider';
 import type { SpanAttributes } from './trace';
 import { createTelemetry } from './telemetry';
+import { INTERNAL_DEMO_SCOPE } from '../../data/accessScope';
 
 interface Observed {
   spans: Array<{ name: string; attributes: SpanAttributes }>;
@@ -88,9 +89,12 @@ describe('instrumentProvider proxying', () => {
     const inner = new MockDataProvider();
     const provider = instrumentProvider(inner, 'local');
 
-    const [wrapped, direct] = await Promise.all([provider.listPartners(), inner.listPartners()]);
+    const [wrapped, direct] = await Promise.all([
+      provider.getPartnerRoster(INTERNAL_DEMO_SCOPE, {}),
+      inner.getPartnerRoster(INTERNAL_DEMO_SCOPE, {}),
+    ]);
 
-    expect(wrapped).toBe(direct);
+    expect(wrapped).toStrictEqual(direct);
   });
 });
 
@@ -99,7 +103,7 @@ describe('instrumentProvider on a successful call', () => {
     const { client, seen } = observingClient();
     const provider = instrumentProvider(new MockDataProvider(), 'remote', client);
 
-    await provider.getPartnerDirectory();
+    await provider.getPartnerDirectory(INTERNAL_DEMO_SCOPE);
 
     expect(seen.spans).toEqual([
       {
@@ -121,7 +125,9 @@ describe('instrumentProvider on a successful call', () => {
     const { client, seen } = observingClient();
     const provider = instrumentProvider(new MockDataProvider(), 'scaled', client);
 
-    const summary = await provider.getForecastSummary({ quarter: 'FY27-Q3' });
+    const { data: summary } = await provider.getForecastSummary(INTERNAL_DEMO_SCOPE, {
+      quarter: 'FY27-Q3',
+    });
 
     expect(summary).toHaveProperty('openPipelineValue');
     expect(summary).toHaveProperty('daysLeftInQuarter');
@@ -133,24 +139,26 @@ describe('instrumentProvider on a failing call', () => {
   it('captures the error with trace context, leaves a breadcrumb, and rethrows', async () => {
     const { client, seen } = observingClient();
     const failing = new MockDataProvider();
-    failing.getTargets = async () => {
-      throw new Error('targets wire is down');
+    failing.getManagerDirectory = async () => {
+      throw new Error('directory wire is down');
     };
     const provider = instrumentProvider(failing, 'remote', client);
 
-    await expect(provider.getTargets()).rejects.toThrow('targets wire is down');
+    await expect(provider.getManagerDirectory(INTERNAL_DEMO_SCOPE)).rejects.toThrow(
+      'directory wire is down',
+    );
 
     expect(seen.counters).toEqual([
       {
         name: 'provider.call',
-        attributes: { method: 'getTargets', providerId: 'remote', status: 'error' },
+        attributes: { method: 'getManagerDirectory', providerId: 'remote', status: 'error' },
       },
     ]);
     expect(seen.durations[0]).toMatchObject({ name: 'provider.call.duration' });
     expect(seen.breadcrumbs).toEqual([
       {
-        message: 'provider.getTargets failed',
-        data: { method: 'getTargets', providerId: 'remote' },
+        message: 'provider.getManagerDirectory failed',
+        data: { method: 'getManagerDirectory', providerId: 'remote' },
       },
     ]);
     expect(seen.captures).toHaveLength(1);
@@ -161,12 +169,38 @@ describe('instrumentProvider on a failing call', () => {
     });
   });
 
+  it('records an aborted call as a cancellation, never as an error', async () => {
+    const { client, seen } = observingClient();
+    const cancelling = new MockDataProvider();
+    cancelling.getManagerDirectory = async () => {
+      const error = new Error('The operation was aborted');
+      error.name = 'AbortError';
+      throw error;
+    };
+    const provider = instrumentProvider(cancelling, 'remote', client);
+
+    await expect(provider.getManagerDirectory(INTERNAL_DEMO_SCOPE)).rejects.toThrow(
+      'The operation was aborted',
+    );
+
+    expect(seen.counters).toEqual([
+      {
+        name: 'provider.call',
+        attributes: { method: 'getManagerDirectory', providerId: 'remote', status: 'aborted' },
+      },
+    ]);
+    expect(seen.durations[0]).toMatchObject({ name: 'provider.call.duration' });
+    // A cancellation is not a fault: no breadcrumb, no captured error.
+    expect(seen.breadcrumbs).toEqual([]);
+    expect(seen.captures).toEqual([]);
+  });
+
   it('stays quiet when the telemetry master flag is switched off mid-session', async () => {
     const { client, seen } = observingClient();
     const provider = instrumentProvider(new MockDataProvider(), 'local', client);
     setFlagOverride('telemetry.enabled', false);
 
-    const partners = await provider.listPartners();
+    const { data: partners } = await provider.getPartnerRoster(INTERNAL_DEMO_SCOPE, {});
 
     expect(partners.length).toBeGreaterThan(0);
     expect(seen.spans).toEqual([]);
@@ -184,7 +218,6 @@ describe('instrumentProvider against the real facade', () => {
     const real = createTelemetry({
       config: {
         endpoint: 'https://collector.test/ingest',
-        alertEndpoint: null,
         dashboardUrl: null,
         analyticsMeasurementId: null,
         logShipLevel: 'warn',
@@ -198,7 +231,7 @@ describe('instrumentProvider against the real facade', () => {
     try {
       const provider: DataProvider = instrumentProvider(new MockDataProvider(), 'local', real);
 
-      await provider.listCertifications();
+      await provider.getPartnerCertification(INTERNAL_DEMO_SCOPE, {});
       await real.flush();
 
       const batch = collected[0] as {
@@ -215,12 +248,12 @@ describe('instrumentProvider against the real facade', () => {
       );
 
       expect(traceEnvelope?.data).toMatchObject({
-        name: 'provider.listCertifications',
+        name: 'provider.getPartnerCertification',
         status: 'ok',
       });
       expect(counterEnvelope?.data).toMatchObject({
         name: 'provider.call',
-        attributes: { method: 'listCertifications', providerId: 'local', status: 'ok' },
+        attributes: { method: 'getPartnerCertification', providerId: 'local', status: 'ok' },
       });
       expect(durationEnvelope?.data).toMatchObject({
         name: 'provider.call.duration',

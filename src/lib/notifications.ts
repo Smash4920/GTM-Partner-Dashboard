@@ -9,15 +9,23 @@
 
 import { REGISTRATION_SLA_BUSINESS_DAYS } from '../data/constants';
 import type {
+  ActionCategory,
+  ActionItem,
   DealRegistration,
   NotificationChannel,
   NotificationKind,
   Partner,
+  TeamUser,
 } from '../data/types';
-import { formatDate } from './format';
+import type { DataProvider } from '../data/DataProvider';
+import { prepareNotificationDraft } from './notificationRecords';
+export { prepareNotificationDraft } from './notificationRecords';
+import { ACTION_CATEGORY_LABELS } from '../data/actionCenter';
+import { formatDate, formatUsd } from './format';
+import { actionEvidence } from './actionEvidence';
 import { businessDaysWaiting, type RegistrationSlaAlert } from './metrics';
 
-export type NotificationTemplateId = 'sla-alert' | 'registration-note' | 'custom';
+export type NotificationTemplateId = 'sla-alert' | 'registration-note' | 'custom' | ActionCategory;
 
 export interface NotificationTemplate {
   id: NotificationTemplateId;
@@ -51,6 +59,49 @@ export interface NotificationDraft {
   body: string;
   channels: NotificationChannel[];
   registrationId?: string;
+  actionId?: string;
+  actionCategory?: ActionCategory;
+  entityKind?: ActionItem['entityKind'];
+  entityId?: string;
+}
+
+/** The shell prepares every save against current state; evidence alone is not eligibility. */
+export type NotificationSender = (
+  draft: NotificationDraft,
+  evidence: { provider: DataProvider; recipient: TeamUser },
+) => void;
+
+/** Category-specific copy uses only the reason's minimum public evidence. */
+export function actionNotificationDraft(
+  item: ActionItem,
+  category: ActionCategory,
+  users: readonly TeamUser[],
+): NotificationDraft | null {
+  const recipient = users.find(
+    (user) => user.id === item.owner?.userId && user.status === 'active',
+  );
+  const reason = item.reasons.find((candidate) => candidate.category === category);
+  if (!recipient || !reason) return null;
+  return prepareNotificationDraft(
+    {
+      userId: recipient.id,
+      kind:
+        reason.category === 'registration-sla'
+          ? reason.evidence.state === 'warning'
+            ? 'registration-sla-warning'
+            : 'registration-sla-breach'
+          : reason.category,
+      subject: `${ACTION_CATEGORY_LABELS[category]}: ${item.entityId}`,
+      body: `Entity: ${item.id}; partner: ${item.partnerId}. Exposure: ${formatUsd(item.exposure)}. Evidence: ${actionEvidence(reason)} Recommended action: ${reason.recommendedAction}`,
+      channels: [...recipient.channels],
+      actionId: item.id,
+      actionCategory: category,
+      entityKind: item.entityKind,
+      entityId: item.entityId,
+      ...(item.entityKind === 'registration' ? { registrationId: item.entityId } : {}),
+    },
+    recipient,
+  );
 }
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
