@@ -9,6 +9,7 @@ export const ROUTES = [
   { id: 'partner-view', label: 'Partner View' },
   { id: 'production-requirements', label: 'Production Requirements' },
   { id: 'data-connections', label: 'Data Connections' },
+  { id: 'settings', label: 'Settings' },
 ] as const;
 
 export type Route = (typeof ROUTES)[number]['id'];

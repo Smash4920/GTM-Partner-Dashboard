@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import DataConnectionsView from './DataConnectionsView';
+import SettingsView from './SettingsView';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
 import type { TeamUser } from '../data/types';
 import { SNAPSHOT_DATE } from '../data/constants';
@@ -57,7 +57,7 @@ function fixture(mode: 'digest-only' | 'both' | 'pending') {
     .mockImplementation(fail);
   const send = vi.fn();
   const view = (overrides: Record<string, Partial<TeamUser>>) => (
-    <DataConnectionsView
+    <SettingsView
       provider={provider}
       teamUserOverrides={overrides}
       addedTeamUsers={[]}
@@ -128,6 +128,8 @@ it.each([
     expect(firstOwnerDrafts).toHaveLength(channels.length ? 2 : 0);
     for (const [draft] of firstOwnerDrafts) expect(draft.channels).toEqual(channels);
     expect(send.mock.calls.filter(([draft]) => draft.userId === users[1].id)).toHaveLength(1);
-    expect(screen.getAllByText('Latest refresh failed:')).toHaveLength(3);
+    // Membership roster, composer, routing panel, and the SLA alert queue all
+    // keep their retained answer and name the failed refresh.
+    expect(screen.getAllByText('Latest refresh failed:')).toHaveLength(4);
   },
 );

@@ -243,27 +243,36 @@ export const TARGET_COLOR = '#8a8380'; // granite
  */
 export const TEAM_ROLE_META: Record<
   TeamRole,
-  { label: string; description: string; aligned: boolean }
+  /**
+   * `administrator` marks the whole-book roles the Settings membership roster
+   * lists as administrators. It is a display grouping only, never an access
+   * grant — production identity (Prod Only) owns permissions.
+   */
+  { label: string; description: string; aligned: boolean; administrator: boolean }
 > = {
   'partnership-lead': {
     label: 'Partnership Lead',
     description: 'Owns the partner business end to end; sees every partner and manager.',
     aligned: false,
+    administrator: true,
   },
   'partner-manager': {
     label: 'Partner Manager',
     description: "Owns one manager's aligned partners, and the registrations they submit.",
     aligned: true,
+    administrator: false,
   },
   'deal-desk-ops': {
     label: 'Deal Desk Ops',
     description: 'Works the registration queue across every partner and manager.',
     aligned: false,
+    administrator: true,
   },
   analyst: {
     label: 'Analyst',
     description: 'Read-only reporting across the ecosystem; no workflow ownership.',
     aligned: false,
+    administrator: false,
   },
 };
 

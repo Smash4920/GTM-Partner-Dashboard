@@ -24,13 +24,18 @@ import { pageWindowAsQuery } from '../data/paginationState';
 import type { SessionEdits } from '../data/sessionEdits';
 import type { FiscalPhase, MeetingClassification, OpportunityType, Partner } from '../data/types';
 import { useHomeQueries } from '../data/useHomeQueries';
-import { funnelRows, stageRows } from './performanceRows';
+import {
+  FUNNEL_MEASURE_OPTIONS,
+  type FunnelMeasure,
+  funnelRows,
+  funnelSubtitle,
+  stageRows,
+} from './performanceRows';
 import type { TypeRow } from '../lib/metrics';
 import { formatCoverage } from '../lib/metrics';
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
 
 type TypeFilter = OpportunityType | 'all';
-type FunnelMeasure = 'value' | 'count';
 
 const TYPE_OPTIONS: ChipOption<TypeFilter>[] = [
   { id: 'all', label: 'All', title: 'All opportunity types' },
@@ -46,11 +51,6 @@ const PHASE_OPTIONS: ChipOption<FiscalPhase>[] = FISCAL_PHASES.map((phase) => ({
   label: FISCAL_PHASE_META[phase].label,
   title: FISCAL_PHASE_META[phase].description,
 }));
-
-const FUNNEL_MEASURE_OPTIONS: ChipOption<FunnelMeasure>[] = [
-  { id: 'value', label: 'Registered $', title: 'Partner-estimated deal value at submission' },
-  { id: 'count', label: 'Count', title: 'Number of registrations' },
-];
 
 function typeRows(types: TypeRow[]): MetricBarRow[] {
   return types.map((row) => ({
@@ -213,11 +213,7 @@ export default function HomeView({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card
           title="Deal registration funnel"
-          subtitle={
-            funnelMeasure === 'value'
-              ? `Partner-estimated value at submission · ${phaseLabel}`
-              : `Registration counts · ${phaseLabel}`
-          }
+          subtitle={funnelSubtitle(funnelMeasure, phaseLabel)}
           action={
             <FilterChips
               options={FUNNEL_MEASURE_OPTIONS}

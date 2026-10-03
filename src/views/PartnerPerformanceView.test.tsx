@@ -217,6 +217,7 @@ function metricRowValue(card: HTMLElement, label: string): HTMLElement {
 
 describe('PartnerPerformanceView', () => {
   it('renders the whole-org book against the snapshot quarter', async () => {
+    const user = userEvent.setup();
     renderView();
 
     expect(await screen.findByText('Scope · whole org · 3 partners')).toBeInTheDocument();
@@ -241,27 +242,39 @@ describe('PartnerPerformanceView', () => {
     expect(within(cardWith('Progress to weekly goal')).getByText('2/10')).toBeInTheDocument();
     expect(within(cardWith('Progress to weekly goal')).getByText('1/3')).toBeInTheDocument();
 
-    // The pending queue is phase-filtered; ops leakage deliberately is not, so
-    // the Q2 registrations still count against the SLAs and the funnel.
+    // The leakage card is always in scope, and its counts span history: the
+    // Q2 registrations still count against the SLA.
+    expect(
+      await within(cardWith('Registration leakage')).findByText('Pending past SLA'),
+    ).toBeInTheDocument();
+    expect(metricRowValue(cardWith('Registration leakage'), 'Pending past SLA')).toHaveTextContent(
+      '2',
+    );
+
+    // The leaderboard ranks on closed-won for the phase.
+    const leaderboard = cardWith('Partner leaderboard & enablement');
+    await within(leaderboard).findByText('Northwind Systems');
+    const leaderboardRows = within(leaderboard).getAllByRole('row').slice(1);
+    expect(leaderboardRows).toHaveLength(3);
+    expect(within(leaderboardRows[0]).getByText('Northwind Systems')).toBeInTheDocument();
+
+    // The three registration-row tables render only for a drill-down: pick a
+    // manager and each answers for that manager's book. The pending queue is
+    // phase-filtered; the exclusivity watch deliberately spans history, so
+    // the Q2 registrations still count against the 60-day window.
+    const manager = await screen.findByRole('combobox', { name: 'Partner manager' });
+    await user.selectOptions(manager, 'pm-1');
     expect(
       await screen.findByText(
         '2 pending in scope · oldest first · colored against the 5-business-day SLA',
       ),
     ).toBeInTheDocument();
-    await screen.findByText(
-      '1 approved registrations without an opportunity · 1 past the 60-day exclusivity window',
-    );
-    expect(metricRowValue(cardWith('Registration leakage'), 'Pending past SLA')).toHaveTextContent(
-      '2',
-    );
+    expect(
+      await screen.findByText(
+        '1 approved registrations without an opportunity · 1 past the 60-day exclusivity window',
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText(/^1 clients registered by more than one partner/)).toBeInTheDocument();
-
-    // The leaderboard ranks on closed-won for the phase.
-    const leaderboardRows = within(cardWith('Partner leaderboard & enablement'))
-      .getAllByRole('row')
-      .slice(1);
-    expect(leaderboardRows).toHaveLength(3);
-    expect(within(leaderboardRows[0]).getByText('Northwind Systems')).toBeInTheDocument();
   });
 
   it('pages the leaderboard 25 partners at a time, appending one unique page per Load more', async () => {
@@ -313,14 +326,19 @@ describe('PartnerPerformanceView', () => {
   });
 
   it('describes the registration SLA breach boundary as inclusive (VAL-DATA-007)', async () => {
+    const user = userEvent.setup();
     renderView();
 
-    // registrationSlaState lapses at exactly 5 business days, so the leakage
-    // row must say 5+, not "> 5" — at the due-date boundary the count and
-    // its explanation would otherwise disagree.
+    // The exclusivity card renders for a drill-down; its ops-backed subtitle
+    // waits for the scoped answer.
+    const manager = await screen.findByRole('combobox', { name: 'Partner manager' });
+    await user.selectOptions(manager, 'pm-1');
     await screen.findByText(
       '1 approved registrations without an opportunity · 1 past the 60-day exclusivity window',
     );
+    // registrationSlaState lapses at exactly 5 business days, so the leakage
+    // row must say 5+, not "> 5" — at the due-date boundary the count and
+    // its explanation would otherwise disagree.
     const leakage = cardWith('Registration leakage');
     expect(within(leakage).getByText('5+ business days awaiting review')).toBeInTheDocument();
     expect(within(leakage).queryByText(/> 5 business days/)).not.toBeInTheDocument();
@@ -531,10 +549,15 @@ describe('PartnerPerformanceView', () => {
   });
 
   it('falls back to empty copy for a book with nothing in it', async () => {
+    const user = userEvent.setup();
+    // A directory to drill into, but no business facts at all: no deals,
+    // registrations, targets, certifications, or meetings anywhere.
     renderView(
       makeProviderBook({
-        partnerManagers: [],
-        partners: [],
+        partnerManagers: [{ id: 'pm-1', name: 'J. Alvarez' }],
+        partners: [
+          makePartner({ id: 'partner-1', name: 'Northwind Systems', partnerManagerId: 'pm-1' }),
+        ],
         opportunities: [],
         registrations: [],
         targets: [],
@@ -543,11 +566,15 @@ describe('PartnerPerformanceView', () => {
       }),
     );
 
-    expect(await screen.findByText('Scope · whole org · 0 partners')).toBeInTheDocument();
+    expect(await screen.findByText('Scope · whole org · 1 partner')).toBeInTheDocument();
     expect(screen.getByText('0% of Q3 target')).toBeInTheDocument();
     expect(screen.getByText('No target')).toBeInTheDocument();
     expect(screen.getByText('No sourced target set')).toBeInTheDocument();
     expect(await screen.findByText('No Q3 opportunities for this scope.')).toBeInTheDocument();
+
+    // The three registration tables' empty copy renders for a drill-down.
+    const manager = await screen.findByRole('combobox', { name: 'Partner manager' });
+    await user.selectOptions(manager, 'pm-1');
     expect(await screen.findByText('Nothing here — the queue is clear.')).toBeInTheDocument();
     expect(
       await screen.findByText(
@@ -562,5 +589,87 @@ describe('PartnerPerformanceView', () => {
     expect(within(cardWith('Registration conversion time')).getAllByText('—')).toHaveLength(4);
     expect(screen.queryByText(/∞/)).not.toBeInTheDocument();
     expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+  });
+
+  it('measures the funnel in registered dollars by default and toggles to counts', async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    const funnel = cardWith('Deal registration funnel');
+    // Registered $ is the default measure: the bars read the partner-estimated
+    // value at submission, with the registration count as the secondary line.
+    expect(
+      within(funnel).getByText('Partner-estimated value at submission · Q3'),
+    ).toBeInTheDocument();
+    const submittedRow = (await within(funnel).findByText('Submitted')).closest(
+      'li',
+    ) as HTMLElement;
+    expect(await within(submittedRow).findByText('$270K')).toBeInTheDocument();
+    expect(within(submittedRow).getByText('2 regs')).toBeInTheDocument();
+
+    // The toggle flips the measure: counts lead and dollars follow.
+    await user.click(within(funnel).getByRole('button', { name: 'Count' }));
+    expect(await within(funnel).findByText('Registration counts · Q3')).toBeInTheDocument();
+    expect(within(submittedRow).getByText('2')).toBeInTheDocument();
+    expect(within(submittedRow).getByText('$270K')).toBeInTheDocument();
+
+    // And back: the dollar measure returns with the same subtitle.
+    await user.click(within(funnel).getByRole('button', { name: 'Registered $' }));
+    expect(
+      await within(funnel).findByText('Partner-estimated value at submission · Q3'),
+    ).toBeInTheDocument();
+    expect(within(submittedRow).getByText('$270K')).toBeInTheDocument();
+  });
+
+  it('keeps the three registration tables off the whole-org scope, with the always-on cards live', async () => {
+    renderView();
+    await screen.findByText('Scope · whole org · 3 partners');
+
+    // The review queue, exclusivity watch, and duplicates belong to Deal Reg
+    // Ops at the whole-org scope: none of the three renders here, and the
+    // say-so points at the drill-down.
+    for (const title of [
+      'Registrations awaiting review',
+      'Exclusivity lapsed · approved, not converted',
+      'Duplicate & conflicting registrations',
+    ]) {
+      expect(screen.queryByRole('heading', { name: title })).not.toBeInTheDocument();
+    }
+    expect(
+      screen.getByText(
+        'The review queue, exclusivity watch, and duplicate registrations for the whole org live on Deal Reg Ops. Pick a partner manager or partner to see them for that scope here.',
+      ),
+    ).toBeInTheDocument();
+
+    // Conversion time and leakage always render for the whole org.
+    expect(cardWith('Registration conversion time')).toBeInTheDocument();
+    expect(cardWith('Registration leakage')).toBeInTheDocument();
+  });
+
+  it('folds the leaderboard card away and restores its rows on expand', async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    const card = cardWith('Partner leaderboard & enablement');
+    await within(card).findByText('Northwind Systems');
+
+    // Collapsing folds the body away without unmounting it: the loaded rows
+    // stay in the DOM — with their query state — and come back unchanged.
+    await user.click(
+      within(card).getByRole('button', { name: 'Collapse Partner leaderboard & enablement' }),
+    );
+    expect(
+      within(card).getByRole('button', { name: 'Expand Partner leaderboard & enablement' }),
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(within(card).getByText('Northwind Systems')).not.toBeVisible();
+
+    await user.click(
+      within(card).getByRole('button', { name: 'Expand Partner leaderboard & enablement' }),
+    );
+    expect(
+      within(card).getByRole('button', { name: 'Collapse Partner leaderboard & enablement' }),
+    ).toHaveAttribute('aria-expanded', 'true');
+    expect(within(card).getByText('Northwind Systems')).toBeVisible();
+    expect(within(card).getAllByRole('row')).toHaveLength(4); // header + 3 partners
   });
 });

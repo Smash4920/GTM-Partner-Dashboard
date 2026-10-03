@@ -14,13 +14,13 @@ import { expect, test, type Page } from '@playwright/test';
  *    cards interactive with the explicit partner-id fallback, and the named
  *    partner-roster Retry repeats only that method, restores the names, and
  *    lands focus on the roster's region.
- * 2. Data Connections: three sections fail on different methods at once; the
- *    static catalog stays interactive, and each section Retry repeats exactly
- *    its own failed dependencies — the alert queue's retry recovers only the
- *    alerts, the roster section's only the roster (recovering the composer
- *    section's shared dependency with it), and the composer's only the
- *    registration records it is still owed.
- * 3. Data Connections again, with skip plans: a session roster edit refreshes
+ * 2. Settings: three sections fail on different methods at once; the static
+ *    Data Connections catalog stays interactive, and each section Retry
+ *    repeats exactly its own failed dependencies — the alert queue's retry
+ *    recovers only the alerts, the roster section's only the roster
+ *    (recovering the composer section's shared dependency with it), and the
+ *    composer's only the registration records it is still owed.
+ * 3. Settings again, with skip plans: a session roster edit refreshes
  *    the roster and alert queries and both refreshes fail — every section
  *    keeps its last good answers under a "Latest refresh failed" line, the
  *    tiles keep their numbers and say the refresh failed, and each section
@@ -29,8 +29,8 @@ import { expect, test, type Page } from '@playwright/test';
  *    and volume cards never blink, and the Log Meetings modal names the
  *    failure with an armed Retry that recovers the week and lands focus
  *    inside the dialog.
- * 5. The three optional resources, one method-specific failure each: a Data
- *    Connections roster failure leaves the SLA alert queue fully live (the
+ * 5. The three optional resources, one method-specific failure each: a
+ *    Settings roster failure leaves the SLA alert queue fully live (the
  *    digest carries its own owners); a Partner View ranking failure opens
  *    the roster's first partner with the picker usable and applies the
  *    recovered ranking on retry; a Home roster failure names the roster and
@@ -119,7 +119,14 @@ test('VAL-DATA-015: a failed Deal Reg Ops partner roster keeps cards live and re
   const queue = cardWith(page, 'Registrations awaiting review');
   await expect(queue.getByText('Showing 10 of 18 pending')).toBeVisible();
   await expect(queue.locator('td', { hasText: /^p-\d+$/ }).first()).toBeVisible();
-  await expect(tileWith(page, 'Pending past SLA')).toHaveText(/14/);
+  // The registration ops summary tile is distinct from the leakage row with
+  // the same label.
+  await expect(
+    page
+      .getByRole('group', { name: 'registration ops summary' })
+      .getByText('Pending past SLA', { exact: true })
+      .locator('..'),
+  ).toHaveText(/14/);
   await queue.getByRole('button', { name: 'Load 10 more' }).click();
   await expect(queue.getByText('Showing 18 of 18 pending')).toBeVisible();
 
@@ -139,7 +146,7 @@ test('VAL-DATA-015: a failed Deal Reg Ops partner roster keeps cards live and re
   expect(consoleErrors.filter((text) => scriptedFailure.test(text)).length).toBeGreaterThan(0);
 });
 
-test('VAL-RES-009: Data Connections fails each section independently and retries every failed dependency once', async ({
+test('VAL-RES-009: Settings fails each section independently and retries every failed dependency once', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -149,8 +156,8 @@ test('VAL-RES-009: Data Connections fails each section independently and retries
     'getTeamRoster:1,getRegistrationSlaAlerts:1,listRecentRegistrations:1',
   );
 
-  await primaryNavigation(page).getByRole('button', { name: 'Data Connections' }).click();
-  await expect(page.getByRole('heading', { name: 'Data Connections', level: 1 })).toBeVisible();
+  await primaryNavigation(page).getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
 
   // Three sections fail on three different methods, each by its own name;
   // the data-derived tiles degrade to a dash with truthful subtitles.
@@ -171,9 +178,10 @@ test('VAL-RES-009: Data Connections fails each section independently and retries
     ),
   ).toBeVisible();
 
-  // The static catalog never waited on any of it.
-  await page.getByRole('button', { name: /^Salesforce/ }).click();
-  await expect(page.getByRole('heading', { name: 'Salesforce', level: 3 })).toBeVisible();
+  // The membership roster is a fourth surface on the same route: it shares
+  // the roster dependency and names its own failure without waiting on the
+  // others.
+  await expect(page.getByText('The membership roster unavailable:')).toBeVisible();
 
   // The alert queue's retry repeats exactly its own failed dependency — the
   // queue recovers while the roster-driven sections stay down, still owed
@@ -224,7 +232,7 @@ test('VAL-RES-009: Data Connections fails each section independently and retries
   }
 });
 
-test('VAL-DATA-015: a failed Data Connections refresh keeps the last good answers and says so', async ({
+test('VAL-DATA-015: a failed Settings refresh keeps the last good answers and says so', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -233,8 +241,8 @@ test('VAL-DATA-015: a failed Data Connections refresh keeps the last good answer
   // roster and of the alerts is each method's second call — and both fail.
   await bootRemoteWithPlan(page, 'getTeamRoster:1:1,getRegistrationSlaAlerts:1:1');
 
-  await primaryNavigation(page).getByRole('button', { name: 'Data Connections' }).click();
-  await expect(page.getByRole('heading', { name: 'Data Connections', level: 1 })).toBeVisible();
+  await primaryNavigation(page).getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
 
   // Healthy first: the seeded answers render with their truthful subtitles.
   const roster = page.getByRole('group', { name: 'The team roster' });
@@ -254,8 +262,10 @@ test('VAL-DATA-015: a failed Data Connections refresh keeps the last good answer
   await form.getByRole('button', { name: 'Add to roster' }).click();
 
   // Every section that reads a failed dependency keeps its retained content
-  // under a named refresh-failure line; the raw prose never renders.
-  await expect(page.getByText('Latest refresh failed:')).toHaveCount(3);
+  // under a named refresh-failure line; the raw prose never renders. Four
+  // sections read the two failed queries (membership, routing, composer,
+  // queue).
+  await expect(page.getByText('Latest refresh failed:')).toHaveCount(4);
   await expect(roster.getByText('Failed to load the notification roster')).toBeVisible();
   await expect(alertQueue.getByText('Failed to load the registration SLA alerts')).toBeVisible();
   await expect(composer.getByText('Failed to load the notification roster')).toBeVisible();
@@ -355,15 +365,15 @@ test('VAL-RES-009: a failed first calendar page is named inside Log Meetings and
   expect(consoleErrors.filter((text) => scriptedFailure.test(text)).length).toBeGreaterThan(0);
 });
 
-test('VAL-RES-009: a Data Connections roster-only failure leaves the SLA queue live and retries only the roster', async ({
+test('VAL-RES-009: a Settings roster-only failure leaves the SLA queue live and retries only the roster', async ({
   page,
 }) => {
   test.setTimeout(120_000);
   const { consoleErrors, pageErrors, requests } = watch(page);
   await bootRemoteWithPlan(page, 'getTeamRoster:1');
 
-  await primaryNavigation(page).getByRole('button', { name: 'Data Connections' }).click();
-  await expect(page.getByRole('heading', { name: 'Data Connections', level: 1 })).toBeVisible();
+  await primaryNavigation(page).getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
 
   // The roster-driven sections name the roster failure; the raw transport
   // prose never renders.

@@ -246,10 +246,9 @@ export const ORIGINAL_CONNECTION_NODES: ConnectionNode[] = [
       'Not connected: demo sends are simulated, local-only session records and are never delivered. A real service needs identity to know who owns a registration, the registration sync to know what is late, and a scheduler to evaluate the rule each business day.',
     owner: 'architecture',
     x: 656,
-    y: 164,
+    y: 246,
     w: 336,
-    h: 252,
-    hostsTeam: true,
+    h: 96,
   },
   {
     id: 'writeback',

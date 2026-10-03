@@ -65,6 +65,7 @@ const ROUTES: [label: string, heading: string | null][] = [
   ['Partner View', null],
   ['Production Requirements', 'Production Requirements'],
   ['Data Connections', 'Data Connections'],
+  ['Settings', 'Settings'],
 ];
 
 describe('App', () => {
@@ -79,7 +80,9 @@ describe('App', () => {
 
     for (const [label, heading] of ROUTES) {
       await user.click(nav().getByRole('button', { name: label }));
-      if (['Action Center', 'Production Requirements', 'Data Connections'].includes(label)) {
+      if (
+        ['Action Center', 'Production Requirements', 'Data Connections', 'Settings'].includes(label)
+      ) {
         // Static preloads do not settle React.lazy's first-use import promises.
         await act(async () => {
           await vi.dynamicImportSettled();
@@ -683,6 +686,8 @@ describe('App under total provider failure (VAL-RES-008)', () => {
       await screen.findByRole('heading', { name: 'Production Requirements', level: 1 }),
     ).toBeInTheDocument();
 
+    // The connection catalog is a static route now: it renders in full
+    // through total failure, and no widget on it can fail at all.
     await user.click(nav().getByRole('button', { name: 'Data Connections' }));
     await act(async () => {
       await vi.dynamicImportSettled();
@@ -691,7 +696,15 @@ describe('App under total provider failure (VAL-RES-008)', () => {
       await screen.findByRole('heading', { name: 'Data Connections', level: 1 }),
     ).toBeInTheDocument();
     expect(await screen.findByRole('group', { name: 'Data connection map' })).toBeInTheDocument();
-    // The business sections name their failure; the catalog never did fail.
+    expect(screen.queryByText(/unavailable:/)).not.toBeInTheDocument();
+
+    // The sections that used to hang off the map live on Settings as scoped
+    // queries; through total failure each names its own failure.
+    await user.click(nav().getByRole('button', { name: 'Settings' }));
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
+    expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeInTheDocument();
     expect(await screen.findByText('The team roster unavailable:')).toBeInTheDocument();
     expect(await screen.findByText('The SLA alert queue unavailable:')).toBeInTheDocument();
   }, 30_000);
@@ -723,7 +736,7 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     expect(screen.getByText('Forecast quality unavailable:')).toBeInTheDocument();
 
     // The roster section's retry recovers that section alone.
-    await user.click(nav().getByRole('button', { name: 'Data Connections' }));
+    await user.click(nav().getByRole('button', { name: 'Settings' }));
     await act(async () => {
       await vi.dynamicImportSettled();
     });

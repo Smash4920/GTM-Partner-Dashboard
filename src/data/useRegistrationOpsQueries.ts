@@ -11,7 +11,7 @@ import type { DealRegistration, Partner } from './types';
 
 /**
  * The Deal Reg Ops route's data, fetched the way it will be fetched in
- * production: five scoped queries in place of the folded registration book.
+ * production: six scoped queries in place of the folded registration book.
  * The route is whole-org and time-agnostic by design — exclusivity lapsing
  * and conversion times span quarters — so every scope is the empty
  * drill-down, and the provider computes each answer from the access-scoped
@@ -19,7 +19,9 @@ import type { DealRegistration, Partner } from './types';
  *
  * - `ops`: the conversion-time, SLA, leakage, and conflict counts behind the
  *   KPI tiles and card subtitles.
- * - `pending`, `unconverted`, `duplicates`: the three row collections, one
+ * - `registrations`, `pending`, `unconverted`, `duplicates`: the four row
+ *   collections, in funnel order (everything submitted, the open queue, the
+ *   approved-but-unconverted watch, the conflicts), one
  *   cursor page at a time; a `loadMore` appends, and a failed page keeps the
  *   pages already loaded.
  * - `roster`: the partner dimension the row tables render names from, with
@@ -29,6 +31,7 @@ import type { DealRegistration, Partner } from './types';
  * One rejected call fails exactly one card; its retry repeats only that call.
  */
 
+const ALL_REGISTRATIONS_PAGE_SIZE = 10;
 /** First page of the review queue, matching the card's historical limit. */
 const QUEUE_PAGE_SIZE = 10;
 const UNCONVERTED_PAGE_SIZE = 8;
@@ -42,6 +45,8 @@ export interface RegistrationOpsQueryInput {
 
 export interface RegistrationOpsQueries {
   ops: QueryState<RegistrationOpsSummary>;
+  /** Every registration in the book, newest submission first. */
+  registrations: PaginationState<DealRegistration>;
   pending: PaginationState<DealRegistration>;
   unconverted: PaginationState<DealRegistration>;
   duplicates: PaginationState<DuplicateRegistrationGroup>;
@@ -60,6 +65,17 @@ export function useRegistrationOpsQueries({
     queryKey: `reg-ops-summary|access:${accessKey}`,
     run: (context) => provider.getRegistrationOpsSummary(access, {}, context),
     errorFallback: 'Failed to load the registration ops summary',
+  });
+
+  const registrations = usePaginatedRows({
+    provider,
+    enabled: true,
+    resetKey: `reg-ops-all|access:${accessKey}|${ALL_REGISTRATIONS_PAGE_SIZE}`,
+    refreshKey: '',
+    pageSize: ALL_REGISTRATIONS_PAGE_SIZE,
+    fetchPage: (page, context) => provider.listRecentRegistrations(access, {}, page, context),
+    errorFallback: 'Failed to load the registrations',
+    loadMoreErrorFallback: 'Failed to load more registrations',
   });
 
   const pending = usePaginatedRows({
@@ -99,5 +115,5 @@ export function useRegistrationOpsQueries({
 
   const roster = usePartnerRoster(provider, access, prospects);
 
-  return { ops, pending, unconverted, duplicates, roster };
+  return { ops, registrations, pending, unconverted, duplicates, roster };
 }

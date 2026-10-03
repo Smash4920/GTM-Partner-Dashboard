@@ -10,6 +10,7 @@ import {
   PortalIcon,
   RegistrationIcon,
   RequirementsIcon,
+  SettingsIcon,
 } from './icons';
 
 const ROUTE_ICONS: Record<Route, (props: { className?: string }) => ReactNode> = {
@@ -22,6 +23,7 @@ const ROUTE_ICONS: Record<Route, (props: { className?: string }) => ReactNode> =
   'partner-view': PortalIcon,
   'production-requirements': RequirementsIcon,
   'data-connections': ConnectionsIcon,
+  settings: SettingsIcon,
 };
 
 interface SidebarProps {

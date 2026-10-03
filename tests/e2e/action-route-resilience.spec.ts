@@ -254,7 +254,7 @@ const FAILURE_ROUTES: FailureRoute[] = [
     },
   },
   {
-    route: 'Data Connections',
+    route: 'Settings',
     method: 'getTeamRoster',
     region: 'The team roster',
     failure: 'The team roster unavailable:',
@@ -264,8 +264,7 @@ const FAILURE_ROUTES: FailureRoute[] = [
       await expect(
         queue.getByRole('button', { name: 'Notify owner', exact: true }).first(),
       ).toBeEnabled();
-      await page.getByRole('button', { name: /^Salesforce/ }).click();
-      await expect(page.getByRole('heading', { name: 'Salesforce', level: 3 })).toBeVisible();
+      await expect(queue.locator('tbody tr')).toHaveCount(8);
     },
   },
   {
@@ -374,7 +373,7 @@ for (const spec of FAILURE_ROUTES) {
   });
 }
 
-test('VAL-RES-009: total named Data Connections failure leaves Production Requirements and the catalog usable', async ({
+test('VAL-RES-009: total named Settings failure leaves Production Requirements and the static catalog usable', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -388,13 +387,15 @@ test('VAL-RES-009: total named Data Connections failure leaves Production Requir
   ];
   await bootOnStaticRoute(page, observations, methods.map((method) => `${method}:1`).join(','));
   await remote(page);
-  await visit(page, 'Data Connections');
+  await visit(page, 'Settings');
   await expect(page.getByText('The team roster unavailable:', { exact: true })).toBeVisible();
   await expect(page.getByText('The SLA alert queue unavailable:', { exact: true })).toBeVisible();
   await expect(
     page.getByText('The notification composer unavailable:', { exact: true }),
   ).toBeVisible();
   await settle(page, observations);
+  // The Data Connections catalog is static and never waited on the provider.
+  await visit(page, 'Data Connections');
   for (const label of [/^Salesforce/, /^Identity provider \(SSO\)/, /^Notification service/]) {
     await page.getByRole('button', { name: label }).click();
     await expect(page.getByText('What is missing', { exact: true })).toBeVisible();
@@ -534,9 +535,13 @@ test('VAL-RES-011: Scaled 100× settles all nine routes, filters and appends uni
       await expect(queue.locator('tbody tr')).toHaveCount(10);
       await queue.getByRole('button', { name: 'Load 10 more', exact: true }).click();
       await expect(queue.locator('tbody tr')).toHaveCount(20);
-    } else if (spec.route === 'Data Connections') {
-      await page.getByRole('button', { name: /^Salesforce/ }).click();
-      await expect(page.getByRole('heading', { name: 'Salesforce', level: 3 })).toBeVisible();
+    } else if (spec.route === 'Settings') {
+      await expect(
+        page.getByRole('region', { name: 'Administrators, scrollable', exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole('group', { name: 'The SLA alert queue', exact: true }),
+      ).toBeVisible();
     }
     await settle(page, observations);
   }

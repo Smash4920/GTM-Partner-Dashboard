@@ -209,7 +209,7 @@ export default function SlaAlertPanel({
         </p>
         {notifications.length === 0 ? (
           <p className="mt-2 text-sm text-granite">
-            Nothing sent yet. Pick a teammate in the notification node above, or send an alert.
+            Nothing sent yet. Pick a teammate in the composer above, or send an alert.
           </p>
         ) : (
           <ul className="mt-3 space-y-2.5">

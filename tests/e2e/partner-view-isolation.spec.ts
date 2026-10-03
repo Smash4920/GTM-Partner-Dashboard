@@ -13,11 +13,12 @@ import { expect, test, type Page } from '@playwright/test';
  *    authorization.
  * 2. Data Connections renders its static catalog without touching business
  *    facts, while the roster and the bounded SLA alert queue arrive as their
- *    own scoped answers.
+ *    own scoped answers on Settings.
  * 3. A scripted per-method failure on the simulated remote
  *    (?remoteFailMethods=..., see src/data/providers.ts) fails exactly the
- *    sections behind those methods, and each section's Retry repeats only
- *    its own failed query while the catalog never leaves the screen.
+ *    Settings sections behind those methods, and each section's Retry repeats
+ *    only its own failed query while the static catalog never leaves the
+ *    screen.
  */
 
 const primaryNavigation = (page: Page) => page.getByRole('navigation', { name: 'Primary' });
@@ -104,7 +105,7 @@ test('VAL-CROSS-004: Partner View renders only the selected partner projection',
   expect(consoleErrors).toEqual([]);
 });
 
-test('VAL-CROSS-004: Data Connections pairs its static catalog with scoped roster and alert answers', async ({
+test('VAL-CROSS-004: Data Connections renders its static catalog and Settings pairs it with scoped roster and alert answers', async ({
   page,
 }) => {
   const consoleErrors: string[] = [];
@@ -122,9 +123,12 @@ test('VAL-CROSS-004: Data Connections pairs its static catalog with scoped roste
   await expect(page.getByRole('group', { name: 'Data connection map' })).toBeVisible();
   await expect(tileWith(page, 'Connections required')).toHaveText(/\d+/);
 
-  // The roster and the alert queue arrive as their own scoped answers: the
-  // session roster with its routing states, and the urgent window of the
-  // alert digest with the whole queue's depth in the cap line.
+  // The roster and the alert queue now live on Settings and arrive as their
+  // own scoped answers: the session roster with its routing states, and the
+  // urgent window of the alert digest with the whole queue's depth in the cap
+  // line.
+  await primaryNavigation(page).getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
   await expect(tileWith(page, 'Receiving notifications')).toHaveText(/7\/8/);
   await expect(tileWith(page, 'SLA alerts due')).toHaveText(/17/);
   await expect(
@@ -141,7 +145,7 @@ test('VAL-CROSS-004: Data Connections pairs its static catalog with scoped roste
   expect(consoleErrors).toEqual([]);
 });
 
-test('VAL-CROSS-004: a failed Data Connections section retries alone while the catalog stays live', async ({
+test('VAL-CROSS-004: a failed Settings section retries alone while the static catalog stays live', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -161,18 +165,15 @@ test('VAL-CROSS-004: a failed Data Connections section retries alone while the c
   await page.getByLabel('Data provider').selectOption('remote');
   await expect(page.getByText(/round trips with a 15% simulated failure rate/)).toBeVisible();
 
-  await primaryNavigation(page).getByRole('button', { name: 'Data Connections' }).click();
-  await expect(page.getByRole('heading', { name: 'Data Connections', level: 1 })).toBeVisible();
-
-  // The static catalog never waited on the provider.
-  await expect(page.getByRole('group', { name: 'Data connection map' })).toBeVisible();
-  await expect(tileWith(page, 'Connections required')).toHaveText(/\d+/);
+  await primaryNavigation(page).getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
 
   // Each failed section names itself, in its own query's stable copy — the
-  // roster query's failure is shared by the two sections that read it.
+  // roster query's failure is shared by the membership roster, the routing
+  // panel, and the composer.
   await expect(page.getByText('The team roster unavailable:')).toBeVisible();
   await expect(page.getByText('The notification composer unavailable:')).toBeVisible();
-  await expect(page.getByText('Failed to load the notification roster')).toHaveCount(2);
+  await expect(page.getByText('Failed to load the notification roster')).toHaveCount(3);
   await expect(page.getByText('The SLA alert queue unavailable:')).toBeVisible();
   await expect(page.getByText('Failed to load the registration SLA alerts')).toBeVisible();
   await expect(tileWith(page, 'Receiving notifications')).toHaveText(/—/);
@@ -190,6 +191,12 @@ test('VAL-CROSS-004: a failed Data Connections section retries alone while the c
   await page.getByRole('button', { name: 'Retry The SLA alert queue' }).click();
   await expect(tileWith(page, 'SLA alerts due')).toHaveText(/17/);
   await expect(page.getByRole('group', { name: 'The SLA alert queue' })).toBeFocused();
+
+  // The static catalog never waited on the provider.
+  await primaryNavigation(page).getByRole('button', { name: 'Data Connections' }).click();
+  await expect(page.getByRole('heading', { name: 'Data Connections', level: 1 })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Data connection map' })).toBeVisible();
+  await expect(tileWith(page, 'Connections required')).toHaveText(/\d+/);
 
   // No uncaught errors and no unexpected console errors. The tolerated
   // records are the scripted failures themselves: the telemetry seam

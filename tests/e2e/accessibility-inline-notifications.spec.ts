@@ -83,7 +83,7 @@ function monitor(page: Page) {
   };
 }
 
-async function route(page: Page, name: 'Action Center' | 'Data Connections') {
+async function route(page: Page, name: 'Action Center' | 'Settings') {
   const nav = page.getByRole('navigation', { name: 'Primary' });
   if (!(await nav.isVisible())) {
     await activate(
@@ -418,7 +418,7 @@ for (const viewport of VIEWPORTS) {
       categories: selected.map(({ category, item }) => ({ category, id: item.id })),
       merged: [...variants].map(([variant, item]) => ({ variant, id: item.id })),
     });
-    await route(page, 'Data Connections');
+    await route(page, 'Settings');
     await settle(page);
     await expect(
       queue(page).getByText(`Sent this session · ${sent}`, { exact: true }),
@@ -426,9 +426,9 @@ for (const viewport of VIEWPORTS) {
     expect(
       await page.evaluate(() => [Object.entries(localStorage), Object.entries(sessionStorage)]),
     ).toEqual(storage);
-    await checkpoint(page, info, `action-records-in-connections-log-${size}`);
+    await checkpoint(page, info, `action-records-in-settings-log-${size}`);
     await page.reload();
-    await route(page, 'Data Connections');
+    await route(page, 'Settings');
     await settle(page);
     await expect(queue(page).getByText('Sent this session · 0', { exact: true })).toBeVisible();
     await checkpoint(page, info, `action-feedback-cleared-on-reload-${size}`);
@@ -443,7 +443,7 @@ for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     await page.clock.setFixedTime(TIME);
     await page.goto('/');
-    await route(page, 'Data Connections');
+    await route(page, 'Settings');
     await settle(page);
     const panel = composer(page);
     const storage = await page.evaluate(() => [
@@ -454,7 +454,9 @@ for (const viewport of VIEWPORTS) {
     await expect(panel.getByLabel('Message')).toHaveValue(/5-business-day response SLA/);
     await expect(panel.getByText(/On the SLA clock:/)).toBeVisible();
     await checkpoint(page, info, `connections-${size}-alert-prefilled`, panel);
-    const map = page.getByRole('group', { name: 'Data connection map', exact: true });
+    // The composer's own recipient picker is the roster surface now that the
+    // connection map no longer carries teammate chips. Every offered
+    // recipient's configured channel set is pinned.
     const recipients = await panel
       .getByLabel('To', { exact: true })
       .locator('option:not([disabled])')
@@ -464,25 +466,15 @@ for (const viewport of VIEWPORTS) {
           name: element.textContent!.split(' · ')[0],
         })),
       );
-    const mapped = map.getByRole('button', { name: /·.*· \d+ SLA alerts$/ });
-    for (const teammate of await mapped.all()) {
-      const name = (await teammate.getAttribute('aria-label'))!.split(' · ')[0];
-      await activate(teammate, 'Enter');
-      await expect(teammate).toHaveAttribute('aria-pressed', 'true');
-      const recipient = recipients.find((candidate) => candidate.name === name);
-      if (recipient) {
-        await expect(panel.getByLabel('To', { exact: true })).toHaveValue(recipient.id);
-        expect(await panel.getByRole('checkbox').count()).toBeGreaterThan(0);
-        for (const channel of await panel.getByRole('checkbox').all()) {
-          await expect(channel).toBeChecked();
-          await reachable(channel);
-        }
-      } else {
-        await expect(panel.getByRole('button', { name: /^Send to / })).toBeDisabled();
-        await expect(panel.getByRole('checkbox')).toHaveCount(0);
-        await expect(panel).toContainText('Only a teammate with notifications on can be messaged.');
+    for (const recipient of recipients) {
+      await keyboardSelect(panel.getByLabel('To', { exact: true }), recipient.id);
+      await expect(panel.getByLabel('To', { exact: true })).toHaveValue(recipient.id);
+      expect(await panel.getByRole('checkbox').count()).toBeGreaterThan(0);
+      for (const channel of await panel.getByRole('checkbox').all()) {
+        await expect(channel).toBeChecked();
+        await reachable(channel);
       }
-      await checkpoint(page, info, `connections-map-${name}-${size}`, panel);
+      await checkpoint(page, info, `connections-recipient-${recipient.name}-${size}`, panel);
     }
     expect(recipients.length).toBeGreaterThan(0);
     await keyboardSelect(panel.getByLabel('To', { exact: true }), recipients[0].id);
@@ -549,7 +541,7 @@ for (const viewport of VIEWPORTS) {
       await page.evaluate(() => [Object.entries(localStorage), Object.entries(sessionStorage)]),
     ).toEqual(storage);
     await page.reload();
-    await route(page, 'Data Connections');
+    await route(page, 'Settings');
     await settle(page);
     await expect(queue(page).getByText('Sent this session · 0', { exact: true })).toBeVisible();
     await checkpoint(page, info, `connections-${size}-feedback-lost-on-refresh`);
@@ -563,7 +555,7 @@ for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     await page.clock.setFixedTime(TIME);
     await page.goto('/');
-    await route(page, 'Data Connections');
+    await route(page, 'Settings');
     await settle(page);
     const panel = composer(page);
     const rows = queue(page).locator('tbody tr');
@@ -648,7 +640,7 @@ for (const viewport of VIEWPORTS) {
         await checkpoint(page, info, `action-${category}-${scenario}-${size}-closed`);
       }
       await checkpoint(page, info, `action-${scenario}-${size}-closed`);
-      await route(page, 'Data Connections');
+      await route(page, 'Settings');
       await settle(page);
       const panel = composer(page);
       if (scenario === 'no-channels') {
@@ -787,7 +779,7 @@ for (const viewport of VIEWPORTS) {
         (method) => window.inlineNotificationFixture.arm(method, 'hold'),
         dependency.method,
       );
-      await route(page, 'Data Connections');
+      await route(page, 'Settings');
       const region = page.getByRole('group', { name: dependency.region, exact: true });
       await expect(region.getByRole('status')).toBeVisible();
       await checkpoint(page, info, `connections-${dependency.method}-${size}-loading`);
@@ -838,7 +830,7 @@ for (const viewport of VIEWPORTS) {
         (method) => window.inlineNotificationFixture.arm(method, 'partial'),
         dependency.method,
       );
-      await route(page, 'Data Connections');
+      await route(page, 'Settings');
       await settle(page);
       expect(
         await page.evaluate(
@@ -863,7 +855,7 @@ for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     await page.clock.setFixedTime(TIME);
     await fixture(page);
-    await route(page, 'Data Connections');
+    await route(page, 'Settings');
     await settle(page);
     const alerts = queue(page);
     const owner = (

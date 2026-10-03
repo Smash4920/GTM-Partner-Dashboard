@@ -20,7 +20,8 @@ import { providerSessionBook } from './test/providerSessionFixtures';
  *   including a 2× component fixture. The production-preview VAL-RES-011
  *   browser matrix separately exercises the genuine 100× provider.
  * - A route mounts with exactly its scoped queries and nothing else's; the
- *   app shell and Production Requirements issue no provider calls at all.
+ *   app shell and the static routes (Production Requirements, the Data
+ *   Connections catalog) issue no provider calls at all.
  * - One failed resource fails one widget: every sibling on the route keeps
  *   its data, and the widget's focused Retry repeats exactly the failed
  *   method — one more call of it, and not one more call of anything else.
@@ -38,8 +39,11 @@ interface RouteSpec {
   heading: string | null;
   /** The full provider-method inventory the route may issue on mount. */
   methods: string[];
-  /** The method the failure matrix breaks, and the widget copy that proves it. */
-  failure: {
+  /**
+   * The method the failure matrix breaks, and the widget copy that proves
+   * it. Static routes have no provider call to break, so they carry none.
+   */
+  failure?: {
     method: string;
     /** unavailable: no answer yet. refresh: stale data stays, failure named. */
     kind: 'unavailable' | 'refresh';
@@ -84,10 +88,12 @@ const ROUTES: RouteSpec[] = [
   {
     label: 'Partner Performance',
     heading: 'Partner Performance',
-    // The certification query is deliberately absent here: it is disabled
-    // while the drill-down is All partners and starts only when a partner is
-    // selected (see the certification-gating tests in
-    // usePartnerPerformanceQueries.test.ts).
+    // The certification query and the three registration-row queries are
+    // deliberately absent here: the certification starts only when a
+    // partner is selected (see the certification-gating tests in
+    // usePartnerPerformanceQueries.test.ts), and the review queue,
+    // exclusivity, and duplicates collections are drill-down-gated — the
+    // default All Partners scope fires none of them.
     methods: [
       'getManagerDirectory',
       'getPartnerRoster',
@@ -98,11 +104,8 @@ const ROUTES: RouteSpec[] = [
       'getStageBreakdown',
       'getWeeklyActivitySeries',
       'getWeeklyGoalProgress',
-      'listDuplicateRegistrationGroups',
       'listPartnerLeaderboard',
-      'listPendingRegistrations',
       'listScopedOpportunities',
-      'listUnconvertedRegistrations',
     ],
     failure: {
       method: 'getPerformanceSummary',
@@ -138,6 +141,7 @@ const ROUTES: RouteSpec[] = [
       'getRegistrationOpsSummary',
       'listDuplicateRegistrationGroups',
       'listPendingRegistrations',
+      'listRecentRegistrations',
       'listUnconvertedRegistrations',
     ],
     failure: {
@@ -192,8 +196,16 @@ const ROUTES: RouteSpec[] = [
     },
   },
   {
+    // The connection catalog is static, like Production Requirements: the
+    // map and the coverage counts render from the catalog alone, so the
+    // route mounts without a single provider call.
     label: 'Data Connections',
     heading: 'Data Connections',
+    methods: [],
+  },
+  {
+    label: 'Settings',
+    heading: 'Settings',
     methods: [
       'getManagerDirectory',
       'getPartnerRoster',
@@ -284,7 +296,7 @@ async function visit(user: ReturnType<typeof userEvent.setup>, route: RouteSpec)
 }
 
 describe('App route matrix', () => {
-  it('renders all nine routes independently under the scaled provider', async () => {
+  it('renders all ten routes independently under the scaled provider', async () => {
     // A populated, hand-built book keeps this a component wiring check.
     // Production-volume generation and bounds belong to the 100× browser proof.
     const book = providerSessionBook('SCALED');
@@ -296,7 +308,6 @@ describe('App route matrix', () => {
         label: 'Production Requirements',
         heading: 'Production Requirements',
         methods: [],
-        failure: { method: '', kind: 'unavailable' as const, text: '', retry: '' },
       },
     ]) {
       await visit(user, route);
@@ -334,7 +345,14 @@ describe('App route matrix', () => {
     expect(diff(before, calls)).toEqual([...route.methods].sort());
   });
 
-  it.each(ROUTES)(
+  // Static routes have no provider call to fail, so the failure matrix covers
+  // the routes that read the seam.
+  const FAILURE_ROUTES = ROUTES.filter(
+    (route): route is RouteSpec & { failure: NonNullable<RouteSpec['failure']> } =>
+      route.failure !== undefined,
+  );
+
+  it.each(FAILURE_ROUTES)(
     '$label: one failed resource fails one widget, and Retry repeats only that method',
     async (route) => {
       const { provider, calls, control } = instrumentedProvider();
@@ -382,11 +400,11 @@ describe('App route matrix', () => {
 
 /**
  * The optional-resource matrix: some queries are enhancements a route can
- * degrade around — the Data Connections notification roster (the SLA digest
- * carries its own resolved owners), the Partner View ranking (the portal can
- * open on the roster's first partner), and the Home roster (the review queue
- * falls back to explicit partner ids). A failure of one of these must leave
- * the primary content live, name the failed resource, and offer a retry that
+ * degrade around — the Settings notification roster (the SLA digest carries
+ * its own resolved owners), the Partner View ranking (the portal can open on
+ * the roster's first partner), and the Home roster (the review queue falls
+ * back to explicit partner ids). A failure of one of these must leave the
+ * primary content live, name the failed resource, and offer a retry that
  * repeats exactly that method.
  */
 interface OptionalResourceSpec {
@@ -477,7 +495,7 @@ const OPTIONAL_RESOURCE_FAILURES: OptionalResourceSpec[] = [
     },
   },
   {
-    route: 'Data Connections',
+    route: 'Settings',
     method: 'getTeamRoster',
     retry: 'Retry The team roster',
     expectFailure: async () => {

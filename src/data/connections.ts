@@ -47,8 +47,6 @@ export interface ConnectionNode {
   y: number;
   w: number;
   h: number;
-  /** Renders the partner-team roster inside this node (notification routing). */
-  hostsTeam?: boolean;
 }
 
 export interface ConnectionEdge {
@@ -122,7 +120,6 @@ type ConnectionNodeTuple = [
   ],
   y: number,
   h?: number,
-  hostsTeam?: boolean,
 ];
 
 // Columns share geometry; metadata defaults to architecture and keeps missing fields absent.
@@ -317,9 +314,8 @@ export const CONNECTION_NODES: ConnectionNode[] = (
         'Bot token with chat:write; email through the transactional provider',
         'Event-driven, evaluated when the alert rule fires',
       ],
-      164,
-      252,
-      true,
+      246,
+      96,
     ],
     [
       'writeback',
@@ -351,7 +347,6 @@ export const CONNECTION_NODES: ConnectionNode[] = (
     [blocker, source, auth, cadence, owner = 'architecture' as const],
     y,
     h = 62,
-    hostsTeam,
   ]) => ({
     id,
     label,
@@ -374,7 +369,6 @@ export const CONNECTION_NODES: ConnectionNode[] = (
     y,
     w: CONNECTION_TIER_META[tier].w,
     h,
-    ...(hostsTeam === undefined ? {} : { hostsTeam }),
   }),
 );
 

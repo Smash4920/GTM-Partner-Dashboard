@@ -148,7 +148,7 @@ export const SCALED_FAILURE_ROUTES: ScaledFailure[] = [
     retained: async (page) => page.getByRole('heading', { level: 1 }).innerText(),
   },
   {
-    route: 'Data Connections',
+    route: 'Settings',
     method: 'getTeamRoster',
     region: 'The team roster',
     failure: 'The team roster unavailable:',
@@ -159,8 +159,6 @@ export const SCALED_FAILURE_ROUTES: ScaledFailure[] = [
           .getByRole('button', { name: 'Notify owner', exact: true })
           .first(),
       ).toBeEnabled();
-      await page.getByRole('button', { name: /^Salesforce/ }).click();
-      await expect(page.getByRole('heading', { name: 'Salesforce', level: 3 })).toBeVisible();
     },
     retained: async (page) =>
       page.getByRole('group', { name: 'The SLA alert queue', exact: true }).innerText(),

@@ -13,6 +13,7 @@ import {
   exclusivityLapsed,
   pendingRegistrations,
   registrationConversionTimes,
+  registrationsNewestFirst,
   registrationsPastSla,
 } from '../lib/metrics';
 import { makeOpportunity, makePartner, makeProviderBook, makeRegistration } from '../test/fixtures';
@@ -21,7 +22,7 @@ import type { ProviderBook } from './mock/book';
 /**
  * VAL-DATA-015 (Deal Reg Ops): the route requests exactly the bounded
  * registration, conflict, conversion, and SLA answers it renders — one
- * ops aggregate and three cursor-paginated row collections, plus the roster
+ * ops aggregate and four cursor-paginated row collections, plus the roster
  * dimension — and every query fails and retries independently of its
  * siblings. Values are pinned against the metrics layer the view used to
  * call itself, so the seam cannot quietly change the arithmetic.
@@ -160,6 +161,7 @@ async function settle(result: { current: ReturnType<typeof useRegistrationOpsQue
   await waitFor(() => {
     expect(result.current.ops.data).not.toBeNull();
     expect(result.current.roster.data).not.toBeNull();
+    expect(result.current.registrations.meta).not.toBeNull();
     expect(result.current.pending.meta).not.toBeNull();
     expect(result.current.unconverted.meta).not.toBeNull();
     expect(result.current.duplicates.meta).not.toBeNull();
@@ -167,7 +169,7 @@ async function settle(result: { current: ReturnType<typeof useRegistrationOpsQue
 }
 
 describe('useRegistrationOpsQueries (VAL-DATA-015)', () => {
-  it('requests exactly its scoped queries — one aggregate, three pages, one dimension', async () => {
+  it('requests exactly its scoped queries — one aggregate, four pages, one dimension', async () => {
     const { provider, calls } = spyProvider(new MockDataProvider(makeBook()));
     const { result } = renderHook(
       (input: RegistrationOpsQueryInput) => useRegistrationOpsQueries(input),
@@ -180,10 +182,12 @@ describe('useRegistrationOpsQueries (VAL-DATA-015)', () => {
       'getRegistrationOpsSummary',
       'listDuplicateRegistrationGroups',
       'listPendingRegistrations',
+      'listRecentRegistrations',
       'listUnconvertedRegistrations',
     ]);
     // Every row collection is one bounded page request.
     for (const pageQuery of [
+      'listRecentRegistrations',
       'listPendingRegistrations',
       'listUnconvertedRegistrations',
       'listDuplicateRegistrationGroups',
@@ -235,6 +239,26 @@ describe('useRegistrationOpsQueries (VAL-DATA-015)', () => {
       'reg-pending-1',
     ]);
     expect(result.current.pending.totalCount).toBe(4);
+
+    // The all-registrations card's window: every status, newest submission
+    // first — the history order the metrics layer defines, and a page size
+    // that holds the whole hand-built book.
+    expect(result.current.registrations.rows.map((row) => row.id)).toEqual(
+      registrationsNewestFirst(book.registrations).map((row) => row.id),
+    );
+    expect(result.current.registrations.rows.map((row) => row.id)).toEqual([
+      'reg-pending-1',
+      'reg-pending-2',
+      'reg-dup-2',
+      'reg-dup-1',
+      'reg-leaking',
+      'reg-converted',
+      'reg-lapsed',
+    ]);
+    expect(result.current.registrations.totalCount).toBe(7);
+    expect(
+      new Set(result.current.registrations.rows.map((row) => row.status)).size,
+    ).toBeGreaterThan(1);
 
     expect(result.current.unconverted.rows.map((row) => row.id)).toEqual([
       'reg-lapsed',

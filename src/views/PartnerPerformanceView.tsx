@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import ActivityTracker from '../components/ActivityTracker';
 import Card from '../components/Card';
+import CollapsibleCard from '../components/CollapsibleCard';
 import DuplicateRegistrationsTable from '../components/DuplicateRegistrationsTable';
 import ExclusivityTable from '../components/ExclusivityTable';
 import FilterChips, { type ChipOption } from '../components/FilterChips';
 import KpiTile from '../components/KpiTile';
 import Leaderboard from '../components/Leaderboard';
 import LightCard from '../components/LightCard';
-import MetricBars, { type MetricBarRow } from '../components/MetricBars';
+import MetricBars from '../components/MetricBars';
 import OpportunityTable from '../components/OpportunityTable';
 import PageFooter from '../components/PageFooter';
 import ProgressBar from '../components/ProgressBar';
@@ -45,7 +46,15 @@ import {
   LEADERBOARD_PAGE_SIZE,
   usePartnerPerformanceQueries,
 } from '../data/usePartnerPerformanceQueries';
-import { conversionRows, funnelRows, stageRows } from './performanceRows';
+import {
+  conversionRows,
+  FUNNEL_MEASURE_OPTIONS,
+  type FunnelMeasure,
+  funnelRows,
+  funnelSubtitle,
+  leakageRows,
+  stageRows,
+} from './performanceRows';
 import type { DuplicateRegistrationGroup } from '../lib/metrics';
 import { formatCoverage } from '../lib/metrics';
 import { formatDate, formatPct, formatUsdCompact } from '../lib/format';
@@ -55,39 +64,6 @@ const PHASE_OPTIONS: ChipOption<FiscalPhase>[] = FISCAL_PHASES.map((phase) => ({
   label: FISCAL_PHASE_META[phase].label,
   title: FISCAL_PHASE_META[phase].description,
 }));
-
-function leakageRows(ops: RegistrationOpsSummary): MetricBarRow[] {
-  return [
-    {
-      label: 'Approved, no opp',
-      value: ops.approvedNotConverted,
-      displayValue: `${ops.approvedNotConverted}`,
-      secondary: 'approved registrations',
-      color: '#8a8380',
-    },
-    {
-      label: 'Exclusivity lapsed',
-      value: ops.exclusivityLapsed,
-      displayValue: `${ops.exclusivityLapsed}`,
-      secondary: `> ${REGISTRATION_EXCLUSIVITY_DAYS} days since approval`,
-      color: '#ee6018',
-    },
-    {
-      label: 'Pending past SLA',
-      value: ops.pastSla,
-      displayValue: `${ops.pastSla}`,
-      secondary: `${REGISTRATION_SLA_BUSINESS_DAYS}+ business days awaiting review`,
-      color: '#ee6018',
-    },
-    {
-      label: 'Duplicate clients',
-      value: ops.duplicateGroups,
-      displayValue: `${ops.duplicateGroups}`,
-      secondary: 'same client, multiple partners',
-      color: '#4d4947',
-    },
-  ];
-}
 
 type CertKind = 'strategists' | 'engineers';
 
@@ -143,7 +119,7 @@ function PipelineOpportunitiesCard({
   opportunities: PaginationState<Opportunity>;
 }) {
   return (
-    <Card
+    <CollapsibleCard
       title={`Pipeline opportunities · ${FISCAL_PHASE_META[phase].label}`}
       subtitle={
         opportunities.meta === null
@@ -169,7 +145,7 @@ function PipelineOpportunitiesCard({
           </>
         ),
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }
 
@@ -216,7 +192,7 @@ function LeaderboardCard({
   phaseLabel: string;
 }) {
   return (
-    <Card
+    <CollapsibleCard
       title="Partner leaderboard & enablement"
       subtitle={
         leaderboard.meta === null
@@ -237,7 +213,7 @@ function LeaderboardCard({
           <PageFooter state={leaderboard} noun="partners" pageSize={LEADERBOARD_PAGE_SIZE} />
         </>
       ))}
-    </Card>
+    </CollapsibleCard>
   );
 }
 
@@ -353,6 +329,10 @@ export default function PartnerPerformanceView({
   const [phase, setPhase] = useState<FiscalPhase>('q3');
   const [managerId, setManagerId] = useState('all');
   const [partnerId, setPartnerId] = useState(initialPartnerId);
+  const [funnelMeasure, setFunnelMeasure] = useState<FunnelMeasure>('value');
+  // The registration row tables live on Deal Reg Ops for the whole org; a
+  // manager or partner drill-down keeps its own copies here.
+  const drilled = managerId !== 'all' || partnerId !== 'all';
   const queries = usePartnerPerformanceQueries({
     provider,
     access: INTERNAL_DEMO_SCOPE,
@@ -524,9 +504,21 @@ export default function PartnerPerformanceView({
       })}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card title="Deal registration funnel" subtitle={`Registrations · ${phaseLabel}`}>
+        <Card
+          title="Deal registration funnel"
+          subtitle={funnelSubtitle(funnelMeasure, phaseLabel)}
+          action={
+            <FilterChips
+              options={FUNNEL_MEASURE_OPTIONS}
+              value={funnelMeasure}
+              onChange={setFunnelMeasure}
+              ariaLabel="Funnel measure"
+              size="xs"
+            />
+          }
+        >
           {renderQueryState('registration funnel', queries.funnel, (funnel) => (
-            <MetricBars rows={funnelRows(funnel, 'count')} />
+            <MetricBars rows={funnelRows(funnel, funnelMeasure)} />
           ))}
         </Card>
         <Card
@@ -539,14 +531,14 @@ export default function PartnerPerformanceView({
         </Card>
       </div>
 
-      <Card
+      <CollapsibleCard
         title="Revenue vs. partner sourced target"
         subtitle="Closed-won by fiscal quarter against combined targets · all FY27 quarters"
       >
         {renderQueryState('revenue trend', queries.trend, (quarterly) => (
           <RevenueTrend data={quarterly} />
         ))}
-      </Card>
+      </CollapsibleCard>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card
@@ -592,12 +584,7 @@ export default function PartnerPerformanceView({
 
       <PipelineOpportunitiesCard phase={phase} opportunities={queries.opportunities} />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ReviewQueueCard pending={queries.pending} roster={roster} />
-        <LeaderboardCard leaderboard={queries.leaderboard} phaseLabel={phaseLabel} />
-      </div>
-
-      <ExclusivityCard ops={queries.ops} unconverted={queries.unconverted} roster={roster} />
+      <LeaderboardCard leaderboard={queries.leaderboard} phaseLabel={phaseLabel} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card
@@ -627,7 +614,18 @@ export default function PartnerPerformanceView({
         </Card>
       </div>
 
-      <DuplicatesCard duplicates={queries.duplicates} roster={roster} />
+      {drilled ? (
+        <>
+          <ReviewQueueCard pending={queries.pending} roster={roster} />
+          <ExclusivityCard ops={queries.ops} unconverted={queries.unconverted} roster={roster} />
+          <DuplicatesCard duplicates={queries.duplicates} roster={roster} />
+        </>
+      ) : (
+        <p className="text-xs text-granite">
+          The review queue, exclusivity watch, and duplicate registrations for the whole org live on
+          Deal Reg Ops. Pick a partner manager or partner to see them for that scope here.
+        </p>
+      )}
 
       {partnerId !== 'all' && <CertificationCard certification={queries.certification} />}
     </div>

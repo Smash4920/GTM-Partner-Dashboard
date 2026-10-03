@@ -60,7 +60,7 @@ test('VAL-ACT-016: all five categories create selected-channel simulated local r
     await expect(page.getByText('85 unique items', { exact: true })).toBeVisible();
   }
   const nav = page.getByRole('navigation', { name: 'Primary' });
-  await nav.getByRole('button', { name: 'Data Connections', exact: true }).click();
+  await nav.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.getByText('Sent this session · 5')).toBeVisible();
   const notificationLog = page
     .getByRole('heading', { name: 'Deal-registration SLA alerts' })
@@ -71,7 +71,7 @@ test('VAL-ACT-016: all five categories create selected-channel simulated local r
     await page.evaluate(() => [Object.entries(localStorage), Object.entries(sessionStorage)]),
   ).toEqual(before);
   await page.reload();
-  await nav.getByRole('button', { name: 'Data Connections', exact: true }).click();
+  await nav.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.getByText('Sent this session · 0')).toBeVisible();
   expect(errors).toEqual([]);
   expect(

@@ -13,7 +13,7 @@ async function openRemoteQueue(page: Page, plan: string) {
   // belong to this route, not to a landing-page request that consumes a skip.
   await page
     .getByRole('navigation', { name: 'Primary' })
-    .getByRole('button', { name: 'Data Connections', exact: true })
+    .getByRole('button', { name: 'Settings', exact: true })
     .click();
   await page.getByLabel('Data provider').selectOption('remote');
   await expect(page.getByText(/round trips with a 15% simulated failure rate/)).toBeVisible();

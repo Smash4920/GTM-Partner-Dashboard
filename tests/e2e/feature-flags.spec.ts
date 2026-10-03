@@ -50,6 +50,7 @@ test('VAL-GOV-007: feature flags stay local, non-authoritative, and make no remo
     'Activity Tracking',
     'Partner View',
     'Data Connections',
+    'Settings',
     'Partner Performance',
     'Home',
     'Production Requirements',

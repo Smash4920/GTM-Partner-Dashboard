@@ -311,7 +311,7 @@ The weekly snapshot job must be **idempotent**: a unique key on
   slow endpoint no longer blanks the whole page. _Done at the seam:_ every
   route loads through its hand-rolled per-widget hook (`useForecastQueries.ts`
   and its siblings through `usePartnerViewQueries.ts` and
-  `useDataConnectionsQueries.ts`), and `useDashboardData` itself is deleted.
+  `useSettingsQueries.ts`), and `useDashboardData` itself is deleted.
   The library stays optional — it is worth adopting when the hooks outgrow
   their shared helpers, not before.
 - Virtualize `OpportunityTable` and `ForecastTable`; give `Leaderboard` a real
@@ -322,8 +322,8 @@ The weekly snapshot job must be **idempotent**: a unique key on
   SLA digest enforces its exported window of 8 with a typed rejection rather
   than a clamp. Table virtualization remains not started — comfort, not
   survival, now that the contract bounds what reaches the client.
-- Route-level `React.lazy`. _Partially implemented:_ Data Connections and
-  Production Requirements share a lazy operational chunk; Action Center and
+- Route-level `React.lazy`. _Partially implemented:_ Data Connections,
+  Production Requirements, and Settings share a lazy operational chunk; Action Center and
   the workflow panel are lazy too. Daily chart routes still load eagerly, so
   avoiding Recharts on first visit is not complete. Current compressed
   measurements come from `npm run bundle:check`, not the original Phase 1
@@ -410,8 +410,8 @@ Performance followed, and Deal Reg Ops, Activity Tracking, Partner View, and
 Data Connections joined them — the manager/partner selection is a provider
 input, the Log Meetings calendar is a cursor-paginated week of raw calls, the
 partner presentation reads only its own partner-audience projection, the
-connection catalog is static while its roster and alert panels carry their own
-query states, and every card carries its own loading, error, retry, and
+connection catalog is static while the roster and alert panels (now on
+Settings) carry their own query states, and every card carries its own loading, error, retry, and
 metadata state. Action Center adds its own bounded summary and cursor pages.
 All eight data-bearing routes use the scoped contract; Production Requirements
 is static and makes no business-data request. The legacy

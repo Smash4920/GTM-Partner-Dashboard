@@ -21,7 +21,39 @@ import type { DealRegistration, Partner } from '../data/types';
 import type { WorkflowActions } from '../data/workflows';
 import { formatDate, formatDays } from '../lib/format';
 import type { DuplicateRegistrationGroup } from '../lib/metrics';
-import { conversionRows } from './performanceRows';
+import { conversionRows, leakageRows } from './performanceRows';
+
+/** Every registration in the book, newest first: the top of the funnel. */
+function AllRegistrationsCard({
+  registrations,
+  roster,
+}: {
+  registrations: PaginationState<DealRegistration>;
+  roster: Partner[];
+}) {
+  return (
+    <Card
+      title="All registrations"
+      subtitle={
+        registrations.meta === null
+          ? 'Every registration submitted, newest first, with its current status'
+          : `${registrations.totalCount} registrations submitted · newest first, with their current status`
+      }
+    >
+      {renderQueryState('registrations', pageWindowAsQuery(registrations, true), (rows) => (
+        <>
+          <RegistrationsTable
+            registrations={rows}
+            partners={roster}
+            variant="history"
+            limit={rows.length}
+          />
+          <PageFooter state={registrations} noun="registrations" pageSize={10} />
+        </>
+      ))}
+    </Card>
+  );
+}
 
 /** The review queue: pending registrations, oldest first, a page at a time. */
 function ReviewQueueCard({
@@ -154,7 +186,7 @@ function DuplicatesCard({
  * duplicate/conflict table is internal only.
  *
  * The route reads the scoped contract: the KPI tiles and conversion chart are
- * one ops aggregate, the three tables are cursor-paginated row collections,
+ * one ops aggregate, the four tables are cursor-paginated row collections,
  * and every card carries its own loading, error, retry, and metadata state
  * rather than a share of a whole-book load.
  */
@@ -260,15 +292,29 @@ export default function DealRegistrationOpsView({
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ReviewQueueCard
-          pending={queries.pending}
-          ops={queries.ops}
-          roster={roster}
-          onWorkflow={onWorkflow}
-        />
-        <ExclusivityCard unconverted={queries.unconverted} ops={queries.ops} roster={roster} />
-      </div>
+      {/* Funnel order, big to small: everything submitted, the open queue,
+          what is leaking, what was approved but never converted, and the
+          conflicts. */}
+      <AllRegistrationsCard registrations={queries.registrations} roster={roster} />
+
+      <ReviewQueueCard
+        pending={queries.pending}
+        ops={queries.ops}
+        roster={roster}
+        onWorkflow={onWorkflow}
+      />
+
+      <Card title="Registration leakage" subtitle="What the funnel loses · whole-org counts">
+        {renderQueryState('registration leakage', queries.ops, (ops) => (
+          <MetricBars rows={leakageRows(ops)} />
+        ))}
+        <p className="mt-4 text-xs text-granite">
+          Leakage is approved registrations that never became opportunities, registrations outside
+          their service levels, and clients registered by more than one partner.
+        </p>
+      </Card>
+
+      <ExclusivityCard unconverted={queries.unconverted} ops={queries.ops} roster={roster} />
 
       <DuplicatesCard duplicates={queries.duplicates} roster={roster} onWorkflow={onWorkflow} />
     </div>

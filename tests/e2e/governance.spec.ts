@@ -116,6 +116,7 @@ test('VAL-GOV-012: default build makes no live integration or telemetry request'
     'Activity Tracking',
     'Partner View',
     'Data Connections',
+    'Settings',
     'Partner Performance',
     'Production Requirements',
     'Home',
