@@ -100,17 +100,21 @@ jobs:
           # the server root -- exactly what the ZAP target below expects.
           BASE_PATH: /
       - name: Serve the production build
+        env:
+          # Preview resolves the base independently of the earlier build.
+          BASE_PATH: /
         run: |
-          npm run preview -- --host 127.0.0.1 --port 4173 --strictPort &
-          for _ in $(seq 1 60); do
-            if curl --fail --silent http://127.0.0.1:4173/ >/dev/null; then
-              echo 'Preview server is serving the build.'
-              exit 0
-            fi
-            sleep 1
-          done
-          echo 'Preview server did not answer within 60 seconds.' >&2
-          exit 1
+          # Own the Vite PID directly, not an npm parent process.
+          ./node_modules/.bin/vite preview --host 127.0.0.1 --port 4173 --strictPort &
+          preview_pid=$!
+          echo "$preview_pid" > "$RUNNER_TEMP/dast-preview.pid"
+          # Bounded to 60 seconds, including HTML and initial asset GETs.
+          if ! node scripts/check-preview-assets.mjs; then
+            kill "$preview_pid" 2>/dev/null || true
+            wait "$preview_pid" 2>/dev/null || true
+            rm -f "$RUNNER_TEMP/dast-preview.pid"
+            exit 1
+          fi
       - name: ZAP baseline scan
         uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
         with:
@@ -124,6 +128,14 @@ jobs:
           fail_action: true
           # Reports stay in the run artifact; no auto-filed tracking issue.
           allow_issue_writing: false
+      - name: Stop the owned preview process
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/dast-preview.pid" ]; then
+            preview_pid="$(cat "$RUNNER_TEMP/dast-preview.pid")"
+            kill "$preview_pid" 2>/dev/null || true
+            rm -f "$RUNNER_TEMP/dast-preview.pid"
+          fi
 
   label-taxonomy:
     name: Sync label taxonomy

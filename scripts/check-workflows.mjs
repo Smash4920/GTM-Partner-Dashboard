@@ -548,6 +548,13 @@ function checkZapPolicy(documents, violations, inventory, zapRulesText) {
     return;
   }
 
+  if (
+    dast['continue-on-error'] !== undefined ||
+    (dast.steps ?? []).some((step) => step?.['continue-on-error'] !== undefined)
+  ) {
+    violations.push(`${file}: job 'dast' and its steps must not use continue-on-error`);
+  }
+
   const zapStep = (dast.steps ?? []).find(
     (step) => typeof step?.uses === 'string' && step.uses.includes('zaproxy/action-baseline@'),
   );
@@ -604,9 +611,18 @@ function checkZapPolicy(documents, violations, inventory, zapRulesText) {
         `${file}: job 'dast' must serve the production preview with the canonical '${PREVIEW_FLAGS}' flags`,
       );
     }
-    if (!/\bseq 1 \d+\b/.test(serveStep.run)) {
+    if (serveStep.env?.BASE_PATH !== '/') {
       violations.push(
-        `${file}: job 'dast' preview startup wait must be a bounded 'seq 1 <n>' loop`,
+        `${file}: job 'dast' must serve with BASE_PATH=/ to match its root-base production build`,
+      );
+    }
+    if (
+      !/^\s*(?:node scripts\/check-preview-assets\.mjs|if ! node scripts\/check-preview-assets\.mjs; then)\s*$/m.test(
+        serveStep.run,
+      )
+    ) {
+      violations.push(
+        `${file}: job 'dast' must check initial module and style assets with the bounded scripts/check-preview-assets.mjs readiness command`,
       );
     }
   }

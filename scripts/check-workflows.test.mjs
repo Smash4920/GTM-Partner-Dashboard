@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { waitForPreviewAssets } from './check-preview-assets.mjs';
 import {
   ALLOWED_JOB_WRITES,
   TIMEOUT_BUDGETS_MINUTES,
@@ -81,6 +82,9 @@ function scalar(value) {
   }
   if (typeof value === 'boolean' || typeof value === 'number') {
     return String(value);
+  }
+  if (String(value).includes('\n')) {
+    return JSON.stringify(String(value));
   }
   return `'${String(value).replaceAll("'", "''")}'`;
 }
@@ -408,7 +412,7 @@ const VALID_RULES = [
 ].join('\n');
 
 const DEFAULT_SERVE_RUN =
-  'npm run preview -- --host 127.0.0.1 --port 4173 --strictPort & for _ in $(seq 1 60); do curl http://127.0.0.1:4173/ && exit 0; sleep 1; done; exit 1';
+  './node_modules/.bin/vite preview --host 127.0.0.1 --port 4173 --strictPort &\nnode scripts/check-preview-assets.mjs';
 
 function securityWorkflow(overrides = {}) {
   const workflow = {
@@ -439,7 +443,12 @@ function securityWorkflow(overrides = {}) {
         steps: [
           { uses: PINNED_CHECKOUT },
           { name: 'Build', run: 'npm run build', env: { BASE_PATH: '/' } },
-          { name: 'Serve', run: overrides.serveRun ?? DEFAULT_SERVE_RUN },
+          {
+            name: 'Serve',
+            run: overrides.serveRun ?? DEFAULT_SERVE_RUN,
+            env: overrides.serveEnv ?? { BASE_PATH: '/' },
+            ...(overrides.serveStep ?? {}),
+          },
           { name: 'ZAP', uses: ZAP_PIN, with: overrides.zapWith ?? VALID_ZAP_WITH },
         ],
       },
@@ -562,6 +571,35 @@ describe('ZAP rules policy (VAL-SEC-012)', () => {
     assert.ok(violations.some((line) => /vite preview/.test(line)));
   });
 
+  for (const serveEnv of [{}, { BASE_PATH: '/GTM-Partner-Dashboard/' }]) {
+    it(`rejects missing or wrong preview base ${JSON.stringify(serveEnv)}`, () => {
+      assert.ok(checkSecurity({ serveEnv }).some((line) => /serve with BASE_PATH=\//.test(line)));
+    });
+  }
+
+  it('rejects root-only HTTP readiness even when the startup loop is bounded', () => {
+    const serveRun =
+      'npm run preview -- --host 127.0.0.1 --port 4173 --strictPort & for _ in $(seq 1 60); do curl --fail http://127.0.0.1:4173/ && exit 0; sleep 1; done; exit 1';
+    assert.ok(
+      checkSecurity({ serveRun }).some((line) => /initial module and style assets/.test(line)),
+    );
+  });
+
+  it('rejects ignored or backgrounded asset readiness failures', () => {
+    for (const suffix of [' || true', ' &', '; exit 0']) {
+      assert.ok(
+        checkSecurity({ serveRun: DEFAULT_SERVE_RUN + suffix }).some((line) =>
+          /initial module and style assets/.test(line),
+        ),
+      );
+    }
+  });
+
+  it('rejects non-blocking DAST setup or scan steps', () => {
+    const violations = checkSecurity({ serveStep: { 'continue-on-error': true } });
+    assert.ok(violations.some((line) => /dast.*continue-on-error/.test(line)));
+  });
+
   it('rejects ZAP rule entries without a rationale', () => {
     const violations = checkDast(VALID_ZAP_WITH, { zapRulesText: '10020\tIGNORE\n' });
     assert.ok(violations.some((line) => /rationale/.test(line)));
@@ -571,6 +609,138 @@ describe('ZAP rules policy (VAL-SEC-012)', () => {
     const violations = checkDast(VALID_ZAP_WITH, { zapRulesText: 'banana\n' });
     assert.ok(violations.some((line) => /malformed/.test(line)));
   });
+});
+
+describe('DAST initial asset readiness', () => {
+  const html = `<!doctype html><div id="root"></div>
+    <script crossorigin src="/assets/index-abc123.js" type="module"></script>
+    <link href="/assets/vendor-def456.js" rel="modulepreload">
+    <link rel="stylesheet" href="/assets/index-abc123.css">`;
+
+  function fixture(overrides = {}) {
+    const responses = {
+      '/': [html, 'text/html'],
+      '/assets/index-abc123.js': ['import "./vendor-def456.js";', 'text/javascript'],
+      '/assets/vendor-def456.js': ['export const ready = true;', 'application/javascript'],
+      '/assets/index-abc123.css': ['body { margin: 0; }', 'text/css'],
+      ...overrides,
+    };
+    const requests = [];
+    let time = 0;
+    return {
+      requests,
+      options: {
+        timeoutMs: 3,
+        now: () => time,
+        pause: async () => {
+          time += 1;
+        },
+        fetchImpl: async (url, options) => {
+          requests.push(new URL(url).pathname);
+          assert.ok(options.signal);
+          assert.equal(options.redirect, 'error');
+          const [body, type, status = 200] = responses[new URL(url).pathname] ?? ['', '', 404];
+          return new Response(body, { status, headers: { 'content-type': type } });
+        },
+      },
+    };
+  }
+
+  it('requires successful actual GETs of the initial module, preload, and stylesheet', async () => {
+    const { requests, options } = fixture();
+    const assets = await waitForPreviewAssets(options);
+    assert.equal(assets.length, 3);
+    assert.deepEqual(requests, [
+      '/',
+      '/assets/index-abc123.js',
+      '/assets/vendor-def456.js',
+      '/assets/index-abc123.css',
+    ]);
+  });
+
+  for (const path of [
+    '/assets/index-abc123.js',
+    '/assets/vendor-def456.js',
+    '/assets/index-abc123.css',
+  ]) {
+    for (const [label, response] of [
+      ['404', ['', 'text/plain', 404]],
+      ['HTML fallback', [html, 'text/html']],
+      ['mislabeled HTML fallback', [html, path.endsWith('.css') ? 'text/css' : 'text/javascript']],
+      ['empty body', ['', path.endsWith('.css') ? 'text/css' : 'text/javascript']],
+    ]) {
+      it(`rejects root 200 with ${path} returning ${label}`, async () => {
+        const { options } = fixture({ [path]: response });
+        await assert.rejects(waitForPreviewAssets(options), /not ready within.*asset/);
+      });
+    }
+  }
+
+  it('rejects HTML without required initial modules or styles', async () => {
+    for (const body of [
+      '<div id="root"></div>',
+      html.replace(/<link rel="stylesheet"[^>]+>/, ''),
+    ]) {
+      const { options } = fixture({ '/': [body, 'text/html'] });
+      await assert.rejects(waitForPreviewAssets(options), /initial module and stylesheet/);
+    }
+  });
+
+  it('rejects cross-origin asset references without making an external request', async () => {
+    const { requests, options } = fixture({
+      '/': [html.replace('/assets/index-abc123.js', 'https://example.com/app.js'), 'text/html'],
+    });
+    await assert.rejects(waitForPreviewAssets(options), /same origin/);
+    assert.ok(requests.every((path) => path === '/'));
+  });
+
+  it('resolves relative assets and tolerates content-type charset parameters', async () => {
+    const { options } = fixture({
+      '/': [html.replaceAll('"/assets/', '"./assets/'), 'text/html; charset=utf-8'],
+      '/assets/index-abc123.css': ['body {}', 'text/css; charset=utf-8'],
+    });
+    assert.equal((await waitForPreviewAssets(options)).length, 3);
+  });
+
+  it('bounds unavailable startup and recovers when the next attempt succeeds', async () => {
+    const { options } = fixture();
+    const fetchImpl = options.fetchImpl;
+    let attempts = 0;
+    options.fetchImpl = async (...args) => {
+      if (attempts++ === 0) throw new Error('connection refused');
+      return fetchImpl(...args);
+    };
+    assert.equal((await waitForPreviewAssets(options)).length, 3);
+    options.fetchImpl = async () => {
+      throw new Error('connection refused');
+    };
+    await assert.rejects(waitForPreviewAssets(options), /not ready within 3ms: connection refused/);
+  });
+
+  for (const stall of ['fetch', 'body']) {
+    it(`bounds a stalled ${stall} and aborts the owned request`, async () => {
+      let signal;
+      let time = 0;
+      const options = {
+        timeoutMs: 10,
+        now: () => time,
+        pause: async () => {
+          time = 10;
+        },
+        fetchImpl: async (_, options) => {
+          signal = options.signal;
+          if (stall === 'fetch') return new Promise(() => {});
+          return {
+            status: 200,
+            headers: new Headers({ 'content-type': 'text/html' }),
+            text: () => new Promise(() => {}),
+          };
+        },
+      };
+      await assert.rejects(waitForPreviewAssets(options), /request or response body timed out/);
+      assert.equal(signal.aborted, true);
+    });
+  }
 });
 
 describe('CI and DAST command parity', () => {
