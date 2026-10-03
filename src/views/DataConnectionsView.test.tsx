@@ -193,17 +193,19 @@ function tile(label: string) {
   return within(root);
 }
 
-const connectionMap = () => within(screen.getByRole('group', { name: 'Data connection map' }));
-
 /** Node labels carry parentheses and dots, so escape before anchoring. */
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const nodeButton = (label: string) =>
-  connectionMap().getByRole('button', { name: new RegExp(`^${escapeRegExp(label)}`) });
-
-/** A teammate chip inside the notification node, matched on the first name. */
-const chip = (firstName: string) =>
-  connectionMap().getByRole('button', { name: new RegExp(`^${escapeRegExp(firstName)}`) });
+/** Capture the stable map once for this mount, never across test cases. */
+function connectionMapQueries() {
+  const map = within(screen.getByRole('group', { name: 'Data connection map' }));
+  const nodeButton = (label: string) =>
+    map.getByRole('button', { name: new RegExp(`^${escapeRegExp(label)}`) });
+  // Teammate chips are inside the notification node, matched on the first name.
+  const chip = (firstName: string) =>
+    map.getByRole('button', { name: new RegExp(`^${escapeRegExp(firstName)}`) });
+  return { map, nodeButton, chip };
+}
 
 /** The composer column, so channel labels elsewhere on the page do not collide. */
 function composerRegion() {
@@ -221,7 +223,9 @@ function queueRow(accountName: string): HTMLElement {
 
 /** The composer prefill lands when the alert queue's query does. */
 async function composerSettled() {
-  await waitFor(() => expect(screen.getByLabelText('To')).toHaveValue(OWNER_USER_ID));
+  const composer = composerRegion();
+  await waitFor(() => expect(composer.getByLabelText('To')).toHaveValue(OWNER_USER_ID));
+  return composer;
 }
 
 describe('DataConnectionsView', () => {
@@ -238,6 +242,7 @@ describe('DataConnectionsView', () => {
         getPartnerRoster: 1,
       },
     });
+    const { map } = connectionMapQueries();
 
     // The catalog: KPIs from CONNECTION_NODES and the wire map render.
     expect(tile('Connections required').getByText(String(REQUIRED_NODES))).toBeInTheDocument();
@@ -246,7 +251,7 @@ describe('DataConnectionsView', () => {
         `${COVERED_METHODS}/${CONNECTION_METHOD_COVERAGE.length}`,
       ),
     ).toBeInTheDocument();
-    expect(connectionMap().getByRole('button', { name: /^CRM/ })).toBeInTheDocument();
+    expect(map.getByRole('button', { name: /^CRM/ })).toBeInTheDocument();
 
     // Each business section names itself; the data-derived KPIs degrade to a
     // dash instead of a plausible zero.
@@ -471,6 +476,7 @@ describe('DataConnectionsView', () => {
     // answer" with a Retry button while the provider was still answering.
     // Loading is not a failure — it announces itself and waits.
     setup({ latencyMs: 60_000 });
+    const { map } = connectionMapQueries();
 
     expect(screen.getByText('Loading the notification composer')).toBeInTheDocument();
     expect(screen.getByText('Loading the team roster')).toBeInTheDocument();
@@ -488,7 +494,7 @@ describe('DataConnectionsView', () => {
       tile('SLA alerts due').getByText(/alert queue loading — waiting on the provider/),
     ).toBeInTheDocument();
     // The static catalog did not wait on any of it.
-    expect(connectionMap().getByRole('button', { name: /^CRM/ })).toBeInTheDocument();
+    expect(map.getByRole('button', { name: /^CRM/ })).toBeInTheDocument();
   });
 
   it('derives the KPI tiles from the catalog and the live alert split', async () => {
@@ -579,6 +585,7 @@ describe('DataConnectionsView', () => {
 
   it('re-renders the detail panel for another node, naming the demo limit on a live one', async () => {
     const { user } = setup();
+    const { nodeButton } = connectionMapQueries();
 
     await user.click(nodeButton('Canonical data model'));
     expect(
@@ -610,6 +617,7 @@ describe('DataConnectionsView', () => {
 
   it('renders identity and notification nodes unconnected with truthful blockers (VAL-GOV-004)', async () => {
     const { user } = setup();
+    const { nodeButton } = connectionMapQueries();
 
     // The intro names the demo boundary up front.
     expect(
@@ -642,30 +650,30 @@ describe('DataConnectionsView', () => {
 
   it('opens the composer on the most urgent approaching alert that has an owner', async () => {
     setup();
-    await composerSettled();
+    const composer = await composerSettled();
 
     const approaching = alertFor(APPROACHING_REG_ID);
-    expect(screen.getByLabelText('To')).toHaveValue(OWNER_USER_ID);
-    expect(screen.getByLabelText('Registration')).toHaveValue(APPROACHING_REG_ID);
-    expect(screen.getByLabelText('Subject')).toHaveValue(
+    expect(composer.getByLabelText('To')).toHaveValue(OWNER_USER_ID);
+    expect(composer.getByLabelText('Registration')).toHaveValue(APPROACHING_REG_ID);
+    expect(composer.getByLabelText('Subject')).toHaveValue(
       'Deal reg due next business day: Acme Freight',
     );
-    expect(screen.getByLabelText('Message')).toHaveValue(slaAlertCopy(approaching).body);
+    expect(composer.getByLabelText('Message')).toHaveValue(slaAlertCopy(approaching).body);
     expect(
-      screen.getByText(
+      composer.getByText(
         `On the SLA clock: last business day before the ${REGISTRATION_SLA_BUSINESS_DAYS}-business-day deadline (due ${formatDate(approaching.dueAt)}).`,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText('j.alvarez@example.com · Partner Manager')).toBeInTheDocument();
-    expect(composerRegion().getByText('Email')).toBeInTheDocument();
-    expect(composerRegion().getByText('Slack')).toBeInTheDocument();
+    expect(composer.getByText('j.alvarez@example.com · Partner Manager')).toBeInTheDocument();
+    expect(composer.getByText('Email')).toBeInTheDocument();
+    expect(composer.getByText('Slack')).toBeInTheDocument();
   });
 
   it('sends the composer draft on the owner channels with the SLA kind', async () => {
     const { user, onSendNotification } = setup();
-    await composerSettled();
+    const composer = await composerSettled();
 
-    await user.click(screen.getByRole('button', { name: 'Send to J. Alvarez' }));
+    await user.click(composer.getByRole('button', { name: 'Send to J. Alvarez' }));
 
     expect(onSendNotification).toHaveBeenCalledTimes(1);
     expect(onSendNotification).toHaveBeenCalledWith(
@@ -683,13 +691,15 @@ describe('DataConnectionsView', () => {
 
   it('keeps the alert kind when the copy is edited by hand', async () => {
     const { user, onSendNotification } = setup();
-    await composerSettled();
+    const composer = await composerSettled();
+    const subject = composer.getByLabelText('Subject');
+    const message = composer.getByLabelText('Message');
 
-    await user.clear(screen.getByLabelText('Subject'));
-    await user.type(screen.getByLabelText('Subject'), 'Quick nudge');
-    await user.clear(screen.getByLabelText('Message'));
-    await user.type(screen.getByLabelText('Message'), 'Please approve it today.');
-    await user.click(screen.getByRole('button', { name: 'Send to J. Alvarez' }));
+    await user.clear(subject);
+    await user.type(subject, 'Quick nudge');
+    await user.clear(message);
+    await user.type(message, 'Please approve it today.');
+    await user.click(composer.getByRole('button', { name: 'Send to J. Alvarez' }));
 
     // Editing the words does not change what the send is: still a warning.
     expect(onSendNotification).toHaveBeenCalledWith(
@@ -704,31 +714,34 @@ describe('DataConnectionsView', () => {
 
   it('cannot send while the subject or body is blank', async () => {
     const { user, onSendNotification } = setup();
-    await composerSettled();
+    const composer = await composerSettled();
+    const subject = composer.getByLabelText('Subject');
+    const message = composer.getByLabelText('Message');
 
-    await user.clear(screen.getByLabelText('Subject'));
-    const send = screen.getByRole('button', { name: 'Send to J. Alvarez' });
+    await user.clear(subject);
+    const send = composer.getByRole('button', { name: 'Send to J. Alvarez' });
     await user.click(send);
-    expect(screen.getByLabelText('Subject')).toHaveFocus();
-    expect(screen.getByLabelText('Subject')).toHaveAccessibleDescription('A subject is required.');
+    expect(subject).toHaveFocus();
+    expect(subject).toHaveAccessibleDescription('A subject is required.');
 
     // Whitespace is not copy either.
-    await user.type(screen.getByLabelText('Subject'), '   ');
+    await user.type(subject, '   ');
     await user.click(send);
-    expect(screen.getByLabelText('Subject')).toHaveFocus();
+    expect(subject).toHaveFocus();
 
-    await user.type(screen.getByLabelText('Subject'), 'Nudge');
-    await user.clear(screen.getByLabelText('Message'));
+    await user.type(subject, 'Nudge');
+    await user.clear(message);
     await user.click(send);
-    expect(screen.getByLabelText('Message')).toHaveFocus();
-    expect(screen.getByLabelText('Message')).toHaveAccessibleDescription('A message is required.');
+    expect(message).toHaveFocus();
+    expect(message).toHaveAccessibleDescription('A message is required.');
 
     expect(onSendNotification).not.toHaveBeenCalled();
   });
 
   it('opens an empty composer when no registration is near the SLA', async () => {
     setup({ data: { registrations: [] } });
-    await waitFor(() => expect(screen.getByLabelText('To')).toHaveValue(''));
+    const composer = composerRegion();
+    await waitFor(() => expect(composer.getByLabelText('To')).toHaveValue(''));
 
     expect(await tile('SLA alerts due').findByText('0')).toBeInTheDocument();
     expect(
@@ -739,41 +752,45 @@ describe('DataConnectionsView', () => {
     expect(screen.getByText('Nothing near the SLA — the queue is clear.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Notify all 0 owners' })).toBeDisabled();
 
-    expect(screen.getByLabelText('Subject')).toHaveValue('');
-    expect(screen.getByLabelText('Message')).toHaveValue('');
+    expect(composer.getByLabelText('Subject')).toHaveValue('');
+    expect(composer.getByLabelText('Message')).toHaveValue('');
     expect(
-      screen.getByText('Pick a teammate to see the channels they receive on.'),
+      composer.getByText('Pick a teammate to see the channels they receive on.'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send to a teammate' })).toBeDisabled();
+    expect(composer.getByRole('button', { name: 'Send to a teammate' })).toBeDisabled();
   });
 
   it('says the roster is empty when there is nobody to notify', async () => {
     setup({ data: { registrations: [], teamUsers: [] } });
+    const { map } = connectionMapQueries();
 
     expect(await tile('Receiving notifications').findByText('0/0')).toBeInTheDocument();
     expect(await screen.findByText('Add someone to the roster first.')).toBeInTheDocument();
-    expect(connectionMap().getByText('No roster yet.')).toBeInTheDocument();
+    expect(map.getByText('No roster yet.')).toBeInTheDocument();
   });
 
   it('retargets the composer from a teammate chip, blank if they own nothing', async () => {
     const { user } = setup();
-    await composerSettled();
+    const { chip } = connectionMapQueries();
+    const composer = await composerSettled();
+    const idleManagerChip = chip('R.');
+    const ownerChip = chip('J.');
 
-    await user.click(chip('R.'));
-    expect(chip('R.')).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByLabelText('To')).toHaveValue(IDLE_MANAGER_USER_ID);
+    await user.click(idleManagerChip);
+    expect(idleManagerChip).toHaveAttribute('aria-pressed', 'true');
+    expect(composer.getByLabelText('To')).toHaveValue(IDLE_MANAGER_USER_ID);
     // No alerts owned: the pick survives but the copy is cleared.
-    expect(screen.getByLabelText('Subject')).toHaveValue('');
-    expect(screen.getByLabelText('Message')).toHaveValue('');
-    expect(composerRegion().getByText('In-app')).toBeInTheDocument();
+    expect(composer.getByLabelText('Subject')).toHaveValue('');
+    expect(composer.getByLabelText('Message')).toHaveValue('');
+    expect(composer.getByText('In-app')).toBeInTheDocument();
 
-    await user.click(chip('J.'));
-    expect(screen.getByLabelText('To')).toHaveValue(OWNER_USER_ID);
-    expect(screen.getByLabelText('Subject')).toHaveValue(
+    await user.click(ownerChip);
+    expect(composer.getByLabelText('To')).toHaveValue(OWNER_USER_ID);
+    expect(composer.getByLabelText('Subject')).toHaveValue(
       'Deal reg due next business day: Acme Freight',
     );
     // The chip carries the count the node derives from the alert rule.
-    expect(chip('J.')).toHaveAttribute(
+    expect(ownerChip).toHaveAttribute(
       'aria-label',
       'J. Alvarez · j.alvarez@example.com · 2 SLA alerts',
     );
@@ -781,20 +798,23 @@ describe('DataConnectionsView', () => {
 
   it('will not notify a paused teammate', async () => {
     const { user } = setup();
-    await composerSettled();
+    const { chip } = connectionMapQueries();
+    const composer = await composerSettled();
+    const pausedChip = chip('T.');
 
-    await user.click(chip('T.'));
-    expect(chip('T.')).toHaveAttribute('aria-pressed', 'true');
+    await user.click(pausedChip);
+    expect(pausedChip).toHaveAttribute('aria-pressed', 'true');
 
     // A paused user is not a notifiable option: no channels, nobody to send to.
     expect(
-      screen.getByText('Only a teammate with notifications on can be messaged.'),
+      composer.getByText('Only a teammate with notifications on can be messaged.'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send to a teammate' })).toBeDisabled();
+    expect(composer.getByRole('button', { name: 'Send to a teammate' })).toBeDisabled();
   });
 
   it('retargets the composer to a single alert picked from the queue', async () => {
     const { user } = setup();
+    const { nodeButton } = connectionMapQueries();
     await composerSettled();
 
     await user.click(nodeButton('Salesforce'));
@@ -804,14 +824,16 @@ describe('DataConnectionsView', () => {
       within(queueRow('Contoso Retail')).getByRole('button', { name: 'Notify owner' }),
     );
 
+    const composer = composerRegion();
+
     // The queue drives the map back to the node that holds the composer.
     expect(
       screen.getByRole('heading', { level: 3, name: 'Notification service' }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('To')).toHaveValue(OWNER_USER_ID);
-    expect(screen.getByLabelText('Registration')).toHaveValue(OWNED_BREACH_REG_ID);
-    expect(screen.getByLabelText('Subject')).toHaveValue('Deal reg SLA lapsed: Contoso Retail');
-    expect(screen.getByLabelText('Message')).toHaveValue(
+    expect(composer.getByLabelText('To')).toHaveValue(OWNER_USER_ID);
+    expect(composer.getByLabelText('Registration')).toHaveValue(OWNED_BREACH_REG_ID);
+    expect(composer.getByLabelText('Subject')).toHaveValue('Deal reg SLA lapsed: Contoso Retail');
+    expect(composer.getByLabelText('Message')).toHaveValue(
       slaAlertCopy(alertFor(OWNED_BREACH_REG_ID)).body,
     );
   });
@@ -856,27 +878,27 @@ describe('DataConnectionsView', () => {
 
   it('recomposes the copy when the template or registration changes', async () => {
     const { user } = setup();
-    await composerSettled();
+    const composer = await composerSettled();
 
-    await user.selectOptions(screen.getByLabelText('Template'), 'registration-note');
-    expect(screen.getByLabelText('Subject')).toHaveValue(
+    await user.selectOptions(composer.getByLabelText('Template'), 'registration-note');
+    expect(composer.getByLabelText('Subject')).toHaveValue(
       'Question on the Acme Freight registration',
     );
 
-    await user.selectOptions(screen.getByLabelText('Registration'), OWNED_BREACH_REG_ID);
-    expect(screen.getByLabelText('Subject')).toHaveValue(
+    await user.selectOptions(composer.getByLabelText('Registration'), OWNED_BREACH_REG_ID);
+    expect(composer.getByLabelText('Subject')).toHaveValue(
       'Question on the Contoso Retail registration',
     );
 
     // A custom note has no template copy, and no registration to hang it on.
-    await user.selectOptions(screen.getByLabelText('Template'), 'custom');
-    expect(screen.getByLabelText('Subject')).toHaveValue('');
-    expect(screen.getByLabelText('Message')).toHaveValue('');
-    expect(screen.getByLabelText('Registration')).toBeDisabled();
+    await user.selectOptions(composer.getByLabelText('Template'), 'custom');
+    expect(composer.getByLabelText('Subject')).toHaveValue('');
+    expect(composer.getByLabelText('Message')).toHaveValue('');
+    expect(composer.getByLabelText('Registration')).toBeDisabled();
 
     // Back to the SLA template and the alert on that registration re-fills it.
-    await user.selectOptions(screen.getByLabelText('Template'), 'sla-alert');
-    expect(screen.getByLabelText('Subject')).toHaveValue('Deal reg SLA lapsed: Contoso Retail');
+    await user.selectOptions(composer.getByLabelText('Template'), 'sla-alert');
+    expect(composer.getByLabelText('Subject')).toHaveValue('Deal reg SLA lapsed: Contoso Retail');
   });
 
   it('notes a registration that is still inside the SLA instead of alerting on it', async () => {
@@ -893,17 +915,17 @@ describe('DataConnectionsView', () => {
         ],
       },
     });
-    await composerSettled();
+    const composer = await composerSettled();
 
-    await user.selectOptions(screen.getByLabelText('Registration'), 'reg-inside');
+    await user.selectOptions(composer.getByLabelText('Registration'), 'reg-inside');
 
     expect(
-      screen.getByText(
+      composer.getByText(
         'Inside the SLA — Northwind Systems still has time before the response is due.',
       ),
     ).toBeInTheDocument();
     // No alert on this one, so the composer falls back to the follow-up question.
-    expect(screen.getByLabelText('Subject')).toHaveValue(
+    expect(composer.getByLabelText('Subject')).toHaveValue(
       'Question on the Litware Media registration',
     );
   });
@@ -925,24 +947,26 @@ describe('DataConnectionsView', () => {
         ],
       },
     });
-    await waitFor(() => expect(screen.getByLabelText('To')).not.toBeDisabled());
+    const composer = composerRegion();
+    await waitFor(() => expect(composer.getByLabelText('To')).not.toBeDisabled());
 
-    await user.selectOptions(screen.getByLabelText('To'), 'user-analyst');
+    await user.selectOptions(composer.getByLabelText('To'), 'user-analyst');
 
     expect(
-      screen.getByText('a.analyst@example.com · Analyst · not aligned to one manager'),
+      composer.getByText('a.analyst@example.com · Analyst · not aligned to one manager'),
     ).toBeInTheDocument();
   });
 
   it('sends a hand-written note to a teammate picked from the composer roster', async () => {
     const { user, onSendNotification } = setup({ data: { registrations: [] } });
-    await waitFor(() => expect(screen.getByLabelText('To')).not.toBeDisabled());
+    const composer = composerRegion();
+    await waitFor(() => expect(composer.getByLabelText('To')).not.toBeDisabled());
 
-    await user.selectOptions(screen.getByLabelText('To'), OWNER_USER_ID);
-    expect(composerRegion().getByText('Email')).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Subject'), 'Heads up');
-    await user.type(screen.getByLabelText('Message'), 'The new partner is live.');
-    await user.click(screen.getByRole('button', { name: 'Send to J. Alvarez' }));
+    await user.selectOptions(composer.getByLabelText('To'), OWNER_USER_ID);
+    expect(composer.getByText('Email')).toBeInTheDocument();
+    await user.type(composer.getByLabelText('Subject'), 'Heads up');
+    await user.type(composer.getByLabelText('Message'), 'The new partner is live.');
+    await user.click(composer.getByRole('button', { name: 'Send to J. Alvarez' }));
 
     // No registration and no alert behind it: a manual note with no record id.
     expect(onSendNotification).toHaveBeenCalledWith(
