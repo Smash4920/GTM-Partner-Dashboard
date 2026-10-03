@@ -2,12 +2,56 @@
 @tailwind components;
 @tailwind utilities;
 
+/* One geometry-based keyboard indicator, including controls in dense tables. */
+:focus-visible {
+  outline: 2px solid theme('colors.bone') !important;
+  outline-offset: -2px !important;
+}
+
+.pointer :focus-visible {
+  outline: none !important;
+}
+
+main,
+h1,
+h2[tabindex] {
+  scroll-margin-top: 5rem;
+}
+
+.skip-link {
+  @apply fixed left-4 top-2 z-50 rounded border border-bone bg-canvas px-4 py-2 text-sm text-bone;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
 html {
   color-scheme: dark;
+  scroll-padding-block: 5rem 1rem;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
+main form :is(button, input, select, textarea) {
+  scroll-margin-block: 5rem;
+}
+
 ::selection {
   background: rgb(238 96 24 / 0.35);
+}
+
+[role='region'] {
+  scroll-padding-top: 3rem;
+}
+
+[role='region'] :is(button, summary) {
+  min-width: 24px;
+  min-height: 24px;
+  scroll-margin-block: 5rem;
+}
+
+.bg-bone :focus-visible {
+  outline-color: theme('colors.carbon') !important;
 }

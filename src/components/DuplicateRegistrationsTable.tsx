@@ -1,8 +1,10 @@
 import type { Partner } from '../data/types';
 import { formatDate } from '../lib/format';
 import type { DuplicateRegistrationGroup } from '../lib/metrics';
+import type { WorkflowActions } from '../data/workflows';
+import TableRegion from './TableRegion';
 
-interface DuplicateRegistrationsTableProps {
+interface DuplicateRegistrationsTableProps extends WorkflowActions {
   groups: DuplicateRegistrationGroup[];
   partners: Partner[];
   limit?: number;
@@ -18,6 +20,7 @@ export default function DuplicateRegistrationsTable({
   groups,
   partners,
   limit = 6,
+  onWorkflow,
 }: DuplicateRegistrationsTableProps) {
   const partnerById = new Map(partners.map((partner) => [partner.id, partner]));
   const rows = groups.slice(0, limit);
@@ -26,53 +29,87 @@ export default function DuplicateRegistrationsTable({
   const firstId = (group: DuplicateRegistrationGroup) => group.firstSubmitted.id;
 
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="border-b border-carbon">
-          <th className={`${th} text-left`}>Client</th>
-          <th className={`${th} text-left`}>Partner</th>
-          <th className={`${th} text-left`}>Submitted</th>
-          <th className={`${th} text-right`}>Claim</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((group) =>
-          group.registrations.map((reg, index) => (
-            <tr key={reg.id} className="border-b border-carbon last:border-0">
-              {index === 0 && (
-                <td
-                  className="py-2.5 pr-3 align-top text-bone"
-                  rowSpan={group.registrations.length}
-                >
-                  {group.accountName}
+    <TableRegion label="Duplicate & conflicting registrations">
+      <table
+        aria-label="Duplicate & conflicting registrations"
+        className="w-full min-w-[640px] text-sm"
+      >
+        <thead>
+          <tr className="border-b border-carbon">
+            <th scope="col" className={`${th} text-left`}>
+              Client
+            </th>
+            <th scope="col" className={`${th} text-left`}>
+              Partner
+            </th>
+            <th scope="col" className={`${th} text-left`}>
+              Submitted
+            </th>
+            <th scope="col" className={`${th} text-right`}>
+              Claim
+            </th>
+          </tr>
+        </thead>
+        {rows.map((group) => (
+          <tbody key={group.firstSubmitted.id}>
+            {group.registrations.map((reg, index) => (
+              <tr key={reg.id} className="border-b border-carbon last:border-0">
+                {index === 0 && (
+                  <th
+                    scope="rowgroup"
+                    className="py-2.5 pr-3 text-left align-top font-normal text-bone"
+                    rowSpan={group.registrations.length}
+                  >
+                    {group.accountName}
+                    {onWorkflow && (
+                      <button
+                        type="button"
+                        className="mt-2 block min-h-6 min-w-6 rounded border border-ash px-3 py-2 text-xs"
+                        aria-label={`Disposition ${group.registrations
+                          .map((reg) => reg.id)
+                          .sort()
+                          .join(', ')}`}
+                        onClick={() =>
+                          onWorkflow({
+                            kind: 'conflict',
+                            entityIds: group.registrations.map((reg) => reg.id).sort(),
+                          })
+                        }
+                      >
+                        Record conflict disposition
+                      </button>
+                    )}
+                  </th>
+                )}
+                <td className="py-2.5 pr-3 align-top text-granite">
+                  {partnerById.get(reg.partnerId)?.name ?? reg.partnerId}
                 </td>
-              )}
-              <td className="py-2.5 pr-3 align-top text-granite">
-                {partnerById.get(reg.partnerId)?.name ?? reg.partnerId}
-              </td>
-              <td className="py-2.5 pr-3 align-top font-mono text-xs tabular-nums text-granite">
-                {formatDate(reg.submittedAt)}
-              </td>
-              <td className="py-2.5 align-top text-right">
-                <span
-                  className={`font-mono text-[10px] uppercase tracking-[0.06em] ${
-                    reg.id === firstId(group) ? 'text-metric' : 'text-signal'
-                  }`}
-                >
-                  {reg.id === firstId(group) ? 'First to submit' : 'Conflict — track closely'}
-                </span>
+                <td className="py-2.5 pr-3 align-top font-mono text-xs tabular-nums text-granite">
+                  {formatDate(reg.submittedAt)}
+                </td>
+                <td className="py-2.5 align-top text-right">
+                  <span
+                    className={`font-mono text-[10px] uppercase tracking-[0.06em] ${
+                      reg.id === firstId(group) ? 'text-metric' : 'text-signal'
+                    }`}
+                  >
+                    {reg.id === firstId(group) ? 'First to submit' : 'Conflict — track closely'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        ))}
+        {rows.length === 0 && (
+          <tbody>
+            <tr>
+              <td colSpan={4} className="py-6 text-center text-sm text-granite">
+                No conflicting registrations in this scope.
               </td>
             </tr>
-          )),
+          </tbody>
         )}
-        {rows.length === 0 && (
-          <tr>
-            <td colSpan={4} className="py-6 text-center text-sm text-granite">
-              No conflicting registrations in this scope.
-            </td>
-          </tr>
-        )}
-      </tbody>
-    </table>
+      </table>
+    </TableRegion>
   );
 }

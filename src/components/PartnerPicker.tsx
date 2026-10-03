@@ -2,8 +2,9 @@ import { PARTNER_TIER_META, PARTNER_TYPE_META } from '../data/constants';
 import type { Partner } from '../data/types';
 
 /**
- * Simulates the partner-scoped login. In production this view sits behind
- * partner SSO and the picker does not exist.
+ * Demo presentation selector standing in for a partner-scoped view. It is not
+ * a security boundary: in production this view sits behind partner SSO with
+ * server-enforced row access, and the picker does not exist.
  */
 export default function PartnerPicker({
   partners,
@@ -16,14 +17,14 @@ export default function PartnerPicker({
 }) {
   const sorted = [...partners].sort((a, b) => a.name.localeCompare(b.name));
   return (
-    <label className="flex items-center gap-2">
-      <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-granite">
+    <label className="flex w-full max-w-full items-center gap-2">
+      <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.08em] text-granite">
         Viewing as
       </span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="rounded border border-ash bg-carbon px-3 py-1.5 text-sm text-bone focus:border-signal focus:outline-none"
+        className="min-w-0 flex-1 rounded border border-ash bg-carbon px-3 py-1.5 text-sm text-bone focus:border-signal focus:outline-none"
       >
         {sorted.map((partner) => (
           <option key={partner.id} value={partner.id}>

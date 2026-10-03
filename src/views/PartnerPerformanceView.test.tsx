@@ -2,16 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PartnerPerformanceView from './PartnerPerformanceView';
+import { MockDataProvider } from '../data/mock/MockDataProvider';
+import { createSimulatedRemoteProvider } from '../data/mock/createSimulatedRemoteProvider';
+import { NO_SESSION_EDITS } from '../data/sessionEdits';
 import {
   makeCertification,
-  makeDashboardData,
   makeMeeting,
   makeOpportunity,
   makePartner,
+  makeProviderBook,
   makeRegistration,
   makeTarget,
 } from '../test/fixtures';
-import type { DashboardData, MeetingClassification } from '../data/types';
+import type { MeetingClassification } from '../data/types';
+import type { ProviderBook } from '../data/mock/book';
 
 /**
  * Partner Performance: the manager → partner → phase drill-down, the guarded
@@ -20,15 +24,17 @@ import type { DashboardData, MeetingClassification } from '../data/types';
  * of conditional labels, and its attainment ratio is the same division that
  * once rendered "∞% of goal" elsewhere in the app.
  *
- * Dates are pinned to the fixed SNAPSHOT_DATE fiscal calendar (FY27 Q3 runs
- * Aug–Oct 2026 through the snapshot of 18 Sep), never to the wall clock.
+ * The view reads scoped provider queries, so every case awaits the answers
+ * rather than rendering synchronously. Dates are pinned to the fixed
+ * SNAPSHOT_DATE fiscal calendar (FY27 Q3 runs Aug–Oct 2026 through the
+ * snapshot of 18 Sep), never to the wall clock.
  */
 
 const NO_CLASSIFICATIONS: Record<string, MeetingClassification> = {};
 
 /** A book with one open Q3 deal, a Q3 win, a loss, a prior-year win and a Q4 deal. */
-function makeBook(): DashboardData {
-  return makeDashboardData({
+function makeBook(): ProviderBook {
+  return makeProviderBook({
     partnerManagers: [
       { id: 'pm-1', name: 'J. Alvarez' },
       { id: 'pm-2', name: 'R. Diaz' },
@@ -180,8 +186,15 @@ function makeBook(): DashboardData {
   });
 }
 
-function renderView(data: DashboardData = makeBook()) {
-  render(<PartnerPerformanceView data={data} classifications={NO_CLASSIFICATIONS} />);
+function renderView(book: ProviderBook = makeBook()) {
+  render(
+    <PartnerPerformanceView
+      provider={new MockDataProvider(book)}
+      edits={NO_SESSION_EDITS}
+      classifications={NO_CLASSIFICATIONS}
+      prospects={[]}
+    />,
+  );
 }
 
 /** The card whose <h2> carries this title, so queries cannot leak across panels. */
@@ -203,18 +216,18 @@ function metricRowValue(card: HTMLElement, label: string): HTMLElement {
 }
 
 describe('PartnerPerformanceView', () => {
-  it('renders the whole-org book against the snapshot quarter', () => {
+  it('renders the whole-org book against the snapshot quarter', async () => {
     renderView();
 
+    expect(await screen.findByText('Scope · whole org · 3 partners')).toBeInTheDocument();
     expect(within(scopeLabel()).getByText('All Partners')).toBeInTheDocument();
-    expect(screen.getByText('Scope · whole org · 3 partners')).toBeInTheDocument();
 
     // 250k open in Q3, 120k closed-won against a 100k target, 100k a year
     // earlier: +20% on the prior period and 120% of target.
-    expect(screen.getByText('1 open Q3 opps')).toBeInTheDocument();
+    expect(await screen.findByText('1 open Q3 opps')).toBeInTheDocument();
     // The pipeline tile, the average-open-deal tile, and the Scope stage bar
     // all read the same single open deal.
-    expect(screen.getAllByText('$250K')).toHaveLength(3);
+    expect(await screen.findAllByText('$250K')).toHaveLength(3);
     expect(screen.getByText('120% of Q3 target')).toBeInTheDocument();
     expect(screen.getByText('▲ +20% vs prior period')).toBeInTheDocument();
     // Closed-won already exceeds the target, so there is no gap to cover.
@@ -231,18 +244,16 @@ describe('PartnerPerformanceView', () => {
     // The pending queue is phase-filtered; ops leakage deliberately is not, so
     // the Q2 registrations still count against the SLAs and the funnel.
     expect(
-      screen.getByText(
+      await screen.findByText(
         '2 pending in scope · oldest first · colored against the 5-business-day SLA',
       ),
     ).toBeInTheDocument();
+    await screen.findByText(
+      '1 approved registrations without an opportunity · 1 past the 60-day exclusivity window',
+    );
     expect(metricRowValue(cardWith('Registration leakage'), 'Pending past SLA')).toHaveTextContent(
       '2',
     );
-    expect(
-      screen.getByText(
-        '1 approved registrations without an opportunity · 1 past the 60-day exclusivity window',
-      ),
-    ).toBeInTheDocument();
     expect(screen.getByText(/^1 clients registered by more than one partner/)).toBeInTheDocument();
 
     // The leaderboard ranks on closed-won for the phase.
@@ -253,21 +264,88 @@ describe('PartnerPerformanceView', () => {
     expect(within(leaderboardRows[0]).getByText('Northwind Systems')).toBeInTheDocument();
   });
 
+  it('pages the leaderboard 25 partners at a time, appending one unique page per Load more', async () => {
+    const user = userEvent.setup();
+    // Thirty roster partners with strictly decreasing wins, so the ranking
+    // order is the fixture's order and every page boundary is checkable.
+    const partners = Array.from({ length: 30 }, (_, index) =>
+      makePartner({
+        id: `partner-${String(index + 1).padStart(2, '0')}`,
+        name: `Partner ${String(index + 1).padStart(2, '0')}`,
+        partnerManagerId: 'pm-1',
+      }),
+    );
+    const opportunities = partners.map((partner, index) =>
+      makeOpportunity({
+        id: `opp-${partner.id}`,
+        partnerId: partner.id,
+        outcome: 'won',
+        forecastedRevenue: 1_000_000 - index * 1_000,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        expectedCloseDate: '2026-09-01T00:00:00.000Z',
+        closedAt: '2026-09-01T00:00:00.000Z',
+      }),
+    );
+    renderView(makeProviderBook({ ...makeBook(), partners, opportunities, registrations: [] }));
+
+    const card = cardWith('Partner leaderboard & enablement');
+    // One bounded page of the ranking, never the thirty-row roster answer.
+    await within(card).findByText('Showing 25 of 30 partners');
+    expect(
+      within(card).getByText(
+        '30 partners in this scope · certification counts show attainment below',
+      ),
+    ).toBeInTheDocument();
+    expect(within(card).getAllByRole('row')).toHaveLength(26); // header + 25
+    expect(within(card).getByText('Partner 01')).toBeInTheDocument();
+
+    await user.click(within(card).getByRole('button', { name: 'Load 25 more' }));
+
+    // The walk continues where the first page stopped: rows 26–30 append.
+    await within(card).findByText('Showing 30 of 30 partners');
+    expect(within(card).getAllByRole('row')).toHaveLength(31);
+    expect(within(card).getByText('Partner 26')).toBeInTheDocument();
+    expect(within(card).getByText('Partner 30')).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Load 25 more' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
+  it('describes the registration SLA breach boundary as inclusive (VAL-DATA-007)', async () => {
+    renderView();
+
+    // registrationSlaState lapses at exactly 5 business days, so the leakage
+    // row must say 5+, not "> 5" — at the due-date boundary the count and
+    // its explanation would otherwise disagree.
+    await screen.findByText(
+      '1 approved registrations without an opportunity · 1 past the 60-day exclusivity window',
+    );
+    const leakage = cardWith('Registration leakage');
+    expect(within(leakage).getByText('5+ business days awaiting review')).toBeInTheDocument();
+    expect(within(leakage).queryByText(/> 5 business days/)).not.toBeInTheDocument();
+  });
+
   it('re-scopes to one partner and then to one manager', async () => {
     const user = userEvent.setup();
     renderView();
+    // The selects fill from the manager directory and the roster queries.
+    await screen.findByText('Scope · whole org · 3 partners');
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), 'partner-1');
 
+    expect(await screen.findByText('Scope · whole org · 1 partner')).toBeInTheDocument();
     expect(within(scopeLabel()).getByText('Northwind Systems')).toBeInTheDocument();
-    expect(screen.getByText('Scope · whole org · 1 partner')).toBeInTheDocument();
-    expect(screen.getByText('with FY activity · of 1 aligned')).toBeInTheDocument();
+    expect(await screen.findByText('with FY activity · of 1 aligned')).toBeInTheDocument();
     expect(
       screen.getByText('1 partner in this scope · certification counts show attainment below'),
     ).toBeInTheDocument();
 
     // A single selected partner gets its own enablement card.
-    const certifications = cardWith('Northwind Systems certifications');
+    const certHeading = await screen.findByRole('heading', {
+      name: 'Northwind Systems certifications',
+    });
+    const certifications = certHeading.closest('section') as HTMLElement;
     expect(within(certifications).getByText('2/4')).toBeInTheDocument();
     expect(within(certifications).getByText('3/6')).toBeInTheDocument();
 
@@ -277,7 +355,7 @@ describe('PartnerPerformanceView', () => {
     expect(screen.getByRole('combobox', { name: 'Partner' })).toHaveValue('all');
     expect(screen.getByRole('option', { name: 'All Partners (1 aligned)' })).toBeInTheDocument();
     expect(within(scopeLabel()).getByText('R. Diaz · All Partners')).toBeInTheDocument();
-    expect(screen.getByText('Scope · R. Diaz · 1 partner')).toBeInTheDocument();
+    expect(await screen.findByText('Scope · R. Diaz · 1 partner')).toBeInTheDocument();
     expect(
       screen.queryByRole('heading', { name: 'Northwind Systems certifications' }),
     ).not.toBeInTheDocument();
@@ -286,38 +364,87 @@ describe('PartnerPerformanceView', () => {
   it('says a partner has no certification record rather than inventing one', async () => {
     const user = userEvent.setup();
     renderView();
+    await screen.findByText('Scope · whole org · 3 partners');
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), 'partner-2');
 
-    const certifications = cardWith('Beacon Consulting certifications');
-    expect(within(certifications).getAllByText('No certification data')).toHaveLength(2);
-    expect(within(certifications).getAllByText('0/1')).toHaveLength(2);
+    const certifications = await screen.findByRole('heading', {
+      name: 'Beacon Consulting certifications',
+    });
+    const card = certifications.closest('section') as HTMLElement;
+    expect(within(card).getAllByText('No certification data', { selector: 'span' })).toHaveLength(
+      2,
+    );
+    expect(within(card).queryByText('0/1')).not.toBeInTheDocument();
+    expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+
+  it('shows a focused certification failure and its retry in the visible card', async () => {
+    const user = userEvent.setup();
+    // One broken certification fetch, then recovery.
+    render(
+      <PartnerPerformanceView
+        provider={createSimulatedRemoteProvider(new MockDataProvider(makeBook()), {
+          latencyMs: 0,
+          failMethods: { getPartnerCertification: 1 },
+        })}
+        edits={NO_SESSION_EDITS}
+        classifications={NO_CLASSIFICATIONS}
+        prospects={[]}
+      />,
+    );
+    await screen.findByText('Scope · whole org · 3 partners');
+
+    // While the drill-down is All partners there is no certification query
+    // at all — no card, no failure, nothing on the network.
+    expect(screen.queryByRole('group', { name: 'certification profile' })).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Partner' }), 'partner-1');
+
+    // The failure is the certification card's own: the same card the profile
+    // belongs in, with its own retry — and every sibling panel unaffected.
+    const failure = await screen.findByText('Failed to load the certification profile');
+    expect(failure.closest('p')).toHaveTextContent('Certification profile unavailable:');
+    // Every sibling panel is unaffected by the certification failure.
+    expect(screen.getByText('Partner sourced pipeline')).toBeInTheDocument();
+    expect(cardWith('Deal registration funnel')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry certification profile' }));
+    const region = screen.getByRole('group', { name: 'certification profile' });
+    expect(await screen.findByText('Northwind Systems certifications')).toBeInTheDocument();
+    expect(within(region).getByText('2/4')).toBeInTheDocument();
+    // Focus lands on the recovered region rather than being dropped.
+    expect(region).toHaveFocus();
   });
 
   it('switches the fiscal phase, including year-to-date and an empty quarter', async () => {
     const user = userEvent.setup();
     renderView();
+    await screen.findByText('1 open Q3 opps');
 
     await user.click(screen.getByRole('button', { name: 'FY' }));
 
-    expect(screen.getByText('Won (FY27 to date)')).toBeInTheDocument();
+    expect(await screen.findByText('Won (FY27 to date)')).toBeInTheDocument();
     expect(screen.getByText('Lost (FY27 to date)')).toBeInTheDocument();
     expect(screen.getByText('120% of FY27 target')).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: 'Pipeline opportunities · FY' }),
     ).toBeInTheDocument();
 
-    // Q4 has a deal but no target row, so attainment reads 0%, not a ratio.
+    // Q4 has a deal but no target row, so attainment reads 0% and coverage
+    // reports the missing target honestly rather than as "Target met".
     await user.click(screen.getByRole('button', { name: 'Q4' }));
 
-    expect(screen.getByText('Won (FY27 Q4)')).toBeInTheDocument();
+    expect(await screen.findByText('Won (FY27 Q4)')).toBeInTheDocument();
     expect(screen.getByText('0% of Q4 target')).toBeInTheDocument();
-    expect(screen.getByText('Target met')).toBeInTheDocument();
+    expect(screen.getByText('No target')).toBeInTheDocument();
+    expect(screen.getByText('No sourced target set')).toBeInTheDocument();
+    expect(screen.queryByText('Target met')).not.toBeInTheDocument();
 
     // Q1 closed before the snapshot with nothing in it at all.
     await user.click(screen.getByRole('button', { name: 'Q1' }));
 
-    expect(screen.getByText('No Q1 opportunities for this scope.')).toBeInTheDocument();
+    expect(await screen.findByText('No Q1 opportunities for this scope.')).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: 'Pipeline opportunities · Q1' }),
     ).toBeInTheDocument();
@@ -326,29 +453,32 @@ describe('PartnerPerformanceView', () => {
   describe('attainment guards', () => {
     // Regression shape: the app has shipped an unguarded division that reached
     // Intl.NumberFormat as Infinity and printed "∞% of goal" to a partner.
-    it('reads a missing target row as no goal', () => {
-      renderView(makeDashboardData({ targets: [] }));
+    it('reads a missing target row as no target, never as target met', async () => {
+      renderView(makeProviderBook({ targets: [] }));
 
-      expect(screen.getByText('0% of Q3 target')).toBeInTheDocument();
-      expect(screen.getByText('Target met')).toBeInTheDocument();
-      expect(screen.getByText('Sourced target achieved')).toBeInTheDocument();
+      expect(await screen.findByText('0% of Q3 target')).toBeInTheDocument();
+      expect(screen.getByText('No target')).toBeInTheDocument();
+      expect(screen.getByText('No sourced target set')).toBeInTheDocument();
+      expect(screen.queryByText('Target met')).not.toBeInTheDocument();
       // With no win a year earlier there is no prior period to measure against.
       expect(screen.queryByText(/vs prior period/)).not.toBeInTheDocument();
       expect(screen.queryByText(/∞/)).not.toBeInTheDocument();
       expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
     });
 
-    it('reads a zero-value target as no goal', () => {
-      renderView(makeDashboardData({ targets: [makeTarget({ revenueTarget: 0 })] }));
+    it('reads a zero-value target as no target', async () => {
+      renderView(makeProviderBook({ targets: [makeTarget({ revenueTarget: 0 })] }));
 
-      expect(screen.getByText('0% of Q3 target')).toBeInTheDocument();
+      expect(await screen.findByText('0% of Q3 target')).toBeInTheDocument();
+      expect(screen.getByText('No target')).toBeInTheDocument();
+      expect(screen.queryByText('Target met')).not.toBeInTheDocument();
       expect(screen.queryByText(/∞/)).not.toBeInTheDocument();
       expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
     });
 
-    it('reports the quota still to source while the target is unmet', () => {
+    it('reports the quota still to source while the target is unmet', async () => {
       renderView(
-        makeDashboardData({
+        makeProviderBook({
           // 100k of open Q3 pipeline covering a 300k target, nothing closed yet.
           opportunities: [
             makeOpportunity({
@@ -362,15 +492,15 @@ describe('PartnerPerformanceView', () => {
         }),
       );
 
-      expect(screen.getByText('0% of Q3 target')).toBeInTheDocument();
+      expect(await screen.findByText('0% of Q3 target')).toBeInTheDocument();
       expect(screen.getByText('$300K sourced target remaining')).toBeInTheDocument();
       expect(screen.getByText('0.3x')).toBeInTheDocument();
       expect(screen.queryByText('Target met')).not.toBeInTheDocument();
     });
 
-    it('reports a shortfall against the prior period as a negative delta', () => {
+    it('reports a shortfall against the prior period as a negative delta', async () => {
       renderView(
-        makeDashboardData({
+        makeProviderBook({
           // 50k closed against 200k a year earlier, on a 40k target.
           opportunities: [
             makeOpportunity({
@@ -394,15 +524,15 @@ describe('PartnerPerformanceView', () => {
         }),
       );
 
-      expect(screen.getByText('▼ -75% vs prior period')).toBeInTheDocument();
+      expect(await screen.findByText('▼ -75% vs prior period')).toBeInTheDocument();
       expect(screen.getByText('125% of Q3 target')).toBeInTheDocument();
       expect(screen.getByText('Sourced target achieved')).toBeInTheDocument();
     });
   });
 
-  it('falls back to empty copy for a book with nothing in it', () => {
+  it('falls back to empty copy for a book with nothing in it', async () => {
     renderView(
-      makeDashboardData({
+      makeProviderBook({
         partnerManagers: [],
         partners: [],
         opportunities: [],
@@ -413,16 +543,20 @@ describe('PartnerPerformanceView', () => {
       }),
     );
 
-    expect(screen.getByText('Scope · whole org · 0 partners')).toBeInTheDocument();
+    expect(await screen.findByText('Scope · whole org · 0 partners')).toBeInTheDocument();
     expect(screen.getByText('0% of Q3 target')).toBeInTheDocument();
-    expect(screen.getByText('Target met')).toBeInTheDocument();
-    expect(screen.getByText('Sourced target achieved')).toBeInTheDocument();
-    expect(screen.getByText('No Q3 opportunities for this scope.')).toBeInTheDocument();
-    expect(screen.getByText('Nothing here — the queue is clear.')).toBeInTheDocument();
+    expect(screen.getByText('No target')).toBeInTheDocument();
+    expect(screen.getByText('No sourced target set')).toBeInTheDocument();
+    expect(await screen.findByText('No Q3 opportunities for this scope.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing here — the queue is clear.')).toBeInTheDocument();
     expect(
-      screen.getByText('No approved registrations without an opportunity — nothing leaking.'),
+      await screen.findByText(
+        'No approved registrations without an opportunity — nothing leaking.',
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByText('No conflicting registrations in this scope.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('No conflicting registrations in this scope.'),
+    ).toBeInTheDocument();
 
     // No registration reached any hop, so none of the four averages is a number.
     expect(within(cardWith('Registration conversion time')).getAllByText('—')).toHaveLength(4);

@@ -6,6 +6,7 @@ import type { DashboardNotification, TeamUser } from '../data/types';
 import { formatDate, formatTime } from '../lib/format';
 import type { RegistrationSlaAlert } from '../lib/metrics';
 import { SendIcon } from './icons';
+import TableRegion from './TableRegion';
 
 /**
  * The rule the notification service runs, the registrations it fires on right
@@ -19,7 +20,14 @@ import { SendIcon } from './icons';
  */
 
 interface SlaAlertPanelProps {
+  /**
+   * The most urgent alerts — the window the queue renders and notifies from.
+   * The provider bounds this list, so `totalCount` carries the whole queue's
+   * depth for the cap line below the table.
+   */
   alerts: RegistrationSlaAlert[];
+  /** Every registration flagged against the SLA; defaults to alerts.length. */
+  totalCount?: number;
   users: TeamUser[];
   notifications: DashboardNotification[];
   onNotify: (alert: RegistrationSlaAlert) => void;
@@ -31,6 +39,7 @@ const LOG_LIMIT = 5;
 
 export default function SlaAlertPanel({
   alerts,
+  totalCount = alerts.length,
   users,
   notifications,
   onNotify,
@@ -49,7 +58,7 @@ export default function SlaAlertPanel({
           Rule · deal registrations
         </p>
         <p className="mt-2 max-w-3xl text-sm text-stone">
-          Warn the owner {REGISTRATION_SLA_WARNING_BUSINESS_DAYS} business day (24 hours) before the{' '}
+          Warn the owner {REGISTRATION_SLA_WARNING_BUSINESS_DAYS} business day before the{' '}
           {REGISTRATION_SLA_BUSINESS_DAYS}-business-day response SLA lapses, then again once it has.
           The owner is the partner&apos;s aligned partner manager; the deal desk catches anything
           unaligned, so a registration never goes unowned.
@@ -57,7 +66,7 @@ export default function SlaAlertPanel({
         <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] uppercase tracking-[0.06em]">
           <span className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-signal" />
-            <span className="text-signal">{approaching.length} at 24 hours</span>
+            <span className="text-signal">{approaching.length} due next business day</span>
           </span>
           <span className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-graphite" />
@@ -69,7 +78,7 @@ export default function SlaAlertPanel({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-          Alert queue · 24-hour warnings first, then most overdue
+          Alert queue · due-soon warnings first, then most overdue
         </p>
         <button
           type="button"
@@ -82,26 +91,47 @@ export default function SlaAlertPanel({
         </button>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <TableRegion label="Deal-registration SLA alert queue">
+        <table
+          aria-label="Deal-registration SLA alert queue"
+          className="w-full min-w-[800px] text-sm"
+        >
           <thead>
             <tr className="border-b border-carbon">
-              <th className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              <th
+                scope="col"
+                className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+              >
                 Registration
               </th>
-              <th className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              <th
+                scope="col"
+                className="pb-2 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+              >
                 Owner
               </th>
-              <th className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              <th
+                scope="col"
+                className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+              >
                 Submitted
               </th>
-              <th className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              <th
+                scope="col"
+                className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+              >
                 Due
               </th>
-              <th className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              <th
+                scope="col"
+                className="pb-2 pr-3 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+              >
                 Clock
               </th>
-              <th className="pb-2 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
+              <th
+                scope="col"
+                className="pb-2 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-granite"
+              >
                 Action
               </th>
             </tr>
@@ -130,7 +160,11 @@ export default function SlaAlertPanel({
                 </td>
                 <td className="py-2.5 pr-3 text-right font-mono text-xs tabular-nums">
                   {alert.state === 'approaching' ? (
-                    <span className="text-signal">24h to SLA</span>
+                    <span className="text-signal">
+                      {alert.businessDaysRemaining === 1
+                        ? '1 business day to SLA'
+                        : `${alert.businessDaysRemaining} business days to SLA`}
+                    </span>
                   ) : (
                     <span className="text-signal">
                       {alert.businessDaysWaiting - REGISTRATION_SLA_BUSINESS_DAYS}d past
@@ -142,7 +176,7 @@ export default function SlaAlertPanel({
                     type="button"
                     onClick={() => onNotify(alert)}
                     disabled={!alert.owner}
-                    className="rounded border border-ash/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/30 hover:text-bone disabled:opacity-40"
+                    className="min-h-6 min-w-6 rounded border border-ash/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/30 hover:text-bone disabled:opacity-40"
                   >
                     Notify owner
                   </button>
@@ -158,17 +192,20 @@ export default function SlaAlertPanel({
             )}
           </tbody>
         </table>
-      </div>
-      {alerts.length > shown.length && (
+      </TableRegion>
+      {totalCount > shown.length && (
         <p className="text-xs text-granite">
-          Showing the {shown.length} most urgent of {alerts.length} registrations flagged against
-          the SLA.
+          Showing the {shown.length} most urgent of {totalCount} registrations flagged against the
+          SLA.
         </p>
       )}
 
       <div className="border-t border-carbon pt-4">
         <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
           Sent this session · {notifications.length}
+        </p>
+        <p className="mt-1 text-[10px] text-granite">
+          Simulated / local only — recorded for this session, never delivered. Refresh clears them.
         </p>
         {notifications.length === 0 ? (
           <p className="mt-2 text-sm text-granite">

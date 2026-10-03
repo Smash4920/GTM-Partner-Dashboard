@@ -1,7 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
+import { CURRENT_FISCAL_QUARTER } from '../data/constants';
 import type { DataProvider, ForecastSummary } from '../data/DataProvider';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
-import { assessHealth, publishHealthArtifact, rollupStatus, runReadinessChecks } from './health';
+import { createSimulatedRemoteProvider } from '../data/mock/createSimulatedRemoteProvider';
+import type { QueryContext } from '../data/queryContext';
+import type { QueryResult } from '../data/queryMetadata';
+import {
+  assessHealth,
+  publishHealthArtifact,
+  rollupStatus,
+  runReadinessChecks,
+  shellHealthArtifact,
+  unavailableDataSeamCheck,
+} from './health';
+import type { HealthArtifact } from './health';
 import { clearFlagOverrides } from './telemetry/flags';
 import { telemetry } from './telemetry/telemetry';
 
@@ -21,6 +34,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   clearFlagOverrides();
   vi.unstubAllEnvs();
   document.getElementById('root')?.remove();
@@ -140,9 +154,10 @@ describe('runReadinessChecks', () => {
 
   it('degrades the data seam past the healthy latency budget without failing it', async () => {
     const slow = new MockDataProvider();
-    slow.getForecastSummary = async () => {
+    const real = slow.getForecastSummary.bind(slow);
+    slow.getForecastSummary = async (access, scope) => {
       await sleep(15);
-      return {} as ForecastSummary;
+      return real(access, scope);
     };
 
     const checks = await runReadinessChecks({
@@ -169,14 +184,31 @@ describe('runReadinessChecks', () => {
 
     const dataSeam = checks.find((check) => check.name === 'dataSeam');
     expect(dataSeam?.status).toBe('unavailable');
-    expect(dataSeam?.detail).toBe('CRM is down');
+    expect(dataSeam?.detail).toBe('getForecastSummary unavailable');
+  });
+
+  it('VAL-CROSS-006: keeps rejected and synchronously thrown provider prose out of the local health artifact', async () => {
+    for (const synchronous of [false, true]) {
+      const broken = new MockDataProvider();
+      broken.getForecastSummary = () => {
+        const error = new Error('PRIVATE health provider prose sentinel');
+        if (synchronous) throw error;
+        return Promise.reject(error);
+      };
+      const artifact = await assessHealth({ provider: broken });
+      expect(artifact.checks.find((check) => check.name === 'dataSeam')?.detail).toBe(
+        'getForecastSummary unavailable',
+      );
+      expect(JSON.stringify(artifact)).not.toContain('PRIVATE');
+    }
   });
 
   it('cuts off a ping that exceeds its budget instead of waiting for it', async () => {
     const silent = new MockDataProvider();
-    silent.getForecastSummary = (() => sleep(200) as unknown as Promise<ForecastSummary>) as (
+    silent.getForecastSummary = (() =>
+      sleep(200) as unknown as Promise<QueryResult<ForecastSummary>>) as (
       scope: Parameters<DataProvider['getForecastSummary']>[0],
-    ) => Promise<ForecastSummary>;
+    ) => Promise<QueryResult<ForecastSummary>>;
 
     const checks = await runReadinessChecks({
       provider: silent,
@@ -186,6 +218,139 @@ describe('runReadinessChecks', () => {
     const dataSeam = checks.find((check) => check.name === 'dataSeam');
     expect(dataSeam?.status).toBe('unavailable');
     expect(dataSeam?.detail).toContain('ping exceeded 20ms');
+  });
+});
+
+describe('data-seam ping cancellation (VAL-RES-002)', () => {
+  it('hands the seam ping a live abort signal in its query context', async () => {
+    const provider = new MockDataProvider();
+    const spy = vi.spyOn(provider, 'getForecastSummary');
+    const controller = new AbortController();
+
+    const checks = await runReadinessChecks({ provider, signal: controller.signal });
+
+    expect(checks.find((check) => check.name === 'dataSeam')?.status).toBe('ok');
+    expect(spy).toHaveBeenCalledTimes(1);
+    const context = spy.mock.calls[0]?.[2];
+    expect(context?.signal).toBeInstanceOf(AbortSignal);
+    // A ping that answered inside its budget and was never superseded stays
+    // live, and the caller's signal was never touched.
+    expect(context?.signal?.aborted).toBe(false);
+    expect(controller.signal.aborted).toBe(false);
+  });
+
+  it('a caller abort rejects the assessment as a cancellation and cancels the ping at the seam', async () => {
+    const provider = new MockDataProvider();
+    let seen: AbortSignal | undefined;
+    provider.getForecastSummary = ((
+      _access: unknown,
+      _scope: unknown,
+      context?: QueryContext,
+    ): Promise<QueryResult<ForecastSummary>> => {
+      seen = context?.signal;
+      return new Promise<QueryResult<ForecastSummary>>(() => {});
+    }) as DataProvider['getForecastSummary'];
+    const controller = new AbortController();
+
+    const pending = assessHealth({ provider, signal: controller.signal });
+    controller.abort();
+
+    // A cancellation, never a failed check: the assessment rejects with the
+    // shared abort error rather than resolving with an 'unavailable' seam.
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    // The provider's own signal was spent, so signal-honouring work stops.
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it('a spent caller signal stops the assessment before any provider work', async () => {
+    const provider = new MockDataProvider();
+    const spy = vi.spyOn(provider, 'getForecastSummary');
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(assessHealth({ provider, signal: controller.signal })).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('a timed-out ping aborts the signal the provider was handed', async () => {
+    let seen: AbortSignal | undefined;
+    const silent = new MockDataProvider();
+    silent.getForecastSummary = ((
+      _access: unknown,
+      _scope: unknown,
+      context?: QueryContext,
+    ): Promise<QueryResult<ForecastSummary>> => {
+      seen = context?.signal;
+      return new Promise<QueryResult<ForecastSummary>>(() => {});
+    }) as DataProvider['getForecastSummary'];
+
+    const checks = await runReadinessChecks({ provider: silent, pingBudgetMs: 20 });
+
+    const dataSeam = checks.find((check) => check.name === 'dataSeam');
+    expect(dataSeam?.status).toBe('unavailable');
+    expect(dataSeam?.detail).toContain('ping exceeded 20ms');
+    // The deadline cancelled the call itself, not just the wait for it.
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it('a timed-out ping stops a simulated remote before any inner provider work', async () => {
+    vi.useFakeTimers();
+    const inner = new MockDataProvider();
+    const innerSpy = vi.spyOn(inner, 'getForecastSummary');
+    const remote = createSimulatedRemoteProvider(inner, { latencyMs: 200, failureRate: 0 });
+
+    const pending = runReadinessChecks({ provider: remote, pingBudgetMs: 20 });
+    await vi.advanceTimersByTimeAsync(20);
+    const checks = await pending;
+
+    const dataSeam = checks.find((check) => check.name === 'dataSeam');
+    expect(dataSeam?.status).toBe('unavailable');
+    // The wire honoured the abort during its delay: the inner provider was
+    // never invoked, and letting the delay play out changes that not.
+    expect(innerSpy).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(innerSpy).not.toHaveBeenCalled();
+  });
+
+  it('a superseded ping cancels a simulated remote in transit', async () => {
+    vi.useFakeTimers();
+    const inner = new MockDataProvider();
+    const innerSpy = vi.spyOn(inner, 'getForecastSummary');
+    const remote = createSimulatedRemoteProvider(inner, { latencyMs: 200, failureRate: 0 });
+    const controller = new AbortController();
+
+    const pending = assessHealth({ provider: remote, signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+
+    await vi.advanceTimersByTimeAsync(250);
+    expect(innerSpy).not.toHaveBeenCalled();
+  });
+
+  it('a ping that ignores its signal is abandoned at the race and its late answer dropped', async () => {
+    let finish!: (result: QueryResult<ForecastSummary>) => void;
+    const stubborn = new MockDataProvider();
+    stubborn.getForecastSummary = (() =>
+      new Promise<QueryResult<ForecastSummary>>((resolve) => {
+        finish = resolve;
+      })) as DataProvider['getForecastSummary'];
+    const controller = new AbortController();
+
+    const pending = assessHealth({ provider: stubborn, signal: controller.signal });
+    controller.abort();
+    // The assessment walks away immediately instead of hanging on a
+    // provider that never observes cancellation.
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+
+    // The late answer settles into nothing: no unhandled rejection, no
+    // late artifact, no further calls.
+    const answer = await new MockDataProvider().getForecastSummary(INTERNAL_DEMO_SCOPE, {
+      quarter: CURRENT_FISCAL_QUARTER,
+    });
+    finish(answer);
+    await sleep(0);
   });
 });
 
@@ -201,7 +366,73 @@ describe('assessHealth', () => {
     expect(Number.isNaN(Date.parse(artifact.generatedAt))).toBe(false);
     expect(artifact.uptimeMs).toBeGreaterThanOrEqual(0);
   });
+
+  it('reports no transition when none was ever requested', async () => {
+    const artifact = await assessHealth({ provider: new MockDataProvider() });
+
+    expect(artifact.requestedProviderId).toBeNull();
+    expect(artifact.providerTransitionStatus).toBe('none');
+  });
+
+  it('distinguishes the requested provider from the committed one mid-transition', async () => {
+    const artifact = await assessHealth({
+      provider: new MockDataProvider(),
+      transition: { requestedId: 'remote', status: 'committing' },
+    });
+
+    // The committed provider is still local; the request for the remote one
+    // is in flight. An operator reading the artifact can tell both halves.
+    expect(artifact.requestedProviderId).toBe('remote');
+    expect(artifact.providerTransitionStatus).toBe('committing');
+  });
+
+  it('names a failed provider transition in the artifact', async () => {
+    const artifact = await assessHealth({
+      provider: new MockDataProvider(),
+      transition: { requestedId: 'remote', status: 'failed' },
+    });
+
+    expect(artifact.providerTransitionStatus).toBe('failed');
+  });
 });
+
+describe('shellHealthArtifact and the unavailable seam (VAL-RES-008)', () => {
+  it('produces a provisional artifact before any check has run', () => {
+    const artifact = shellHealthArtifact();
+
+    // Published at mount, so the endpoint exists even when the assessment
+    // never will: the shell reports itself, and the seam is marked as not
+    // yet assessed rather than silently absent or optimistically ok.
+    expect(artifact.status).toBe('degraded');
+    expect(artifact.service).toBe('gtm-partner-dashboard');
+    expect(artifact.checks.map((check) => check.name)).toEqual(['appShell', 'dataSeam']);
+    expect(artifact.checks[1]?.detail).toBe('readiness checks still running');
+  });
+
+  it('the unavailable seam check is a named check, not a missing one', async () => {
+    const check = unavailableDataSeamCheck('CRM is down');
+    expect(check).toEqual({ name: 'dataSeam', status: 'unavailable', detail: 'CRM is down' });
+
+    // And a failed provider really does roll the whole artifact up to
+    // unavailable, so "window.GTM_HEALTH exists" can never be mistaken for
+    // "the app is healthy".
+    const broken = new MockDataProvider();
+    broken.getForecastSummary = async () => {
+      throw new Error('CRM is down');
+    };
+    const artifact = await assessHealth({ provider: broken });
+    expect(artifact.status).toBe('unavailable');
+    expect(artifact.checks.find((entry) => entry.name === 'dataSeam')).toMatchObject({
+      status: 'unavailable',
+      detail: 'getForecastSummary unavailable',
+    });
+  });
+});
+
+/** A publishable artifact carrying only the identity a race test cares about. */
+function artifactFor(providerId: string, status: HealthArtifact['status']): HealthArtifact {
+  return { ...shellHealthArtifact(), providerId, status };
+}
 
 describe('publishHealthArtifact', () => {
   it('publishes the artifact on the page with a live refresh handle', async () => {
@@ -217,6 +448,81 @@ describe('publishHealthArtifact', () => {
 
     expect(refreshed?.checks).toHaveLength(6);
     expect(window.GTM_HEALTH?.artifact).toBe(refreshed);
+  });
+
+  it('a refresh settling after a newer provider published cannot overwrite it', async () => {
+    // Provider A's artifact is live and A's refresh is slow. B commits and
+    // re-publishes while A is still in flight. When A's stale answer finally
+    // settles, B's artifact must survive — and the stale caller is handed
+    // the truth that outlived it, not its own answer.
+    const a = artifactFor('local', 'ok');
+    let resolveA!: (artifact: HealthArtifact) => void;
+    const slowA = new Promise<HealthArtifact>((resolve) => {
+      resolveA = resolve;
+    });
+    publishHealthArtifact(a, () => slowA);
+
+    const inFlight = window.GTM_HEALTH!.refresh();
+
+    const b = artifactFor('remote', 'ok');
+    publishHealthArtifact(b, async () => b);
+    expect(window.GTM_HEALTH?.artifact).toBe(b);
+
+    resolveA(artifactFor('local', 'unavailable'));
+    const settled = await inFlight;
+
+    expect(window.GTM_HEALTH?.artifact).toBe(b);
+    expect(settled).toBe(b);
+  });
+
+  it('a refresh whose answer names another provider cannot overwrite the published artifact', async () => {
+    // Even within one generation, an assessment that ran against a seam the
+    // session has since left behind is stale.
+    const a = artifactFor('local', 'ok');
+    publishHealthArtifact(a, async () => artifactFor('remote', 'unavailable'));
+
+    const settled = await window.GTM_HEALTH!.refresh();
+
+    expect(window.GTM_HEALTH?.artifact).toBe(a);
+    expect(settled).toBe(a);
+  });
+
+  it('a superseded refresh loses to the newer refresh', async () => {
+    // Two overlapping refreshes against the same publication: the one that
+    // started first settles last, and its older answer must not clobber the
+    // newer refresh's result.
+    const a = artifactFor('local', 'ok');
+    const older = artifactFor('local', 'degraded');
+    const newer = artifactFor('local', 'ok');
+    let resolveOld!: (artifact: HealthArtifact) => void;
+    const slow = new Promise<HealthArtifact>((resolve) => {
+      resolveOld = resolve;
+    });
+
+    let calls = 0;
+    publishHealthArtifact(a, () => (calls++ === 0 ? slow : Promise.resolve(newer)));
+
+    const first = window.GTM_HEALTH!.refresh();
+    const second = await window.GTM_HEALTH!.refresh();
+    expect(second).toBe(newer);
+
+    resolveOld(older);
+    const firstResult = await first;
+
+    expect(window.GTM_HEALTH?.artifact).toBe(newer);
+    expect(firstResult).toBe(newer);
+  });
+
+  it('a refresh that returns null changes nothing', async () => {
+    // The caller declined to refresh (the committed provider moved while the
+    // assessment ran); the published artifact stays exactly as it was.
+    const a = artifactFor('local', 'ok');
+    publishHealthArtifact(a, async () => null);
+
+    const settled = await window.GTM_HEALTH!.refresh();
+
+    expect(window.GTM_HEALTH?.artifact).toBe(a);
+    expect(settled).toBe(a);
   });
 });
 

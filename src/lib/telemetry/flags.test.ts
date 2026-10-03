@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { auditFlagLifecycle, FLAG_GOVERNANCE_AS_OF } from '../flagGovernance';
 import {
   clearFlagOverrides,
   FLAG_DEFINITIONS,
@@ -26,12 +27,38 @@ afterEach(() => {
 });
 
 describe('the flag registry', () => {
-  it('declares every flag with a key, a default, and a plain-language purpose', () => {
+  it('declares every operational flag with complete lifecycle metadata', () => {
     expect(FLAG_KEYS).toEqual(['telemetry.enabled', 'telemetry.logShipping', 'analytics.enabled']);
-    for (const key of FLAG_KEYS) {
-      expect(FLAG_DEFINITIONS[key].key).toBe(key);
-      expect(FLAG_DEFINITIONS[key].description.length).toBeGreaterThan(20);
-    }
+
+    const violations = auditFlagLifecycle(
+      FLAG_KEYS.map((key) => ({ key, lifecycle: FLAG_DEFINITIONS[key].lifecycle })),
+      new Date(FLAG_GOVERNANCE_AS_OF),
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  it('fails deterministically on missing ownership and expired operational flags', () => {
+    const asOf = new Date(FLAG_GOVERNANCE_AS_OF);
+    const lifecycle = FLAG_DEFINITIONS['telemetry.enabled'].lifecycle;
+
+    expect(
+      auditFlagLifecycle(
+        [{ key: 'telemetry.enabled', lifecycle: { ...lifecycle, owner: '' } }],
+        asOf,
+      ),
+    ).toEqual([expect.objectContaining({ flagKey: 'telemetry.enabled', field: 'owner' })]);
+    expect(
+      auditFlagLifecycle(
+        [
+          {
+            key: 'analytics.enabled',
+            lifecycle: { ...lifecycle, reviewDate: '2025-06-01', expiresAt: '2026-01-01' },
+          },
+        ],
+        asOf,
+      ),
+    ).toEqual([expect.objectContaining({ flagKey: 'analytics.enabled', field: 'expiresAt' })]);
   });
 
   it('derives each flag environment key from its name', () => {
@@ -44,7 +71,9 @@ describe('flag resolution order', () => {
   it('uses the documented defaults when nothing overrides them', () => {
     expect(isFlagEnabled('telemetry.enabled', envWith())).toBe(true);
     expect(isFlagEnabled('telemetry.logShipping', envWith())).toBe(false);
-    expect(isFlagEnabled('analytics.enabled', envWith())).toBe(true);
+    // Analytics is independently opt-in and defaults off pending privacy
+    // approval (VAL-SEC-002): telemetry being on never turns analytics on.
+    expect(isFlagEnabled('analytics.enabled', envWith())).toBe(false);
   });
 
   it('lets the build environment flip a default', () => {
@@ -113,19 +142,19 @@ describe('invalid configuration', () => {
 
 describe('flagSnapshot', () => {
   it('reports every flag with its resolution source', () => {
-    setFlagOverride('analytics.enabled', false);
+    setFlagOverride('analytics.enabled', true);
 
     const snapshot = flagSnapshot(envWith({ VITE_FLAG_TELEMETRY_LOG_SHIPPING: 'true' }));
 
     expect(snapshot).toEqual([
       { key: 'telemetry.enabled', enabled: true, source: 'default' },
       { key: 'telemetry.logShipping', enabled: true, source: 'env' },
-      { key: 'analytics.enabled', enabled: false, source: 'override' },
+      { key: 'analytics.enabled', enabled: true, source: 'override' },
     ]);
   });
 
   it('clears every override at once', () => {
-    setFlagOverride('analytics.enabled', false);
+    setFlagOverride('analytics.enabled', true);
     setFlagOverride('telemetry.enabled', false);
     clearFlagOverrides();
 

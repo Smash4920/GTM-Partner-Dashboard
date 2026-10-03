@@ -1,5 +1,6 @@
 import { logger, type Logger } from '../logging';
 import { redactRecord } from '../redact';
+import { allowlistEnvelope, type TelemetryEnvelopeType } from './allowlist';
 import { randomHex } from './config';
 
 /**
@@ -12,14 +13,22 @@ import { randomHex } from './config';
  * in-process consumer (metrics, error insights, health, alert handlers) still
  * works.
  *
- * Every envelope's payload is redacted (`src/lib/redact.ts`) as it is queued,
- * so nothing sensitive sits in the queue even if a batch never ships. Delivery
- * is fire-and-forget: a failed batch is counted, reported through the failure
- * hook (the facade raises an alert from it), and dropped rather than retried
- * forever — client telemetry must never wedge a session over its own delivery.
+ * The master telemetry switch is enforced here, at the boundary: when
+ * `isEgressAllowed()` is false the transport neither queues nor schedules nor
+ * sends, and the pagehide/visibility flush handlers reach the same dead end,
+ * so a disabled session produces zero requests, beacons, or lifecycle
+ * flushes. The flag is read per operation, so a runtime override takes effect
+ * without a rebuild.
+ *
+ * Every payload is allowlisted to its envelope's registered technical fields
+ * (`src/lib/telemetry/allowlist.ts`) as it is queued, then redacted
+ * (`src/lib/redact.ts`) as defense in depth: nothing sensitive sits in the
+ * queue even if a batch never ships. Delivery is fire-and-forget: a failed
+ * batch is counted, reported through the failure hook as a technical
+ * classification (never the raw error prose), and dropped rather than
+ * retried forever — client telemetry must never wedge a session over its own
+ * delivery.
  */
-
-type TelemetryEnvelopeType = 'log' | 'metric' | 'event' | 'trace' | 'error' | 'alert' | 'health';
 
 export interface TelemetryEnvelope {
   id: string;
@@ -71,11 +80,24 @@ interface BatchMeta {
   providerId: string | null;
 }
 
+/**
+ * Why a batch failed, as a technical classification: the raw error message
+ * stays in the local status for debugging, but an alert or log line built
+ * from this can never carry exception prose out of the browser.
+ */
+type DeliveryFailure = { kind: 'http'; status: number } | { kind: 'network' };
+
 export interface TransportOptions {
   endpoint: string | null;
   sampleRate: number;
   /** Context stamped on each batch as it is sent, read at send time. */
   getMeta: () => BatchMeta;
+  /**
+   * The master egress switch, read at every queue/flush decision. When it
+   * returns false the transport queues nothing, schedules nothing, and sends
+   * nothing. Defaults to allowed; the facade wires it to `telemetry.enabled`.
+   */
+  isEgressAllowed?: () => boolean;
   /** Cap on queued envelopes; the oldest are dropped past it. */
   maxQueued?: number;
   /** How long an envelope can sit queued before a flush is scheduled. */
@@ -83,7 +105,7 @@ export interface TransportOptions {
   fetchImpl?: typeof fetch;
   now?: () => number;
   random?: () => number;
-  onDeliveryFailure?: (reason: string) => void;
+  onDeliveryFailure?: (failure: DeliveryFailure) => void;
   /**
    * Runs at the start of every flush cycle, before the queue is taken — the
    * hook the facade uses to enqueue metric deltas so they ride the same batch.
@@ -113,11 +135,19 @@ const DEFAULT_FLUSH_INTERVAL_MS = 5_000;
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
+/** Internal marker so a non-2xx collector response classifies as http, with its status code. */
+class CollectorResponseError extends Error {
+  constructor(readonly status: number) {
+    super(`collector responded ${status}`);
+  }
+}
+
 export function createTransport(options: TransportOptions): TelemetryTransport {
   const {
     endpoint,
     sampleRate,
     getMeta,
+    isEgressAllowed = () => true,
     maxQueued = DEFAULT_MAX_QUEUED,
     flushIntervalMs = DEFAULT_FLUSH_INTERVAL_MS,
     now = Date.now,
@@ -139,7 +169,7 @@ export function createTransport(options: TransportOptions): TelemetryTransport {
   let flushing = false;
 
   const scheduleFlush = () => {
-    if (flushTimer !== null || !endpoint) return;
+    if (flushTimer !== null || !endpoint || !isEgressAllowed()) return;
     flushTimer = setTimeout(() => {
       flushTimer = null;
       void flush();
@@ -165,7 +195,7 @@ export function createTransport(options: TransportOptions): TelemetryTransport {
   }
 
   async function flush(): Promise<void> {
-    if (flushing || !endpoint) return;
+    if (flushing || !endpoint || !isEgressAllowed()) return;
     beforeFlush?.();
     if (queue.length === 0) return;
     flushing = true;
@@ -185,7 +215,7 @@ export function createTransport(options: TransportOptions): TelemetryTransport {
         body: JSON.stringify(batch),
       });
       if (!response.ok) {
-        throw new Error(`collector responded ${response.status}`);
+        throw new CollectorResponseError(response.status);
       }
       shipped += envelopes.length;
       lastDeliveryAt = new Date(now()).toISOString();
@@ -193,15 +223,21 @@ export function createTransport(options: TransportOptions): TelemetryTransport {
       failedBatches += 1;
       dropped += envelopes.length;
       lastFailureAt = new Date(now()).toISOString();
+      // The raw message stays in the local status for debugging; everything
+      // that leaves this function is the technical classification.
       lastFailureReason = error instanceof Error ? error.message : String(error);
+      const failure: DeliveryFailure =
+        error instanceof CollectorResponseError
+          ? { kind: 'http', status: error.status }
+          : { kind: 'network' };
       // One warn, not one per envelope: a collector that is down does not need
       // to be re-announced every five seconds, and the alert layer dedupes.
       log.warn('Telemetry batch delivery failed', {
-        endpoint,
+        failureKind: failure.kind,
+        ...(failure.kind === 'http' ? { status: failure.status } : {}),
         envelopes: envelopes.length,
-        reason: lastFailureReason,
       });
-      onDeliveryFailure?.(lastFailureReason);
+      onDeliveryFailure?.(failure);
     } finally {
       flushing = false;
       if (queue.length > 0) scheduleFlush();
@@ -210,12 +246,22 @@ export function createTransport(options: TransportOptions): TelemetryTransport {
 
   return {
     enqueue(input, enqueueOptions) {
-      if (!endpoint) {
+      // The master switch, enforced at the boundary: disabled telemetry never
+      // queues, so a later flush, pagehide, or timer has nothing to send.
+      if (!endpoint || !isEgressAllowed()) {
         dropped += 1;
         return;
       }
       const critical = enqueueOptions?.critical === true;
       if (!critical && random() >= sampleRate) {
+        dropped += 1;
+        return;
+      }
+      // Allowlisting happens here, at the boundary, before redaction and
+      // before the queue: an unregistered event is rejected, and unregistered
+      // fields never sit in the queue even if a batch never ships.
+      const data = allowlistEnvelope(input.type, input.data);
+      if (data === null) {
         dropped += 1;
         return;
       }
@@ -228,9 +274,7 @@ export function createTransport(options: TransportOptions): TelemetryTransport {
         type: input.type,
         timestamp: new Date(now()).toISOString(),
         ...(input.traceparent !== undefined ? { traceparent: input.traceparent } : {}),
-        // Redaction happens here, at the boundary, not later in some sink:
-        // the queue must never hold a sensitive value.
-        data: redactRecord(input.data),
+        data: redactRecord(data),
       });
       scheduleFlush();
     },

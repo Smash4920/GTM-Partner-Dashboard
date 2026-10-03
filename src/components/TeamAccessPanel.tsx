@@ -1,4 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useId, useRef, useState, type ReactNode } from 'react';
+import FormField, { focusInvalid } from './FormField';
+import TableRegion from './TableRegion';
 import {
   NOTIFICATION_CHANNEL_META,
   NOTIFICATION_CHANNELS,
@@ -18,14 +20,16 @@ import { formatDate } from '../lib/format';
 import { CheckIcon, PlusIcon, XIcon } from './icons';
 
 /**
- * Partner-team access: who is on the internal roster, whether they are
- * authorized, and which manager they are aligned to.
+ * Partner-team notification roster: who is on the internal roster, which manager
+ * they are aligned to, and whether this session routes simulated notifications
+ * to them.
  *
- * Adding and authorizing are deliberately two steps. Adding puts a name on the
- * roster awaiting authorization; authorizing grants access. That split is what
- * a real identity provider enforces, and it is the difference between "we know
- * who should have access" and "they can sign in" — the gap the architecture
- * roadmap's first item closes.
+ * Everything here is a current-session simulation. Adding a name, turning
+ * notifications on, pausing them, resuming them, or removing an entry only
+ * changes who this demo would route a simulated notification to. None of it
+ * provisions, authorizes, revokes, or restores sign-in or data access — a real
+ * identity provider (Prod Only, see the Data Connections map) owns that, which
+ * is the gap the architecture roadmap's first item closes.
  */
 
 interface TeamAccessPanelProps {
@@ -49,42 +53,61 @@ export default function TeamAccessPanel({
   onRemove,
 }: TeamAccessPanelProps) {
   const [formOpen, setFormOpen] = useState(false);
+  const formId = useId();
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const closeForm = () => {
+    setFormOpen(false);
+    toggleRef.current?.focus();
+  };
   const managerName = (id?: string) =>
     partnerManagers.find((manager) => manager.id === id)?.name ?? '—';
-  const active = users.filter((user) => user.status === 'active').length;
-  const awaiting = users.filter((user) => user.status === 'invited').length;
+  const routing = users.filter((user) => user.status === 'active').length;
+  const notSetUp = users.filter((user) => user.status === 'invited').length;
 
   return (
     <div className="space-y-4">
+      <p className="rounded border border-ash/60 bg-carbon/40 p-3 text-[11px] leading-snug text-granite">
+        Current-session notification-routing simulation only. These controls decide who this demo
+        would route a simulated notification to; they do not provision, authorize, revoke, or
+        restore sign-in or data access. Refresh resets the roster.
+      </p>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-granite">
-          {users.length} on the roster · {active} authorized · {awaiting} awaiting authorization
+          {users.length} on the roster · {routing} receiving notifications · {notSetUp} not yet
+          routing
         </p>
         <button
+          ref={toggleRef}
           type="button"
           onClick={() => setFormOpen((open) => !open)}
           className="flex items-center gap-1.5 rounded border border-ash px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-bone transition-colors hover:bg-ash/30"
           aria-expanded={formOpen}
+          aria-controls={formId}
         >
           {formOpen ? <XIcon className="h-3.5 w-3.5" /> : <PlusIcon className="h-3.5 w-3.5" />}
           {formOpen ? 'Close' : 'Add user'}
         </button>
       </div>
 
-      {formOpen && (
-        <AddTeamUserForm
-          users={users}
-          partnerManagers={partnerManagers}
-          onAdd={(input) => {
-            onAdd(input);
-            setFormOpen(false);
-          }}
-          onCancel={() => setFormOpen(false)}
-        />
-      )}
+      <div id={formId} hidden={!formOpen}>
+        {formOpen && (
+          <AddTeamUserForm
+            users={users}
+            partnerManagers={partnerManagers}
+            onAdd={(input) => {
+              onAdd(input);
+              closeForm();
+            }}
+            onCancel={closeForm}
+          />
+        )}
+      </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <TableRegion label="Partner team notification routing">
+        <table
+          aria-label="Partner team notification routing"
+          className="w-full min-w-[960px] text-sm"
+        >
           <thead>
             <tr className="border-b border-carbon">
               <Th className="pr-3 text-left">User</Th>
@@ -92,7 +115,7 @@ export default function TeamAccessPanel({
               <Th className="pr-3 text-left">Aligned manager</Th>
               <Th className="pr-3 text-left">Channels</Th>
               <Th className="pr-3 text-left">Added</Th>
-              <Th className="pr-3 text-left">Access</Th>
+              <Th className="pr-3 text-left">Notifications</Th>
               <Th className="text-right">Action</Th>
             </tr>
           </thead>
@@ -145,7 +168,7 @@ export default function TeamAccessPanel({
                     </span>
                     {user.authorizedAt && (
                       <p className="mt-0.5 font-mono text-[9px] text-granite">
-                        authorized {formatDate(user.authorizedAt)}
+                        routing since {formatDate(user.authorizedAt)}
                       </p>
                     )}
                   </td>
@@ -153,18 +176,18 @@ export default function TeamAccessPanel({
                     <span className="flex flex-wrap items-center justify-end gap-1.5">
                       {user.status === 'active' && (
                         <RowAction onClick={() => onSetStatus(user.id, 'suspended')}>
-                          Revoke access
+                          Pause notifications
                         </RowAction>
                       )}
                       {user.status === 'invited' && (
                         <RowAction onClick={() => onSetStatus(user.id, 'active')}>
                           <CheckIcon className="h-3 w-3" />
-                          Authorize
+                          Turn on notifications
                         </RowAction>
                       )}
                       {user.status === 'suspended' && (
                         <RowAction onClick={() => onSetStatus(user.id, 'active')}>
-                          Restore
+                          Resume notifications
                         </RowAction>
                       )}
                       {addedUserIds.has(user.id) && (
@@ -177,7 +200,7 @@ export default function TeamAccessPanel({
             })}
           </tbody>
         </table>
-      </div>
+      </TableRegion>
     </div>
   );
 }
@@ -185,6 +208,7 @@ export default function TeamAccessPanel({
 function Th({ children, className }: { children: ReactNode; className: string }) {
   return (
     <th
+      scope="col"
       className={`pb-2 font-mono text-[10px] uppercase tracking-[0.06em] text-granite ${className}`}
     >
       {children}
@@ -197,7 +221,7 @@ function RowAction({ children, onClick }: { children: ReactNode; onClick: () => 
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1 rounded border border-ash/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/30 hover:text-bone"
+      className="flex min-h-6 min-w-6 items-center gap-1 rounded border border-ash/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-stone transition-colors hover:bg-ash/30 hover:text-bone"
     >
       {children}
     </button>
@@ -211,13 +235,19 @@ interface AddTeamUserFormProps {
   onCancel: () => void;
 }
 
+type RosterErrors = Partial<Record<'name' | 'email' | 'partnerManagerId', string>>;
+
 function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUserFormProps) {
+  const channelId = useId();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<TeamRole>('partner-manager');
   const [partnerManagerId, setPartnerManagerId] = useState(partnerManagers[0]?.id ?? '');
   const [channels, setChannels] = useState<NotificationChannel[]>(['email', 'slack', 'in-app']);
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<RosterErrors>({});
+
+  const clearError = (field: keyof RosterErrors) =>
+    setErrors((previous) => ({ ...previous, [field]: undefined }));
 
   const aligned = TEAM_ROLE_META[role].aligned;
 
@@ -229,17 +259,21 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
     );
   };
 
-  const submit = () => {
+  const submit = (form: HTMLFormElement) => {
     const trimmedName = name.trim();
     const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedName) return setError('A name is required.');
-    if (!EMAIL_PATTERN.test(trimmedEmail)) return setError('Enter a valid work email address.');
-    if (users.some((user) => user.email.toLowerCase() === trimmedEmail)) {
-      return setError('That email is already on the roster.');
+    const nextErrors: RosterErrors = {};
+    if (!trimmedName) nextErrors.name = 'A name is required.';
+    if (!EMAIL_PATTERN.test(trimmedEmail)) {
+      nextErrors.email = 'Enter a valid work email address.';
+    } else if (users.some((user) => user.email.toLowerCase() === trimmedEmail)) {
+      nextErrors.email = 'That email is already on the roster.';
     }
-    if (aligned && !partnerManagerId) {
-      return setError('A partner manager needs an aligned partner manager.');
+    if (aligned && !partnerManagers.some((manager) => manager.id === partnerManagerId)) {
+      nextErrors.partnerManagerId = 'A partner manager needs an aligned partner manager.';
     }
+    setErrors(nextErrors);
+    if (focusInvalid(form, nextErrors)) return;
     onAdd({
       name: trimmedName,
       email: trimmedEmail,
@@ -250,40 +284,58 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
   };
 
   return (
-    <div
+    <form
       className="rounded border border-ash bg-carbon p-4"
-      role="dialog"
       aria-label="Add internal user"
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit(event.currentTarget);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        onCancel();
+      }}
     >
       <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-        Add to the partner team · access awaits authorization
+        Add to the notification roster · routing starts off
       </p>
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Name">
+        <FormField label="Name" error={errors.name}>
           <input
+            name="name"
             autoFocus
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+              clearError('name');
+            }}
             placeholder="Jordan Fields"
             className={inputClass}
           />
-        </Field>
-        <Field label="Work email">
+        </FormField>
+        <FormField label="Work email" error={errors.email}>
           <input
+            name="email"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') submit();
-              if (event.key === 'Escape') onCancel();
+            onChange={(event) => {
+              setEmail(event.target.value);
+              clearError('email');
             }}
             placeholder="jordan.fields@factory.ai"
             className={inputClass}
           />
-        </Field>
-        <Field label="Role">
+        </FormField>
+        <FormField label="Role">
           <select
             value={role}
-            onChange={(event) => setRole(event.target.value as TeamRole)}
+            onChange={(event) => {
+              const nextRole = event.target.value as TeamRole;
+              setRole(nextRole);
+              if (!TEAM_ROLE_META[nextRole].aligned) clearError('partnerManagerId');
+            }}
             className={inputClass}
           >
             {TEAM_ROLES.map((option) => (
@@ -292,11 +344,15 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
               </option>
             ))}
           </select>
-        </Field>
-        <Field label="Aligned manager">
+        </FormField>
+        <FormField label="Aligned manager" error={errors.partnerManagerId}>
           <select
+            name="partnerManagerId"
             value={partnerManagerId}
-            onChange={(event) => setPartnerManagerId(event.target.value)}
+            onChange={(event) => {
+              setPartnerManagerId(event.target.value);
+              clearError('partnerManagerId');
+            }}
             disabled={!aligned}
             className={`${inputClass} disabled:opacity-40`}
           >
@@ -306,7 +362,7 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
               </option>
             ))}
           </select>
-        </Field>
+        </FormField>
       </div>
 
       <p className="mt-3 text-[10px] leading-snug text-granite">
@@ -323,31 +379,32 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
           {NOTIFICATION_CHANNELS.map((channel) => {
             const on = channels.includes(channel);
             return (
-              <button
-                key={channel}
-                type="button"
-                onClick={() => toggleChannel(channel)}
-                disabled={channel === 'email'}
-                aria-pressed={on}
-                title={NOTIFICATION_CHANNEL_META[channel].description}
-                className={`flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.06em] transition-colors ${
-                  on ? 'border-ash bg-ash/30 text-bone' : 'border-carbon text-granite'
-                } ${channel === 'email' ? 'cursor-default' : 'hover:border-ash'}`}
-              >
-                {on && <CheckIcon className="h-3 w-3" />}
-                {NOTIFICATION_CHANNEL_META[channel].label}
-              </button>
+              <div key={channel} className="min-w-0 max-w-[240px]">
+                <button
+                  type="button"
+                  onClick={() => toggleChannel(channel)}
+                  disabled={channel === 'email'}
+                  aria-pressed={on}
+                  aria-describedby={`${channelId}-${channel}`}
+                  className={`flex min-h-6 min-w-6 items-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.06em] transition-colors ${
+                    on ? 'border-ash bg-ash/30 text-bone' : 'border-carbon text-granite'
+                  } ${channel === 'email' ? 'cursor-default' : 'hover:border-ash'}`}
+                >
+                  {on && <CheckIcon className="h-3 w-3" />}
+                  {NOTIFICATION_CHANNEL_META[channel].label}
+                </button>
+                <p id={`${channelId}-${channel}`} className="mt-1 text-[10px] text-granite">
+                  {NOTIFICATION_CHANNEL_META[channel].description}
+                </p>
+              </div>
             );
           })}
         </div>
       </div>
 
-      {error && <p className="mt-3 text-xs text-signal">{error}</p>}
-
       <div className="mt-4 flex items-center gap-2">
         <button
-          type="button"
-          onClick={submit}
+          type="submit"
           className="flex items-center gap-1.5 rounded border border-ash px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-bone transition-colors hover:bg-ash/30"
         >
           <PlusIcon className="h-3.5 w-3.5" />
@@ -361,18 +418,7 @@ function AddTeamUserForm({ users, partnerManagers, onAdd, onCancel }: AddTeamUse
           Cancel
         </button>
       </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="block">
-      <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
-        {label}
-      </span>
-      <span className="mt-1 block">{children}</span>
-    </label>
+    </form>
   );
 }
 

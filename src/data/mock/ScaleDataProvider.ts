@@ -4,10 +4,9 @@ import type {
   Opportunity,
   Partner,
   PartnerCertification,
-  PipelineSnapshot,
-  ProviderBook,
   Target,
 } from '../types';
+import type { PipelineSnapshot, ProviderBook } from './book';
 import { MockDataProvider } from './MockDataProvider';
 import { generateDashboardData } from './generate';
 
@@ -26,14 +25,14 @@ export interface BookSize {
 /**
  * The mock book multiplied, to make the contract's claim measurable instead of
  * asserted: the scoped queries return the same small answers at 100× volume,
- * while the nine load-everything calls return 100× the rows.
+ * and there is no load-everything path left to grow with the book.
  *
  * What is scaled is the book — partners, opportunities, the weekly snapshots,
  * registrations, targets, activities, certifications. What is not is the
  * roster: the partner team stays five managers and one deal desk, because
  * scaling people would not change anything the seam ships. A manager simply
- * owns 100× the accounts, which is the situation the load-everything contract
- * fails on.
+ * owns 100× the accounts, which is the situation the retired whole-book
+ * contract failed on.
  *
  * Ids and account names carry a per-copy suffix so the copies stay distinct
  * rows; foreign keys are rewritten with the same suffix so each copy's
@@ -45,7 +44,9 @@ export class ScaleDataProvider extends MockDataProvider {
 
   constructor(scale: number = DEFAULT_SCALE, base: ProviderBook = generateDashboardData()) {
     const expanded = expandBook(base, scale);
-    super(expanded);
+    // Answers are stamped with the scaled identity, so metadata on screen can
+    // never attribute a 100× figure to the local mock.
+    super(expanded, { providerId: 'scaled' });
     this.scale = Math.max(1, Math.floor(scale));
     this.size = measureBook(expanded);
   }
@@ -93,6 +94,10 @@ function expandBook(base: ProviderBook, scale: number): ProviderBook {
         ...registration,
         id: `${registration.id}${suffix}`,
         partnerId: `${registration.partnerId}${suffix}`,
+        // The account name carries the copy label too, or duplicate-account
+        // groups would merge across copies and the scaled book would stop
+        // being 100 disjoint copies.
+        accountName: `${registration.accountName}${label}`,
         ...(registration.convertedTo
           ? { convertedTo: `${registration.convertedTo}${suffix}` }
           : {}),

@@ -1,48 +1,48 @@
 import { describe, expect, it } from 'vitest';
-import { CURRENT_FISCAL_QUARTER, FISCAL_PHASE_META, SNAPSHOT_DATE } from '../data/constants';
+import {
+  CURRENT_FISCAL_QUARTER,
+  FISCAL_PHASE_META,
+  OPP_TYPES,
+  SNAPSHOT_DATE,
+  STAGES,
+} from '../data/constants';
 import type {
   ActivityMeeting,
-  DashboardData,
   DealRegistration,
+  ForecastCategory,
+  MeetingClassification,
   Opportunity,
-  Partner,
-  PipelineSnapshot,
   Target,
   TeamUser,
 } from '../data/types';
 import {
-  approvedNotConverted,
-  businessDaysBetween,
-  businessDaysWaiting,
-  calendarDaysBetween,
+  applyTeamRosterOverlays,
   categoryStageMismatches,
   closedWonForPhase,
   closedWonPriorYearForPhase,
-  coverageRatio,
+  coverageState,
   currentWeekMeetings,
   daysLeftInQuarter,
-  duplicateRegistrationGroups,
-  exclusivityLapsed,
   filterByPhase,
   filterRegistrationsByPhase,
   forecastCategoryOf,
   formatCoverage,
   openOpportunities,
   openPipeline,
-  partnerLeaderboard,
   phaseForQuarter,
   phaseWindow,
   quarterlyClosedWonAndTarget,
-  registrationConversionTimes,
-  registrationSlaAlerts,
-  registrationSlaState,
-  registrationsPastSla,
+  registrationsNewestFirst,
   remainingQuota,
+  stageBreakdown,
+  typeBreakdown,
+  weeklyActivity,
   weeklyForecastRows,
   weeklyGoalProgress,
   weightedForecast,
   winRateForPhase,
 } from './metrics';
+import type { RecordedWeekTotals } from './metrics';
 
 // ---- fixtures --------------------------------------------------------------
 
@@ -76,44 +76,66 @@ function registration(submittedAt: string): DealRegistration {
   };
 }
 
-const partner: Partner = {
-  id: 'p-01',
-  name: 'Northwind Solutions',
-  type: 'reseller',
-  tier: 'gold',
-  region: 'na',
-  accountManager: 'Dana Reyes',
-  partnerManagerId: 'pm-01',
-  joinedAt: '2024-01-01T00:00:00Z',
-};
-
-function dashboard(overrides: Partial<DashboardData>): DashboardData {
+/**
+ * One recording instant's totals, zero-filled the way the provider's
+ * aggregation emits them (see `src/data/mock/book.ts`). The metrics layer
+ * never touches raw snapshot rows — even its tests receive history in this
+ * folded shape.
+ */
+function recorded(
+  takenAt: string,
+  raw: Partial<Record<ForecastCategory, number>>,
+): RecordedWeekTotals {
   return {
-    partnerManagers: [],
-    partners: [],
-    registrations: [],
-    opportunities: [],
-    targets: [],
-    activities: [],
-    certifications: [],
-    teamUsers: [],
-    ...overrides,
-  };
-}
-
-function snapshot(
-  fields: Partial<PipelineSnapshot> & Pick<PipelineSnapshot, 'takenAt' | 'opportunityId'>,
-): PipelineSnapshot {
-  return {
-    forecastedRevenue: 10_000,
-    forecastCategory: 'pipeline',
-    stage: 'scope',
-    expectedCloseDate: '2026-09-30T00:00:00Z',
-    ...fields,
+    takenAt,
+    raw: { 'long-shot': 0, pipeline: 0, 'best-case': 0, commit: 0, ...raw },
   };
 }
 
 // ---- phase windows ---------------------------------------------------------
+
+describe('open pipeline breakdown parity', () => {
+  it.each([false, true])(
+    'preserves closed exclusions, zero buckets and sum order (empty=%s)',
+    (empty) => {
+      const rows = empty
+        ? []
+        : Array.from({ length: 21 }, (_, index) =>
+            opp({
+              id: `bucket-${index}`,
+              expectedCloseDate: '2026-10-01T00:00:00Z',
+              stage: STAGES[index % STAGES.length]!,
+              oppType: OPP_TYPES[index % OPP_TYPES.length]!,
+              forecastedRevenue: index % 3 === 0 ? 0.1 : index % 3 === 1 ? 0.2 : 1e15,
+              outcome: index % 4 === 0 ? 'won' : index % 4 === 1 ? 'lost' : undefined,
+            }),
+          );
+      const before = structuredClone(rows);
+      const open = rows.filter((row) => row.outcome === undefined);
+      expect(stageBreakdown(rows)).toEqual(
+        STAGES.map((stage) => {
+          const bucket = open.filter((row) => row.stage === stage);
+          return {
+            stage,
+            count: bucket.length,
+            value: bucket.reduce((sum, row) => sum + row.forecastedRevenue, 0),
+          };
+        }),
+      );
+      expect(typeBreakdown(rows)).toEqual(
+        OPP_TYPES.map((type) => {
+          const bucket = open.filter((row) => row.oppType === type);
+          return {
+            type,
+            count: bucket.length,
+            value: bucket.reduce((sum, row) => sum + row.forecastedRevenue, 0),
+          };
+        }),
+      );
+      expect(rows).toEqual(before);
+    },
+  );
+});
 
 describe('phaseWindow', () => {
   it('truncates in-progress phases at the snapshot for closed activity only', () => {
@@ -197,17 +219,17 @@ describe('filterRegistrationsByPhase', () => {
 
 // ---- coverage and quota ----------------------------------------------------
 
-describe('coverageRatio', () => {
+describe('coverageState', () => {
   const targets = [target('FY27-Q3', 100_000)];
+  const closedWon20k = opp({
+    id: 'w',
+    expectedCloseDate: '2026-08-05T00:00:00Z',
+    outcome: 'won',
+    closedAt: '2026-08-05T00:00:00Z',
+    forecastedRevenue: 20_000,
+  });
 
   it('counts open pipeline across the whole phase, not just through the snapshot', () => {
-    const closedWon = opp({
-      id: 'w',
-      expectedCloseDate: '2026-08-05T00:00:00Z',
-      outcome: 'won',
-      closedAt: '2026-08-05T00:00:00Z',
-      forecastedRevenue: 20_000,
-    });
     const beforeSnapshot = opp({
       id: 'o1',
       expectedCloseDate: '2026-09-10T00:00:00Z',
@@ -227,20 +249,56 @@ describe('coverageRatio', () => {
     // Remaining quota is 80k; Q3-scheduled open pipeline is 160k (the 500k
     // Q4 deal must not leak in), so coverage is 2x.
     expect(
-      coverageRatio([closedWon, beforeSnapshot, lateInPhase, nextQuarter], targets, 'q3'),
-    ).toBe(2);
+      coverageState([closedWon20k, beforeSnapshot, lateInPhase, nextQuarter], targets, 'q3'),
+    ).toEqual({ kind: 'coverage', value: 2 });
   });
 
-  it('returns null when the phase target is already met', () => {
+  it('reports target-met once closed-won reaches the target, even with open pipeline left', () => {
     const closedWon = opp({
-      id: 'w',
+      id: 'w-met',
       expectedCloseDate: '2026-08-05T00:00:00Z',
       outcome: 'won',
       closedAt: '2026-08-05T00:00:00Z',
       forecastedRevenue: 150_000,
     });
-    expect(coverageRatio([closedWon], targets, 'q3')).toBeNull();
-    expect(formatCoverage(coverageRatio([closedWon], targets, 'q3'))).toBe('Target met');
+    const stillOpen = opp({
+      id: 'o-open',
+      expectedCloseDate: '2026-10-15T00:00:00Z',
+      forecastedRevenue: 400_000,
+    });
+    // The zero remaining gap is a state, not a ratio: 400k of open pipeline
+    // over a fully covered target must not render as a coverage figure.
+    expect(coverageState([closedWon, stillOpen], targets, 'q3')).toEqual({ kind: 'target-met' });
+    expect(formatCoverage(coverageState([closedWon, stillOpen], targets, 'q3'))).toBe('Target met');
+  });
+
+  it('reports no-target when the phase has no target rows for the scope', () => {
+    expect(coverageState([closedWon20k], [], 'q3')).toEqual({ kind: 'no-target' });
+    expect(formatCoverage(coverageState([closedWon20k], [], 'q3'))).toBe('No target');
+  });
+
+  it('reports no-target for a zero-value target row and a target in another quarter', () => {
+    expect(coverageState([], [target('FY27-Q3', 0)], 'q3')).toEqual({ kind: 'no-target' });
+    expect(coverageState([closedWon20k], [target('FY27-Q4', 900_000)], 'q3')).toEqual({
+      kind: 'no-target',
+    });
+  });
+
+  it('never produces Infinity or NaN', () => {
+    for (const state of [
+      coverageState([], [], 'q3'),
+      coverageState([], [target('FY27-Q3', 0)], 'q3'),
+      coverageState([closedWon20k], targets, 'q3'),
+    ]) {
+      expect(state.kind === 'coverage' ? Number.isFinite(state.value) : true).toBe(true);
+      expect(formatCoverage(state)).not.toMatch(/Infinity|NaN/);
+    }
+  });
+
+  it('formats the three states distinctly', () => {
+    expect(formatCoverage({ kind: 'no-target' })).toBe('No target');
+    expect(formatCoverage({ kind: 'target-met' })).toBe('Target met');
+    expect(formatCoverage({ kind: 'coverage', value: 2.34 })).toBe('2.3x');
   });
 });
 
@@ -381,42 +439,6 @@ describe('quarterlyClosedWonAndTarget', () => {
   });
 });
 
-// ---- leaderboard ------------------------------------------------------------
-
-describe('partnerLeaderboard', () => {
-  it('ranks partners by closed-won for the selected phase', () => {
-    const data = dashboard({
-      partners: [partner, { ...partner, id: 'p-02', name: 'Second Partner' }],
-      opportunities: [
-        opp({
-          id: 'a',
-          partnerId: 'p-01',
-          expectedCloseDate: '2026-08-05T00:00:00Z',
-          outcome: 'won',
-          closedAt: '2026-08-05T00:00:00Z',
-          forecastedRevenue: 10,
-        }),
-        opp({
-          id: 'b',
-          partnerId: 'p-02',
-          expectedCloseDate: '2026-05-05T00:00:00Z',
-          outcome: 'won',
-          closedAt: '2026-05-05T00:00:00Z',
-          forecastedRevenue: 20,
-        }),
-      ],
-    });
-
-    const q3 = partnerLeaderboard(data, 'all', undefined, 'q3');
-    expect(q3[0]?.partner.id).toBe('p-01');
-    expect(q3[0]?.closedWonValue).toBe(10);
-
-    const q2 = partnerLeaderboard(data, 'all', undefined, 'q2');
-    expect(q2[0]?.partner.id).toBe('p-02');
-    expect(q2[0]?.closedWonValue).toBe(20);
-  });
-});
-
 // ---- forecasting helpers ----------------------------------------------------
 
 describe('daysLeftInQuarter', () => {
@@ -495,6 +517,88 @@ describe('weeklyGoalProgress', () => {
         new Set(['p-02']),
       ).meetings,
     ).toBe(1);
+  });
+
+  it('resolves classified ownership before manager filtering — once across both managers', () => {
+    // pm-01's call, reclassified onto a prospect in pm-02's book. The
+    // classification owns the meeting now: the old manager's partner set
+    // rejects it and the new manager's set counts it. Applying the raw
+    // calendar attribution on top of the partner set would drop it from
+    // BOTH scopes — the sum over the two managers must be exactly one.
+    const call = activity({ id: 'mx', occurredAt: '2026-09-15T09:00:00Z' });
+    const moved: Record<string, MeetingClassification> = {
+      mx: { partnerId: 'prospect-b', type: 'pio-interlock' },
+    };
+    const a = weeklyGoalProgress([call], moved, 'pm-01', new Set(['p-01']));
+    const b = weeklyGoalProgress([call], moved, 'pm-02', new Set(['p-02', 'prospect-b']));
+    expect(a.meetings).toBe(0);
+    expect(a.pioMeetings).toBe(0);
+    expect(b.meetings).toBe(1);
+    expect(b.pioMeetings).toBe(1);
+    expect(a.meetings + b.meetings).toBe(1);
+  });
+
+  it('keeps an unclassified call in its raw manager’s partner scope alone', () => {
+    const call = activity({ id: 'mx', occurredAt: '2026-09-15T09:00:00Z' });
+    const a = weeklyGoalProgress([call], {}, 'pm-01', new Set(['p-01']));
+    const b = weeklyGoalProgress([call], {}, 'pm-02', new Set(['p-02', 'prospect-b']));
+    expect(a.meetings).toBe(1);
+    expect(b.meetings).toBe(0);
+    expect(a.meetings + b.meetings).toBe(1);
+  });
+
+  it('keeps raw-manager inclusion when no partner set scopes the query', () => {
+    // Without a partner set the classification still retypes the call, but
+    // membership follows the raw calendar attribution, unchanged.
+    const call = activity({ id: 'mx', occurredAt: '2026-09-15T09:00:00Z' });
+    const moved: Record<string, MeetingClassification> = {
+      mx: { partnerId: 'p-02', type: 'pio-interlock' },
+    };
+    const a = weeklyGoalProgress([call], moved, 'pm-01');
+    expect(a.meetings).toBe(1);
+    expect(a.pioMeetings).toBe(1);
+    expect(weeklyGoalProgress([call], moved, 'pm-02').meetings).toBe(0);
+  });
+});
+
+describe('weeklyActivity', () => {
+  // One call on pm-01's partner p-01, mid snapshot week (the last bucket).
+  const call = activity({ id: 'mx', occurredAt: '2026-09-15T09:00:00Z', type: 'discovery' });
+  const movedToProspectB: Record<string, MeetingClassification> = {
+    mx: { partnerId: 'prospect-b', type: 'pio-interlock' },
+  };
+
+  it('scopes the week to the raw manager when no partner set is given', () => {
+    const rows = weeklyActivity([call], 'pm-01');
+    expect(rows[rows.length - 1].total).toBe(1);
+    expect(weeklyActivity([call], 'pm-02')[rows.length - 1].total).toBe(0);
+  });
+
+  it('resolves classified ownership before manager filtering — once across both managers', () => {
+    // The same cross-manager reclassification as the goal: zero buckets for
+    // the old manager's scope, the call and its new type in the new one.
+    const a = weeklyActivity([call], 'pm-01', new Set(['p-01']), movedToProspectB);
+    const b = weeklyActivity([call], 'pm-02', new Set(['p-02', 'prospect-b']), movedToProspectB);
+    expect(a[a.length - 1].total).toBe(0);
+    expect(b[b.length - 1].total).toBe(1);
+    expect(b[b.length - 1].byType['pio-interlock']).toBe(1);
+    expect(a[a.length - 1].total + b[b.length - 1].total).toBe(1);
+  });
+
+  it('keeps an unclassified call in its raw manager’s partner scope alone', () => {
+    const a = weeklyActivity([call], 'pm-01', new Set(['p-01']));
+    const b = weeklyActivity([call], 'pm-02', new Set(['p-02', 'prospect-b']));
+    expect(a[a.length - 1].total).toBe(1);
+    expect(b[b.length - 1].total).toBe(0);
+  });
+
+  it('retypes the split without moving membership when no partner set is given', () => {
+    const a = weeklyActivity([call], 'pm-01', undefined, movedToProspectB);
+    expect(a[a.length - 1].total).toBe(1);
+    expect(a[a.length - 1].byType['pio-interlock']).toBe(1);
+    expect(weeklyActivity([call], 'pm-02', undefined, movedToProspectB)[a.length - 1].total).toBe(
+      0,
+    );
   });
 });
 
@@ -692,7 +796,9 @@ describe('weeklyForecastRows', () => {
 });
 
 describe('weeklyForecastRows with recorded history', () => {
-  // One deal, recorded at every Monday of Q3 through the snapshot week.
+  // One deal's worth of history: a recording at every Monday of Q3 through
+  // the snapshot week, already folded to per-category totals the way the
+  // provider's aggregation emits them (the raw rows are provider-private).
   const mondays = [
     '2026-08-10',
     '2026-08-17',
@@ -704,17 +810,10 @@ describe('weeklyForecastRows with recorded history', () => {
 
   const book = [opp({ id: 'a', expectedCloseDate: '2026-09-30T00:00:00Z' })];
 
-  it('reads closed weeks from the snapshot rather than the current book', () => {
+  it('reads closed weeks from the recording rather than the current book', () => {
     // The deal was called Pipeline at $100k all quarter, and today reads
     // Commit at $500k. History must show what was recorded, not today.
-    const history = mondays.map((takenAt) =>
-      snapshot({
-        takenAt,
-        opportunityId: 'a',
-        forecastedRevenue: 100_000,
-        forecastCategory: 'pipeline',
-      }),
-    );
+    const history = mondays.map((takenAt) => recorded(takenAt, { pipeline: 100_000 }));
     const edited = [
       opp({
         id: 'a',
@@ -724,9 +823,9 @@ describe('weeklyForecastRows with recorded history', () => {
       }),
     ];
     const rows = weeklyForecastRows(edited, 'FY27-Q3', SNAPSHOT_DATE, history);
-    const recorded = rows.filter((row) => row.recordedAt !== undefined);
-    expect(recorded).toHaveLength(6);
-    for (const row of recorded) {
+    const recordedWeeks = rows.filter((row) => row.recordedAt !== undefined);
+    expect(recordedWeeks).toHaveLength(6);
+    for (const row of recordedWeeks) {
       expect(row.total).toBe(100_000);
       expect(row.raw.pipeline).toBe(100_000);
       expect(row.weightedTotal).toBe(25_000); // 100k × 25%, the call of the day
@@ -734,9 +833,7 @@ describe('weeklyForecastRows with recorded history', () => {
   });
 
   it('keeps the in-progress week live, so it still matches the tiles', () => {
-    const history = mondays.map((takenAt) =>
-      snapshot({ takenAt, opportunityId: 'a', forecastedRevenue: 100_000 }),
-    );
+    const history = mondays.map((takenAt) => recorded(takenAt, { pipeline: 100_000 }));
     const rows = weeklyForecastRows(book, 'FY27-Q3', SNAPSHOT_DATE, history);
     // Snapshot Sep 18 sits inside the week of Sep 14, whose own recording is
     // its opening boundary, not a state inside it: that week stays live.
@@ -748,17 +845,14 @@ describe('weeklyForecastRows with recorded history', () => {
     expect(live[0].weightedTotal).toBe(weightedForecast(open).total);
   });
 
-  it('shows a slip out of the quarter as a drop instead of erasing it', () => {
-    // Recorded in Q3 for the first three weeks, then pushed into Q4. Today the
-    // deal is a Q4 deal, so deriving from the current book would hide it from
-    // every week and leave no drop behind.
+  it('draws a recorded zero as a drop, not as a week to reconstruct', () => {
+    // The aggregation reports 100k of pipeline for the first three Mondays
+    // and zero after — the deal's recorded close slid into Q4, so it clipped
+    // out of the later recordings (the raw-side clip is pinned in
+    // mock/book.test.ts). Today the deal is a Q4 deal, so deriving from the
+    // current book would hide it from every week and leave no drop behind.
     const history = mondays.map((takenAt, index) =>
-      snapshot({
-        takenAt,
-        opportunityId: 'a',
-        forecastedRevenue: 100_000,
-        expectedCloseDate: index < 3 ? '2026-09-30T00:00:00Z' : '2026-11-20T00:00:00Z',
-      }),
+      recorded(takenAt, index < 3 ? { pipeline: 100_000 } : {}),
     );
     const slipped = [opp({ id: 'a', expectedCloseDate: '2026-11-20T00:00:00Z' })];
     const totals = weeklyForecastRows(slipped, 'FY27-Q3', SNAPSHOT_DATE, history)
@@ -769,9 +863,7 @@ describe('weeklyForecastRows with recorded history', () => {
 
   it('falls back to the current book for weeks history does not cover', () => {
     // History starts in September, so August weeks have nothing recorded.
-    const history = mondays
-      .slice(4)
-      .map((takenAt) => snapshot({ takenAt, opportunityId: 'a', forecastedRevenue: 100_000 }));
+    const history = mondays.slice(4).map((takenAt) => recorded(takenAt, { pipeline: 100_000 }));
     const rows = weeklyForecastRows(book, 'FY27-Q3', SNAPSHOT_DATE, history);
     const august = rows.filter(
       (row) => row.hasStarted && new Date(row.weekStart) < new Date('2026-08-31T00:00:00Z'),
@@ -786,8 +878,8 @@ describe('weeklyForecastRows with recorded history', () => {
 
   it('ignores recordings outside the quarter being charted', () => {
     const history = [
-      snapshot({ takenAt: '2026-07-06T00:00:00.000Z', opportunityId: 'a' }),
-      snapshot({ takenAt: '2026-11-09T00:00:00.000Z', opportunityId: 'a' }),
+      recorded('2026-07-06T00:00:00.000Z', { pipeline: 100_000 }),
+      recorded('2026-11-09T00:00:00.000Z', { pipeline: 100_000 }),
     ];
     const rows = weeklyForecastRows(book, 'FY27-Q3', SNAPSHOT_DATE, history);
     expect(rows.every((row) => row.recordedAt === undefined)).toBe(true);
@@ -851,325 +943,72 @@ describe('categoryStageMismatches', () => {
   });
 });
 
-// ---- deal-registration ops --------------------------------------------------
+// ---- registration history order + roster overlays -------------------------
 
-function reg(
-  fields: Partial<DealRegistration> & Pick<DealRegistration, 'id' | 'submittedAt' | 'status'>,
-): DealRegistration {
-  return {
-    partnerId: 'p-01',
-    accountName: 'Test Account',
-    amount: 50_000,
-    ...fields,
-  };
-}
+describe('registrationsNewestFirst', () => {
+  it('orders newest submission first across every status, id breaking ties', () => {
+    const rows = [
+      { ...registration('2026-09-10T00:00:00Z'), id: 'reg-b', status: 'approved' as const },
+      { ...registration('2026-09-17T00:00:00Z'), id: 'reg-a' },
+      { ...registration('2026-09-10T00:00:00Z'), id: 'reg-a', status: 'rejected' as const },
+      { ...registration('2026-09-01T00:00:00Z'), id: 'reg-c', status: 'rejected' as const },
+    ];
 
-describe('businessDaysBetween', () => {
-  it('counts UTC weekdays excluding the start day', () => {
-    expect(businessDaysBetween('2026-09-18T00:00:00Z', '2026-09-18T00:00:00Z')).toBe(0);
-    // Friday → Monday is 1 business day.
-    expect(businessDaysBetween('2026-09-11T00:00:00Z', '2026-09-14T00:00:00Z')).toBe(1);
-    // Monday → Friday same week is 4.
-    expect(businessDaysBetween('2026-09-14T00:00:00Z', '2026-09-18T00:00:00Z')).toBe(4);
-    // Monday → next Monday is 5 (Tue–Fri + Mon).
-    expect(businessDaysBetween('2026-09-14T00:00:00Z', '2026-09-21T00:00:00Z')).toBe(5);
+    expect(registrationsNewestFirst(rows).map((row) => row.id)).toEqual([
+      'reg-a', // Sep 17
+      'reg-a', // Sep 10, id tiebreak
+      'reg-b',
+      'reg-c',
+    ]);
+    // The tiebreak is what makes the walk a total order: the cursor contract
+    // needs "the same page twice means the same rows", and an unstable sort
+    // over equal timestamps would not give it.
+    expect(registrationsNewestFirst(rows)).toEqual(registrationsNewestFirst([...rows].reverse()));
+  });
+
+  it('does not mutate the input', () => {
+    const rows = [registration('2026-09-10T00:00:00Z'), registration('2026-09-17T00:00:00Z')];
+    const before = rows.map((row) => row.id);
+    registrationsNewestFirst(rows);
+    expect(rows.map((row) => row.id)).toEqual(before);
   });
 });
 
-describe('registrationSlaState', () => {
-  it('counts the waiting counter in business days, not calendar days', () => {
-    // Snapshot 2026-09-18 (Friday). A weekend submission separates the two
-    // units: Sunday 09-06 is 12 calendar days back but only 10 working days.
-    // The counter the UI shows sits next to a 5-business-day SLA and is
-    // colored by it, so it has to be quoted in the same unit.
-    const sunday = reg({ id: 'r-sun', submittedAt: '2026-09-06T00:00:00Z', status: 'pending' });
-    expect(calendarDaysBetween(sunday.submittedAt, SNAPSHOT_DATE.toISOString())).toBe(12);
-    expect(businessDaysWaiting(sunday)).toBe(10);
-  });
-
-  it('lapses exactly when the business-day counter reaches the SLA', () => {
-    // The counter and the color read off the same scale: 4 working days is
-    // inside, and the day it reaches 5 is the day it lapses.
-    const monday = reg({ id: 'r-mon', submittedAt: '2026-09-14T00:00:00Z', status: 'pending' });
-    const sunday = reg({ id: 'r-sun2', submittedAt: '2026-09-13T00:00:00Z', status: 'pending' });
-    expect(businessDaysWaiting(monday)).toBe(4);
-    expect(registrationSlaState(monday)).toBe('within-sla');
-    expect(businessDaysWaiting(sunday)).toBe(5);
-    expect(registrationSlaState(sunday)).toBe('past-sla');
-  });
-
-  it('flags submissions inside the 5-business-day window as within SLA', () => {
-    // Snapshot 2026-09-18. Submitted Monday, four business days earlier.
-    expect(
-      registrationSlaState(
-        reg({ id: 'r1', submittedAt: '2026-09-14T00:00:00Z', status: 'pending' }),
-      ),
-    ).toBe('within-sla');
-  });
-
-  it('flags submissions at or past 5 business days as past SLA', () => {
-    expect(
-      registrationSlaState(
-        reg({ id: 'r2', submittedAt: '2026-09-07T00:00:00Z', status: 'pending' }),
-      ),
-    ).toBe('past-sla');
-  });
-});
-
-describe('registrationsPastSla', () => {
-  it('returns only pending registrations outside the SLA, oldest first', () => {
-    const old = reg({ id: 'r1', submittedAt: '2026-09-01T00:00:00Z', status: 'pending' });
-    const fresh = reg({ id: 'r2', submittedAt: '2026-09-17T00:00:00Z', status: 'pending' });
-    const approved = reg({
-      id: 'r3',
-      submittedAt: '2026-09-01T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-09-05T00:00:00Z',
-    });
-    expect(registrationsPastSla([approved, fresh, old])).toEqual([old]);
-  });
-});
-
-function teamUser(fields: Partial<TeamUser> & Pick<TeamUser, 'id' | 'role'>): TeamUser {
-  return {
-    name: 'Alex Morgan',
-    email: `${fields.id}@factory.ai`,
+describe('applyTeamRosterOverlays', () => {
+  const user = (id: string): TeamUser => ({
+    id,
+    name: `User ${id}`,
+    email: `${id}@factory.example`,
+    role: 'deal-desk-ops',
+    channels: ['email', 'in-app'],
     status: 'active',
-    channels: ['email'],
-    addedAt: '2026-02-02T00:00:00Z',
-    ...fields,
-  };
-}
-
-describe('registrationSlaAlerts', () => {
-  const manager = teamUser({ id: 'u-01', role: 'partner-manager', partnerManagerId: 'pm-01' });
-  const dealDesk = teamUser({ id: 'u-02', role: 'deal-desk-ops' });
-  const roster = [manager, dealDesk];
-
-  // Snapshot 2026-09-18 (Friday). A Monday submission has 4 business days
-  // behind it, which is one business day from the 5-business-day deadline.
-  const warning = reg({ id: 'r-warning', submittedAt: '2026-09-14T00:00:00Z', status: 'pending' });
-  const breached = reg({ id: 'r-breach', submittedAt: '2026-09-07T00:00:00Z', status: 'pending' });
-  const inside = reg({ id: 'r-inside', submittedAt: '2026-09-17T00:00:00Z', status: 'pending' });
-
-  it('flags the warning window a business day before the deadline', () => {
-    const [alert] = registrationSlaAlerts([warning], [partner], roster);
-    expect(alert.state).toBe('approaching');
-    expect(alert.businessDaysWaiting).toBe(4);
-    expect(alert.businessDaysRemaining).toBe(1);
-    expect(alert.dueAt).toBe('2026-09-21T00:00:00.000Z');
+    addedAt: '2026-09-01T00:00:00Z',
   });
 
-  it('flags registrations already past the SLA', () => {
-    const [alert] = registrationSlaAlerts([breached], [partner], roster);
-    expect(alert.state).toBe('breached');
-    expect(alert.businessDaysRemaining).toBeLessThan(0);
-    expect(alert.dueAt).toBe('2026-09-14T00:00:00.000Z');
-  });
-
-  it('leaves registrations still inside the SLA alone', () => {
-    expect(registrationSlaAlerts([inside], [partner], roster)).toEqual([]);
-  });
-
-  it('ignores registrations that are no longer pending', () => {
-    const approved = reg({
-      id: 'r-approved',
-      submittedAt: '2026-09-01T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-09-03T00:00:00Z',
-    });
-    expect(registrationSlaAlerts([approved], [partner], roster)).toEqual([]);
-  });
-
-  it('routes to the aligned partner manager, and to the deal desk otherwise', () => {
-    expect(registrationSlaAlerts([warning], [partner], roster)[0].owner?.id).toBe('u-01');
-    // A manager without an alignment, or one whose access was revoked, cannot
-    // own the alert: the deal desk catches it rather than nobody.
-    expect(registrationSlaAlerts([warning], [partner], [dealDesk])[0].owner?.id).toBe('u-02');
-    expect(
-      registrationSlaAlerts(
-        [warning],
-        [partner],
-        [{ ...manager, status: 'suspended' }, dealDesk],
-      )[0].owner?.id,
-    ).toBe('u-02');
-  });
-
-  it('keeps the first active manager aligned to a partner manager', () => {
-    // A second user appended to the roster with the same alignment must not
-    // silently take over the first one's alert queue.
-    const second = teamUser({
-      id: 'u-03',
-      role: 'partner-manager',
-      partnerManagerId: 'pm-01',
-    });
-    expect(registrationSlaAlerts([warning], [partner], [manager, second])[0].owner?.id).toBe(
-      'u-01',
+  it('folds patches into the provider roster by id and appends session adds', () => {
+    const result = applyTeamRosterOverlays(
+      [user('user-a'), user('user-b')],
+      { 'user-a': { status: 'suspended' } },
+      [user('user-c')],
     );
+
+    expect(result.map((entry) => entry.id)).toEqual(['user-a', 'user-b', 'user-c']);
+    expect(result[0]!.status).toBe('suspended');
+    expect(result[1]!.status).toBe('active');
   });
 
-  it('still returns an alert with no owner when the roster is empty', () => {
-    const [alert] = registrationSlaAlerts([warning], [partner], []);
-    expect(alert.owner).toBeUndefined();
-    expect(alert.state).toBe('approaching');
-  });
-
-  it('leads with the 24-hour warnings, then the most overdue registration', () => {
-    const alerts = registrationSlaAlerts([warning, breached], [partner], roster);
-    expect(alerts.map((alert) => alert.registration.id)).toEqual(['r-warning', 'r-breach']);
-  });
-});
-
-describe('approvedNotConverted and exclusivityLapsed', () => {
-  const lapsed = reg({
-    id: 'r1',
-    submittedAt: '2026-06-01T00:00:00Z',
-    status: 'approved',
-    decisionAt: '2026-07-01T00:00:00Z',
-  });
-  const inWindow = reg({
-    id: 'r2',
-    submittedAt: '2026-08-15T00:00:00Z',
-    status: 'approved',
-    decisionAt: '2026-08-20T00:00:00Z',
-  });
-  const converted = reg({
-    id: 'r3',
-    submittedAt: '2026-07-01T00:00:00Z',
-    status: 'approved',
-    decisionAt: '2026-07-05T00:00:00Z',
-    convertedTo: 'opp-1',
-  });
-  const pending = reg({ id: 'r4', submittedAt: '2026-09-15T00:00:00Z', status: 'pending' });
-
-  it('keeps only approved registrations without an opportunity, oldest decision first', () => {
-    const leaking = approvedNotConverted([converted, pending, inWindow, lapsed]);
-    expect(leaking.map((item) => item.id)).toEqual(['r1', 'r2']);
-  });
-
-  it('flags exclusivity only past the 60-day window from approval', () => {
-    expect(exclusivityLapsed(lapsed)).toBe(true);
-    expect(exclusivityLapsed(inWindow)).toBe(false);
-    expect(exclusivityLapsed(converted)).toBe(false);
-    expect(exclusivityLapsed(pending)).toBe(false);
-  });
-});
-
-describe('registrationConversionTimes', () => {
-  const registrations = [
-    reg({
-      id: 'r1',
-      submittedAt: '2026-08-01T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-08-06T00:00:00Z',
-      convertedTo: 'o-1',
-    }),
-    reg({
-      id: 'r2',
-      submittedAt: '2026-08-15T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-08-20T00:00:00Z',
-      convertedTo: 'o-2',
-    }),
-    reg({
-      id: 'r3',
-      submittedAt: '2026-08-25T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-09-01T00:00:00Z',
-    }),
-  ];
-  const opportunities = [
-    opp({
-      id: 'o-1',
-      partnerId: 'p-01',
-      expectedCloseDate: '2026-09-30T00:00:00Z',
-      createdAt: '2026-08-10T00:00:00Z',
-      outcome: 'won',
-      closedAt: '2026-09-01T00:00:00Z',
-    }),
-    opp({
-      id: 'o-2',
-      partnerId: 'p-01',
-      expectedCloseDate: '2026-09-30T00:00:00Z',
-      createdAt: '2026-08-22T00:00:00Z',
-      outcome: 'lost',
-      closedAt: '2026-08-25T00:00:00Z',
-    }),
-  ];
-
-  it('averages each hop only over the registrations that reached it', () => {
-    const times = registrationConversionTimes(registrations, opportunities);
-    expect(times.submittedToApproved).toBe(5.7); // (5 + 5 + 7) / 3
-    expect(times.approvedToOpportunity).toBe(3); // (4 + 2) / 2
-    expect(times.opportunityToWin).toBe(22); // only r1 won: Aug 10 → Sep 1
-    expect(times.submittedToWin).toBe(31); // only r1 won: Aug 1 → Sep 1
-  });
-
-  it('returns null hops when no registration reached them', () => {
-    expect(
-      registrationConversionTimes(
-        [reg({ id: 'r4', submittedAt: '2026-09-01T00:00:00Z', status: 'pending' })],
-        [],
-      ),
-    ).toEqual({
-      submittedToApproved: null,
-      approvedToOpportunity: null,
-      opportunityToWin: null,
-      submittedToWin: null,
+  it('ignores a patch naming a user the provider never served', () => {
+    const result = applyTeamRosterOverlays([user('user-a')], {
+      'user-ghost': { status: 'suspended' },
     });
+    expect(result.map((entry) => entry.id)).toEqual(['user-a']);
+    expect(result[0]!.status).toBe('active');
   });
-});
 
-describe('duplicateRegistrationGroups', () => {
-  const secondPartner: Partner = { ...partner, id: 'p-02', name: 'Second Partner' };
-  const regs = [
-    reg({
-      id: 'r1',
-      partnerId: 'p-01',
-      accountName: 'Shared Client',
-      submittedAt: '2026-03-01T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-03-05T00:00:00Z',
-    }),
-    reg({
-      id: 'r2',
-      partnerId: 'p-02',
-      accountName: 'Shared Client',
-      submittedAt: '2026-04-01T00:00:00Z',
-      status: 'approved',
-      decisionAt: '2026-04-05T00:00:00Z',
-    }),
-    reg({
-      id: 'r3',
-      partnerId: 'p-01',
-      accountName: 'Solo Client',
-      submittedAt: '2026-03-01T00:00:00Z',
-      status: 'pending',
-    }),
-    reg({
-      id: 'r4',
-      partnerId: 'p-01',
-      accountName: 'Same Partner Twice',
-      submittedAt: '2026-02-01T00:00:00Z',
-      status: 'pending',
-    }),
-    reg({
-      id: 'r5',
-      partnerId: 'p-01',
-      accountName: 'Same Partner Twice',
-      submittedAt: '2026-02-10T00:00:00Z',
-      status: 'pending',
-    }),
-  ];
-
-  it('groups only clients registered by two or more distinct partners', () => {
-    const groups = duplicateRegistrationGroups(regs, [partner, secondPartner]);
-    expect(groups).toHaveLength(1);
-    const group = groups[0]!;
-    expect(group.accountName).toBe('Shared Client');
-    expect(group.distinctPartners).toBe(2);
-    expect(group.firstSubmitted.id).toBe('r1');
-    expect(group.registrations.map((item) => item.id)).toEqual(['r1', 'r2']);
+  it('does not mutate the provider roster it was handed', () => {
+    const roster = [user('user-a')];
+    applyTeamRosterOverlays(roster, { 'user-a': { status: 'suspended' } });
+    expect(roster[0]!.status).toBe('active');
   });
 });
 

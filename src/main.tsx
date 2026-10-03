@@ -10,6 +10,18 @@ import './index.css';
 
 initializePerformanceTelemetry();
 
+// Native focus-visible retains its state when a pointer reuses the same control.
+// Native focus scroll can also leave a partially visible outline clipped.
+for (const type of ['keydown', 'pointerdown', 'focusin']) {
+  document.addEventListener(type, () => {
+    if (type !== 'focusin') {
+      document.documentElement.classList.toggle('pointer', type === 'pointerdown');
+    } else {
+      document.activeElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
     <StrictMode>

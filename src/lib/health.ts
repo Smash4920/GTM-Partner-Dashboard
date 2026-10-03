@@ -1,5 +1,7 @@
+import { INTERNAL_DEMO_SCOPE } from '../data/accessScope';
 import type { DataProvider } from '../data/DataProvider';
 import { CURRENT_FISCAL_QUARTER } from '../data/constants';
+import { createAbortError, isAbortError, throwIfAborted } from './abort';
 import { TELEMETRY_STARTUP_EPOCH } from './telemetry/config';
 import { flagIssues, flagSnapshot } from './telemetry/flags';
 import { telemetry } from './telemetry/telemetry';
@@ -44,7 +46,12 @@ export interface HealthArtifact {
   environment: string;
   sessionId: string;
   route: string | null;
+  /** The committed provider: the one whose answers are actually on screen. */
   providerId: string | null;
+  /** The provider the operator last asked for, when it differs from the committed one. */
+  requestedProviderId: string | null;
+  /** Where the last provider request stands; 'none' when nothing was ever requested. */
+  providerTransitionStatus: 'none' | 'committing' | 'committed' | 'failed';
   generatedAt: string;
   uptimeMs: number;
   checks: HealthCheck[];
@@ -85,6 +92,21 @@ export interface ReadinessOptions {
    * running app's own.
    */
   transportStatus?: TransportStatus;
+  /**
+   * The requested-vs-committed provider transition, so the artifact can
+   * distinguish "serving remote" from "still local while remote probes".
+   */
+  transition?: { requestedId: string; status: 'committing' | 'committed' | 'failed' };
+  /**
+   * Cancels the assessment's provider-visible work. The data-seam ping
+   * carries the signal through the query context like every other scoped
+   * call, so a timed-out, superseded, or provider-obsolete probe stops at
+   * the seam instead of running to an answer nobody will publish. A
+   * provider that ignores the signal is abandoned at the race and its late
+   * answer dropped. An aborted assessment rejects with the shared abort
+   * error — a cancellation, never a failed check.
+   */
+  signal?: AbortSignal;
 }
 
 const DEFAULT_PING_BUDGET_MS = 10_000;
@@ -175,6 +197,16 @@ function recentErrorsCheck(windowMs: number, budget: number): HealthCheck {
  * (`getForecastSummary`), so the check measures the seam a user depends on
  * without paying for the book, and it goes through the instrumented wrapper,
  * so the ping is itself measured by the same metrics it is checking.
+ *
+ * The ping carries a live AbortSignal in its query context, like every other
+ * scoped call. Two things cancel it: the caller's signal (a superseded
+ * refresh, a committed-provider replacement, an unmount) and the latency
+ * budget's deadline. Either way the provider sees the abort at the seam — a
+ * simulated remote stops during its delay and never reaches the inner
+ * provider — and a provider that ignores the signal is still abandoned at
+ * the race, its late answer dropped by the wrapper that swallows it. A
+ * caller abort rejects the whole assessment with the shared abort error: an
+ * abandoned probe is obsolete, not 'unavailable'.
  */
 async function dataSeamCheck(
   provider: DataProvider,
@@ -182,14 +214,54 @@ async function dataSeamCheck(
   pingBudgetMs: number,
   healthyPingMs: number,
   now: () => number,
+  signal?: AbortSignal,
 ): Promise<HealthCheck> {
+  // A spent signal means the probe was obsolete before it started.
+  throwIfAborted(signal);
+  // The ping's own controller: the caller's abort forwards into it, and the
+  // budget deadline aborts it, so both paths cancel at the provider seam.
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort();
+  signal?.addEventListener('abort', forwardAbort, { once: true });
   const startedAt = now();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  let dropAbandonListener: (() => void) | undefined;
+  // Settles the moment the caller walks away, even against a provider that
+  // ignores its signal; the ping's own settlement goes through a wrapper
+  // that never rejects, so a late answer or late rejection floats nowhere.
+  const abandoned = new Promise<never>((_, reject) => {
+    const onAbandoned = () => reject(createAbortError());
+    dropAbandonListener = () => signal?.removeEventListener('abort', onAbandoned);
+    signal?.addEventListener('abort', onAbandoned, { once: true });
+  });
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`ping exceeded ${pingBudgetMs}ms`)), pingBudgetMs);
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error('Health ping budget exceeded'));
+    }, pingBudgetMs);
   });
   try {
-    await Promise.race([provider.getForecastSummary({ quarter }), deadline]);
+    const ping = Promise.resolve(
+      provider.getForecastSummary(INTERNAL_DEMO_SCOPE, { quarter }, { signal: controller.signal }),
+    ).then(
+      (result) => ({ outcome: 'answered' as const, result }),
+      (error: unknown) => ({ outcome: 'failed' as const, error }),
+    );
+    const settled = await Promise.race([ping, deadline, abandoned]);
+    if (settled.outcome === 'failed') {
+      // The caller's abort rejects the assessment rather than reporting the
+      // cancelled seam as down.
+      if (isAbortError(settled.error) && controller.signal.aborted) {
+        throw settled.error;
+      }
+      return {
+        name: 'dataSeam',
+        status: 'unavailable',
+        latencyMs: now() - startedAt,
+        detail: 'getForecastSummary unavailable',
+      };
+    }
     const latencyMs = now() - startedAt;
     return {
       name: 'dataSeam',
@@ -198,15 +270,31 @@ async function dataSeamCheck(
       detail: `getForecastSummary answered in ${latencyMs}ms`,
     };
   } catch (error) {
+    if (isAbortError(error)) throw error;
+    // The budget cut the ping off: cancel the provider's work at the seam
+    // rather than leaving it to finish a call nobody is waiting for.
+    controller.abort();
     return {
       name: 'dataSeam',
       status: 'unavailable',
       latencyMs: now() - startedAt,
-      detail: error instanceof Error ? error.message : String(error),
+      detail: timedOut ? `ping exceeded ${pingBudgetMs}ms` : 'getForecastSummary unavailable',
     };
   } finally {
     if (timer !== undefined) clearTimeout(timer);
+    dropAbandonListener?.();
+    signal?.removeEventListener('abort', forwardAbort);
   }
+}
+
+/**
+ * The dataSeam check for a shell that never got a readiness answer: the seam
+ * did not just ping slow, it failed before any route's queries could run.
+ * Publishing this check (instead of omitting it) is what lets an operator
+ * tell "healthy app" apart from "health endpoint that never ran".
+ */
+export function unavailableDataSeamCheck(detail: string): HealthCheck {
+  return { name: 'dataSeam', status: 'unavailable', detail };
 }
 
 export async function runReadinessChecks(options: ReadinessOptions): Promise<HealthCheck[]> {
@@ -226,8 +314,38 @@ export async function runReadinessChecks(options: ReadinessOptions): Promise<Hea
     options.pingBudgetMs ?? DEFAULT_PING_BUDGET_MS,
     options.healthyPingMs ?? DEFAULT_HEALTHY_PING_MS,
     options.now ?? Date.now,
+    options.signal,
   );
   return [...staticChecks, dataSeam];
+}
+
+/**
+ * The provisional artifact the app publishes the moment the shell mounts,
+ * before any readiness check has resolved. It exists so `window.GTM_HEALTH`
+ * is never absent — a page whose only signal is "the endpoint never
+ * appeared" forces an operator to guess whether the app is healthy or never
+ * booted. The checks it lists are the two things the shell already knows
+ * about itself; everything else waits for the first real assessment.
+ */
+export function shellHealthArtifact(now: () => number = Date.now): HealthArtifact {
+  const context = telemetry.contextSnapshot();
+  return {
+    status: 'degraded',
+    service: HEALTH_SERVICE,
+    release: context.release,
+    environment: context.environment,
+    sessionId: context.sessionId,
+    route: context.route,
+    providerId: context.providerId,
+    requestedProviderId: null,
+    providerTransitionStatus: 'none',
+    generatedAt: new Date(now()).toISOString(),
+    uptimeMs: Math.max(0, now() - TELEMETRY_STARTUP_EPOCH),
+    checks: [
+      appShellCheck(),
+      { name: 'dataSeam', status: 'degraded', detail: 'readiness checks still running' },
+    ],
+  };
 }
 
 /** Runs every check and folds the results into one publishable artifact. */
@@ -245,6 +363,8 @@ export async function assessHealth(options: ReadinessOptions): Promise<HealthArt
     sessionId: context.sessionId,
     route: context.route,
     providerId: context.providerId,
+    requestedProviderId: options.transition?.requestedId ?? null,
+    providerTransitionStatus: options.transition?.status ?? 'none',
     generatedAt: new Date(now()).toISOString(),
     uptimeMs: Math.max(0, now() - TELEMETRY_STARTUP_EPOCH),
     checks,
@@ -252,27 +372,70 @@ export async function assessHealth(options: ReadinessOptions): Promise<HealthArt
 }
 
 /**
+ * The publication guard shared by every refresh of the live endpoint.
+ *
+ * A refresh is allowed to replace the published artifact only while it is
+ * still the newest request against the newest publication. Three things make
+ * an in-flight refresh stale:
+ *
+ * - a newer publication (a provider commit re-publishes the artifact with
+ *   the newly committed identity, bumping the generation);
+ * - a newer refresh (the sequence moved while this one was in flight);
+ * - an answer that names a different provider than the artifact on the page
+ *   (the assessment ran against a seam that is no longer the committed one).
+ *
+ * A stale refresh changes nothing and resolves with the artifact that
+ * outlived it, so the newest committed-provider artifact can never be
+ * overwritten by an older or overlapping one.
+ */
+const publication = {
+  generation: 0,
+  refreshSequence: 0,
+  providerId: null as string | null,
+};
+
+/**
  * Publishes the artifact at `window.GTM_HEALTH`. `refresh` re-runs the
  * assessment, so the endpoint stays live rather than pinning startup state;
  * it is also the documented way for an operator or a synthetic monitor to ask
- * the deployed page how it is doing.
+ * the deployed page how it is doing. A refresh that returns null — or that
+ * the publication guard finds stale when it settles — leaves the published
+ * artifact alone.
  */
 export function publishHealthArtifact(
   artifact: HealthArtifact,
-  refresh: () => Promise<HealthArtifact>,
+  refresh: () => Promise<HealthArtifact | null>,
 ): void {
   if (typeof window === 'undefined') return;
-  window.GTM_HEALTH = {
+  publication.generation += 1;
+  const generation = publication.generation;
+  publication.providerId = artifact.providerId;
+  const endpoint: HealthEndpoint = {
     artifact,
     checks: artifact.checks,
     refresh: async () => {
+      const sequence = ++publication.refreshSequence;
       const next = await refresh();
+      const stale =
+        next === null ||
+        sequence !== publication.refreshSequence ||
+        generation !== publication.generation ||
+        (next.providerId !== null &&
+          publication.providerId !== null &&
+          next.providerId !== publication.providerId);
+      if (stale) {
+        // The artifact already published is newer than this result; hand the
+        // caller the truth that outlived the race rather than the stale one.
+        return window.GTM_HEALTH?.artifact ?? artifact;
+      }
+      publication.providerId = next.providerId;
       window.GTM_HEALTH = {
         artifact: next,
         checks: next.checks,
-        refresh: window.GTM_HEALTH?.refresh ?? refresh,
+        refresh: window.GTM_HEALTH?.refresh ?? endpoint.refresh,
       };
       return next;
     },
   };
+  window.GTM_HEALTH = endpoint;
 }

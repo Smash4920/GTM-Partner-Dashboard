@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { PlusIcon, XIcon } from './icons';
 
 interface AddPartnerFormProps {
@@ -20,11 +20,28 @@ export default function AddPartnerForm({
 }: AddPartnerFormProps) {
   const [name, setName] = useState('');
   const trimmed = name.trim();
+  const input = useRef<HTMLInputElement>(null);
+  const opener = useRef(document.activeElement);
+  useLayoutEffect(() => {
+    input.current?.focus();
+    return () => {
+      // The invoking select remains mounted while this inline form is open.
+      queueMicrotask(() => {
+        const control = opener.current;
+        if (
+          control instanceof HTMLElement &&
+          control.isConnected &&
+          !control.closest('dialog:not([open]), [hidden]')
+        )
+          control.focus();
+      });
+    };
+  }, []);
 
   return (
     <div
       className="rounded border border-ash bg-carbon p-3"
-      role="dialog"
+      role="group"
       aria-label="Add prospective partner"
     >
       <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-granite">
@@ -32,12 +49,17 @@ export default function AddPartnerForm({
       </p>
       <div className="mt-2 flex items-center gap-2">
         <input
-          autoFocus
+          ref={input}
+          aria-label="Partner name"
           value={name}
           onChange={(event) => setName(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && trimmed) onAdd(trimmed);
-            if (event.key === 'Escape') onCancel();
+            if (event.key === 'Enter' || event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              if (event.key === 'Escape') onCancel();
+              else if (trimmed) onAdd(trimmed);
+            }
           }}
           placeholder="Partner name"
           className="min-w-0 flex-1 rounded border border-ash bg-canvas px-3 py-1.5 text-sm text-bone placeholder:text-graphite focus:border-signal focus:outline-none"

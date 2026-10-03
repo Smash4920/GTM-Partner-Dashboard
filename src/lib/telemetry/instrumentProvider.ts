@@ -1,4 +1,5 @@
 import { DATA_PROVIDER_METHODS, type DataProvider } from '../../data/DataProvider';
+import { isAbortError } from '../abort';
 import type { ErrorCaptureOptions, ErrorRecord } from './errors';
 import { isFlagEnabled } from './flags';
 import type { MetricAttributes } from './metrics';
@@ -81,6 +82,15 @@ async function instrumentedCall(
     client.recordDuration('provider.call.duration', data.durationMs, { method, providerId });
     return result;
   } catch (error) {
+    // A cancellation is the caller walking away: the span closes, the call is
+    // counted under its own outcome, and nothing is captured as an error —
+    // an abort is not a fault worth an operator's attention.
+    if (isAbortError(error)) {
+      const data = span.end('ok');
+      client.recordCounter('provider.call', { method, providerId, status: 'aborted' });
+      client.recordDuration('provider.call.duration', data.durationMs, { method, providerId });
+      throw error;
+    }
     const data = span.end('error');
     client.recordCounter('provider.call', { method, providerId, status: 'error' });
     client.recordDuration('provider.call.duration', data.durationMs, { method, providerId });
@@ -91,7 +101,6 @@ async function instrumentedCall(
       category: 'provider',
       severity: 'warning',
       traceparent: span.traceparent,
-      context: { method, providerId },
     });
     throw error;
   }

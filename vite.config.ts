@@ -52,32 +52,94 @@ export default defineConfig({
       // layer sat at 0% before Phase 0 of docs/migration-plan.md, which is how
       // a refactor of 5,700 unverified lines came to look survivable.
       thresholds: {
-        statements: 94,
-        branches: 88,
-        functions: 92,
-        lines: 95,
+        statements: 95,
+        branches: 90,
+        functions: 96,
+        lines: 96,
       },
     },
   },
   build: {
-    // Production source maps let the configured error collector resolve
-    // minified stack frames back to the exact release and source location.
-    sourcemap: true,
+    // Safe two-pass compression keeps the accessible shell/forms inside
+    // the existing budgets; retaining shared function bodies compresses better
+    // than injecting their variables into callers. ES2020 syntax is within
+    // Vite's default browser target; no unsafe transforms or property mangling.
+    minify: 'terser',
+    terserOptions: { ecma: 2020, compress: { passes: 2, inline: 1 } },
+    // No public source maps in production: a published .map hands anyone the
+    // full original source and pairs with stack traces to expose internals.
+    // This app ships nothing to an error collector, so maps would exist only
+    // as an information leak. The bundle policy scan (check-telemetry-policy)
+    // fails the build if a .map file or sourceMappingURL ever reappears.
+    sourcemap: false,
     rollupOptions: {
       output: {
+        // Vendor chunks contain exactly the packages matched below. Without
+        // this, a manual chunk silently drags its whole dependency closure
+        // in, so unrelated modules could land in a budgeted vendor chunk (or
+        // a lazy route chunk) and distort what each budget measures.
+        onlyExplicitManualChunks: true,
         // Recharts and its d3/victory deps form ~2/3 of the bundle. Split them
         // into cached vendor chunks so the app shell loads without pulling
         // the whole charting stack, and no single chunk trips the size
         // warning that would bury real regressions in CI output.
         //
-        // Recharts 3 reaches its redux/immer runtime only from its own entry,
-        // so Rollup co-locates those in this chunk without an explicit rule.
+        // The recharts chunk must carry every runtime that only Recharts
+        // imports (redux toolkit, immer, es-toolkit, decimal.js-light, and
+        // friends). Rollup used to co-locate them automatically, but route
+        // code splitting gives it reason to hoist them into the shared core
+        // chunk — which would quietly halve the measured "Recharts chunk"
+        // while shipping the same bytes under an unbudgeted name. Pinning
+        // them here keeps the VAL-QUAL-003 Recharts budget honest.
         manualChunks(id) {
-          if (id.includes('node_modules/recharts')) {
+          if (
+            id.includes('node_modules/recharts') ||
+            /node_modules\/(@reduxjs\/toolkit|immer|redux|redux-thunk|reselect|react-redux|react-is|use-sync-external-store|tiny-invariant|es-toolkit|decimal\.js-light|eventemitter3|clsx)\//.test(
+              id,
+            )
+          ) {
             return 'recharts';
           }
-          if (id.includes('node_modules/victory-vendor') || /node_modules\/d3[-/]/.test(id)) {
+          if (
+            id.includes('node_modules/victory-vendor') ||
+            id.includes('node_modules/internmap') ||
+            /node_modules\/d3[-/]/.test(id)
+          ) {
             return 'charts-vendor';
+          }
+          // The React framework gets its own plainly named chunk: it is
+          // shared by the entry and the lazy route chunk, and naming it keeps
+          // the Application chunk budget (dist/assets/index-*.js) measuring
+          // application code only, as its reason states. Merging it into the
+          // recharts chunk measured worse: the cross-chunk export wiring cost
+          // more than the boundary it removed.
+          if (
+            /node_modules\/(react|react-dom|scheduler)\//.test(id) ||
+            id.includes('commonjsHelpers')
+          ) {
+            return 'react-core';
+          }
+          // These operational routes and their exclusive dependencies remain
+          // lazy, but share a compression dictionary rather than shipping
+          // several tiny chunks. Keep the provider's Action Center rules here
+          // too: its dynamic query import otherwise adds two more boundaries.
+          // Match only these modules, not their eager dependency closure;
+          // framework/vendor and shared app code retain their honest budgets.
+          if (
+            /\/src\/views\/(system|DataConnectionsView|ProductionRequirementsView|ActionCenterView)\.tsx?$/.test(
+              id,
+            ) ||
+            /\/src\/components\/(FormField|WorkflowPanel|NotificationComposer|ActionNotificationPanel|SlaAlertPanel|TeamAccessPanel|WireDiagram|ActionPolicyForm|ActionItemRow|ActionPagination)\.tsx$/.test(
+              id,
+            ) ||
+            /\/src\/data\/(connections|useDataConnectionsQueries|useActionCenterQueries|actionCenter|mock\/actionCenterQueries)\.ts$/.test(
+              id,
+            ) ||
+            /\/src\/lib\/(workflows|notifications|partnerHealthRules|actionRules|actionRouting|actionEvidence)\.ts$/.test(
+              id,
+            )
+          ) {
+            return 'system';
           }
         },
       },

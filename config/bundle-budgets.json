@@ -14,7 +14,7 @@
       "pattern": "dist/assets/index-*.js",
       "aggregate": "each",
       "limitBytes": 69632,
-      "reason": "The entry chunk that every visitor downloads before charts render. Keep app code out of the vendor chunks. Raised from 65 KiB when the runtime observability stack (telemetry envelopes, health checks, error capture) and the feature-flag runtime landed together: a measured, deliberate addition to the entry chunk, not drift."
+      "reason": "The entry chunk that every visitor downloads before charts render: the app shell, the provider seam, the telemetry boundary, and the six daily-workflow views. The two heaviest operational routes — Data Connections and Production Requirements, with their exclusive components — ship as one lazily loaded chunk fetched on first visit (see views/system.ts), and the provider seam wrappers forward through Proxies instead of re-declaring the contract per method, which is how the entry returned to this ceiling after the observability, pagination, and scoped-contract work grew it. Keep app code out of the vendor chunks."
     },
     {
       "name": "Recharts chunk",

@@ -62,6 +62,68 @@ describe('createTransport without an endpoint', () => {
   });
 });
 
+describe('createTransport master egress switch (VAL-SEC-001)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('queues nothing, schedules nothing, and sends nothing while egress is disallowed', async () => {
+    const { fetchImpl, requests } = recordingFetch();
+    const transport = createTransport({
+      endpoint: ENDPOINT,
+      sampleRate: 1,
+      getMeta: () => META,
+      fetchImpl,
+      isEgressAllowed: () => false,
+      flushIntervalMs: 50,
+    });
+
+    transport.enqueue({ type: 'error', data: { name: 'Error' } }, { critical: true });
+    transport.enqueue({ type: 'event', data: { event: 'route_view' } });
+    await transport.flush();
+    window.dispatchEvent(new Event('pagehide'));
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(requests).toHaveLength(0);
+    expect(transport.status()).toMatchObject({ queued: 0, shipped: 0, dropped: 2 });
+    transport.dispose();
+  });
+
+  it('reads the switch per operation, so a runtime change stops a queued flush', async () => {
+    const { fetchImpl, requests } = recordingFetch();
+    let allowed = true;
+    const transport = createTransport({
+      endpoint: ENDPOINT,
+      sampleRate: 1,
+      getMeta: () => META,
+      fetchImpl,
+      isEgressAllowed: () => allowed,
+      flushIntervalMs: 60_000,
+    });
+
+    transport.enqueue({ type: 'event', data: { event: 'route_view' } });
+    expect(transport.status().queued).toBe(1);
+
+    // Egress disabled after queueing: the lifecycle flush is a dead end and
+    // the queued envelope stays put, bounded by the queue cap.
+    allowed = false;
+    window.dispatchEvent(new Event('pagehide'));
+    await transport.flush();
+    expect(requests).toHaveLength(0);
+    expect(transport.status().queued).toBe(1);
+
+    // Re-enabled, the next flush drains what was queued before.
+    allowed = true;
+    await transport.flush();
+    expect(requests).toHaveLength(1);
+    transport.dispose();
+  });
+});
+
 describe('createTransport queueing', () => {
   it('keeps every envelope when the sample rate includes it', () => {
     const { fetchImpl } = recordingFetch();
@@ -111,9 +173,9 @@ describe('createTransport queueing', () => {
       flushIntervalMs: 60_000,
     });
 
-    transport.enqueue({ type: 'event', data: { event: 'first' } });
-    transport.enqueue({ type: 'event', data: { event: 'second' } });
-    transport.enqueue({ type: 'event', data: { event: 'third' } });
+    transport.enqueue({ type: 'event', data: { event: 'route_view' } });
+    transport.enqueue({ type: 'event', data: { event: 'provider_selected' } });
+    transport.enqueue({ type: 'event', data: { event: 'notification_sent' } });
 
     const status = transport.status();
     expect(status.queued).toBe(2);
@@ -145,7 +207,10 @@ describe('createTransport flushing', () => {
     transport.enqueue({
       type: 'event',
       traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
-      data: { event: 'team_user_invited', email: 'dana@corp.example', role: 'partner-manager' },
+      data: {
+        event: 'team_user_invited',
+        properties: { role: 'partner-manager', email: 'dana@corp.example' },
+      },
     });
     await transport.flush();
 
@@ -163,14 +228,33 @@ describe('createTransport flushing', () => {
     expect(envelope?.id).toMatch(/^[0-9a-f]{16}$/);
     expect(envelope?.timestamp).toBe(new Date(1_758_000_000_000).toISOString());
     expect(envelope?.traceparent).toContain('0af7651916cd43dd8448eb211c80319c');
-    // The address is masked before it is ever queued: the queue must not hold
-    // sensitive values even if a batch never ships.
+    // The address is not a registered property of this event, so it is
+    // dropped at the boundary: the queue must not hold sensitive values even
+    // if a batch never ships.
     expect(envelope?.data).toEqual({
       event: 'team_user_invited',
-      email: '[redacted]',
-      role: 'partner-manager',
+      properties: { role: 'partner-manager' },
     });
+    expect(JSON.stringify(batch)).not.toContain('dana@corp.example');
     expect(transport.status()).toMatchObject({ shipped: 1, queued: 0 });
+  });
+
+  it('rejects unregistered analytics events rather than shipping them', async () => {
+    const { fetchImpl, requests } = recordingFetch();
+    const transport = createTransport({
+      endpoint: ENDPOINT,
+      sampleRate: 1,
+      getMeta: () => META,
+      fetchImpl,
+      flushIntervalMs: 60_000,
+    });
+
+    transport.enqueue({ type: 'event', data: { event: 'page_scrolled', properties: {} } });
+    await transport.flush();
+
+    expect(requests).toHaveLength(0);
+    expect(transport.status()).toMatchObject({ dropped: 1, queued: 0, shipped: 0 });
+    transport.dispose();
   });
 
   it('runs the beforeFlush hook into the same batch, so metric deltas ride along', async () => {
@@ -218,7 +302,8 @@ describe('createTransport flushing', () => {
     });
     expect(transport.status().lastFailureReason).toBe('collector responded 503');
     expect(transport.status().lastFailureAt).toBeTypeOf('string');
-    expect(onDeliveryFailure).toHaveBeenCalledWith('collector responded 503');
+    // The failure hook receives a technical classification, never raw prose.
+    expect(onDeliveryFailure).toHaveBeenCalledWith({ kind: 'http', status: 503 });
     expect(requests).toHaveLength(1);
   });
 
@@ -237,7 +322,9 @@ describe('createTransport flushing', () => {
     await transport.flush();
 
     expect(transport.status()).toMatchObject({ failedBatches: 1, dropped: 1 });
-    expect(onDeliveryFailure).toHaveBeenCalledWith('collector unreachable');
+    expect(onDeliveryFailure).toHaveBeenCalledWith({ kind: 'network' });
+    // The raw reason survives only in the local status, never in the hook.
+    expect(transport.status().lastFailureReason).toBe('collector unreachable');
   });
 
   it('flushes on its own cadence once an envelope is queued', async () => {
@@ -327,7 +414,7 @@ describe('createTransport flushing', () => {
       flushIntervalMs: 60_000,
     });
 
-    transport.enqueue({ type: 'event', data: { event: 'first' } });
+    transport.enqueue({ type: 'event', data: { event: 'route_view' } });
     const firstFlush = transport.flush();
     // A second flush while the first is in flight resolves without sending.
     await transport.flush();

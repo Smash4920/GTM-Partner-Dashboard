@@ -1,7 +1,8 @@
 # Production migration plan
 
-How this dashboard gets from a deterministic mock to a system serving real
-partner data at production volume. The _what_ is already enumerated in the
+How this dashboard gets from a deterministic, client-only mock to a system
+serving real partner data at production volume. The _what_ is already
+enumerated in the
 [Production Requirements](../src/views/ProductionRequirementsView.tsx)
 architecture roadmap — in particular "serve aggregated, paginated API responses
 rather than loading the entire ecosystem into the browser". This document is
@@ -9,19 +10,27 @@ the _how_: where the current design breaks, the one contract change everything
 else follows from, and the order the work has to happen in.
 
 Every item on that board — the architecture roadmap, the migration path, and
-the utility backlog — carries a status stamped against the code as it stands
-(Complete, WIP, Pending, or Prod Only for the steps that wait on production
-connections or infrastructure), together with the date the statuses were last
-reviewed. This document is the reasoning underneath those statuses, not a
-duplicate of them.
+the utility backlog — carries a Demo status stamped against verified client
+behavior (Complete, WIP, or Pending) and, wherever a production dependency is
+intentionally paused, a separate Production: Prod Only status naming the exact
+blocker, together with the date the statuses were last reviewed. Demo
+completion never completes a production dependency. This document is the
+reasoning underneath those statuses, not a duplicate of them.
 
-## Where the current design breaks
+The production continuation runs in a fixed order: trusted identity first,
+then the warehouse and scoped API with row-level authorization, then source
+ingestion, then persisted writes and audit, then production operations. The
+phases below follow that order, and no phase may be pulled ahead of identity
+and server-side row enforcement.
 
-Every view today reads a single in-memory `DashboardData` containing the entire
-ecosystem. `useDashboardData` fetches nine collections in one `Promise.all` and
-`src/lib/metrics.ts` aggregates them in the browser on every render. That is the
-right shape for a deterministic demo and it does not survive contact with real
-volume.
+## Where the pre-migration design broke
+
+Every view read a single in-memory `DashboardData` containing the entire
+ecosystem. `useDashboardData` fetched nine collections in one `Promise.all` and
+`src/lib/metrics.ts` aggregated them in the browser on every render. That was the
+right shape for a deterministic demo and it could not survive contact with real
+volume. Phase 1 below replaced it end to end; this section is the measurement
+that justified doing so.
 
 Extrapolating from measured object sizes (~600 B per `Opportunity`, ~250 B per
 `PipelineSnapshot`), retaining three years of history:
@@ -56,9 +65,10 @@ memory, and vice versa. Both need the same underlying change.
 
 **The server ships answers, not books.**
 
-Today `metrics.ts` is the implementation: ~1,100 lines of aggregation running in
-the browser over the full dataset. In production it becomes the _specification_
-a server implementation must match.
+Before the rewrite, `metrics.ts` was the implementation: ~1,100 lines of
+aggregation running in the browser over the full dataset. It now sits behind
+the `MockDataProvider` seam — the in-browser stand-in for the server — and in
+production it becomes the _specification_ a server implementation must match.
 
 That reframing is more tractable than it sounds, because the aggregate return
 types already exist as exported interfaces: `RegistrationFunnel`, `StageRow`,
@@ -76,8 +86,8 @@ interface ForecastScope {
   edits?: SessionEdits; // this session's uncommitted corrections
 }
 interface PageRequest {
-  cursor?: string;
-  limit: number;
+  cursor?: string; // opaque; bound to the query and data epoch that minted it
+  limit?: number; // positive, at most 100; defaults to 25
 }
 interface Page<T> {
   rows: T[];
@@ -87,17 +97,63 @@ interface Page<T> {
 
 interface ScopedQueryProvider {
   // Aggregates: computed behind the seam, returned small.
-  getForecastSummary(scope: ForecastScope): Promise<ForecastSummary>;
-  getWeightedForecast(scope: ForecastScope): Promise<WeightedForecastSummary>;
-  getForecastQuality(scope: ForecastScope, sampleSize: number): Promise<ForecastQualitySummary>;
-  getManagerForecastGroups(scope: ForecastScope): Promise<ManagerForecastGroup[]>;
-  getWeeklyForecastSeries(scope: ForecastScope): Promise<WeeklySeriesRow[]>;
+  getForecastSummary(
+    access: DemoAccessScope,
+    scope: ForecastScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<ForecastSummary>>;
+  getWeightedForecast(
+    access: DemoAccessScope,
+    scope: ForecastScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<WeightedForecastSummary>>;
+  getForecastQuality(
+    access: DemoAccessScope,
+    scope: ForecastScope,
+    sampleSize: number,
+    context?: QueryContext,
+  ): Promise<QueryResult<ForecastQualitySummary>>;
+  getManagerForecastGroups(
+    access: DemoAccessScope,
+    scope: ForecastScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<ManagerForecastGroup[]>>;
+  getWeeklyForecastSeries(
+    access: DemoAccessScope,
+    scope: ForecastScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<WeeklySeriesRow[]>>;
 
-  // Rows: cursor-paginated, server-sorted, server-filtered.
-  listQuarterOpportunities(scope: ForecastScope, page: PageRequest): Promise<Page<Opportunity>>;
-  getPartnerDirectory(): Promise<PartnerRef[]>;
+  // Rows: cursor-paginated, server-sorted, server-filtered. Invalid limits
+  // and invalid, foreign-query, or expired cursors are typed errors, never
+  // a quiet page one (src/data/pagination.ts).
+  listQuarterOpportunities(
+    access: DemoAccessScope,
+    scope: ForecastScope,
+    page: PageRequest,
+    context?: QueryContext,
+  ): Promise<QueryResult<Page<Opportunity>>>;
+  getPartnerDirectory(
+    access: DemoAccessScope,
+    context?: QueryContext,
+  ): Promise<QueryResult<PartnerRef[]>>;
 }
 ```
+
+This is the Forecasting subset of the current contract, not a second
+interface. All data methods require non-authoritative demo access scope
+before aggregation and accept cancellation context; see `DataProvider.ts`
+for the complete route and Action Center methods.
+
+Every scoped answer is a `QueryResult<T>`: the data plus a `QueryMeta`
+envelope carrying the committed provider's id, a deterministic ISO as-of (the
+snapshot date, never the wall clock), typed lineage entries, a completeness
+flag, and typed warnings. The envelope is how a partial answer stays honest —
+for example a weekly series whose closed weeks were reconstructed from the
+current book ships with a `weekly-history-reconstructed` warning, and a
+manager grouping that dropped unattributable opportunities ships
+`unattributed-opportunities` — and how a UI caption can say whose answer it is
+showing. See `src/data/queryMetadata.ts`.
 
 The scope is a quarter rather than a fiscal phase, because a quarter is the unit
 a caller thinks in and `phaseForQuarter()` in `metrics.ts` bridges to the
@@ -114,16 +170,16 @@ tests rather than by thinking about it:
   deal was in. Filtering the live weeks by manager while the recorded weeks kept
   everyone's deals would draw a cliff into the chart that never happened, so the
   series stays quarter-level and the contract says so.
-- **Aggregates are scoped, and the Forecasting view asks unscoped.** Its tiles
-  are statements about the quarter, so it passes a quarter-only scope to the
-  aggregate hook and a manager scope to the row list. The filtering is the
-  caller's decision, not a hidden property of the method.
+- **Forecasting scopes the summary to the selected manager's own targets.**
+  Weighted forecast, quality, and groups remain quarter-level; the selection
+  narrows displayed groups and row pages. The weekly series stays
+  organization-level and omits the goal comparison for manager scope.
 
 `listPipelineSnapshots()` is already gone from the client contract, replaced by
 `getWeeklyForecastSeries()` returning ~13 rows instead of millions — the one
 line in this plan that pays for itself immediately, since the client no longer
 receives the collection that is 87% of the payload. `ProviderBook` in
-`types.ts` is the provider-side shape that still holds it.
+`src/data/mock/book.ts` is the provider-private shape that still holds it.
 
 **Known blast radius.** `src/data/connections.ts` records the DataProvider
 methods each integration node fills, and `connections.test.ts` asserts every
@@ -140,7 +196,7 @@ Facts: `fct_opportunity`, `fct_registration`, `fct_pipeline_snapshot`,
 `fct_activity`. Dimensions: `dim_partner`, `dim_partner_manager`, `dim_date`.
 
 Snapshots partitioned by week and **write-once**, with no UPDATE grant on the
-table. `src/data/types.ts` already states the invariant — "a snapshot already
+table. `src/data/mock/book.ts` already states the invariant — "a snapshot already
 written must never change" — because reading the past off current state
 backdates every later change. In production that invariant is a database
 permission, not a comment.
@@ -168,16 +224,30 @@ see. Precompute the common combinations and cache the rest.
 Partner View currently excludes Sell To and conflicting registrations in the
 browser. Under a partner SSO boundary the partner's token must scope the query
 itself, so their browser never receives another partner's data at all. The
-architecture roadmap already calls for removing the partner picker outside an
-internal demo mode; that is the same requirement seen from the UI side.
+picker that chooses which partner the portal renders is an untrusted demo
+presentation selector, and client-side filtering is not authorization: any
+visitor can select any partner today. Serving external partners requires
+trusted sign-in and server-enforced row access first, which is why the
+architecture roadmap keeps the picker-removal item Pending — the same
+requirement seen from the UI side.
 
 ### Feature-flag methodology and maintainer control plane
 
-The current typed registry provides safe defaults, explicit build-time
-overrides, deterministic percentage cohorts, and a first real gate. It reduces
-release risk now, but changing a flag still requires someone to edit deployment
-configuration and rebuild the app. That is not an appropriate long-term
-workflow for a nontechnical maintainer.
+The registries now carry the full flag lifecycle — owner, purpose,
+environment scope, safe default, rollout and rollback triggers, review date,
+expiry, and removal condition — for both product flags
+(`src/lib/featureFlags.ts`) and operational telemetry flags
+(`src/lib/telemetry/flags.ts`), with a deterministic policy check
+(`src/lib/flagGovernance.ts`) that fails on missing metadata, missing
+ownership, or an expired flag. Evaluation is fail-safe and tested with an
+injected clock: a fresh valid value wins, a failing source serves a bounded
+last-known-good cache, and cold start or a stale cache falls back to the
+registry safe default. Flags are local and non-authoritative — they never
+grant a role or a row, and flag modules cannot import access-scope logic.
+
+What remains production-only is the maintainer experience: changing a flag
+still requires someone to edit deployment configuration and rebuild the app.
+That is not an appropriate long-term workflow for a nontechnical maintainer.
 
 Before production rollout, select or build an authenticated control plane that
 provides a straightforward web interface and:
@@ -194,11 +264,13 @@ provides a straightforward web interface and:
 - caches the last known configuration and falls back to the declared safe
   default when the service is unavailable.
 
-The accompanying methodology must define naming, ownership, safe defaults,
-targeting rules, staged rollout and rollback, review cadence, expiration, and
-code removal. A flag is temporary release machinery, not permanent
-configuration. Authorization and partner-data boundaries remain server-enforced
-even when a related feature is hidden; a flag must never grant access.
+The checked-in registry already defines naming, ownership, safe defaults,
+environment scope, rollout and rollback triggers, review cadence, expiration,
+and removal conditions; the control plane must surface and enforce the same
+lifecycle for nontechnical maintainers, plus the targeting rules. A flag is
+temporary release machinery, not permanent configuration. Authorization and
+partner-data boundaries remain server-enforced even when a related feature is
+hidden; a flag must never grant access.
 
 ### A real write path
 
@@ -209,6 +281,18 @@ happens when Salesforce changes a figure underneath a manager's override? Keep
 it, drop it, or flag it. The choice has to be made and surfaced to the user.
 That record is also what makes forecast accuracy scoreable later — a call can
 only be scored against an outcome if the call as made was kept.
+
+### Deferred: per-manager and per-partner Forecast Quality history
+
+The second forecast-quality utility item — close-date slippage, stage aging,
+and category-confidence history per manager and partner — stays Pending.
+Weekly snapshots record every call as made, but they do not preserve immutable
+historical partner-manager ownership, and they carry no authoritative
+stage-entry events. Applying today's ownership retroactively would rewrite
+history, so an honest trend waits on Phase 2 and Phase 3 data: immutable
+ownership records and stage-transition timestamps in the warehouse. Weekly
+snapshots, partner-health alerts, and forecast-change reviews are inputs to
+that history, not substitutes for it.
 
 ### Incremental ingestion
 
@@ -224,16 +308,26 @@ The weekly snapshot job must be **idempotent**: a unique key on
 
 - Replace the single `Promise.all` in `useDashboardData` with a server-state
   library (TanStack Query) and **per-widget** loading and error states, so one
-  slow endpoint no longer blanks the whole page. _Partly done:_ the migrated
-  view has hand-rolled per-widget states (`useForecastQueries.ts`) and a global
-  spinner still covers the other seven. The library is worth adopting when there
-  are several migrated views to share it, not before.
+  slow endpoint no longer blanks the whole page. _Done at the seam:_ every
+  route loads through its hand-rolled per-widget hook (`useForecastQueries.ts`
+  and its siblings through `usePartnerViewQueries.ts` and
+  `useDataConnectionsQueries.ts`), and `useDashboardData` itself is deleted.
+  The library stays optional — it is worth adopting when the hooks outgrow
+  their shared helpers, not before.
 - Virtualize `OpportunityTable` and `ForecastTable`; give `Leaderboard` a real
-  limit instead of `limit={uniquePartners}`. _Not started_ — the scoped contract
-  now bounds what reaches the client, so this is comfort rather than survival.
-- Route-level `React.lazy` so the ~485 KB Recharts chunk stops loading for users
-  who only open Data Connections. _Not started._ Measured after Phase 1: 193 KB
-  app + 484 KB Recharts + 63 KB charts vendor, raw.
+  limit instead of `limit={uniquePartners}`. _Leaderboard done at the seam:_
+  the roster-sized answer is gone — Home and the Partner View picker read the
+  fixed-cap `getTopPartnerLeaders` (top 10 plus the field's size), Partner
+  Performance walks `listPartnerLeaderboard` 25 rows per cursor page, and the
+  SLA digest enforces its exported window of 8 with a typed rejection rather
+  than a clamp. Table virtualization remains not started — comfort, not
+  survival, now that the contract bounds what reaches the client.
+- Route-level `React.lazy`. _Partially implemented:_ Data Connections and
+  Production Requirements share a lazy operational chunk; Action Center and
+  the workflow panel are lazy too. Daily chart routes still load eagerly, so
+  avoiding Recharts on first visit is not complete. Current compressed
+  measurements come from `npm run bundle:check`, not the original Phase 1
+  raw-size checkpoint.
 - **Keep edits feeling instant.** _Partly done:_ rows render the session's
   override immediately and the aggregates hold their previous figures during the
   refetch, so an edit never flashes the page. The full optimistic delta is Phase
@@ -241,10 +335,10 @@ The weekly snapshot job must be **idempotent**: a unique key on
 
 ## What is kept
 
-This is the payoff of the existing seam. Effectively unchanged: all eight views,
-all components, the design system, `types.ts`, `fiscal.ts`, and the business
-rules encoded in `metrics.ts`. The `DataProvider` abstraction was the right
-decision; it has the wrong method signatures.
+The seam preserves the design system and fiscal/business specification while
+views use focused hooks instead of a whole book. The contract rewrite,
+Action Center, independent query state, and accessibility improvements are
+implemented and tested; production enforcement remains absent.
 
 The existing tests become a **conformance suite**: run them against the
 TypeScript implementation and against fixtures served by the server
@@ -280,6 +374,12 @@ the assertion was matching the em dash in a neighbouring column. It only became
 a test after mutation-testing the fix — reverting the `||` to `??` and watching
 it fail.
 
+Those are historical Phase 0 measurements, not the final suite. Current CI
+uses `test:coverage:ci` with JUnit and effective coverage floors of 95%
+statements, 90% branches, 96% functions, and 96% lines. Read the fresh
+coverage/JUnit, `build-metrics/test-performance.json`, and bundle reports for
+run-specific results; `quality:check` prevents weakening the checked-in limits.
+
 ### Phase 1 — Contract rewrite against the mock
 
 Reshape `DataProvider` to the scope/page/aggregate contract and implement it in
@@ -295,7 +395,7 @@ rather than six months into a warehouse build.
 Migrate **Forecasting first**. It is the hard case: the hottest edit path, and
 the only view driven by the snapshot collection that can never ship whole. If
 the week-over-week series can be served as a ~14-row aggregate, the central
-thesis is proven and the remaining seven views are a template exercise.
+thesis is proven and the remaining views are a template exercise.
 
 Ship two additional providers behind the same contract:
 
@@ -305,24 +405,39 @@ Ship two additional providers behind the same contract:
 - a **scale provider** generating ~100× data, so the claim that the contract
   holds at volume is demonstrable rather than asserted.
 
-**Outcome, as built.** Forecast migrated end to end, the other seven views
-untouched and still on the list-everything contract. Measured on the built demo,
-which is honest about what the mock can and cannot show. Medians over five runs
+**Outcome, as built.** Forecasting migrated end to end first; Home and Partner
+Performance followed, and Deal Reg Ops, Activity Tracking, Partner View, and
+Data Connections joined them — the manager/partner selection is a provider
+input, the Log Meetings calendar is a cursor-paginated week of raw calls, the
+partner presentation reads only its own partner-audience projection, the
+connection catalog is static while its roster and alert panels carry their own
+query states, and every card carries its own loading, error, retry, and
+metadata state. Action Center adds its own bounded summary and cursor pages.
+All eight data-bearing routes use the scoped contract; Production Requirements
+is static and makes no business-data request. The legacy
+`LegacyBookProvider` interface, its eight list-everything methods, and the
+`useDashboardData` loader were deleted: `DataProvider` _is_ the scoped contract
+now, and the connection map covers every remaining method. The following
+measurements are the historical Phase 1 checkpoint, not current performance
+guarantees. Medians over five runs
 at 100× — 2,500 partners, 21,300 opportunities, 191,000 snapshot rows, ~45 MB of
 JSON:
 
-| Call                                            | Payload                | Median          |
-| ----------------------------------------------- | ---------------------- | --------------- |
-| `getForecastSummary`                            | 217 B                  | 15 ms           |
-| `getManagerForecastGroups`                      | 578 B                  | 13 ms           |
-| `getForecastQuality`                            | < 1 KB                 | 14 ms           |
-| `listQuarterOpportunities`                      | 7.8 KB, one page of 25 | 15 ms           |
-| `getWeeklyForecastSeries`                       | 4.2 KB, 13 buckets     | 106 ms          |
-| the five aggregates, as one view load           | ~13 KB                 | ~165 ms         |
-| `listOpportunities` (still on the old contract) | **7.5 MB**             | 0 ms in-process |
+| Call                                              | Payload                | Median          |
+| ------------------------------------------------- | ---------------------- | --------------- |
+| `getForecastSummary`                              | 217 B                  | 15 ms           |
+| `getManagerForecastGroups`                        | 578 B                  | 13 ms           |
+| `getForecastQuality`                              | < 1 KB                 | 14 ms           |
+| `listQuarterOpportunities`                        | 7.8 KB, one page of 25 | 15 ms           |
+| `getWeeklyForecastSeries`                         | 4.2 KB, 13 buckets     | 106 ms          |
+| the five aggregates, as one view load             | ~13 KB                 | ~165 ms         |
+| `listOpportunities` (the retired whole-book call) | **7.5 MB**             | 0 ms in-process |
 
 The week-over-week series is the whole argument in one line: 191,100 rows,
-35.9 MB, and the client now receives 13 buckets. What is left is in-process
+35.9 MB, and the client now receives 13 buckets. The last row is the measured
+cost of the retired contract — 7.5 MB for one list call, kept here as the
+baseline the scoped contract replaced; the method itself no longer exists.
+What is left is in-process
 work, because `MockDataProvider` stands in for the server and does the
 aggregation the browser used to do; that is the 100 ms and it is exactly the
 work a rollup table removes in Phase 3. What changed is the _shape_ of what
@@ -331,9 +446,10 @@ hardware at it.
 
 Three things came out of building it that the plan did not predict:
 
-- Pagination forced a real decision about where a manager's book lives. It is a
-  component per expanded group, so collapsing and reopening restarts from page
-  one, and one manager's failed page cannot take the others down.
+- Pagination forced a real decision about where a manager's book lives.
+  Current hooks preserve loaded manager pages across collapse/reopen and
+  retained Forecasting/Action Center navigation in the provider session.
+  One manager's failed page cannot take the others down.
 - `ForecastTable` was taking the entire `Partner[]` collection to render one
   column. It now takes a `Record<id, name>` from `getPartnerDirectory()` — a
   dimension, not a fact.
@@ -343,25 +459,38 @@ Three things came out of building it that the plan did not predict:
   change to the affected tiles immediately) is still Phase 5 work, because it
   needs the write path to reconcile against.
 
-### Phase 2 — Warehouse and `dim_date`
+### Mandatory production prerequisite — IdP and trusted claims
+
+Production: Prod Only. Before Phases 2–5 expose real data, authenticate
+internal and partner subjects and map trusted roles, manager/partner scope,
+and approver claims. The demo picker and actor selection do not fulfill this.
+
+### Phase 2 — Warehouse and `dim_date` (Prod Only)
 
 Fact and dimension model, week-partitioned immutable snapshots, idempotent
 weekly snapshot job, `dim_date` generated from `fiscal.ts`.
 
-### Phase 3 — API with row-level authorization
+### Phase 3 — API with row-level authorization (Prod Only)
 
 Serve the Phase 1 contract for real. The `metrics.ts` tests become the
 conformance suite against the server implementation.
 
-### Phase 4 — Incremental ingestion
+### Phase 4 — Incremental ingestion (Prod Only)
 
 Salesforce watermark sync, Calendar OAuth, enablement records, reconciliation
 and dead-letter handling.
 
-### Phase 5 — Write path and audit
+### Phase 5 — Write path and audit (Prod Only)
 
 Persist overrides with provenance, resolve conflicts against the source system,
 wire optimistic client updates.
+
+### Production operations continuation (Prod Only)
+
+After trusted identity, warehouse/scoped API, ingestion, and durable writes:
+approved telemetry and private symbols, backups with restore evidence,
+retention, separate environments, incident ownership, and monitored
+rollout/rollback. Local checks do not verify these services or remote settings.
 
 ## Rough sizing
 

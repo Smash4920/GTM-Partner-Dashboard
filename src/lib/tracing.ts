@@ -1,3 +1,4 @@
+import { isAbortError } from './abort';
 import { logger } from './logging';
 
 const TRACE_VERSION = '00';
@@ -83,6 +84,14 @@ export async function traceProviderRequest<T>(
     });
     return result;
   } catch (error) {
+    // A cancellation is the caller walking away, not a failure: it stays out
+    // of the error log and out of error telemetry.
+    if (isAbortError(error)) {
+      log.debug('Provider request aborted', {
+        durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
+      });
+      throw error;
+    }
     log.error('Provider request failed', {
       durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
       error,

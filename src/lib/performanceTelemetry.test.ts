@@ -5,6 +5,7 @@ import {
   parseSampleRate,
   type PerformanceTelemetryConfig,
 } from './performanceTelemetry';
+import { clearFlagOverrides, setFlagOverride } from './telemetry/flags';
 
 const CONFIG: PerformanceTelemetryConfig = {
   endpoint: 'https://metrics.example.test/v1/browser',
@@ -55,6 +56,36 @@ describe('initializePerformanceTelemetry', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    clearFlagOverrides();
+  });
+
+  it('does not register observers while the master telemetry switch is off (VAL-SEC-001)', () => {
+    setFlagOverride('telemetry.enabled', false);
+    const subscribe = vi.fn();
+
+    const initialized = initializePerformanceTelemetry(CONFIG, {
+      metricSubscribers: [subscribe],
+      random: () => 0,
+    });
+
+    expect(initialized).toBe(false);
+    expect(subscribe).not.toHaveBeenCalled();
+  });
+
+  it('stops sending mid-session when the master switch turns off', () => {
+    let report: ((metric: MetricType) => void) | undefined;
+    const sendBeacon = vi.fn(() => true);
+
+    initializePerformanceTelemetry(CONFIG, {
+      location: { pathname: '/' },
+      metricSubscribers: [(callback) => (report = callback)],
+      random: () => 0,
+      sendBeacon,
+    });
+    setFlagOverride('telemetry.enabled', false);
+    report?.(METRIC);
+
+    expect(sendBeacon).not.toHaveBeenCalled();
   });
 
   it('does not register observers without an endpoint', () => {

@@ -28,8 +28,9 @@ Vercel, then still land the revert so `main` and production agree.
 
 - Vercel: open the project, choose the previous successful production
   deployment, and promote it.
-- GitHub Pages: run `deploy-pages.yml` against the last good commit with
-  `workflow_dispatch`.
+- GitHub Pages: land the revert on `main`, then run `deploy-pages.yml` from
+  `main` with `workflow_dispatch`. Both jobs require `refs/heads/main`; the
+  workflow has no arbitrary historical-commit checkout option.
 
 ## Confirm recovery
 

@@ -1,6 +1,6 @@
 ---
 name: migrate-dashboard-data-view
-description: Migrate a GTM Partner Dashboard view from the legacy load-everything DashboardData flow to scoped aggregates and paginated DataProvider queries. Use for DataProvider contract changes, view data migrations, provider implementations, or removal of legacy list methods.
+description: Extend the GTM Partner Dashboard data layer with scoped aggregates and paginated DataProvider queries. Use for DataProvider contract changes, view data work, provider implementations, or removal of list methods. (The load-everything DashboardData flow this skill originally migrated views away from is deleted; every route already reads the scoped contract.)
 ---
 
 # Migrate a dashboard view to scoped data
@@ -24,9 +24,9 @@ failed requests.
      `src/data/constants.ts`.
 3. Read the view's tests before editing it. Add characterization coverage first
    if a business rule or interaction is not already pinned.
-4. Search for every consumer of the legacy fields and methods under change.
-   Do not remove a field from `DashboardData` or a method from
-   `LegacyBookProvider` while another view still uses it.
+4. Search for every consumer of the fields and methods under change. Do
+   not remove a field from a shared DTO or a method from `DataProvider`
+   while another view still uses it.
 
 ## Design a bounded contract
 
@@ -98,8 +98,8 @@ view.
 
 ## Migrate the view
 
-1. Replace only the target view's legacy `DashboardData` reads with the new
-   hook state.
+1. Replace only the target view's reads with the new hook state; keep every
+   untouched view on its existing hook.
 2. Keep session-only writes in `src/App.tsx`; do not imply persistence or add
    browser storage.
 3. Preserve existing accessible labels, native controls, responsive behavior,
@@ -108,7 +108,7 @@ view.
    failure, retry, and pagination explicitly.
 5. For Partner View, test that Sell To opportunities, conflicting
    registrations, and other partners' records cannot appear.
-6. Remove a legacy prop, field, method, or loader call only after a repository
+6. Remove a prop, field, method, or loader call only after a repository
    search proves it has no remaining consumer.
 
 ## Prove the migration
@@ -142,5 +142,5 @@ npm run test:e2e
 npm run bundle:check
 ```
 
-In the final summary, name the legacy calls removed, the new bounded query
-shapes, the scope and edit semantics preserved, and the exact checks run.
+In the final summary, name the calls removed, the new bounded query shapes,
+the scope and edit semantics preserved, and the exact checks run.

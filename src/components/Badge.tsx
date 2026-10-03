@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react';
-import { REGISTRATION_STATUS_META, ROADMAP_STATUS_META } from '../data/constants';
-import type { RegistrationStatus, RoadmapStatus } from '../data/types';
+import {
+  REGISTRATION_STATUS_META,
+  ROADMAP_SCOPE_LABELS,
+  ROADMAP_STATUS_META,
+} from '../data/constants';
+import type { RegistrationStatus, RoadmapScope, RoadmapStatus } from '../data/types';
 
 /** Small mono uppercase chip. Classes come fully written from constants. */
 export default function Badge({
@@ -38,11 +42,21 @@ export function StatusBadge({
 }
 
 /**
- * Production Requirements item status. Prod-only steps carry a dashed border,
- * the same not-real-yet mark as the dashed "planned" wires on the Data
+ * A scope-labeled Production Requirements status. The scope prefix ("Demo" or
+ * "Production") keeps the two axes visibly and accessibly distinct, so a demo
+ * badge never reads as a production claim. Prod-only steps carry a dashed
+ * border, the same not-real-yet mark as the dashed "planned" wires on the Data
  * Connections map.
  */
-export function RoadmapStatusBadge({ status }: { status: RoadmapStatus }) {
+export function RoadmapStatusBadge({
+  scope,
+  status,
+}: {
+  scope: RoadmapScope;
+  status: RoadmapStatus;
+}) {
   const meta = ROADMAP_STATUS_META[status];
-  return <Badge className={meta.badgeClass}>{meta.label}</Badge>;
+  return (
+    <Badge className={meta.badgeClass}>{`${ROADMAP_SCOPE_LABELS[scope]}: ${meta.label}`}</Badge>
+  );
 }

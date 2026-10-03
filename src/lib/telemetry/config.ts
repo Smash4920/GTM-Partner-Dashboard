@@ -25,7 +25,6 @@ export interface TelemetryEnv {
   /** Flag overrides are addressed by derived keys, so any string key can appear. */
   [variable: string]: string | boolean | undefined;
   VITE_TELEMETRY_ENDPOINT?: string;
-  VITE_ALERT_ENDPOINT?: string;
   VITE_TELEMETRY_DASHBOARD_URL?: string;
   VITE_RELEASE?: string;
   VITE_VERCEL_GIT_COMMIT_SHA?: string;
@@ -37,8 +36,6 @@ export interface TelemetryEnv {
 export interface TelemetryConfig {
   /** Collector URL for every envelope type; null means "stay in-process". */
   endpoint: string | null;
-  /** Webhook URL for alert payloads; null means alerts reach in-app handlers only. */
-  alertEndpoint: string | null;
   /** Operator dashboard URL stamped on telemetry batches when configured. */
   dashboardUrl: string | null;
   /** Minimum level a log record must have to be shipped when log shipping is on. */
@@ -70,13 +67,85 @@ function resolveRelease(env: TelemetryEnv): string {
   return env.PROD ? UNLABELED_RELEASE : 'dev';
 }
 
-/** Endpoints must be http(s) URLs; anything else is ignored and reported. */
-function resolveEndpoint(value: string | undefined, name: string, issues: string[]): string | null {
+/**
+ * Collector hosts approved for production telemetry. The list is checked in
+ * because approving a destination is a privacy review, not a deploy-time
+ * detail: a production build only ships telemetry to a host named here.
+ * It is intentionally empty — no external collector has been approved, so
+ * production telemetry stays local-only until a host is added in a reviewed
+ * change.
+ */
+const APPROVED_TELEMETRY_HOSTS: readonly string[] = [];
+
+/**
+ * Loopback hosts a development or test collector may use over plain HTTP.
+ * `import.meta.env.DEV` is replaced at build time, so in a production bundle
+ * this is an empty list and the loopback exception is dead code that the
+ * minifier removes — production output contains no HTTP exception.
+ */
+const LOOPBACK_HOSTS: readonly string[] = import.meta.env.DEV
+  ? ['127.0.0.1', 'localhost', '[::1]']
+  : [];
+
+export interface EndpointPolicy {
+  /** Production builds refuse anything but HTTPS on an approved host. */
+  production: boolean;
+  /**
+   * The telemetry collector is a data destination, so production requires an
+   * approved host. Metadata URLs (the operator dashboard link) skip that one
+   * check but keep every other rule.
+   */
+  requireApprovedHost?: boolean;
+}
+
+/**
+ * Validates a configured telemetry URL, failing closed: any rejection returns
+ * null (local-only behavior) with a plain-language entry in `issues`.
+ *
+ * Rejected: unparseable or protocol-relative URLs, embedded credentials,
+ * query strings and fragments (both can smuggle secrets or record data),
+ * non-HTTPS schemes, non-default ports, and — for data destinations in
+ * production — hosts outside APPROVED_TELEMETRY_HOSTS. The one exception is
+ * loopback HTTP for development and test collectors, compiled out of
+ * production builds.
+ */
+export function resolveEndpoint(
+  value: string | undefined,
+  name: string,
+  issues: string[],
+  policy: EndpointPolicy,
+): string | null {
   if (value === undefined || value.trim() === '') return null;
   const trimmed = value.trim();
-  if (!/^https?:\/\//i.test(trimmed)) {
-    issues.push(`${name} is not an http(s) URL; telemetry will stay in-process`);
+
+  const reject = (cause: string): null => {
+    issues.push(`${name} rejected: ${cause}; telemetry stays in-process`);
     return null;
+  };
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return reject('not a valid URL');
+  }
+  if (url.username !== '' || url.password !== '') {
+    return reject('must not embed credentials');
+  }
+  if (url.search !== '' || url.hash !== '') {
+    return reject('must not carry a query string or fragment');
+  }
+  if (url.protocol === 'http:' && !policy.production && LOOPBACK_HOSTS.includes(url.hostname)) {
+    return trimmed;
+  }
+  if (url.protocol !== 'https:') {
+    return reject('must be an HTTPS URL');
+  }
+  if (url.port !== '') {
+    return reject('must use the default HTTPS port');
+  }
+  if ((policy.requireApprovedHost ?? true) && !APPROVED_TELEMETRY_HOSTS.includes(url.hostname)) {
+    return reject('host is not on the approved telemetry host list');
   }
   return trimmed;
 }
@@ -99,13 +168,23 @@ export function readTelemetryConfig(env: TelemetryEnv = import.meta.env): Teleme
     issues.push('VITE_TELEMETRY_SAMPLE_RATE is not a number; using full sampling');
   }
 
+  const policy: EndpointPolicy = { production: env.PROD === true };
+
   return {
-    endpoint: resolveEndpoint(env.VITE_TELEMETRY_ENDPOINT, 'VITE_TELEMETRY_ENDPOINT', issues),
-    alertEndpoint: resolveEndpoint(env.VITE_ALERT_ENDPOINT, 'VITE_ALERT_ENDPOINT', issues),
+    endpoint: resolveEndpoint(
+      env.VITE_TELEMETRY_ENDPOINT,
+      'VITE_TELEMETRY_ENDPOINT',
+      issues,
+      policy,
+    ),
     dashboardUrl: resolveEndpoint(
       env.VITE_TELEMETRY_DASHBOARD_URL,
       'VITE_TELEMETRY_DASHBOARD_URL',
       issues,
+      {
+        ...policy,
+        requireApprovedHost: false,
+      },
     ),
     analyticsMeasurementId:
       env.VITE_GA_MEASUREMENT_ID?.trim() === '' || env.VITE_GA_MEASUREMENT_ID === undefined

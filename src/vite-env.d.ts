@@ -24,8 +24,6 @@ interface ImportMetaEnv {
   readonly VITE_DEPLOYMENT_ENV?: string;
   /** Collector URL for telemetry envelopes (logs, metrics, events, traces, errors, alerts, health). */
   readonly VITE_TELEMETRY_ENDPOINT?: string;
-  /** Webhook URL alert payloads are POSTed to; falls back to in-app handlers only. */
-  readonly VITE_ALERT_ENDPOINT?: string;
   /** Operator dashboard URL linked from deployment telemetry and runbooks. */
   readonly VITE_TELEMETRY_DASHBOARD_URL?: string;
   /** Release identifier (git SHA or tag) stamped on every envelope and the health artifact. */
