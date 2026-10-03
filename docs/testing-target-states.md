@@ -16,7 +16,15 @@ splitting the selected suite into two runs.
 Ordinary preview never overlaps the serial fixtures and never reuses a server.
 Local and CI ordinary runs use four browser workers, leaving one of the five
 validator slots for manual checks. CI retains two retries and the reviewed
-30-minute job timeout. Remote CI execution remains unverified.
+45-minute `e2e` job cap, approved on 2026-10-03 in place of 30 minutes.
+All other job caps, individual deadlines, assertions, full axe scans, retries,
+and workers remain unchanged; no sharding or stronger runner is approved.
+Coverage floors remain 95% statements / 90% branches / 96% functions / 96%
+lines, and unit timing limits remain 210,000 ms total / 8,000 ms individual.
+The cap amendment is not a speed fix or a historical job pass: earlier
+30-minute cancellations remain cancellations and historical measurements stay
+unchanged. Actual hosted execution under the 45-minute cap remains pending
+separate exact-commit publication approval, not authorized by this amendment.
 
 Modal and inline-notification static assets are built once per selected suite,
 then shared read-only across workers. Every test retains its own browser context

@@ -46,6 +46,18 @@ const SHA_REFERENCE = /^[0-9a-f]{40}$/;
 const FORBIDDEN_TRIGGERS = ['pull_request_target', 'workflow_run'];
 const TRUSTED_ONLY_TRIGGERS = new Set(['schedule', 'workflow_dispatch']);
 const ZAP_THRESHOLDS = new Set(['IGNORE', 'WARN', 'FAIL', 'INFO', 'OFF']);
+// Whole-rule localhost-preview acceptances, reviewed on 2026-10-03.
+// Unknown WARN/FAIL findings retain the scanner's blocking defaults.
+const REVIEWED_ZAP_RULE_IDS = new Set([
+  '10020',
+  '10021',
+  '10038',
+  '10049',
+  '10063',
+  '10096',
+  '10109',
+  '90004',
+]);
 // `\b` after the condition would never fire for `:`, the shell no-op builtin,
 // because a non-word character followed by `;` or whitespace has no word
 // boundary — so `while :; do` must be matched with a lookahead instead.
@@ -187,7 +199,7 @@ export const ALLOWED_JOB_WRITES = [
  * a budget without a job) fails the check.
  */
 export const TIMEOUT_BUDGETS_MINUTES = {
-  'ci.yml': { verify: 30, e2e: 30 },
+  'ci.yml': { verify: 30, e2e: 45 },
   'deploy-pages.yml': { build: 15, deploy: 15 },
   'droid-review.yml': { 'droid-review': 30 },
   'droid.yml': { droid: 30 },
@@ -597,6 +609,26 @@ function checkZapPolicy(documents, violations, inventory, zapRulesText) {
   } else {
     const { entries, violations: ruleViolations } = parseZapRules(zapRulesText);
     violations.push(...ruleViolations);
+    const seen = new Set();
+    for (const { id, threshold } of entries) {
+      if (!REVIEWED_ZAP_RULE_IDS.has(id)) {
+        violations.push(
+          `${ZAP_RULES_FILE}: unreviewed rule ${id}; unknown WARN/FAIL remain blocking`,
+        );
+      }
+      if (seen.has(id)) {
+        violations.push(`${ZAP_RULES_FILE}: duplicate rule ${id}`);
+      }
+      if (threshold !== 'IGNORE') {
+        violations.push(`${ZAP_RULES_FILE}: reviewed rule ${id} must use IGNORE`);
+      }
+      seen.add(id);
+    }
+    for (const id of REVIEWED_ZAP_RULE_IDS) {
+      if (!seen.has(id)) {
+        violations.push(`${ZAP_RULES_FILE}: missing reviewed rule ${id}`);
+      }
+    }
     inventory.zapRules = entries;
   }
 

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
 import { describe, it } from 'node:test';
+
+import { parse } from 'yaml';
 
 import { waitForPreviewAssets } from './check-preview-assets.mjs';
 import {
@@ -12,6 +15,17 @@ import {
 } from './check-workflows.mjs';
 
 const PINNED_CHECKOUT = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1';
+
+function repositorySources() {
+  const directory = new URL('../.github/workflows/', import.meta.url);
+  return readdirSync(directory)
+    .filter((file) => /\.ya?ml$/.test(file))
+    .map((file) => ({ file, text: readFileSync(new URL(file, directory), 'utf8') }));
+}
+
+function repositoryRules() {
+  return readFileSync(new URL('../.zap/rules.tsv', import.meta.url), 'utf8');
+}
 
 function compliantWorkflow(overrides = {}) {
   const job = {
@@ -237,6 +251,58 @@ describe('least-privilege permissions (VAL-SEC-009)', () => {
 });
 
 describe('job timeouts (VAL-SEC-011)', () => {
+  it('accepts CI e2e at 45 minutes and rejects 46 against the actual policy', () => {
+    for (const timeout of [45, 46]) {
+      const workflowSources = repositorySources().map((source) => {
+        if (source.file !== 'ci.yml') return source;
+        const workflow = parse(source.text);
+        workflow.jobs.e2e['timeout-minutes'] = timeout;
+        return { ...source, text: toYaml(workflow) };
+      });
+      const violations = checkWorkflowSources({ workflowSources, zapRulesText: repositoryRules() });
+      if (timeout === 45) {
+        assert.deepEqual(violations, []);
+      } else {
+        assert.ok(violations.some((line) => /e2e.*46.*budget of 45/.test(line)));
+      }
+    }
+  });
+
+  it('preserves every other reviewed cap and rejects each job one minute over budget', () => {
+    const expected = {
+      'ci.yml': { verify: 30, e2e: 45 },
+      'deploy-pages.yml': { build: 15, deploy: 15 },
+      'droid-review.yml': { 'droid-review': 30 },
+      'droid.yml': { droid: 30 },
+      'error-to-insight.yml': { 'sync-sentry-errors': 5 },
+      'release-please.yml': { 'release-please': 10 },
+      'security.yml': {
+        'secret-scan': 15,
+        'dependency-audit': 10,
+        dast: 30,
+        'label-taxonomy': 10,
+      },
+    };
+    assert.deepEqual(TIMEOUT_BUDGETS_MINUTES, expected);
+    for (const source of repositorySources()) {
+      const workflow = parse(source.text);
+      for (const [job, budget] of Object.entries(expected[source.file])) {
+        assert.equal(workflow.jobs[job]['timeout-minutes'], budget, `${source.file}/${job}`);
+        const changed = structuredClone(workflow);
+        changed.jobs[job]['timeout-minutes'] = budget + 1;
+        const workflowSources = repositorySources().map((entry) =>
+          entry.file === source.file ? { ...entry, text: toYaml(changed) } : entry,
+        );
+        assert.ok(
+          checkWorkflowSources({ workflowSources, zapRulesText: repositoryRules() }).some(
+            (line) => line.includes(`job '${job}'`) && line.includes('exceeds the reviewed budget'),
+          ),
+          `${source.file}/${job}`,
+        );
+      }
+    }
+  });
+
   it('rejects a job without timeout-minutes', () => {
     const { file, workflow } = compliantWorkflow();
     delete workflow.jobs.verify['timeout-minutes'];
@@ -408,6 +474,13 @@ const VALID_ZAP_WITH = {
 const VALID_RULES = [
   '# Reviewed baseline exceptions.',
   '10020\tIGNORE\tStatic preview demo has no authenticated state; framing headers belong to the production host.',
+  '10021\tIGNORE\tCorrect content types are served locally; production nosniff remains a hosting concern.',
+  '10038\tIGNORE\tCSP remains a production-host requirement, not verified by this localhost preview.',
+  '10063\tIGNORE\tNo powerful browser features are used in this localhost preview demo.',
+  '10049\tIGNORE\tPublic localhost preview assets revalidate; no sensitive cache waiver is approved.',
+  '10096\tIGNORE\tThe apparent timestamp is a deterministic RNG constant in the local mock bundle.',
+  '10109\tIGNORE\tSPA identification locally requires no code change and proves no rendered scan coverage.',
+  '90004\tIGNORE\tCOEP, COOP and CORP are accepted only for the whole localhost preview rule.',
   '',
 ].join('\n');
 
@@ -535,8 +608,100 @@ describe('ZAP rules policy (VAL-SEC-012)', () => {
     return checkSecurity({ zapWith, serveRun: options.serveRun }, options);
   }
 
-  it('accepts a rules-file policy with a reviewed entry', () => {
+  it('accepts exactly the eight reviewed whole-rule local-preview exceptions', () => {
     assert.deepEqual(checkDast(), []);
+    const rules = parseZapRules(repositoryRules());
+    assert.deepEqual(rules.violations, []);
+    assert.deepEqual(
+      rules.entries
+        .map(({ id, threshold }) => ({ id, threshold }))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+      ['10020', '10021', '10038', '10049', '10063', '10096', '10109', '90004'].map((id) => ({
+        id,
+        threshold: 'IGNORE',
+      })),
+    );
+    assert.deepEqual(checkDast(VALID_ZAP_WITH, { zapRulesText: repositoryRules() }), []);
+  });
+
+  for (const id of ['10020', '10021', '10038', '10049', '10063', '10096', '10109', '90004']) {
+    it(`rejects missing reviewed rule ${id}`, () => {
+      const zapRulesText = VALID_RULES.split('\n')
+        .filter((line) => !line.startsWith(`${id}\t`))
+        .join('\n');
+      assert.ok(
+        checkDast(VALID_ZAP_WITH, { zapRulesText }).some((line) =>
+          line.includes(`missing reviewed rule ${id}`),
+        ),
+      );
+    });
+  }
+
+  for (const threshold of ['IGNORE', 'OFF', 'INFO', 'WARN', 'FAIL']) {
+    it(`rejects unreviewed rule overrides even at ${threshold} severity`, () => {
+      const zapRulesText = `${VALID_RULES}\n99999\t${threshold}\tUnreviewed rule must retain blocking scanner behavior.\n`;
+      assert.ok(
+        checkDast(VALID_ZAP_WITH, { zapRulesText }).some((line) =>
+          /unreviewed rule 99999/.test(line),
+        ),
+      );
+    });
+  }
+
+  for (const threshold of ['OFF', 'INFO', 'WARN', 'FAIL']) {
+    it(`rejects changing an approved IGNORE threshold to ${threshold}`, () => {
+      const zapRulesText = VALID_RULES.replace('90004\tIGNORE', `90004\t${threshold}`);
+      assert.ok(
+        checkDast(VALID_ZAP_WITH, { zapRulesText }).some((line) =>
+          /90004.*must use IGNORE/.test(line),
+        ),
+      );
+    });
+  }
+
+  it('rejects duplicate reviewed rules and severity-wide suppression', () => {
+    const duplicate = `${VALID_RULES}\n10020\tIGNORE\tDuplicate framing exception must not broaden the reviewed policy.\n`;
+    assert.ok(
+      checkDast(VALID_ZAP_WITH, { zapRulesText: duplicate }).some((line) =>
+        /duplicate rule 10020/.test(line),
+      ),
+    );
+    assert.ok(
+      checkDast(VALID_ZAP_WITH, {
+        zapRulesText: `${VALID_RULES}\n*\tIGNORE\tIgnore every severity across the whole preview.\n`,
+      }).some((line) => /malformed/.test(line)),
+    );
+  });
+
+  it('records dated local whole-rule rationale without claiming a fix or production waiver', () => {
+    const text = repositoryRules();
+    assert.match(text, /whole rule ID/);
+    assert.match(text, /re-review/i);
+    const entries = parseZapRules(text).entries;
+    for (const id of ['10049', '10096', '10109', '90004']) {
+      const rationale = entries.find((entry) => entry.id === id)?.rationale;
+      assert.match(rationale ?? '', /2026-10-03/);
+      assert.match(rationale ?? '', /local.*preview/i);
+    }
+    assert.match(
+      entries.find(({ id }) => id === '10049')?.rationale ?? '',
+      /no.*private.*cache waiver/i,
+    );
+    assert.match(
+      entries.find(({ id }) => id === '10096')?.rationale ?? '',
+      /1831565813.*0x6d2b79f5.*rng\.ts/,
+    );
+    assert.match(entries.find(({ id }) => id === '10109')?.rationale ?? '', /no.*rendered.*AJAX/i);
+    assert.match(
+      entries.find(({ id }) => id === '90004')?.rationale ?? '',
+      /COEP.*COOP.*CORP.*no production/i,
+    );
+    assert.ok(
+      readFileSync(new URL('../src/data/mock/rng.ts', import.meta.url), 'utf8').includes(
+        '0x6d2b79f5',
+      ),
+    );
+    assert.equal(0x6d2b79f5, 1831565813);
   });
 
   for (const cmdOptions of ['-d -I', '-I', '-d -I -x']) {

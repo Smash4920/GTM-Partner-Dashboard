@@ -125,12 +125,38 @@ least privilege, trusted write triggers, finite timeouts, blocking scans,
 reviewed ZAP rules, and local/CI production-preview parity. This static policy
 does not verify remote repository settings or execute hosted scanners.
 
+The 2026-10-03 local-preview amendment accepts exactly eight whole ZAP rule IDs:
+`10020`, `10021`, `10038`, `10063`, plus `10049`, `10096`, `10109`, and `90004`.
+Scope is the whole rule in the localhost preview scan, not production compliance:
+`90004` includes all COEP/COOP/CORP subalerts; `10049` accepts public-asset
+revalidation, not private-data caching; `10096` is the deterministic RNG constant
+`1831565813` / `0x6d2b79f5` false positive, not a reason to change the RNG;
+`10109` makes no rendered-dashboard or AJAX-spider coverage claim. See
+[`security.md`](../security.md) for reviewed rationales. Re-review when target,
+data sensitivity, RNG provenance, integrations, or production hosting changes.
+Unknown WARN/FAIL remain blocking; do not use `-I` or severity-wide suppression.
+Docker and Podman CLIs are unavailable locally, so full local ZAP remains unrun.
+The amended hosted baseline outcome is pending separate exact-commit publication
+approval; static policy checks do not turn historical scan failures into passes.
+
+The high-severity dependency audit also remains blocking. The user chose to wait
+for the official upstream `braces` fix; no backport, override, downgrade,
+advisory exception, or suppression is approved.
+
 ### Playwright job
 
 `npm run test:e2e` builds production assets and starts strict Vite production
 preview on `127.0.0.1:4173`, with `BASE_PATH=/` and no HMR. Serial port-owning
 fixtures finish before ordinary preview starts. Ordinary local and CI runs use
-four workers; CI keeps two retries and its reviewed 30-minute timeout.
+four workers; serial fixtures use one worker. CI keeps two retries and its
+reviewed 45-minute `e2e` job cap, approved on 2026-10-03 to replace 30 minutes.
+All other job caps, individual test deadlines, assertions, full axe scans,
+workers, and retries are unchanged, as are coverage floors 95/90/96/96
+(statements/branches/functions/lines) and unit timing limits 210,000/8,000 ms
+(total/individual). No sharding or stronger runner is approved.
+This is a policy amendment, not a speed fix: historical measurements and
+30-minute cancellations are unchanged. Actual hosted 45-minute execution is
+pending separate exact-commit publication approval.
 Inspect `build-metrics/e2e-timing.json` for actual wall time and phase outcomes,
 and `build-metrics/e2e-preview-lifecycle.json` for verified PID teardown. If the browser
 dependency fails, re-run with `npx playwright install --with-deps chromium`. If
@@ -141,3 +167,7 @@ a test is flaky, capture the trace artifact before changing the test.
 If a required check is failing for infrastructure reasons (runner outage,
 registry outage), re-run the job once, then note it in the pull request. Do not
 merge with a red required check.
+
+For this amendment, no new push, hosted rerun, merge, deployment, or settings
+change is authorized. Preserve prior failures and cancellations and seek
+separate exact-commit publication approval for new hosted evidence.

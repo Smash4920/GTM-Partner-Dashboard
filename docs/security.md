@@ -111,6 +111,10 @@ on every pull request, push to `main`, and weekly. Anything rated high or
 critical by the npm registry fails the job; moderate findings are visible in
 the job output for triage.
 
+As of the 2026-10-03 amendment, the user chose to wait for an official upstream
+`braces` fix. The high-severity audit remains blocking: no backport, override,
+downgrade, advisory exception, or suppression is approved.
+
 ### Dynamic application security testing
 
 The `dast` job builds the production bundle (`BASE_PATH=/` so the preview
@@ -125,13 +129,37 @@ The only accepted findings are the reviewed, rule-specific entries in
 `.zap/rules.tsv`: each line names one exact ZAP rule ID, the threshold
 override, and the rationale a reviewer accepted. `npm run workflows:check`
 rejects the `-I` flag, a missing rules file, and entries without rationale.
-Today's accepted set is four header-hardening alerts raised against
-`vite preview`: the preview is a local scan target, not a production host,
-and response headers are owned by the production hosts (Vercel, GitHub
-Pages). A new WARN means the artifact changed: reproduce locally with
-`npm run preview`, fix it, or add a justified rule entry in the same pull
-request. `allow_issue_writing: false` keeps the report out of the issue
-tracker; the artifact and the job log carry it.
+The **2026-10-03** approved policy retains `10020`, `10021`, `10038`, and
+`10063` and adds only `10049`, `10096`, `10109`, and `90004`. Acceptance covers
+each **whole rule ID in the localhost preview scan**, not just the instances
+in the historical report:
+
+| Rule ID | Reviewed local-preview rationale                                                                                                                                                                                                       |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `10020` | Missing Anti-clickjacking Header: this client-only demo has no authenticated or sensitive state; production framing policy remains a host concern.                                                                                     |
+| `10021` | X-Content-Type-Options Header Missing: preview serves correct static content types; production `nosniff` policy remains a host concern.                                                                                                |
+| `10038` | Content Security Policy Header Not Set: CSP remains a production-host control, not waived for production by this preview exception.                                                                                                    |
+| `10063` | Permissions Policy Header Not Set: the demo uses no camera, microphone, or geolocation; production policy remains a host concern.                                                                                                      |
+| `10049` | Storable but Non-Cacheable Content (informational): public CSS and the sitemap SPA fallback use preview `no-cache` revalidation. No sensitive-data cache leak was demonstrated; this is not a private-data or production cache waiver. |
+| `10096` | Timestamp Disclosure–Unix (low severity, low confidence): `1831565813` is the deterministic RNG constant `0x6d2b79f5` in `src/data/mock/rng.ts`, not a sensitive timestamp. This is a false positive; the RNG is unchanged.            |
+| `10109` | Modern Web Application (informational): the scanner says no code change is required. Acceptance does not establish rendered-dashboard or AJAX-spider coverage.                                                                         |
+| `90004` | Missing Cross-Origin Isolation headers: all COEP, COOP, and CORP subalerts are accepted locally under the whole rule. This is not production header compliance; indiscriminate isolation can break resource and pop-up integrations.   |
+
+Re-review these exceptions when the scan target, data sensitivity, RNG
+provenance, integrations, or production hosting changes. The preview is a local
+scan target, not a production host; production response-header and cache
+controls still require their own review. Unknown WARN/FAIL findings remain
+blocking. No severity-wide ignore, `-I`, non-blocking scan step, or dependency
+audit waiver is approved. A new finding requires triage and either a fix or
+explicit approval for a justified exact-rule policy change.
+`allow_issue_writing: false` keeps the report out of the issue tracker; the
+artifact and the job log carry it.
+
+These are policy amendments, not vulnerability fixes or retrospective scan
+passes. Historical failures remain failures. Docker and Podman CLIs are
+unavailable locally, so a full local ZAP baseline has not run. Hosted results
+under the amended baseline remain pending separate exact-commit publication
+approval; this amendment authorizes no push or manual rerun.
 
 ### Telemetry egress privacy
 
@@ -227,6 +255,16 @@ security policy locally and in CI:
 - **Finite timeouts.** Every job declares `timeout-minutes` at or below
   its reviewed budget in the checker, and unbounded wait loops are
   rejected (the DAST preview startup loop is bounded at 60 seconds).
+  On 2026-10-03, only CI's `e2e` job cap was approved to change from 30 to
+  45 minutes. All other job caps, test deadlines, assertions, full axe scans,
+  retries, and worker settings remain unchanged: four ordinary workers,
+  one serial fixture worker, and two CI retries. Coverage floors remain
+  95% statements / 90% branches / 96% functions / 96% lines; unit timing
+  limits remain 210,000 ms total / 8,000 ms individual. No sharding or
+  stronger runner is approved. This is not a speed fix: historical
+  30-minute cancellations stay cancellations, and an actual hosted run
+  under the 45-minute cap remains pending separate exact-commit publication
+  approval.
 - **Blocking scans.** gitleaks scans the full commit history and
   `npm audit --audit-level=high` gates the dependency tree. Both run on
   pull requests, pushes to `main`, the weekly schedule, and manual
@@ -311,11 +349,13 @@ one-time setup step:
   the secret from the branch, and consider history cleanup. The secret
   stays compromised until rotated.
 - **Dependency audit fails:** read the advisory, upgrade the affected
-  package, and if no fixed release exists, pin a known-good version and
-  note the exception in the PR.
+  package when an approved official fix exists, or report the blocker.
+  The current `braces` decision is to wait; do not backport, override,
+  downgrade, suppress, or waive the high-severity audit.
 - **DAST fails:** reproduce locally with `npm run preview`, confirm the
-  finding, fix it or add a justified rule-specific entry to
-  `.zap/rules.tsv`, and keep the ratchet moving.
+  finding when tooling is available, and fix it or seek explicit approval
+  for a justified rule-specific entry to `.zap/rules.tsv`. Do not claim
+  a full scan pass from static policy checks or preview inspection.
 - **Workflow policy fails:** read the violation from
   `npm run workflows:check`. Either restore the control (action pin,
   permission scope, trigger guard, timeout, ZAP rule) or change the
