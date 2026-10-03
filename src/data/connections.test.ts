@@ -26,7 +26,7 @@ describe('connection catalog', () => {
   });
 
   it('preserves optional-property presence without materializing absent fields', () => {
-    const optionalProperties = ['source', 'auth', 'cadence', 'blocker', 'owner', 'hostsTeam'];
+    const optionalProperties = ['source', 'auth', 'cadence', 'blocker', 'owner'];
     for (const [index, original] of ORIGINAL_CONNECTION_NODES.entries()) {
       const node = CONNECTION_NODES[index];
       expect(Object.keys(node).sort()).toEqual(Object.keys(original).sort());

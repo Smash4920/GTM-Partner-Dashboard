@@ -1,15 +1,15 @@
 # GTM Partner Dashboard
 
 A client-only mockup of a partner revenue pipeline dashboard for the GTM team.
-Nine views over one deterministic mock data model, reached through a
+Ten views over one deterministic mock data model, reached through a
 collapsible left sidebar: **Home** (ecosystem
 summary), **Partner Performance** (per-manager / per-partner drill-down),
 **Forecasting** (the VP's in-quarter view with a weighted forecast),
 **Deal Reg Ops** (registration SLAs, conversion time, exclusivity, and
 conflicts), **Activity Tracking** (weekly meeting goals and calendar logging),
 **Partner View** (the partner-facing sharing surface), **Production
-Requirements** (the architecture + utility roadmap), and **Data Connections**
-(the integration map, partner-team access, and registration SLA notifications),
+Requirements** (the architecture + utility roadmap), **Data Connections**
+(the integration map), **Settings** (the membership roster and notifications),
 and **Action Center** (bounded action summaries, filters, and session-only demo policy).
 
 ![Home view](docs/screenshots/home.png)
@@ -23,7 +23,7 @@ metric green for positive data.
 
 ## Navigation
 
-A collapsible sidebar on the left carries the nine pages; the icon in the upper
+A collapsible sidebar on the left carries the ten pages; the icon in the upper
 left expands and collapses it to an icon rail. The header also carries a
 **provider selector** — local mock, simulated remote, or a 100× book — which is
 the demo of the integration seam described under Data contract below.
@@ -71,7 +71,10 @@ Partners aligned to that manager, or a single partner, via Salesforce-style
 `Account.Partner_Manager__c` assignments).
 
 - The same KPI row, registration funnel, stage breakdown, and revenue-vs-target
-  chart, all scoped to the selection
+  chart, all scoped to the selection. The funnel has the same **Registered $** /
+  **Count** toggle as Home, defaulting to Registered $
+- The revenue-vs-target chart, the opportunity table, and the leaderboard are
+  collapsible; their loaded pages survive a collapse
 - Meeting tracker alongside progress to the weekly goal for that scope
 - Salesforce-shaped opportunity table: client, Factory Account Director, stage,
   forecasted revenue, and close date (actual close once closed, expected close
@@ -81,6 +84,10 @@ Partners aligned to that manager, or a single partner, via Salesforce-style
   partner — Partner Strategist / Partner Engineer certification against
   goal. When the scope includes multiple partners, the leaderboard shows
   each partner's certified counts and attainment beneath the count.
+- Registration conversion time and registration leakage always show. The
+  registration row tables below (awaiting review, exclusivity lapsed,
+  duplicates) show only once a partner manager or partner is selected; at the
+  All Partners scope they live on Deal Reg Ops, and their queries do not run
 - Registrations awaiting review are colored against the **5-business-day
   response SLA**, and the waiting counter is quoted in the same unit —
   business days, not calendar days. A Friday submission is one business day
@@ -229,7 +236,10 @@ leakage spanning quarters stays visible.
   SLA, and registrations past the 60-day **exclusivity window**
 - Conversion-time bars with the SLA and exclusivity windows annotated against
   each hop
-- Pending registrations queue with the SLA-colored day counters
+- The tables follow the funnel, big to small: **All registrations** (every
+  submission, newest first, with its status), the pending queue with the
+  SLA-colored day counters, **Registration leakage** counts, then the
+  exclusivity watch and duplicates below
 - **Exclusivity window**: approved registrations still without an opportunity,
   flagged "Exclusivity lapsed" once the 60 days from approval pass — the lead
   keeps exclusivity until the partner introduces it
@@ -331,8 +341,8 @@ snapshots, partner-health alerts, and forecast reviews are not substitutes.
 
 ### Data Connections
 
-The integration map and the two things that hang off it: who on the partner
-team can be told about the data, and the rule that tells them.
+The integration map. The route is static: it renders from the connection
+catalog alone and makes no provider calls.
 
 - **Data connection map** — a wire diagram of every system the dashboard reads
   from or writes to, drawn from one catalog
@@ -347,31 +357,40 @@ team can be told about the data, and the rule that tells them.
   DataProvider method it fills, so the map and the contract in
   `DataProvider.ts` can be read against each other; a test asserts every method
   there is covered here
-- **Partner team access** — a session-only roster that simulates how the
-  identity provider's records would project into the dashboard. Nothing here
-  provisions, authorizes, revokes, or restores sign-in or data access, and a
-  refresh resets the roster. A user is either a Partnership Lead, a Partner
-  Manager (aligned to one partner manager, which is what routes a registration
-  to them), Deal Desk Ops (the whole queue), or an Analyst; each carries the
-  notification channels configured for them this session. Notification routing
-  can be turned on, paused, or resumed per user, and a user added this session
-  can be removed
-- **Deal-registration SLA alerts** — the notification rule, the registrations
-  it fires on, and what has been recorded this session. Every pending
-  registration is measured against the 5-business-day response SLA at the
-  snapshot; one business day before the deadline the owner is warned, and once
-  it has passed the breach is raised. The owner is the submitting partner's
-  aligned active partner manager, with active deal-desk fallback. A registration
-  remains unowned if no eligible recipient exists. The warnings lead the queue — they are the
-  ones with a business day left in them
-- **Notifications** are composed from inside the map: pick a teammate in the
-  notification node and it loads their own most urgent alert, or pick a
-  registration from the alert queue, or write a free-form note. The send is
-  recorded locally for the session over the user's configured channels, and the
-  confirmation reads "Simulated / local only" — nothing is delivered or
-  persisted. Sends are timestamped off the session clock, not the fixed
-  snapshot: the demo data is frozen at Sep 18, but an action taken now happened
-  now
+
+### Settings
+
+Who is on the partner team and how the dashboard notifies them, in two
+discrete sections.
+
+- **Membership roster** — every internal user, split into **Administrators**
+  (Partnership Lead and Deal Desk Ops, the whole-book roles) and **Users**
+  (Partner Managers and Analysts). The grouping is a display of the identity
+  provider's roster projection, not a permission
+- **Notifications**:
+  - **Partner team notification routing** — a session-only roster that
+    simulates how the identity provider's records would project into the
+    dashboard. Nothing here provisions, authorizes, revokes, or restores
+    sign-in or data access, and a refresh resets the roster. A user is either a
+    Partnership Lead, a Partner Manager (aligned to one partner manager, which
+    is what routes a registration to them), Deal Desk Ops (the whole queue), or
+    an Analyst; each carries the notification channels configured for them
+    this session. Notification routing can be turned on, paused, or resumed per
+    user, and a user added this session can be removed
+  - **Deal-registration SLA alerts** — the notification rule, the
+    registrations it fires on, and what has been recorded this session. Every
+    pending registration is measured against the 5-business-day response SLA
+    at the snapshot; one business day before the deadline the owner is warned,
+    and once it has passed the breach is raised. The owner is the submitting
+    partner's aligned active partner manager, with active deal-desk fallback. A
+    registration remains unowned if no eligible recipient exists. The warnings
+    lead the queue — they are the ones with a business day left in them
+  - **Send a notification** — pick a teammate, pick a registration from the
+    alert queue, or write a free-form note. The send is recorded locally for the
+    session over the user's configured channels, and the confirmation reads
+    "Simulated / local only" — nothing is delivered or persisted. Sends are
+    timestamped off the session clock, not the fixed snapshot: the demo data is
+    frozen at Sep 18, but an action taken now happened now
 
 ## Running locally
 

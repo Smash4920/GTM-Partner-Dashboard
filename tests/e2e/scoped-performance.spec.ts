@@ -112,15 +112,25 @@ test('VAL-DATA-014: Partner Performance paginates the pipeline by cursor', async
   await expect(page.getByText('Showing 65 of 65')).toBeVisible();
   await expect(loadMore).toHaveAttribute('aria-disabled', 'true');
 
-  // Scoped siblings on the same route render their own answers.
+  // In the whole-org default scope the registration row tables live on Deal
+  // Reg Ops; the route says so rather than rendering a whole-book table.
   await expect(
-    page.getByText('18 pending in scope · oldest first · colored against the 5-business-day SLA'),
+    page.getByText(
+      'The review queue, exclusivity watch, and duplicate registrations for the whole org live on Deal Reg Ops. Pick a partner manager or partner to see them for that scope here.',
+    ),
   ).toBeVisible();
   const leaderboardCard = page
     .getByRole('heading', { name: 'Partner leaderboard & enablement' })
     .locator('xpath=ancestor::*[contains(@class,"rounded-card")][1]');
   await expect(leaderboardCard.getByText('Kestrel Networks')).toBeVisible();
   await expect(page.getByText('All Partners').first()).toBeVisible();
+
+  // Drilling into one manager re-scopes the registration queue onto this
+  // route as its own provider answer.
+  await page.getByRole('combobox', { name: 'Partner manager', exact: true }).selectOption('pm-01');
+  await expect(
+    page.getByText(/\d+ pending in scope · oldest first · colored against the 5-business-day SLA/),
+  ).toBeVisible();
 
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);

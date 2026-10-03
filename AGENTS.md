@@ -110,7 +110,7 @@ survivable.
 - `src/data/useForecastQueries.ts` and its siblings (`useHomeQueries.ts`,
   `usePartnerPerformanceQueries.ts`, `useRegistrationOpsQueries.ts`,
   `useActivityQueries.ts`, `usePartnerViewQueries.ts`,
-  `useDataConnectionsQueries.ts`): load the scoped contract for their routes,
+  `useSettingsQueries.ts`): load the scoped contract for their routes,
   with per-widget loading and error state.
 - `src/data/providers.ts`: selects between the three providers the header's
   provider dropdown exposes.

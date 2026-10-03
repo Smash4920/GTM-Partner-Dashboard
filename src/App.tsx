@@ -59,6 +59,9 @@ const DataConnectionsView = lazy(() =>
 const ProductionRequirementsView = lazy(() =>
   import('./views/system').then((module) => ({ default: module.ProductionRequirementsView })),
 );
+const SettingsView = lazy(() =>
+  import('./views/system').then((module) => ({ default: module.SettingsView })),
+);
 const ActionCenterView = lazy(() => import('./views/ActionCenterView'));
 const WorkflowPanel = lazy(() => import('./components/WorkflowPanel'));
 
@@ -146,7 +149,7 @@ export default function App({
   // patches are overrides keyed by user id, additions are separate, and sent
   // notifications are their own session log — the same shape as the other
   // session edits, and the same gap a live provider has to close by persisting
-  // them (see Data Connections).
+  // them (see Settings).
   const [teamRoster, setTeamRoster] = useState<Required<TeamRosterScope>>({
     overrides: {},
     added: [],
@@ -840,7 +843,12 @@ function RouteContent({
       )}
       {route === 'data-connections' && (
         <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:data-connections`}>
-          <DataConnectionsView
+          <DataConnectionsView />
+        </ErrorBoundary>
+      )}
+      {route === 'settings' && (
+        <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:settings`}>
+          <SettingsView
             provider={provider}
             teamUserOverrides={roster.overrides}
             addedTeamUsers={roster.added}

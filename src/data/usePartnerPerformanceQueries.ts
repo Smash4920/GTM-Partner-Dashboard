@@ -81,7 +81,8 @@ const PIPELINE_PAGE_SIZE = 25;
  * more, never the roster.
  */
 export const LEADERBOARD_PAGE_SIZE = 25;
-/** The queue, exclusivity, and duplicate cards render a single page each. */
+/** The queue, exclusivity, and duplicate cards render a single page each,
+ * and only for a manager or partner drill-down. */
 const QUEUE_PAGE_SIZE = 7;
 const UNCONVERTED_PAGE_SIZE = 8;
 const DUPLICATE_PAGE_SIZE = 6;
@@ -136,6 +137,10 @@ export function usePartnerPerformanceQueries({
   const rosterKey = prospectsKey(prospects);
   const partnerManagerId = managerId === 'all' ? undefined : managerId;
   const selectedPartnerId = partnerId === 'all' ? undefined : partnerId;
+  // The review queue, exclusivity, and duplicate tables belong to Deal Reg
+  // Ops at the whole-org scope; the route shows them only for a drill-down,
+  // so the unfiltered scope fires none of their requests.
+  const drilled = managerId !== 'all' || partnerId !== 'all';
   const drilldown = {
     partnerManagerId,
     partnerId: selectedPartnerId,
@@ -280,7 +285,7 @@ export function usePartnerPerformanceQueries({
 
   const pending = usePaginatedRows({
     provider,
-    enabled: true,
+    enabled: drilled,
     resetKey: `pending-regs|${phaseKey}|${QUEUE_PAGE_SIZE}`,
     refreshKey: '',
     pageSize: QUEUE_PAGE_SIZE,
@@ -292,7 +297,7 @@ export function usePartnerPerformanceQueries({
 
   const unconverted = usePaginatedRows({
     provider,
-    enabled: true,
+    enabled: drilled,
     resetKey: `unconverted-regs|${drilldownKey}|${UNCONVERTED_PAGE_SIZE}`,
     refreshKey: '',
     pageSize: UNCONVERTED_PAGE_SIZE,
@@ -304,7 +309,7 @@ export function usePartnerPerformanceQueries({
 
   const duplicates = usePaginatedRows({
     provider,
-    enabled: true,
+    enabled: drilled,
     resetKey: `dup-groups|${drilldownKey}|${DUPLICATE_PAGE_SIZE}`,
     refreshKey: '',
     pageSize: DUPLICATE_PAGE_SIZE,

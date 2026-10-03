@@ -1,6 +1,13 @@
+import type { ChipOption } from '../components/FilterChips';
 import type { MetricBarRow } from '../components/MetricBars';
-import { LOST_COLOR, STAGE_META, WON_COLOR } from '../data/constants';
-import type { StageBreakdown } from '../data/DataProvider';
+import {
+  LOST_COLOR,
+  REGISTRATION_EXCLUSIVITY_DAYS,
+  REGISTRATION_SLA_BUSINESS_DAYS,
+  STAGE_META,
+  WON_COLOR,
+} from '../data/constants';
+import type { RegistrationOpsSummary, StageBreakdown } from '../data/DataProvider';
 import { formatDays, formatUsdCompact } from '../lib/format';
 import type { RegistrationConversionTimes, RegistrationFunnel } from '../lib/metrics';
 
@@ -39,7 +46,55 @@ export function conversionRows(
   }));
 }
 
-export function funnelRows(funnel: RegistrationFunnel, measure: 'value' | 'count'): MetricBarRow[] {
+/** What the registration funnel loses, as counts (shared by Partner Performance and Deal Reg Ops). */
+export function leakageRows(ops: RegistrationOpsSummary): MetricBarRow[] {
+  return [
+    {
+      label: 'Approved, no opp',
+      value: ops.approvedNotConverted,
+      displayValue: `${ops.approvedNotConverted}`,
+      secondary: 'approved registrations',
+      color: '#8a8380',
+    },
+    {
+      label: 'Exclusivity lapsed',
+      value: ops.exclusivityLapsed,
+      displayValue: `${ops.exclusivityLapsed}`,
+      secondary: `> ${REGISTRATION_EXCLUSIVITY_DAYS} days since approval`,
+      color: '#ee6018',
+    },
+    {
+      label: 'Pending past SLA',
+      value: ops.pastSla,
+      displayValue: `${ops.pastSla}`,
+      secondary: `${REGISTRATION_SLA_BUSINESS_DAYS}+ business days awaiting review`,
+      color: '#ee6018',
+    },
+    {
+      label: 'Duplicate clients',
+      value: ops.duplicateGroups,
+      displayValue: `${ops.duplicateGroups}`,
+      secondary: 'same client, multiple partners',
+      color: '#4d4947',
+    },
+  ];
+}
+
+export type FunnelMeasure = 'value' | 'count';
+
+/** The funnel's measure toggle; Registered $ is the default on every route. */
+export const FUNNEL_MEASURE_OPTIONS: ChipOption<FunnelMeasure>[] = [
+  { id: 'value', label: 'Registered $', title: 'Partner-estimated deal value at submission' },
+  { id: 'count', label: 'Count', title: 'Number of registrations' },
+];
+
+export function funnelSubtitle(measure: FunnelMeasure, phaseLabel: string): string {
+  return measure === 'value'
+    ? `Partner-estimated value at submission · ${phaseLabel}`
+    : `Registration counts · ${phaseLabel}`;
+}
+
+export function funnelRows(funnel: RegistrationFunnel, measure: FunnelMeasure): MetricBarRow[] {
   const rows: [string, number, number, string, boolean?][] = [
     ['Submitted', funnel.submitted, funnel.submittedValue, '#8a8380'],
     ['Approved', funnel.approved, funnel.approvedValue, '#b8b3b0'],

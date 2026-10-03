@@ -131,7 +131,7 @@ async function assertPerformanceCharts(page: Page, scope: PerformanceScope) {
   ]);
   const outcomes =
     scope.phase === 'fy' ? 'FY27 to date' : `FY27 ${FISCAL_PHASE_META[scope.phase].label}`;
-  await metric(page, 'Deal registration funnel', funnelRows(funnel.data, 'count'));
+  await metric(page, 'Deal registration funnel', funnelRows(funnel.data, 'value'));
   await metric(page, 'Pipeline by sales stage', stageRows(stages.data, outcomes));
   await revenue(page, trend.data);
   await activity(page, series.data);
@@ -594,6 +594,8 @@ const TABLE_ROUTES = [
   },
   {
     route: 'Partner Performance',
+    // The whole-org registration tables live on Deal Reg Ops; a manager
+    // drill-down keeps its own copies on this route.
     tables: [
       ['DT-003', 'Pipeline opportunities'],
       ['DT-004', 'Registrations awaiting review'],
@@ -605,6 +607,7 @@ const TABLE_ROUTES = [
   {
     route: 'Deal Reg Ops',
     tables: [
+      ['DT-021', 'Deal registrations'],
       ['DT-013', 'Registrations awaiting review'],
       ['DT-014', 'Exclusivity window'],
       ['DT-015', 'Duplicate & conflicting registrations'],
@@ -619,8 +622,10 @@ const TABLE_ROUTES = [
     ],
   },
   {
-    route: 'Data Connections',
+    route: 'Settings',
     tables: [
+      ['DT-022', 'Administrators'],
+      ['DT-023', 'Users'],
       ['DT-019', 'Partner team notification routing'],
       ['DT-020', 'Deal-registration SLA alert queue'],
     ],
@@ -688,8 +693,17 @@ for (const viewport of viewports) {
     await page.goto('/');
     await settle(page);
     const records: unknown[] = [];
-    for (const { route, tables } of TABLE_ROUTES) {
+    for (const entry of TABLE_ROUTES) {
+      const { route, tables } = entry;
       await navigate(page, route);
+      // The whole-org registration tables live on Deal Reg Ops; this route
+      // needs a manager drill-down to render its scoped copies.
+      if (route === 'Partner Performance') {
+        await page
+          .getByRole('combobox', { name: 'Partner manager', exact: true })
+          .selectOption('pm-01');
+        await settle(page);
+      }
       for (const [id, name] of tables) {
         const region = page.getByRole('region', { name: `${name}, scrollable`, exact: true });
         records.push(await dense(page, region, id));
@@ -708,7 +722,7 @@ for (const viewport of viewports) {
             }
           }
         }
-        if (name === 'Deal registrations') {
+        if (name === 'Deal registrations' && route === 'Partner View') {
           const partnerId = await page
             .getByRole('combobox', { name: 'Viewing as', exact: true })
             .inputValue();
@@ -969,13 +983,7 @@ test('VAL-A11Y-005 VAL-A11Y-011: DS-035..041 DT-019/020 every connection node, t
   for (const node of CONNECTION_NODES) {
     const button = map.getByRole('button').filter({ hasText: node.summary });
     for (const method of methods) {
-      // Roster chips intentionally occupy the bottom of the notification
-      // node. Activate its broad header rather than clicking a teammate.
-      if (node.hostsTeam && method === 'click') {
-        await button.click({ position: { x: 24, y: 16 } });
-      } else if (node.hostsTeam && method === 'touch') {
-        await button.tap({ position: { x: 24, y: 16 } });
-      } else await activate(button, method);
+      await activate(button, method);
       await expect(button).toHaveAttribute('aria-pressed', 'true');
       const detail = page
         .getByRole('heading', { name: node.label, level: 3, exact: true })
@@ -993,40 +1001,44 @@ test('VAL-A11Y-005 VAL-A11Y-011: DS-035..041 DT-019/020 every connection node, t
     }
   }
   expect([...coveredEdges].sort()).toEqual(CONNECTION_EDGES.map((edge) => edge.id).sort());
+
+  // The roster, composer, and add-form now live on Settings; the map keeps
+  // its nodes and wires only.
+  await navigate(page, 'Settings');
   const roster = (await provider.getTeamRoster(access, {})).data;
-  const digest = (await provider.getRegistrationSlaAlerts(access, {}, 8)).data;
   const composer = page.getByRole('group', { name: 'The notification composer', exact: true });
+  const to = composer.getByLabel('To', { exact: true });
+  const offered = new Set(
+    await to
+      .locator('option:not([disabled])')
+      .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value)),
+  );
   for (const user of roster) {
-    const alerts = digest.alertCountByOwner[user.id] ?? 0;
-    const button = map.getByRole('button', {
-      name: `${user.name} · ${user.email} · ${alerts} SLA alerts`,
-      exact: true,
-    });
-    await expect(button).toContainText(user.name);
-    await expect(button).toContainText(user.email);
-    await activate(button, 'Enter');
-    await expect(button).toHaveAttribute('aria-pressed', 'true');
-    if (user.status === 'active') {
-      await expect(composer.getByLabel('To', { exact: true })).toHaveValue(user.id);
-      for (const template of NOTIFICATION_TEMPLATES) {
-        await composer.getByLabel('Template', { exact: true }).selectOption(template.id);
-        await expect(composer.getByText(template.description, { exact: true })).toBeVisible();
-      }
-      await expect(composer.getByRole('checkbox')).toHaveCount(user.channels.length);
-      for (const channel of user.channels) {
-        const checkbox = composer.getByRole('checkbox', {
-          name: `Use ${NOTIFICATION_CHANNEL_META[channel].label}`,
-          exact: true,
-        });
-        await expect(checkbox.locator('..')).toContainText(
-          NOTIFICATION_CHANNEL_META[channel].description,
-        );
-        await checkbox.uncheck();
-        await checkbox.check();
-      }
-    } else {
-      await expect(composer.getByRole('checkbox')).toHaveCount(0);
-      await expect(composer).toContainText('Pick a teammate to see the channels they receive on.');
+    // Every roster identity is rendered by the membership and routing tables.
+    await expect(page.getByText(user.email, { exact: true }).first()).toBeVisible();
+    if (user.status !== 'active') {
+      // A paused or not-yet-routing teammate is never offered as a recipient.
+      expect(offered.has(user.id)).toBe(false);
+      continue;
+    }
+    expect(offered.has(user.id)).toBe(true);
+    await to.selectOption(user.id);
+    await expect(to).toHaveValue(user.id);
+    for (const template of NOTIFICATION_TEMPLATES) {
+      await composer.getByLabel('Template', { exact: true }).selectOption(template.id);
+      await expect(composer.getByText(template.description, { exact: true })).toBeVisible();
+    }
+    await expect(composer.getByRole('checkbox')).toHaveCount(user.channels.length);
+    for (const channel of user.channels) {
+      const checkbox = composer.getByRole('checkbox', {
+        name: `Use ${NOTIFICATION_CHANNEL_META[channel].label}`,
+        exact: true,
+      });
+      await expect(checkbox.locator('..')).toContainText(
+        NOTIFICATION_CHANNEL_META[channel].description,
+      );
+      await checkbox.uncheck();
+      await checkbox.check();
     }
   }
   const add = page.getByRole('button', { name: /^(Add user|Close)$/, exact: true });
@@ -1054,7 +1066,7 @@ test('VAL-A11Y-005 VAL-A11Y-011: DS-035..041 DT-019/020 every connection node, t
       await expect(button).toHaveAttribute('aria-pressed', 'true');
     }
   }
-  await axe(page, testInfo, 'connections-expanded-add-form');
+  await axe(page, testInfo, 'settings-expanded-add-form');
   await form.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(formContainer).toBeHidden();
   await expect(add).toBeFocused();
@@ -1085,6 +1097,6 @@ test('VAL-A11Y-005 VAL-A11Y-011: DS-035..041 DT-019/020 every connection node, t
     templates: NOTIFICATION_TEMPLATES.map((template) => template.id),
     channels: NOTIFICATION_CHANNELS,
   });
-  await axe(page, testInfo, 'connections-final-roster-and-composer');
+  await axe(page, testInfo, 'settings-final-roster-and-composer');
   check();
 });

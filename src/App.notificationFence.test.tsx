@@ -2,19 +2,21 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import type { ComponentProps } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import App from './App';
-import type DataConnectionsView from './views/DataConnectionsView';
+import type SettingsView from './views/SettingsView';
 import { MockDataProvider } from './data/mock/MockDataProvider';
 import { makeProviderBook, makeTeamUser } from './test/fixtures';
 import { addGlobalSink, logger, type LogRecord } from './lib/logging';
 import { telemetry } from './lib/telemetry/telemetry';
 
-let current: ComponentProps<typeof DataConnectionsView>;
+let current: ComponentProps<typeof SettingsView>;
 vi.mock('./views/system', () => ({
-  ['DataConnectionsView']: (props: ComponentProps<typeof DataConnectionsView>) => {
+  // Settings owns the roster and notification surfaces this fence exercises.
+  ['SettingsView']: (props: ComponentProps<typeof SettingsView>) => {
     current = props;
     return <p>Notification fence test route</p>;
   },
   ['ProductionRequirementsView']: () => null,
+  ['DataConnectionsView']: () => null,
 }));
 afterEach(() => vi.restoreAllMocks());
 
@@ -28,7 +30,7 @@ it('fences saves before IDs, records, logs and telemetry using current session s
   render(<App providerFactory={(id) => (id === 'local' ? local : remote)} probeProvider={probe} />);
   fireEvent.click(
     within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('button', {
-      name: 'Data Connections',
+      name: 'Settings',
     }),
   );
   await screen.findByText('Notification fence test route');

@@ -245,9 +245,12 @@ test('VAL-A11Y-004 VAL-ACT-017: required registration decisions are session proj
   await expect(pending.opener).toBeFocused();
   await expect(queue).toHaveText(sourceBefore, { useInnerText: true });
   await expect(records(page).getByRole('listitem')).toHaveCount(2);
-  await expect(page.getByText('Pending past SLA', { exact: true }).locator('..')).toContainText(
-    '14',
-  );
+  await expect(
+    page
+      .getByRole('group', { name: 'registration ops summary' })
+      .getByText('Pending past SLA', { exact: true })
+      .locator('..'),
+  ).toContainText('14');
   await audit();
 });
 
@@ -381,7 +384,7 @@ test('VAL-A11Y-004 VAL-ACT-018 VAL-ACT-019 VAL-CROSS-005: all workflow, policy, 
   await expect(workflows).toContainText(
     'Current-session forecast edits, not source history or manager/partner trends',
   );
-  await navigate(page, 'Data Connections');
+  await navigate(page, 'Settings');
   await expect(page.getByText('Sent this session · 1', { exact: true })).toBeVisible();
   await expect(page.getByText(PRIVACY_SENTINEL, { exact: true }).first()).toBeVisible();
   await audit();
@@ -408,7 +411,7 @@ test('VAL-A11Y-004 VAL-ACT-018 VAL-ACT-019 VAL-CROSS-005: all workflow, policy, 
   await expect(pipeline).toHaveText(originalPipeline);
   await expect(weighted).toHaveText(originalWeighted);
   await expect(page.getByText('$987,654,321', { exact: true })).toHaveCount(0);
-  await navigate(page, 'Data Connections');
+  await navigate(page, 'Settings');
   await expect(page.getByText('Sent this session · 0', { exact: true })).toBeVisible();
   await expect(page.getByText(PRIVACY_SENTINEL)).toHaveCount(0);
   await audit();

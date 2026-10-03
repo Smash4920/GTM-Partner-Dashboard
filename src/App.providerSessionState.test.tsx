@@ -11,13 +11,13 @@ import { DEFAULT_ACTION_POLICY } from './lib/actionPolicy';
 import { providerSessionBook } from './test/providerSessionFixtures';
 import type ForecastingView from './views/ForecastingView';
 import type ActivityTrackingView from './views/ActivityTrackingView';
-import type DataConnectionsView from './views/DataConnectionsView';
+import type SettingsView from './views/SettingsView';
 import type ActionCenterView from './views/ActionCenterView';
 import type WorkflowPanel from './components/WorkflowPanel';
 
 type ForecastProps = ComponentProps<typeof ForecastingView>;
 type ActivityProps = ComponentProps<typeof ActivityTrackingView>;
-type ConnectionsProps = ComponentProps<typeof DataConnectionsView>;
+type SettingsProps = ComponentProps<typeof SettingsView>;
 type ActionProps = ComponentProps<typeof ActionCenterView>;
 type WorkflowProps = ComponentProps<typeof WorkflowPanel>;
 
@@ -28,7 +28,7 @@ const observed = vi.hoisted(() => ({
   renderViews: false,
   forecast: [] as ForecastProps[],
   activity: [] as ActivityProps[],
-  connections: [] as ConnectionsProps[],
+  settings: [] as SettingsProps[],
   actions: [] as ActionProps[],
   workflow: [] as WorkflowProps[],
 }));
@@ -58,13 +58,11 @@ vi.mock('./views/system', async (importOriginal) => {
   const module = await importOriginal<typeof import('./views/system')>();
   return {
     ...module,
-    ['DataConnectionsView']: (props: ConnectionsProps) => {
-      observed.connections.push(props);
-      return observed.renderViews ? (
-        <module.DataConnectionsView {...props} />
-      ) : (
-        <p>Roster shell inputs</p>
-      );
+    // Settings carries the session roster surfaces Data Connections used to
+    // own; the connection catalog itself is static and observes nothing.
+    ['SettingsView']: (props: SettingsProps) => {
+      observed.settings.push(props);
+      return observed.renderViews ? <module.SettingsView {...props} /> : <p>Roster shell inputs</p>;
     },
   };
 });
@@ -162,7 +160,7 @@ function clearTrace() {
   for (const frames of [
     observed.forecast,
     observed.activity,
-    observed.connections,
+    observed.settings,
     observed.actions,
     observed.workflow,
   ])
@@ -209,9 +207,9 @@ async function seedSession(harness: Harness, id: 'local' | 'remote') {
       [book.activities[0].id]: { partnerId: prospectId, type: 'technical-enablement' },
     });
   });
-  await visit('Data Connections');
+  await visit('Settings');
   act(() => {
-    const props = latest(observed.connections);
+    const props = latest(observed.settings);
     props.onSetTeamUserStatus(book.teamUsers[1].id, 'suspended');
     props.onAddTeamUser({
       name: `${id} removed`,
@@ -220,20 +218,20 @@ async function seedSession(harness: Harness, id: 'local' | 'remote') {
       channels: ['email'],
     });
   });
-  act(() => latest(observed.connections).onSetTeamUserStatus('session-user-1', 'active'));
-  const removed = latest(observed.connections).addedTeamUsers[0];
-  act(() => latest(observed.connections).onRemoveTeamUser(removed.id));
+  act(() => latest(observed.settings).onSetTeamUserStatus('session-user-1', 'active'));
+  const removed = latest(observed.settings).addedTeamUsers[0];
+  act(() => latest(observed.settings).onRemoveTeamUser(removed.id));
   act(() =>
-    latest(observed.connections).onAddTeamUser({
+    latest(observed.settings).onAddTeamUser({
       name: `${id} remaining`,
       email: 'remaining@example.test',
       role: 'analyst',
       channels: ['email'],
     }),
   );
-  act(() => latest(observed.connections).onSetTeamUserStatus('session-user-2', 'active'));
+  act(() => latest(observed.settings).onSetTeamUserStatus('session-user-2', 'active'));
   act(() =>
-    latest(observed.connections).onSendNotification(
+    latest(observed.settings).onSendNotification(
       {
         userId: actor.id,
         kind: 'manual',
@@ -292,14 +290,14 @@ function expectSeeded(harness: Harness, id: 'local' | 'remote') {
   expect(activity.classifications).toEqual({
     [book.activities[0].id]: { partnerId: 'prospect-1', type: 'technical-enablement' },
   });
-  const connections = latest(observed.connections);
-  expect(connections.teamUserOverrides).toMatchObject({
+  const settings = latest(observed.settings);
+  expect(settings.teamUserOverrides).toMatchObject({
     [book.teamUsers[1].id]: { status: 'suspended' },
   });
-  expect(connections.addedTeamUsers).toMatchObject([
+  expect(settings.addedTeamUsers).toMatchObject([
     { id: 'session-user-2', name: `${id} remaining`, status: 'active' },
   ]);
-  expect(connections.notifications).toMatchObject([
+  expect(settings.notifications).toMatchObject([
     { id: 'notification-1', userId: book.teamUsers[0].id, subject: `${id} subject` },
   ]);
   expect(latest(observed.actions).policy.staleCalendarDays).toBe(1);
@@ -330,7 +328,7 @@ function expectCleanFrames(provider: DataProvider) {
     expect(props.prospects).toEqual([]);
     expect(props.classifications).toEqual({});
   }
-  for (const props of observed.connections.filter((frame) => frame.provider === provider)) {
+  for (const props of observed.settings.filter((frame) => frame.provider === provider)) {
     expect(props.teamUserOverrides).toEqual({});
     expect(props.addedTeamUsers).toEqual([]);
     expect(props.notifications).toEqual([]);
@@ -355,14 +353,14 @@ async function verifyReset(harness: Harness, id: 'local' | 'remote') {
   const provider = harness.providers[id];
   expect(screen.queryByRole('region', { name: 'Action context' })).not.toBeInTheDocument();
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  for (const route of ['Forecasting', 'Activity Tracking', 'Data Connections', 'Action Center']) {
+  for (const route of ['Forecasting', 'Activity Tracking', 'Settings', 'Action Center']) {
     await visit(route);
   }
   // Each inventory surface actually rendered. No empty-loop assertions.
   for (const frames of [
     observed.forecast,
     observed.activity,
-    observed.connections,
+    observed.settings,
     observed.actions,
     observed.workflow,
   ]) {
@@ -411,7 +409,7 @@ describe('VAL-RES-003 committed-provider session inventory', () => {
       ] as const) {
         await seedSession(harness, source);
         expectSeeded(harness, source);
-        const oldSend = latest(observed.connections).onSendNotification;
+        const oldSend = latest(observed.settings).onSendNotification;
         const gate = await request(harness, destination);
         expect(gate.candidate).toBe(harness.providers[destination]);
         expectSeeded(harness, source);
@@ -634,22 +632,22 @@ describe('VAL-RES-003 real-view selection defaults', () => {
   it('clears removed-recipient fences and restarts session IDs without accepting stale saves on return', async () => {
     const harness = setup();
     await settle();
-    let staleSend: ConnectionsProps['onSendNotification'] | undefined;
-    let staleRecipient: ConnectionsProps['addedTeamUsers'][number] | undefined;
+    let staleSend: SettingsProps['onSendNotification'] | undefined;
+    let staleRecipient: SettingsProps['addedTeamUsers'][number] | undefined;
     for (const id of ['local', 'remote', 'local'] as const) {
       if (staleSend) await commit(harness, id);
-      await visit('Data Connections');
+      await visit('Settings');
       act(() =>
-        latest(observed.connections).onAddTeamUser({
+        latest(observed.settings).onAddTeamUser({
           name: `${id} reused ID`,
           email: 'reused@example.test',
           role: 'analyst',
           channels: ['email'],
         }),
       );
-      expect(latest(observed.connections).addedTeamUsers[0].id).toBe('session-user-1');
-      act(() => latest(observed.connections).onSetTeamUserStatus('session-user-1', 'active'));
-      const recipient = latest(observed.connections).addedTeamUsers[0];
+      expect(latest(observed.settings).addedTeamUsers[0].id).toBe('session-user-1');
+      act(() => latest(observed.settings).onSetTeamUserStatus('session-user-1', 'active'));
+      const recipient = latest(observed.settings).addedTeamUsers[0];
       const draft = {
         userId: recipient.id,
         kind: 'manual' as const,
@@ -661,27 +659,27 @@ describe('VAL-RES-003 real-view selection defaults', () => {
         act(() =>
           staleSend!(draft, { provider: harness.providers.local, recipient: staleRecipient! }),
         );
-        expect(latest(observed.connections).notifications).toEqual([]);
+        expect(latest(observed.settings).notifications).toEqual([]);
       }
       act(() =>
-        latest(observed.connections).onSendNotification(draft, {
+        latest(observed.settings).onSendNotification(draft, {
           provider: harness.providers[id],
           recipient,
         }),
       );
-      expect(latest(observed.connections).notifications).toMatchObject([
+      expect(latest(observed.settings).notifications).toMatchObject([
         { id: 'notification-1', userId: 'session-user-1' },
       ]);
-      staleSend = latest(observed.connections).onSendNotification;
+      staleSend = latest(observed.settings).onSendNotification;
       staleRecipient = recipient;
-      act(() => latest(observed.connections).onRemoveTeamUser(recipient.id));
+      act(() => latest(observed.settings).onRemoveTeamUser(recipient.id));
       act(() =>
-        latest(observed.connections).onSendNotification(draft, {
+        latest(observed.settings).onSendNotification(draft, {
           provider: harness.providers[id],
           recipient,
         }),
       );
-      expect(latest(observed.connections).notifications).toHaveLength(1);
+      expect(latest(observed.settings).notifications).toHaveLength(1);
     }
   });
 });

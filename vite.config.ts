@@ -126,13 +126,13 @@ export default defineConfig({
           // Match only these modules, not their eager dependency closure;
           // framework/vendor and shared app code retain their honest budgets.
           if (
-            /\/src\/views\/(system|DataConnectionsView|ProductionRequirementsView|ActionCenterView)\.tsx?$/.test(
+            /\/src\/views\/(system|DataConnectionsView|ProductionRequirementsView|SettingsView|ActionCenterView)\.tsx?$/.test(
               id,
             ) ||
-            /\/src\/components\/(FormField|WorkflowPanel|NotificationComposer|ActionNotificationPanel|SlaAlertPanel|TeamAccessPanel|WireDiagram|ActionPolicyForm|ActionItemRow|ActionPagination)\.tsx$/.test(
+            /\/src\/components\/(FormField|WorkflowPanel|NotificationComposer|ActionNotificationPanel|SlaAlertPanel|TeamAccessPanel|MembershipRoster|WireDiagram|ActionPolicyForm|ActionItemRow|ActionPagination)\.tsx$/.test(
               id,
             ) ||
-            /\/src\/data\/(connections|useDataConnectionsQueries|useActionCenterQueries|actionCenter|mock\/actionCenterQueries)\.ts$/.test(
+            /\/src\/data\/(connections|useSettingsQueries|useActionCenterQueries|actionCenter|mock\/actionCenterQueries)\.ts$/.test(
               id,
             ) ||
             /\/src\/lib\/(workflows|notifications|partnerHealthRules|actionRules|actionRouting|actionEvidence)\.ts$/.test(

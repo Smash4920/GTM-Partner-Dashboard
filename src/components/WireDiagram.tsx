@@ -5,7 +5,6 @@ import {
   CONNECTION_TIER_META,
   type ConnectionNode,
 } from '../data/connections';
-import type { TeamUser } from '../data/types';
 
 /**
  * The wire diagram: every system that has to be connected, drawn as boxes and
@@ -14,9 +13,8 @@ import type { TeamUser } from '../data/types';
  * The boxes and the wires come from the same catalog (data/connections.ts) so
  * they cannot disagree about where a node sits — each node carries its own
  * rectangle, and each wire's path is derived from the two rectangles it joins.
- * Wires are SVG, boxes are HTML: the nodes need real text, focus, and clicks
- * (a user can be picked inside the notification node), and SVG text would
- * fight all three.
+ * Wires are SVG, boxes are HTML: the nodes need real text, focus, and clicks,
+ * and SVG text would fight all three.
  *
  * Color carries state only, per the brand rules: signal for a required
  * connection, metric for one already flowing, graphite for planned.
@@ -25,12 +23,6 @@ import type { TeamUser } from '../data/types';
 interface WireDiagramProps {
   selectedNodeId: string | null;
   onSelectNode: (nodeId: string) => void;
-  /** Roster entries this session would route simulated notifications to. */
-  users: TeamUser[];
-  selectedUserId: string | null;
-  onSelectUser: (userId: string) => void;
-  /** Alerts waiting on each user, shown as a count on their chip. */
-  alertCountByUserId: Record<string, number>;
 }
 
 interface Rect {
@@ -76,14 +68,7 @@ function nodeById(id: string): ConnectionNode | undefined {
   return CONNECTION_NODES.find((node) => node.id === id);
 }
 
-export default function WireDiagram({
-  selectedNodeId,
-  onSelectNode,
-  users,
-  selectedUserId,
-  onSelectUser,
-  alertCountByUserId,
-}: WireDiagramProps) {
+export default function WireDiagram({ selectedNodeId, onSelectNode }: WireDiagramProps) {
   const canvasWidth = Math.max(...CONNECTION_NODES.map((node) => node.x + node.w)) + CANVAS_PADDING;
   const canvasHeight =
     Math.max(...CONNECTION_NODES.map((node) => node.y + node.h)) + CANVAS_PADDING;
@@ -189,10 +174,6 @@ export default function WireDiagram({
               node={node}
               selected={selectedNodeId === node.id}
               onSelect={() => onSelectNode(node.id)}
-              users={node.hostsTeam ? users : undefined}
-              selectedUserId={selectedUserId}
-              onSelectUser={onSelectUser}
-              alertCountByUserId={alertCountByUserId}
             />
           ))}
         </div>
@@ -224,22 +205,9 @@ interface NodeCardProps {
   node: ConnectionNode;
   selected: boolean;
   onSelect: () => void;
-  /** Present only on the node that hosts the roster. */
-  users?: TeamUser[];
-  selectedUserId: string | null;
-  onSelectUser: (userId: string) => void;
-  alertCountByUserId: Record<string, number>;
 }
 
-function NodeCard({
-  node,
-  selected,
-  onSelect,
-  users,
-  selectedUserId,
-  onSelectUser,
-  alertCountByUserId,
-}: NodeCardProps) {
+function NodeCard({ node, selected, onSelect }: NodeCardProps) {
   const meta = CONNECTION_STATUS_META[node.status];
   return (
     <div className="absolute" style={{ left: node.x, top: node.y, width: node.w, height: node.h }}>
@@ -247,7 +215,7 @@ function NodeCard({
         type="button"
         onClick={onSelect}
         aria-pressed={selected}
-        className={`${users ? 'h-20' : 'h-full'} w-full rounded border px-3 py-2 text-left transition-colors duration-150 ${
+        className={`h-full w-full rounded border px-3 py-2 text-left transition-colors duration-150 ${
           selected ? 'border-bone bg-carbon' : 'border-ash/50 bg-carbon/40 hover:border-ash'
         }`}
       >
@@ -264,46 +232,6 @@ function NodeCard({
           {node.summary}
         </span>
       </button>
-
-      {users && (
-        <div
-          className="absolute inset-x-3 bottom-3 top-24 overflow-auto"
-          role="region"
-          tabIndex={0}
-          aria-label="Notification roster, scrollable"
-        >
-          <p className="font-mono text-[9px] uppercase tracking-[0.06em] text-granite">
-            Partner team · pick one to notify
-          </p>
-          <div className="mt-1.5 flex flex-wrap gap-1">
-            {users.length === 0 && <span className="text-[10px] text-granite">No roster yet.</span>}
-            {users.map((user) => {
-              const alerts = alertCountByUserId[user.id] ?? 0;
-              const selectedUser = user.id === selectedUserId;
-              return (
-                <button
-                  key={user.id}
-                  type="button"
-                  onClick={() => onSelectUser(user.id)}
-                  aria-label={`${user.name} · ${user.email} · ${alerts} SLA alerts`}
-                  aria-pressed={selectedUser}
-                  className={`flex min-h-6 items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px] transition-colors ${
-                    selectedUser
-                      ? 'border-bone bg-ash/40 text-bone'
-                      : 'border-ash/50 text-stone hover:border-ash'
-                  }`}
-                >
-                  <span>
-                    {user.name}
-                    <span className="block text-[9px]">{user.email}</span>
-                  </span>
-                  {alerts > 0 && <span className="text-signal">{alerts}</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

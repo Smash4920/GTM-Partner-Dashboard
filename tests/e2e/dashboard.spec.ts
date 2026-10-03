@@ -58,8 +58,8 @@ test('editing an open forecast updates live pipeline and weighted metrics', asyn
 });
 
 test('VAL-GOV-003: roster controls state their simulation boundary', async ({ page }) => {
-  await openView(page, 'Data Connections');
-  await expect(page.getByRole('heading', { name: 'Data Connections' })).toBeVisible();
+  await openView(page, 'Settings');
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 
   // The roster panel names itself a current-session simulation and never
   // claims to provision, authorize, revoke, or restore sign-in or data access.
@@ -84,8 +84,13 @@ test('VAL-GOV-003: roster controls state their simulation boundary', async ({ pa
   await form.getByLabel('Work email').fill(email);
   await form.getByRole('button', { name: 'Add to roster' }).click();
 
-  // An addition lands with routing off and cannot be messaged yet.
-  const userRow = page.getByRole('row').filter({ hasText: email });
+  // An addition lands with routing off and cannot be messaged yet. The
+  // membership roster also lists the new name, so scope the routing row.
+  const routing = page.getByRole('region', {
+    name: 'Partner team notification routing, scrollable',
+    exact: true,
+  });
+  const userRow = routing.getByRole('row').filter({ hasText: email });
   await expect(userRow).toContainText('Routing not set up');
   await expect(recipient).not.toContainText(name);
 

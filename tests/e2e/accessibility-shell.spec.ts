@@ -333,7 +333,7 @@ test('VAL-A11Y-004: forecast, roster, policy and notification errors are linked,
   await revenue.fill('500000');
   await expect(revenue).not.toHaveAttribute('aria-describedby');
   await row.getByRole('button', { name: 'Cancel revenue edit' }).click();
-  await navigate(page, 'Data Connections');
+  await navigate(page, 'Settings');
   await page.getByRole('button', { name: 'Add user', exact: true }).click();
   const roster = page.getByRole('form', { name: 'Add internal user' });
   await roster.getByRole('button', { name: 'Add to roster' }).click();

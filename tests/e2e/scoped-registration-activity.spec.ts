@@ -29,9 +29,13 @@ function cardWith(page: Page, title: string) {
     .locator('xpath=ancestor::*[contains(@class,"rounded-card")][1]');
 }
 
-/** The KPI tile whose label matches. */
+/** The registration-ops KPI tile whose label matches (the leakage rows reuse
+ * some of the same labels). */
 function tileWith(page: Page, label: string) {
-  return page.getByText(label, { exact: true }).locator('..');
+  return page
+    .getByRole('group', { name: 'registration ops summary' })
+    .getByText(label, { exact: true })
+    .locator('..');
 }
 
 test('VAL-DATA-015: Deal Reg Ops renders the exact scoped registration answers', async ({

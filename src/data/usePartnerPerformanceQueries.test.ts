@@ -165,7 +165,12 @@ function inputFor(
   };
 }
 
-/** Waits until every Partner Performance query has settled with an answer. */
+/** Waits until every Partner Performance query that can fire has settled.
+ *
+ * The review queue, exclusivity, and duplicates collections are drill-down
+ * queries — disabled while the scope is All partners — so they hold no
+ * answer here and are settled by the drill-down-gating tests instead.
+ */
 async function settle(result: { current: ReturnType<typeof usePartnerPerformanceQueries> }) {
   await waitFor(() => {
     expect(result.current.summary.data).not.toBeNull();
@@ -179,9 +184,6 @@ async function settle(result: { current: ReturnType<typeof usePartnerPerformance
     expect(result.current.managers.data).not.toBeNull();
     expect(result.current.roster.data).not.toBeNull();
     expect(result.current.opportunities.meta).not.toBeNull();
-    expect(result.current.pending.meta).not.toBeNull();
-    expect(result.current.unconverted.meta).not.toBeNull();
-    expect(result.current.duplicates.meta).not.toBeNull();
   });
 }
 
@@ -194,6 +196,9 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
     );
     await settle(result);
 
+    // The certification query and the three registration-row queries are
+    // deliberately absent here: both are drill-down-gated (see the
+    // certification-gating and drill-down-gating tests below).
     expect([...new Set(calls)].sort()).toEqual([
       'getManagerDirectory',
       'getPartnerRoster',
@@ -204,21 +209,12 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
       'getStageBreakdown',
       'getWeeklyActivitySeries',
       'getWeeklyGoalProgress',
-      'listDuplicateRegistrationGroups',
       'listPartnerLeaderboard',
-      'listPendingRegistrations',
       'listScopedOpportunities',
-      'listUnconvertedRegistrations',
     ]);
     // Every row collection is one bounded page request, the full leaderboard
     // included.
-    for (const pageQuery of [
-      'listScopedOpportunities',
-      'listPendingRegistrations',
-      'listUnconvertedRegistrations',
-      'listDuplicateRegistrationGroups',
-      'listPartnerLeaderboard',
-    ]) {
+    for (const pageQuery of ['listScopedOpportunities', 'listPartnerLeaderboard']) {
       expect(calls.filter((method) => method === pageQuery)).toHaveLength(1);
     }
     expect(result.current.opportunities.rows.length).toBeLessThanOrEqual(25);
@@ -254,20 +250,14 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
     expect(result.current.opportunities.totalCount).toBe(4);
     expect(result.current.opportunities.hasMore).toBe(false);
 
-    // The queue is phase-filtered: the June conflict registration is out.
-    expect(result.current.pending.rows.map((row) => row.id)).toEqual(['reg-pending']);
-    expect(result.current.pending.totalCount).toBe(1);
-
-    // Ops deliberately span history: the June approval is leaking, lapsed,
-    // and in conflict.
+    // Ops deliberately spans history: the June approval is leaking, lapsed,
+    // and in conflict. The three row tables that render these figures are
+    // drill-down queries (see the drill-down-gating tests), but the
+    // aggregate itself is always in scope.
     const ops = result.current.ops.data!;
     expect(ops.approvedNotConverted).toBe(1);
     expect(ops.exclusivityLapsed).toBe(1);
     expect(ops.duplicateGroups).toBe(1);
-    expect(result.current.unconverted.rows.map((row) => row.id)).toEqual(['reg-lapsed']);
-    expect(result.current.duplicates.rows.map((group) => group.accountName)).toEqual([
-      'Cobalt Health',
-    ]);
   });
 
   it('scopes every aggregate to the selected manager', async () => {
@@ -802,6 +792,74 @@ describe('usePartnerPerformanceQueries (VAL-DATA-014)', () => {
 
       expect(calls.slice(beforeRetry)).toEqual(['getPartnerCertification']);
       expect(result.current.certification.data?.partner.id).toBe('partner-1');
+    });
+  });
+
+  describe('drill-down gating', () => {
+    // The review queue, exclusivity watch, and duplicates tables live on
+    // Deal Reg Ops for the whole org; Partner Performance renders them only
+    // for a manager or partner drill-down, so the All scope fires none of
+    // their requests — nothing invisible can fail — and each fires one page
+    // once the drill-down lands.
+    const GATED_METHODS = [
+      'listPendingRegistrations',
+      'listUnconvertedRegistrations',
+      'listDuplicateRegistrationGroups',
+    ] as const;
+
+    it('fires none of the three registration-row queries in the All scope, one page each once drilled', async () => {
+      const { provider, calls } = spyProvider(new MockDataProvider(makeBook()));
+      const { result, rerender } = renderHook(
+        (input: PartnerPerformanceQueryInput) => usePartnerPerformanceQueries(input),
+        { initialProps: inputFor(provider) },
+      );
+      await settle(result);
+      for (const method of GATED_METHODS) {
+        expect(calls.filter((name) => name === method)).toHaveLength(0);
+      }
+      expect(result.current.pending.meta).toBeNull();
+      expect(result.current.unconverted.meta).toBeNull();
+      expect(result.current.duplicates.meta).toBeNull();
+
+      // A manager selection is a drill-down: all three start, one page each,
+      // and answer with the same deterministic rows the whole-book view had.
+      rerender(inputFor(provider, { managerId: 'pm-1' }));
+      await waitFor(() => {
+        expect(result.current.pending.meta).not.toBeNull();
+        expect(result.current.unconverted.meta).not.toBeNull();
+        expect(result.current.duplicates.meta).not.toBeNull();
+      });
+      for (const method of GATED_METHODS) {
+        expect(calls.filter((name) => name === method)).toHaveLength(1);
+      }
+      // The queue is phase-filtered: the June conflict registration is out.
+      expect(result.current.pending.rows.map((row) => row.id)).toEqual(['reg-pending']);
+      expect(result.current.pending.totalCount).toBe(1);
+      expect(result.current.unconverted.rows.map((row) => row.id)).toEqual(['reg-lapsed']);
+      expect(result.current.duplicates.rows.map((group) => group.accountName)).toEqual([
+        'Cobalt Health',
+      ]);
+
+      // Back to All: the three collections go quiet again — no new request,
+      // no retained answer under the whole-org label.
+      rerender(inputFor(provider, { managerId: 'all' }));
+      await waitFor(() => expect(result.current.summary.data).not.toBeNull());
+      for (const method of GATED_METHODS) {
+        expect(calls.filter((name) => name === method)).toHaveLength(1);
+      }
+      expect(result.current.pending.meta).toBeNull();
+      expect(result.current.pending.rows).toEqual([]);
+
+      // A partner-only selection is a drill-down too, under its own key.
+      rerender(inputFor(provider, { partnerId: 'partner-1' }));
+      await waitFor(() => {
+        expect(result.current.pending.meta).not.toBeNull();
+        expect(result.current.unconverted.meta).not.toBeNull();
+        expect(result.current.duplicates.meta).not.toBeNull();
+      });
+      for (const method of GATED_METHODS) {
+        expect(calls.filter((name) => name === method)).toHaveLength(2);
+      }
     });
   });
 });

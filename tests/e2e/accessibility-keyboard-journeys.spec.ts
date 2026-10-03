@@ -76,7 +76,7 @@ test.setTimeout(180_000);
 
 for (const viewport of JOURNEY_VIEWPORTS) {
   const size = `${viewport.width}x${viewport.height}`;
-  test(`VAL-A11Y-013: conflict, forecast-review and Data Connections notification keyboard-only ${size}`, async ({
+  test(`VAL-A11Y-013: conflict, forecast-review and Settings notification keyboard-only ${size}`, async ({
     page,
   }, info) => {
     await journey(page, info, viewport, async (keyboard) => {
@@ -102,7 +102,7 @@ for (const viewport of JOURNEY_VIEWPORTS) {
         'Forecast-change review',
         'accepted',
       );
-      await keyboard.navigate('Data Connections');
+      await keyboard.navigate('Settings');
       const panel = page.getByRole('group', { name: 'The notification composer', exact: true });
       const recipient = panel.getByLabel('To', { exact: true });
       const recipientId = (await recipient
@@ -118,14 +118,14 @@ for (const viewport of JOURNEY_VIEWPORTS) {
       await expect(subject).toBeFocused();
       await linkedError(subject, 'A subject is required.');
       await linkedError(message, 'A message is required.');
-      await keyboard.checkpoint('Data Connections inline invalid notification', panel);
+      await keyboard.checkpoint('Settings inline invalid notification', panel);
       await keyboard.type(subject, 'Session-only keyboard notification');
       await keyboard.type(message, 'Simulated local-only keyboard message.');
       await keyboard.activate(send);
       await expect(panel.getByText(/Simulated \/ local only · \d/)).toBeVisible();
       await expect(page.getByRole('dialog')).toHaveCount(0);
       await expect(panel.getByRole('button', { name: 'Close notification' })).toHaveCount(0);
-      await keyboard.checkpoint('Data Connections inline local feedback, no close control', panel);
+      await keyboard.checkpoint('Settings inline local feedback, no close control', panel);
     });
   });
 

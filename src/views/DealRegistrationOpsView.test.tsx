@@ -65,9 +65,13 @@ function renderView(provider: DataProvider = new MockDataProvider(boundaryBook()
   render(<DealRegistrationOpsView provider={provider} prospects={[]} />);
 }
 
-/** The KPI tile whose label matches, so neighboring tiles cannot leak in. */
+/** The KPI tile whose label matches, so neighboring tiles cannot leak in.
+ *
+ * The selector keeps the KPI tile's label `<p>` distinct from same-named
+ * chart labels (the leakage card renders a 'Pending past SLA' bar too).
+ */
 function tileWith(label: string): HTMLElement {
-  const tile = screen.getByText(label).closest('div');
+  const tile = screen.getByText(label, { selector: 'p' }).closest('div');
   if (!tile) throw new Error(`tile not found: ${label}`);
   return tile;
 }
@@ -83,7 +87,7 @@ describe('DealRegistrationOpsView', () => {
     renderView();
 
     // Only the boundary registration counts: the boundary is inclusive.
-    await screen.findByText('Pending past SLA');
+    await screen.findByText('Pending past SLA', { selector: 'p' });
     const tile = tileWith('Pending past SLA');
     expect(tile).toHaveTextContent('1');
     // The copy describes the same inclusive boundary the counter uses.
@@ -96,7 +100,7 @@ describe('DealRegistrationOpsView', () => {
   it('states the response SLA in business days and exclusivity in calendar days', async () => {
     renderView();
 
-    await screen.findByText('Pending past SLA');
+    await screen.findByText('Pending past SLA', { selector: 'p' });
     expect(
       screen.getAllByText(`avg business days · ${REGISTRATION_SLA_BUSINESS_DAYS}-business-day SLA`)
         .length,
@@ -107,7 +111,7 @@ describe('DealRegistrationOpsView', () => {
   it('answers every card from its own scoped query, with metadata on screen', async () => {
     renderView();
 
-    await screen.findByText('Pending past SLA');
+    await screen.findByText('Pending past SLA', { selector: 'p' });
     // The queue card's subtitle reports the collection's total, not the page.
     expect(
       within(cardWith('Registrations awaiting review')).getByText(
@@ -128,6 +132,10 @@ describe('DealRegistrationOpsView', () => {
         /registered by more than one partner/,
       ),
     ).toBeInTheDocument();
+    // The leakage card reads the ops aggregate too.
+    expect(
+      within(cardWith('Registration leakage')).getByText('Pending past SLA'),
+    ).toBeInTheDocument();
   });
 
   it('keeps the tiles standing when the review queue fails, and retries only it', async () => {
@@ -144,7 +152,7 @@ describe('DealRegistrationOpsView', () => {
     const queue = cardWith('Registrations awaiting review');
     await within(queue).findByText(/Review queue unavailable/);
     expect(within(queue).getByText('Failed to load the review queue')).toBeInTheDocument();
-    expect(screen.getByText('Pending past SLA')).toBeInTheDocument();
+    expect(tileWith('Pending past SLA')).toBeInTheDocument();
     expect(
       within(cardWith('Exclusivity window')).getByText(/still without an opportunity/),
     ).toBeInTheDocument();
@@ -236,5 +244,68 @@ describe('DealRegistrationOpsView', () => {
       // One header row plus the twelve data rows.
       expect(cells).toHaveLength(13);
     });
+  });
+
+  it('orders the cards along the funnel, the All registrations card on top', async () => {
+    renderView();
+
+    const queue = cardWith('Registrations awaiting review');
+    await within(queue).findByText(/2 pending · day counter is green/);
+    // Everything submitted first, then the open queue, what is leaking, the
+    // approved-but-unconverted watch, and the conflicts — big to small.
+    expect(
+      screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent),
+    ).toEqual([
+      'Conversion time',
+      'All registrations',
+      'Registrations awaiting review',
+      'Registration leakage',
+      'Exclusivity window',
+      'Duplicate & conflicting registrations',
+    ]);
+  });
+
+  it('opens the All registrations card on every status, newest first', async () => {
+    renderView(
+      new MockDataProvider(
+        makeBook([
+          makeRegistration({
+            id: 'reg-newest',
+            partnerId: 'partner-1',
+            accountName: 'Acme Freight',
+            submittedAt: '2026-09-17T00:00:00.000Z',
+            status: 'pending',
+          }),
+          makeRegistration({
+            id: 'reg-mid',
+            partnerId: 'partner-2',
+            accountName: 'Borealis Labs',
+            submittedAt: '2026-09-10T00:00:00.000Z',
+            status: 'approved',
+            decisionAt: '2026-09-12T00:00:00.000Z',
+          }),
+          makeRegistration({
+            id: 'reg-oldest',
+            partnerId: 'partner-1',
+            accountName: 'Cobalt Health',
+            submittedAt: '2026-09-01T00:00:00.000Z',
+            status: 'approved',
+            decisionAt: '2026-09-03T00:00:00.000Z',
+          }),
+        ]),
+      ),
+    );
+
+    const all = cardWith('All registrations');
+    // The subtitle reports the collection's total across every status.
+    expect(await within(all).findByText(/3 registrations submitted/)).toBeInTheDocument();
+    const rows = within(all).getAllByRole('row');
+    // One header row plus the three data rows, newest submission first.
+    expect(rows).toHaveLength(4);
+    expect(within(rows[1]).getByText('Acme Freight')).toBeInTheDocument();
+    expect(within(rows[2]).getByText('Borealis Labs')).toBeInTheDocument();
+    expect(within(rows[3]).getByText('Cobalt Health')).toBeInTheDocument();
+    // The history variant shows decisions, not the queue's day counter.
+    expect(within(all).queryByText(/business days waiting/)).not.toBeInTheDocument();
   });
 });

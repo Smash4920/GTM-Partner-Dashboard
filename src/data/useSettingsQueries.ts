@@ -10,11 +10,9 @@ import { useManagerDirectory, usePartnerRoster } from './useScopedDirectories';
 import type { DealRegistration, Partner, PartnerManager, TeamUser } from './types';
 
 /**
- * The Data Connections route's session data, fetched the way it will be
- * fetched in production: the connection catalog itself is static and renders
- * without touching business facts, and each data-backed section — the
- * roster, the SLA alert queue, the composer's record pickers — is its own
- * scoped query. One rejected call fails exactly one section; its retry
+ * The Settings route's session data, fetched the way it will be fetched in
+ * production: each data-backed section — the membership roster, the SLA
+ * alert queue, the composer's record pickers — is its own scoped query. One rejected call fails exactly one section; its retry
  * repeats only that call.
  *
  * The roster is internal notification infrastructure, so the route reads it
@@ -23,7 +21,7 @@ import type { DealRegistration, Partner, PartnerManager, TeamUser } from './type
  * session's edits ride the forecast queries — there is no write path to an
  * identity provider (Production: Prod Only), so the overlay is the query's
  * input, and the alert rule resolves owners against exactly the roster the
- * Access section renders.
+ * membership and routing sections render.
  */
 
 /** The composer's record picker lists the most recent registrations. */
@@ -43,7 +41,7 @@ function rosterOverlayKey(scope: TeamRosterScope): string {
   return `overrides:${overrides}|added:${added}`;
 }
 
-export interface DataConnectionsQueryInput {
+export interface SettingsQueryInput {
   provider: DataProvider;
   /** The internal demo scope — this route's data is internal-only material. */
   access: DemoAccessScope;
@@ -52,7 +50,7 @@ export interface DataConnectionsQueryInput {
   prospects: Partner[];
 }
 
-export interface DataConnectionsQueries {
+export interface SettingsQueries {
   /** The notification roster with the session's overlays applied. */
   teamUsers: QueryState<TeamUser[]>;
   /** The partner managers the roster's alignment column renders names from. */
@@ -65,18 +63,18 @@ export interface DataConnectionsQueries {
   partners: QueryState<Partner[]>;
 }
 
-export function useDataConnectionsQueries({
+export function useSettingsQueries({
   provider,
   access,
   roster,
   prospects,
-}: DataConnectionsQueryInput): DataConnectionsQueries {
+}: SettingsQueryInput): SettingsQueries {
   const accessKey = demoScopeKey(access);
   const overlayKey = rosterOverlayKey(roster);
 
   const teamUsers = useScopedQuery({
     provider,
-    queryKey: `connections-roster|access:${accessKey}|${overlayKey}`,
+    queryKey: `settings-roster|access:${accessKey}|${overlayKey}`,
     run: (context) => provider.getTeamRoster(access, roster, context),
     errorFallback: 'Failed to load the notification roster',
   });
@@ -88,7 +86,7 @@ export function useDataConnectionsQueries({
   // enforces, so the window and the rule can never drift apart.
   const alerts = useScopedQuery({
     provider,
-    queryKey: `connections-alerts|access:${accessKey}|${overlayKey}|${MAX_SLA_ALERT_DIGEST}`,
+    queryKey: `settings-alerts|access:${accessKey}|${overlayKey}|${MAX_SLA_ALERT_DIGEST}`,
     run: (context) =>
       provider.getRegistrationSlaAlerts(access, roster, MAX_SLA_ALERT_DIGEST, context),
     errorFallback: 'Failed to load the registration SLA alerts',
@@ -97,7 +95,7 @@ export function useDataConnectionsQueries({
   const registrations = usePaginatedRows({
     provider,
     enabled: true,
-    resetKey: `connections-registrations|access:${accessKey}|${COMPOSER_PAGE_SIZE}`,
+    resetKey: `settings-registrations|access:${accessKey}|${COMPOSER_PAGE_SIZE}`,
     refreshKey: '',
     pageSize: COMPOSER_PAGE_SIZE,
     fetchPage: (page, context) => provider.listRecentRegistrations(access, {}, page, context),

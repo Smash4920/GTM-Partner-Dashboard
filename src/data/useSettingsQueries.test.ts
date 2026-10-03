@@ -6,8 +6,8 @@ import { DATA_PROVIDER_METHODS } from './DataProvider';
 import type { DataProvider, TeamRosterScope } from './DataProvider';
 import { MockDataProvider } from './mock/MockDataProvider';
 import { createSimulatedRemoteProvider } from './mock/createSimulatedRemoteProvider';
-import { useDataConnectionsQueries } from './useDataConnectionsQueries';
-import type { DataConnectionsQueryInput } from './useDataConnectionsQueries';
+import { useSettingsQueries } from './useSettingsQueries';
+import type { SettingsQueryInput } from './useSettingsQueries';
 import {
   applyTeamRosterOverlays,
   registrationSlaAlerts,
@@ -17,7 +17,7 @@ import { makePartner, makeProviderBook, makeRegistration, makeTeamUser } from '.
 import type { ProviderBook } from './mock/book';
 
 /**
- * VAL-CROSS-004 (Data Connections): the route's data-backed sections request
+ * VAL-CROSS-004 (Settings): the route's data-backed sections request
  * exactly the scoped answers they render — the overlaid roster, the manager
  * directory, the bounded SLA alert digest, the composer's registration page,
  * and the partner roster — and each section fails and retries independently.
@@ -112,8 +112,8 @@ function makeBook(): ProviderBook {
 
 function inputFor(
   provider: DataProvider,
-  overrides: Partial<DataConnectionsQueryInput> = {},
-): DataConnectionsQueryInput {
+  overrides: Partial<SettingsQueryInput> = {},
+): SettingsQueryInput {
   return {
     provider,
     access: INTERNAL_DEMO_SCOPE,
@@ -123,8 +123,8 @@ function inputFor(
   };
 }
 
-/** Waits until every Data Connections query has settled with an answer. */
-async function settle(result: { current: ReturnType<typeof useDataConnectionsQueries> }) {
+/** Waits until every Settings query has settled with an answer. */
+async function settle(result: { current: ReturnType<typeof useSettingsQueries> }) {
   await waitFor(() => {
     expect(result.current.teamUsers.data).not.toBeNull();
     expect(result.current.managers.data).not.toBeNull();
@@ -134,13 +134,12 @@ async function settle(result: { current: ReturnType<typeof useDataConnectionsQue
   });
 }
 
-describe('useDataConnectionsQueries (VAL-CROSS-004)', () => {
+describe('useSettingsQueries (VAL-CROSS-004)', () => {
   it('requests exactly its scoped queries — and never a whole-book read', async () => {
     const { provider, calls } = spyProvider(new MockDataProvider(makeBook()));
-    const { result } = renderHook(
-      (input: DataConnectionsQueryInput) => useDataConnectionsQueries(input),
-      { initialProps: inputFor(provider) },
-    );
+    const { result } = renderHook((input: SettingsQueryInput) => useSettingsQueries(input), {
+      initialProps: inputFor(provider),
+    });
     await settle(result);
 
     expect([...new Set(calls.map((call) => call.method))].sort()).toEqual([
@@ -158,10 +157,9 @@ describe('useDataConnectionsQueries (VAL-CROSS-004)', () => {
   it('answers with the values the metrics layer computes over the same book', async () => {
     const book = makeBook();
     const { provider } = spyProvider(new MockDataProvider(book));
-    const { result } = renderHook(
-      (input: DataConnectionsQueryInput) => useDataConnectionsQueries(input),
-      { initialProps: inputFor(provider) },
-    );
+    const { result } = renderHook((input: SettingsQueryInput) => useSettingsQueries(input), {
+      initialProps: inputFor(provider),
+    });
     await settle(result);
 
     expect(result.current.teamUsers.data).toEqual(book.teamUsers);
@@ -201,7 +199,7 @@ describe('useDataConnectionsQueries (VAL-CROSS-004)', () => {
     const book = makeBook();
     const { provider, calls } = spyProvider(new MockDataProvider(book));
     const { result, rerender } = renderHook(
-      (input: DataConnectionsQueryInput) => useDataConnectionsQueries(input),
+      (input: SettingsQueryInput) => useSettingsQueries(input),
       { initialProps: inputFor(provider) },
     );
     await settle(result);
@@ -238,10 +236,9 @@ describe('useDataConnectionsQueries (VAL-CROSS-004)', () => {
       failMethods: { getRegistrationSlaAlerts: 1 },
     });
     const { provider, calls } = spyProvider(remote);
-    const { result } = renderHook(
-      (input: DataConnectionsQueryInput) => useDataConnectionsQueries(input),
-      { initialProps: inputFor(provider) },
-    );
+    const { result } = renderHook((input: SettingsQueryInput) => useSettingsQueries(input), {
+      initialProps: inputFor(provider),
+    });
 
     await waitFor(() => expect(result.current.alerts.error).not.toBeNull());
     await waitFor(() => {

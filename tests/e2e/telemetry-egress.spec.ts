@@ -29,6 +29,7 @@ test('VAL-SEC-001: default build makes no telemetry, analytics, or webhook reque
     'Activity Tracking',
     'Partner View',
     'Data Connections',
+    'Settings',
     'Partner Performance',
     'Production Requirements',
     'Home',

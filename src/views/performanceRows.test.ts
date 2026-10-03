@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { conversionRows, funnelRows } from './performanceRows';
+import {
+  conversionRows,
+  FUNNEL_MEASURE_OPTIONS,
+  funnelRows,
+  funnelSubtitle,
+  leakageRows,
+} from './performanceRows';
+import type { RegistrationOpsSummary } from '../data/DataProvider';
 import type { RegistrationFunnel } from '../lib/metrics';
 
 const FUNNEL: RegistrationFunnel = {
@@ -118,5 +125,65 @@ describe('shared registration row parity', () => {
     expect(rows.map((row) => [row.value, row.displayValue])).toEqual(
       Array.from({ length: 4 }, () => [0, '—']),
     );
+  });
+});
+
+describe('the funnel measure toggle', () => {
+  it('offers Registered $ first, and both measures name their subtitle', () => {
+    expect(FUNNEL_MEASURE_OPTIONS.map((option) => [option.id, option.label])).toEqual([
+      ['value', 'Registered $'],
+      ['count', 'Count'],
+    ]);
+    expect(funnelSubtitle('value', 'Q3')).toBe('Partner-estimated value at submission · Q3');
+    expect(funnelSubtitle('count', 'FY')).toBe('Registration counts · FY');
+  });
+});
+
+describe('the shared registration leakage rows', () => {
+  it('reads one row per leak from the ops aggregate, in funnel order', () => {
+    const ops: RegistrationOpsSummary = {
+      times: {
+        submittedToApprovedBusinessDays: 2,
+        approvedToOpportunityCalendarDays: 4,
+        opportunityToWinCalendarDays: 10,
+        submittedToWinCalendarDays: 21,
+      },
+      pending: 6,
+      approvedNotConverted: 4,
+      exclusivityLapsed: 2,
+      pastSla: 3,
+      duplicateGroups: 1,
+    };
+    expect(leakageRows(ops)).toEqual([
+      {
+        label: 'Approved, no opp',
+        value: 4,
+        displayValue: '4',
+        secondary: 'approved registrations',
+        color: '#8a8380',
+      },
+      {
+        label: 'Exclusivity lapsed',
+        value: 2,
+        displayValue: '2',
+        secondary: '> 60 days since approval',
+        color: '#ee6018',
+      },
+      {
+        label: 'Pending past SLA',
+        value: 3,
+        displayValue: '3',
+        // The boundary is inclusive: the copy says 5+, never "> 5".
+        secondary: '5+ business days awaiting review',
+        color: '#ee6018',
+      },
+      {
+        label: 'Duplicate clients',
+        value: 1,
+        displayValue: '1',
+        secondary: 'same client, multiple partners',
+        color: '#4d4947',
+      },
+    ]);
   });
 });
