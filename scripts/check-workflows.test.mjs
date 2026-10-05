@@ -507,7 +507,7 @@ function securityWorkflow(overrides = {}) {
       'dependency-audit': {
         'runs-on': 'ubuntu-latest',
         'timeout-minutes': 10,
-        steps: [{ uses: PINNED_CHECKOUT }, { run: 'npm audit --audit-level=high' }],
+        steps: [{ uses: PINNED_CHECKOUT }, { run: 'npm run audit:dependencies' }],
         ...(overrides.dependencyAudit ?? {}),
       },
       dast: {
@@ -595,11 +595,13 @@ describe('blocking scans (VAL-SEC-013)', () => {
     assert.ok(violations.some((line) => /continue-on-error/.test(line)));
   });
 
-  it('rejects an audit gate without the high severity level', () => {
+  it('rejects an audit gate that bypasses the exception-aware wrapper', () => {
     const violations = checkSecurity({
-      dependencyAudit: { steps: [{ uses: PINNED_CHECKOUT }, { run: 'npm audit' }] },
+      dependencyAudit: {
+        steps: [{ uses: PINNED_CHECKOUT }, { run: 'npm audit --audit-level=high' }],
+      },
     });
-    assert.ok(violations.some((line) => /npm audit --audit-level=high/.test(line)));
+    assert.ok(violations.some((line) => /npm run audit:dependencies/.test(line)));
   });
 });
 

@@ -26,7 +26,7 @@ never completes a production dependency.
 | Code ownership          | `.github/CODEOWNERS`                      | @Smash4920 owns every path; no gaps                                        |
 | Dependency updates      | `.github/dependabot.yml`, `renovate.json` | Actions + devcontainers by Dependabot, npm by Renovate                     |
 | Minimum release age     | `renovate.json`, `.github/dependabot.yml` | 7 days general, 14 days for npm majors                                     |
-| Dependency audit        | `security.yml` job `dependency-audit`     | `npm audit`, fails on high or above                                        |
+| Dependency audit        | `security.yml` job `dependency-audit`     | `npm run audit:dependencies`; high+ fails except reviewed exceptions       |
 | Dynamic scanning (DAST) | `security.yml` job `dast`                 | OWASP ZAP baseline vs `vite preview`, reviewed rules                       |
 | Workflow policy         | `scripts/check-workflows.mjs`             | `npm run workflows:check`, locally and in CI                               |
 | Telemetry egress        | `src/lib/telemetry/`, `vite.config.ts`    | Allowlists + endpoint policy in code, unit/e2e suites, `bundle:check` scan |
@@ -106,14 +106,32 @@ update immediately after checking the diff, or pin a known-good version.
 
 ### Dependency audit
 
-`dependency-audit` runs `npm audit --audit-level=high` against the lockfile
-on every pull request, push to `main`, and weekly. Anything rated high or
-critical by the npm registry fails the job; moderate findings are visible in
-the job output for triage.
+`dependency-audit` runs `npm run audit:dependencies`
+(`scripts/audit-dependencies.mjs`) against the lockfile on every pull
+request, push to `main`, and weekly. The wrapper preserves
+`npm audit --audit-level=high` semantics: anything rated high or critical by
+the npm registry fails the job except the reviewed exceptions in
+`config/audit-exceptions.json`, and moderate findings remain visible in the
+job output for triage. Every exception names the advisory, the
+accepted-exposure rationale, and the tracking issue with its removal
+condition. An exception that no longer matches a reported advisory fails the
+job as stale, so the list only shrinks and an upstream fix cannot leave a
+permanent waiver behind.
 
-As of the 2026-10-03 amendment, the user chose to wait for an official upstream
-`braces` fix. The high-severity audit remains blocking: no backport, override,
-downgrade, advisory exception, or suppression is approved.
+As of the 2026-10-04 amendment, GHSA-vfj7-8cjw-p6xm (CVE-2026-93687,
+`braces` stack-exhaustion denial of service) is an accepted risk, tracked in
+[issue #55](https://github.com/Smash4920/GTM-Partner-Dashboard/issues/55).
+Rationale: `braces` reaches the tree only through build- and lint-time dev
+tooling (`tailwindcss`, `eslint-plugin-boundaries`), parses only this
+repository's own glob configuration rather than attacker-controlled input,
+and never ships in the client bundle, so the worst case is a crashed build
+or lint worker. No patched release exists and the upstream repository has
+been inactive since 2025-01. The exception is removed when an official
+patched `braces` release lands or the planned Tailwind v4 and
+`import/no-restricted-paths` migration removes `braces` from the tree. This
+supersedes the 2026-10-03 amendment (wait for upstream; no exceptions),
+which predated GitHub's review of the advisory and the confirmation that no
+fix is forthcoming.
 
 ### Dynamic application security testing
 
@@ -265,10 +283,11 @@ security policy locally and in CI:
   30-minute cancellations stay cancellations, and an actual hosted run
   under the 45-minute cap remains pending separate exact-commit publication
   approval.
-- **Blocking scans.** gitleaks scans the full commit history and
-  `npm audit --audit-level=high` gates the dependency tree. Both run on
-  pull requests, pushes to `main`, the weekly schedule, and manual
-  dispatch, and neither may use `continue-on-error`.
+- **Blocking scans.** gitleaks scans the full commit history and the
+  exception-aware dependency audit (`npm run audit:dependencies`, high
+  severity and above) gates the dependency tree. Both run on pull
+  requests, pushes to `main`, the weekly schedule, and manual dispatch,
+  and neither may use `continue-on-error`.
 
 Remote GitHub settings -- branch protection, the workflow token's default
 permissions, the allowed-actions policy -- cannot be expressed in a
@@ -348,10 +367,15 @@ one-time setup step:
 - **Secret scan fails:** rotate the exposed credential immediately, remove
   the secret from the branch, and consider history cleanup. The secret
   stays compromised until rotated.
-- **Dependency audit fails:** read the advisory, upgrade the affected
-  package when an approved official fix exists, or report the blocker.
-  The current `braces` decision is to wait; do not backport, override,
-  downgrade, suppress, or waive the high-severity audit.
+- **Dependency audit fails:** the gate is exception-aware
+  (`npm run audit:dependencies`), so a failure names either an unreviewed
+  high or critical advisory or a stale exception. For a new advisory, read
+  it, upgrade the affected package when an official fix exists, or propose
+  a reviewed exception in `config/audit-exceptions.json` with the
+  accepted-exposure rationale and tracking issue in the same pull request.
+  For a stale exception, the upstream fix has landed: remove the entry.
+  The one accepted advisory (GHSA-vfj7-8cjw-p6xm, `braces`) is recorded in
+  the dependency audit section above with its removal condition.
 - **DAST fails:** reproduce locally with `npm run preview`, confirm the
   finding when tooling is available, and fix it or seek explicit approval
   for a justified rule-specific entry to `.zap/rules.tsv`. Do not claim

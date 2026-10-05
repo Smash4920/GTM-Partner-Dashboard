@@ -70,10 +70,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Fails the job on high or critical advisories anywhere in the tree.
-      # The lockfile is the input, so no build is needed.
+      # Fails the job on high or critical advisories anywhere in the tree,
+      # except the reviewed exceptions in config/audit-exceptions.json (see
+      # docs/security.md). The lockfile is the input, so no build is needed.
       - name: Audit dependency tree
-        run: npm audit --audit-level=high
+        run: npm run audit:dependencies
 
   dast:
     name: DAST (OWASP ZAP baseline)

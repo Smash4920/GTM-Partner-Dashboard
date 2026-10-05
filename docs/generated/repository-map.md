@@ -32,6 +32,7 @@ dependencies, and tool caches are excluded.
 
 ## Shared configuration
 
+- `config/audit-exceptions.json`
 - `config/bundle-budgets.json`
 - `config/dependency-budgets.json`
 - `config/release-please-config.json`

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Reviewed npm audit exceptions for the dependency-audit gate. scripts/audit-dependencies.mjs fails on every high or critical advisory except the entries here; an entry that no longer matches a reported advisory fails as stale, so the list only shrinks and a closed upstream fix cannot leave a permanent waiver behind. Every entry names the advisory, the accepted-exposure rationale, and the tracking issue with the removal condition.",
+  "exceptions": [
+    {
+      "id": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "reason": "Stack-exhaustion denial of service via deeply nested brace patterns (CVE-2026-93687), affecting every release through 3.0.3 with no patched version and an upstream repository inactive since 2025-01. Accepted risk: braces reaches this tree only through build- and lint-time dev tooling (tailwindcss via chokidar/fast-glob/micromatch, eslint-plugin-boundaries via micromatch), parses only this repository's own glob configuration rather than attacker-controlled input, and never ships in the client bundle, so the worst case is a crashed build or lint worker. Remove once an official patched braces release lands or the Tailwind v4 plus import/no-restricted-paths migration removes braces from the tree.",
+      "issue": "https://github.com/Smash4920/GTM-Partner-Dashboard/issues/55"
+    }
+  ]
+}

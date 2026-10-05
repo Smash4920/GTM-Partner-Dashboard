@@ -35,6 +35,7 @@ npm run dev       # start the Vite development server
 npm run agents:check # validate this file's commands and repository paths
 npm run check:file-limits # reject oversized files before review
 npm run client-boundary:check # reject server, database, auth, warehouse, connector, durable-store, sender, or credential additions
+npm run audit:dependencies # audit the dependency tree, allowing only reviewed advisory exceptions
 npm run docs:check # verify generated docs and documentation consistency
 npm run quality:check # enforce effective ratchets and ordered blocking gate parity
 npm run workflows:check # enforce the GitHub workflow security policy
