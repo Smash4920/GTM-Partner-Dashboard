@@ -139,9 +139,15 @@ Docker and Podman CLIs are unavailable locally, so full local ZAP remains unrun.
 The amended hosted baseline outcome is pending separate exact-commit publication
 approval; static policy checks do not turn historical scan failures into passes.
 
-The high-severity dependency audit also remains blocking. The user chose to wait
-for the official upstream `braces` fix; no backport, override, downgrade,
-advisory exception, or suppression is approved.
+The high-severity dependency audit remains blocking through the
+exception-aware wrapper (`npm run audit:dependencies`). As of the 2026-10-04
+amendment, GHSA-vfj7-8cjw-p6xm (`braces`, build/lint-tooling-only exposure)
+is the one accepted advisory, recorded in `config/audit-exceptions.json` and
+[`security.md`](../security.md) with its removal condition; this supersedes
+the 2026-10-03 wait-for-upstream decision. New advisories still fail the
+gate: upgrade on an official fix or propose a reviewed exception in the same
+pull request. A stale-exception failure means the upstream fix landed, so
+remove the entry.
 
 ### Playwright job
 

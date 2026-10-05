@@ -30,6 +30,7 @@
     "lint:duplicates": "jscpd src",
     "check:pre-commit": "npm run agents:check && npm run check:file-limits && npm run debt:check && npm run lint && npm run dead-code && npm run lint:duplicates && npm test",
     "client-boundary:check": "node --test scripts/check-client-boundary.test.mjs && node scripts/check-client-boundary.mjs",
+    "audit:dependencies": "node --test scripts/audit-dependencies.test.mjs && node scripts/audit-dependencies.mjs",
     "prepare": "husky",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

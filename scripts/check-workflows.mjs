@@ -25,9 +25,11 @@ import { parse } from 'yaml';
  *     new WARN/FAIL findings, and may ignore only the exact rule IDs with
  *     rationale recorded in .zap/rules.tsv -- the blanket `-I` flag is
  *     forbidden;
- *   - gitleaks scans full history and `npm audit --audit-level=high` stays
- *     blocking (no `continue-on-error`) on pull requests, pushes to main,
- *     the weekly schedule, and manual runs;
+ *   - gitleaks scans full history and the dependency audit gate
+ *     (`npm run audit:dependencies`, which fails on high and critical
+ *     advisories except the reviewed exceptions in
+ *     config/audit-exceptions.json) stays blocking (no `continue-on-error`)
+ *     on pull requests, pushes to main, the weekly schedule, and manual runs;
  *   - the CI e2e job runs the same `npm run test:e2e` command as local, and
  *     the DAST job builds and serves a production preview with the canonical
  *     flags.
@@ -727,11 +729,14 @@ function checkBlockingScans(documents, violations) {
   if (!audit) {
     violations.push(`${file}: no 'dependency-audit' job; the npm audit gate is required`);
   } else {
+    // The gate is the exception-aware wrapper in scripts/audit-dependencies.mjs;
+    // it preserves `npm audit --audit-level=high` semantics for everything
+    // outside config/audit-exceptions.json.
     const hasAuditGate = (audit.steps ?? []).some(
-      (step) => typeof step?.run === 'string' && step.run.includes('npm audit --audit-level=high'),
+      (step) => typeof step?.run === 'string' && step.run.includes('npm run audit:dependencies'),
     );
     if (!hasAuditGate) {
-      violations.push(`${file}: dependency-audit must run 'npm audit --audit-level=high'`);
+      violations.push(`${file}: dependency-audit must run 'npm run audit:dependencies'`);
     }
   }
 }
