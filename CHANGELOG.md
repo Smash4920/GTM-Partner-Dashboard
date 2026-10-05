@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.4.0](https://github.com/Smash4920/GTM-Partner-Dashboard/compare/v0.3.0...v0.4.0) (2026-10-03)
+
+
+### Features
+
+* add accessible shell navigation and linked form errors ([ced77d7](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/ced77d7131a24dd4d83d5b3437e86b71782220ac))
+* add deterministic action-alert domain rules ([a8f8f06](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/a8f8f06e62a1cdb87c173fab35901ba547018850))
+* add session-only workflow projections ([c34fccc](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/c34fccc2a4460db501a3e8a53014d3d177815b1d))
+* add Settings page and reorganize Partner Performance deal-reg sections ([a6d50cf](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/a6d50cfb936ba007e9b3579eb7408356872e9ed5))
+* add validated Action Center policy and bounded queries ([0ebf614](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/0ebf6140fea4eb415ccba1eadf274db1b16c355a))
+* bound leaderboards and the SLA digest at the provider seam ([f6ddd7e](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/f6ddd7e0797045f188eae37f48e76a2814f7e152))
+* complete Action Center evidence and internal context ([2d0dc1a](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/2d0dc1ab179b619e42712c31685c381dfc85843f))
+* enforce bounded cursor pagination and pin the raw-history boundary ([4aa12c1](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/4aa12c15777a79a2923cf8b540e5ece2cbd19132))
+* govern flag lifecycle and add fail-safe local evaluation ([81a47a8](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/81a47a8410b289bd4b2c1eb5a475e540b911dbff))
+* harden client-only dashboard and measure hosted validation ([248a8d7](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/248a8d7c5ec0b8101f7d9245a19772dc5aec40bb))
+* harden modal focus, isolation and responsive states ([3db3b88](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/3db3b884117072d74cf5ea8ba22074fcac4e7f8a))
+* harden telemetry egress privacy and remove browser webhooks ([39336c2](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/39336c23f4a20be7eff5146962ece473d96b2653))
+* make charts, disclosures and paged tables accessible ([0f5e5d5](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/0f5e5d527fdb4f91562fb650efce96842073370c))
+* move Deal Reg Ops and Activity Tracking to scoped queries ([03c2778](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/03c27787485ae86c8041642a7a7c8a7cbcb47317))
+* move Home and Partner Performance to scoped queries ([5a99b46](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/5a99b4635847ea879e0b5a41e299a32f4f32ceba))
+* move Partner View and Data Connections to scoped queries ([c0c6b64](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/c0c6b640a910cf66a98b8402140930845945bc17))
+* preserve forecast and Action Center context across navigation ([3da7c51](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/3da7c516bb81e62fe4bc2200a8f3601a8125aa6c))
+* require demo access scope on every provider method and add pure source normalizers ([a616f39](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/a616f39915186a569181df37ba094c3e9220f00d))
+* retire the legacy whole-book contract and prove scale bounds ([733c594](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/733c5947b65a52d09ac256ca0cc2e3eb0f1455cf))
+* route action owners and generalize local notifications ([c8309b1](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/c8309b12a26a747322c26771921c93471bd2b4fe))
+* split roadmap status into demo and production scope ([c9d7812](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/c9d78127c5bff2170eac4bdfe15f7462ce7ebc35))
+* sync Sentry errors to GitHub issues ([984e881](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/984e8814746b3e7f76f4e1634ae96fc58cfefcd5))
+* sync Sentry errors to GitHub issues ([eba6679](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/eba66798a12db8db9bb647c0399f9075d0d61168))
+
+
+### Bug Fixes
+
+* align DAST preview base and require initial assets ([8ab3c07](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/8ab3c07e65666d86e0f75ede62b08074f594d523))
+* cancel obsolete health probes at the seam and narrow book edits in every state ([03c3cfd](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/03c3cfdf9e6d623ba9f9edf312bb1cfc07c6f33e))
+* close scrutiny round-1 telemetry gating and policy-checker gaps ([80a6511](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/80a6511da39d6978f339c3b18c26c69511042914))
+* complete accessible shell focus and validation evidence ([8a6e894](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/8a6e894898051d84b9cb47d7e3f396741b84b8c5))
+* decouple optional roster and ranking resources from primary surfaces ([2c9e3df](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/2c9e3dff3f59a41985c6db1cb9f3b2b34dd68f50))
+* fence notification saves against current session recipients ([802cf8f](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/802cf8f97c2ebf40d6e52e21fdc38099805d2942))
+* gate forecast answers by current scope identity ([fe8cc4a](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/fe8cc4a8a0f801d0cb0f17f7504a84f20add5856))
+* gate route aggregates by scope identity and thread session inputs through Partner View ([60202b5](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/60202b5372d3c364aae8d3b965e61c4d6e40ba89))
+* give every forecasting query independent failure, retry, and invalidation state ([0873bd2](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/0873bd20ea94cd07bea95360776cb9cfabbd9c31))
+* hold activity goal surfaces until the manager directory settles ([cfedc2f](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/cfedc2fc11e1bf59334e100ba644637471e3475c))
+* initialize note and next-step editors from effective values ([61b0d43](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/61b0d435eedce2df8d99f65a345504333e4490c2))
+* keep readiness-probe rejection prose out of the transition notice ([b6d25b2](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/b6d25b24d4cda22cf05973478725741c1416bb72))
+* label roster and notifications as session-only simulations ([1eacca8](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/1eacca851b2bfbf15468c871667cdb55864c7567))
+* make provider transitions atomic with requested-versus-committed state ([8c84e77](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/8c84e77caa3d35022b3866f4bf462e3b5e678966))
+* make query failure surfaces truthful and guard health refreshes ([55bca94](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/55bca94c797de67269d528dab986a6a8d9a66754))
+* preserve Action Center depth across forecast edits ([54500e3](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/54500e3e6a199dc8328ccd22ebc1e6ca38d6be57))
+* preserve dirty workflow dialogs through repeated Escape ([f2d3e3e](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/f2d3e3e1b4d6fb6e0040901de0e39d8594f373df))
+* prioritize retry focus and capture browser diagnostics ([a44adb6](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/a44adb62ccf2e4837c7081f9d15bdc17ec0eefab))
+* reject inherited enums and unbounded forecast samples ([5d46eeb](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/5d46eebc1835fa153f3f469f1a278e51d1155be8))
+* reject whitespace-only PRM decision facts and edit-stale leaderboard cursors ([195738e](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/195738ed8d2ec125199e7ab34a455565c4caadc7))
+* resolve classified activity ownership before manager filtering ([8db79ff](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/8db79ff87e83015cd5cbbb51acdf1dbb1b8f2ad8))
+* restore VAL-QUAL-003 bundle ceilings via lazy system routes and proxy seam wrappers ([9b82dd8](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/9b82dd874d64d2ef5075f80ba10d900c479e5a07))
+* scope forecast summary to the selected manager and state the inclusive SLA boundary ([2615006](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/2615006d54e2e8121dc7423a28a060330555039a))
+* scope manager targets and report truthful coverage and SLA units ([234e7c3](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/234e7c3777cf71612d29bec2b620aed38948b483))
+* seal provider cursors and close scoped-data boundary gaps ([410a026](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/410a0260eecc9ddb65a213ad9e7f75da4c52accd))
+* stamp scoped answers with metadata and publish health through failure ([d63cc35](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/d63cc359ee34ae73951fee825110fcf95c4243db))
+* surface independent query failures over retained data with focused retries ([2a73bfc](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/2a73bfc96a524617b5d276fa65e17cd32925f744))
+* thread provider-visible cancellation through queries and narrow book invalidation ([16a5690](https://github.com/Smash4920/GTM-Partner-Dashboard/commit/16a5690927b7c6d6e1d8b8321f5abd094299f4d6))
+
 ## [0.3.0](https://github.com/Smash4920/GTM-Partner-Dashboard/compare/v0.2.0...v0.3.0) (2026-09-29)
 
 
