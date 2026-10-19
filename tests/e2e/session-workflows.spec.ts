@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { ACTION_CENTER, navigate as navigateRoute } from './support/accessibility-surfaces';
 
 const PRIVACY_SENTINEL = 'PRIVATE-workflow-reason-VAL-ACT-019';
 const EMPTY_COUNTS = 'Registration decisions: 0 · Conflict dispositions: 0 · Forecast reviews: 0';
@@ -67,6 +68,12 @@ async function boot(page: Page, query = '') {
 }
 
 async function navigate(page: Page, name: string) {
+  // Action Center is the Settings route's second tab, not a sidebar
+  // destination, so the shared helper opens Settings and activates the tab.
+  if (name === ACTION_CENTER) {
+    await navigateRoute(page, ACTION_CENTER);
+    return;
+  }
   const button = page
     .getByRole('navigation', { name: 'Primary' })
     .getByRole('button', { name, exact: true });

@@ -16,15 +16,18 @@ import { providerSessionBook } from './test/providerSessionFixtures';
  * The provider-call matrix: what every route asks of the seam, and what one
  * failure costs it.
  *
- * - Every registered route, including Action Center, renders independently —
- *   including a 2× component fixture. The production-preview VAL-RES-011
- *   browser matrix separately exercises the genuine 100× provider.
+ * - Every registered route renders independently — including a 2× component
+ *   fixture. The production-preview VAL-RES-011 browser matrix separately
+ *   exercises the genuine 100× provider.
  * - A route mounts with exactly its scoped queries and nothing else's; the
  *   app shell and the static routes (Production Requirements, the Data
  *   Connections catalog) issue no provider calls at all.
  * - One failed resource fails one widget: every sibling on the route keeps
  *   its data, and the widget's focused Retry repeats exactly the failed
  *   method — one more call of it, and not one more call of anything else.
+ * - Action Center is the Settings route's second tab, so its two queries
+ *   belong to the tab's first activation and not to the route's arrival;
+ *   they are covered by the same two contracts below.
  */
 
 const nav = () => within(screen.getByRole('navigation', { name: 'Primary' }));
@@ -53,17 +56,6 @@ interface RouteSpec {
 }
 
 const ROUTES: RouteSpec[] = [
-  {
-    label: 'Action Center',
-    heading: 'Action Center',
-    methods: ['getActionCenterSummary', 'listActionItems'],
-    failure: {
-      method: 'getActionCenterSummary',
-      kind: 'unavailable',
-      text: 'Action Center summary unavailable:',
-      retry: 'Retry Action Center summary',
-    },
-  },
   {
     label: 'Home',
     heading: 'Partner Performance Overview',
@@ -295,8 +287,59 @@ async function visit(user: ReturnType<typeof userEvent.setup>, route: RouteSpec)
   await settle();
 }
 
+/**
+ * The failure contract's body: one broken resource costs exactly one widget,
+ * the route stays alive around it, and the focused Retry repeats exactly the
+ * failed method — one call of it, and not one more call of anything else.
+ */
+async function expectOneFailedWidget(
+  failure: NonNullable<RouteSpec['failure']>,
+  user: ReturnType<typeof userEvent.setup>,
+  calls: Map<string, number>,
+) {
+  await screen.findByText(failure.text, undefined, { timeout: 10_000 });
+  await settle();
+
+  // One failed resource, one failed widget: every sibling answered.
+  expect(screen.queryAllByText(/unavailable:/)).toHaveLength(
+    failure.kind === 'unavailable' ? 1 : 0,
+  );
+  if (failure.kind === 'refresh') {
+    expect(screen.queryAllByText(/refresh failed:/)).toHaveLength(1);
+  }
+  // The boundary never tripped: the route is alive around its failure.
+  expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
+
+  const afterFailure = snapshot(calls);
+  const failed = screen.getByText(failure.text).closest('p')!;
+  await user.click(within(failed).getByRole('button', { name: failure.retry }));
+
+  // Recovery: the widget's data replaces the failure copy.
+  await waitFor(() => expect(screen.queryByText(failure.text)).not.toBeInTheDocument(), {
+    timeout: 10_000,
+  });
+
+  expect(diff(afterFailure, calls)).toEqual([failure.method]);
+}
+
+/**
+ * Action Center is the Settings route's second tab: reaching it is the
+ * sidebar's Settings entry and then the tab.
+ */
+async function openActionCenterTab(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(nav().getByRole('button', { name: 'Settings' }));
+  await screen.findByRole('heading', { name: 'Settings', level: 1 }, { timeout: 10_000 });
+  await settle();
+  await user.click(screen.getByRole('tab', { name: 'Action Center' }));
+  await screen.findByRole('heading', { name: 'Action Center', level: 2 }, { timeout: 10_000 });
+  await settle();
+}
+
+/** Action Center's scoped inventory, the tab's own and nothing else's. */
+const ACTION_CENTER_METHODS = ['getActionCenterSummary', 'listActionItems'];
+
 describe('App route matrix', () => {
-  it('renders all ten routes independently under the scaled provider', async () => {
+  it('renders every route independently under the scaled provider', async () => {
     // A populated, hand-built book keeps this a component wiring check.
     // Production-volume generation and bounds belong to the 100× browser proof.
     const book = providerSessionBook('SCALED');
@@ -316,6 +359,10 @@ describe('App route matrix', () => {
       // No widget failed: every route answers against this 2× component fixture.
       expect(screen.queryByText(/unavailable:/)).not.toBeInTheDocument();
     }
+    // The Settings tab is a route-level surface too: it renders, and its
+    // action queries answer, against the same fixture.
+    await openActionCenterTab(user);
+    expect(screen.queryByText(/unavailable:/)).not.toBeInTheDocument();
   }, 60_000);
 
   it('the shell and Production Requirements issue no provider calls at all', async () => {
@@ -368,34 +415,63 @@ describe('App route matrix', () => {
       control.armed = true;
 
       await user.click(nav().getByRole('button', { name: route.label }));
-      await screen.findByText(route.failure.text, undefined, { timeout: 10_000 });
-      await settle();
-
-      // One failed resource, one failed widget: every sibling answered.
-      expect(screen.queryAllByText(/unavailable:/)).toHaveLength(
-        route.failure.kind === 'unavailable' ? 1 : 0,
-      );
-      if (route.failure.kind === 'refresh') {
-        expect(screen.queryAllByText(/refresh failed:/)).toHaveLength(1);
-      }
-      // The boundary never tripped: the route is alive around its failure.
-      expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
-
-      const afterFailure = snapshot(calls);
-      const failure = screen.getByText(route.failure.text).closest('p')!;
-      await user.click(within(failure).getByRole('button', { name: route.failure.retry }));
-
-      // Recovery: the widget's data replaces the failure copy.
-      await waitFor(() => expect(screen.queryByText(route.failure.text)).not.toBeInTheDocument(), {
-        timeout: 10_000,
-      });
-
-      // The focused retry repeated exactly the failed method — one call of
-      // it, and not one more call of anything else on the route.
-      expect(diff(afterFailure, calls)).toEqual([route.failure.method]);
+      await expectOneFailedWidget(route.failure, user, calls);
     },
     30_000,
   );
+
+  /**
+   * Action Center's two queries belong to the tab, not to the Settings route:
+   * arriving on Settings must not issue them, opening the tab must issue
+   * exactly them, and a broken one must cost exactly its own widget.
+   */
+  it('the Action Center tab mounts with exactly its scoped queries, and only when opened', async () => {
+    const { provider, calls } = instrumentedProvider();
+    const user = await renderApp(provider);
+    await settle();
+
+    // Baseline on the static route so the diff is the Settings route alone.
+    await user.click(nav().getByRole('button', { name: 'Production Requirements' }));
+    await screen.findByRole('heading', { name: 'Production Requirements', level: 1 });
+    const before = snapshot(calls);
+
+    await user.click(nav().getByRole('button', { name: 'Settings' }));
+    await screen.findByRole('heading', { name: 'Settings', level: 1 });
+    await settle();
+    const generalTab = diff(before, calls);
+    expect(generalTab).not.toContain('getActionCenterSummary');
+    expect(generalTab).not.toContain('listActionItems');
+
+    await user.click(screen.getByRole('tab', { name: 'Action Center' }));
+    await screen.findByRole('heading', { name: 'Action Center', level: 2 });
+    await settle();
+
+    expect(diff(before, calls)).toEqual([...generalTab, ...ACTION_CENTER_METHODS].sort());
+  }, 30_000);
+
+  it('the Action Center tab: one failed resource fails one widget, and Retry repeats only that method', async () => {
+    const { provider, calls, control } = instrumentedProvider();
+    const user = await renderApp(provider);
+    await settle();
+
+    // The failure belongs to the tab, so it is armed before the tab opens.
+    await user.click(nav().getByRole('button', { name: 'Production Requirements' }));
+    await screen.findByRole('heading', { name: 'Production Requirements', level: 1 });
+    control.failMethod = 'getActionCenterSummary';
+    control.armed = true;
+
+    await openActionCenterTab(user);
+    await expectOneFailedWidget(
+      {
+        method: 'getActionCenterSummary',
+        kind: 'unavailable',
+        text: 'Action Center summary unavailable:',
+        retry: 'Retry Action Center summary',
+      },
+      user,
+      calls,
+    );
+  }, 30_000);
 });
 
 /**

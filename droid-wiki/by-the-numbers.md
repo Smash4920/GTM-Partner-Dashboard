@@ -1,6 +1,6 @@
 # By the numbers
 
-Data collected on 2026-09-19. A quantitative snapshot of the GTM Partner Dashboard: size, dependency load, recent churn, and the largest files in the tree.
+Data collected on 2026-09-19. A quantitative snapshot of the Gantry: size, dependency load, recent churn, and the largest files in the tree.
 
 ## Repository size by language
 

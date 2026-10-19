@@ -26,7 +26,7 @@ for (const viewport of JOURNEY_VIEWPORTS) {
         await keyboard.navigate(route.label);
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
         await expect(page.getByRole('heading', { level: 1 })).not.toHaveText('');
-        await expect(page).toHaveTitle(`${route.label} | GTM Partner Dashboard`);
+        await expect(page).toHaveTitle(`${route.label} | Gantry`);
         await expect(
           page
             .getByRole('navigation', { name: 'Primary', includeHidden: true })
@@ -53,4 +53,48 @@ for (const viewport of JOURNEY_VIEWPORTS) {
       }
     });
   }
+}
+
+// Action Center is the Settings route's second tab rather than a registry
+// entry, so it gets the same sweep with its own two selectors: the tab for
+// the control, the Settings route for the current-page mark.
+for (const viewport of JOURNEY_VIEWPORTS) {
+  test(`VAL-A11Y-012 VAL-QUAL-005: action-center tab full-page axe ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }, info) => {
+    const check = productionObservations(page);
+    const keyboard = keyboardJourney(page);
+    try {
+      await page.setViewportSize(viewport);
+      await page.goto('/');
+      await settled(page);
+      await keyboard.press('Tab');
+      await keyboard.navigate('Action Center');
+      await expect(page.getByRole('heading', { name: 'Action Center', level: 2 })).toBeVisible();
+      await expect(page).toHaveTitle('Settings | Gantry');
+      await expect(page.getByRole('tab', { name: 'Action Center', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      await expect(
+        page
+          .getByRole('navigation', { name: 'Primary', includeHidden: true })
+          .getByRole('button', { name: 'Settings', exact: true, includeHidden: true }),
+      ).toHaveAttribute('aria-current', 'page');
+      const result = await new AxeBuilder({ page }).analyze();
+      await retain(info, `axe-action-center-tab-${viewport.width}x${viewport.height}`, {
+        validationId: 'VAL-A11Y-012',
+        route: { id: 'action-center', label: 'Action Center' },
+        viewport,
+        title: await page.title(),
+        url: page.url(),
+        state: 'default deterministic local provider; Settings route, Action Center tab',
+        violationCount: result.violations.length,
+        violations: result.violations,
+      });
+      expect(result.violations).toEqual([]);
+    } finally {
+      await check(info);
+    }
+  });
 }

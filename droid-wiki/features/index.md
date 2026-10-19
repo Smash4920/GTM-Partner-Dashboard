@@ -1,6 +1,6 @@
 # Features
 
-The Features lens describes the two user-facing views of the GTM Partner Dashboard: the internal GTM Leadership dashboard and the partner-facing portal. Both views receive the same `DashboardData` object from `src/App.tsx` and derive every number from `src/lib/metrics.ts`, so the pages here focus on what each view shows, which logic backs each panel, and which files to touch when a view needs to change.
+The Features lens describes the two user-facing views of the Gantry: the internal GTM Leadership dashboard and the partner-facing portal. Both views receive the same `DashboardData` object from `src/App.tsx` and derive every number from `src/lib/metrics.ts`, so the pages here focus on what each view shows, which logic backs each panel, and which files to touch when a view needs to change.
 
 ## Purpose of this lens
 

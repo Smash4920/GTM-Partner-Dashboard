@@ -137,7 +137,7 @@ describe('initializePerformanceTelemetry', () => {
     expect(JSON.parse(body)).toEqual({
       schemaVersion: 1,
       type: 'web-vital',
-      application: 'gtm-partner-dashboard',
+      application: 'gantry',
       environment: 'test',
       release: 'abc123',
       route: '/GTM-Partner-Dashboard/forecasting',

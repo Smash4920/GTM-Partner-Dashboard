@@ -1,6 +1,6 @@
 # Reference
 
-The Reference lens collects the factual, look-it-up pages for the GTM Partner Dashboard: the configuration surface, the canonical data model, and the dependency list. Where the [Overview](../overview/index.md) explains what the project is and the [Systems](../systems/index.md) and [Features](../features/index.md) lenses explain how behavior is built, these pages are the source-of-truth details — file layouts, shapes, and versions — that the other lenses link back to.
+The Reference lens collects the factual, look-it-up pages for the Gantry: the configuration surface, the canonical data model, and the dependency list. Where the [Overview](../overview/index.md) explains what the project is and the [Systems](../systems/index.md) and [Features](../features/index.md) lenses explain how behavior is built, these pages are the source-of-truth details — file layouts, shapes, and versions — that the other lenses link back to.
 
 ## Reference map
 

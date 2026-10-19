@@ -48,7 +48,7 @@ describe('accessible route context', () => {
 
   it('titles, announces and focuses routes once without query-driven focus theft', async () => {
     render(<App providerFactory={providerFactory} />);
-    expect(document.title).toBe('Home | GTM Partner Dashboard');
+    expect(document.title).toBe('Home | Gantry');
     const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
     fireEvent.click(nav.getByRole('button', { name: 'Production Requirements' }));
     const heading = await screen.findByRole('heading', {
@@ -56,7 +56,7 @@ describe('accessible route context', () => {
       level: 1,
     });
     await waitFor(() => expect(heading).toHaveFocus());
-    expect(document.title).toBe('Production Requirements | GTM Partner Dashboard');
+    expect(document.title).toBe('Production Requirements | Gantry');
     expect(screen.getByRole('status', { name: 'Route announcement' })).toHaveTextContent(
       'Production Requirements',
     );

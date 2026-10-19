@@ -59,10 +59,34 @@ vi.mock('./views/system', async (importOriginal) => {
   return {
     ...module,
     // Settings carries the session roster surfaces Data Connections used to
-    // own; the connection catalog itself is static and observes nothing.
+    // own, and Action Center as its second tab; the connection catalog itself
+    // is static and observes nothing. The shell stand-in keeps the tab
+    // contract — the Action Center panel is the shell's, and it renders once
+    // its tab is selected — without paying for the real surfaces.
     ['SettingsView']: (props: SettingsProps) => {
       observed.settings.push(props);
-      return observed.renderViews ? <module.SettingsView {...props} /> : <p>Roster shell inputs</p>;
+      if (observed.renderViews) return <module.SettingsView {...props} />;
+      return (
+        <div>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={props.tab === 'general'}
+            onClick={() => props.onTabChange('general')}
+          >
+            General Settings
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={props.tab === 'action-center'}
+            onClick={() => props.onTabChange('action-center')}
+          >
+            Action Center
+          </button>
+          {props.tab === 'action-center' ? null : <p>Roster shell inputs</p>}
+        </div>
+      );
     },
   };
 });
@@ -97,6 +121,15 @@ const latest = <T,>(values: T[]): T => values[values.length - 1]!;
 const nav = () => within(screen.getByRole('navigation', { name: 'Primary' }));
 async function visit(label: string) {
   fireEvent.click(nav().getByText(label, { exact: true }));
+  await settle();
+}
+/** Action Center is the Settings route's second tab, one activation away. */
+async function visitActionCenter() {
+  await visit('Settings');
+  fireEvent.click(screen.getByRole('tab', { name: 'Action Center' }));
+  await act(async () => {
+    await vi.dynamicImportSettled();
+  });
   await settle();
 }
 async function settle() {
@@ -242,7 +275,7 @@ async function seedSession(harness: Harness, id: 'local' | 'remote') {
       { provider: harness.providers[id], recipient: actor },
     ),
   );
-  await visit('Action Center');
+  await visitActionCenter();
   act(() =>
     latest(observed.actions).onPolicyChange({ ...DEFAULT_ACTION_POLICY, staleCalendarDays: 1 }),
   );
@@ -353,9 +386,10 @@ async function verifyReset(harness: Harness, id: 'local' | 'remote') {
   const provider = harness.providers[id];
   expect(screen.queryByRole('region', { name: 'Action context' })).not.toBeInTheDocument();
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  for (const route of ['Forecasting', 'Activity Tracking', 'Settings', 'Action Center']) {
+  for (const route of ['Forecasting', 'Activity Tracking', 'Settings']) {
     await visit(route);
   }
+  await visitActionCenter();
   // Each inventory surface actually rendered. No empty-loop assertions.
   for (const frames of [
     observed.forecast,
@@ -521,7 +555,7 @@ describe('VAL-RES-003 real-view selection defaults', () => {
         ['local', 'remote'],
         ['remote', 'local'],
       ] as const) {
-        await visit('Action Center');
+        await visitActionCenter();
         const registration = harness.books[source].registrations[0];
         const row = screen
           .getAllByTestId('action-item')

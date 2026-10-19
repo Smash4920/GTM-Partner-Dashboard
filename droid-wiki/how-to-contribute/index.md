@@ -1,6 +1,6 @@
 # How to contribute
 
-This lens covers the contribution path for the GTM Partner Dashboard: how to pick up work, the branch and pull-request cycle, the checks that exist today, where to debug, and the tooling behind the build. It is the counterpart to the [Overview](../overview/index.md), which explains what the application does, and to [Patterns and conventions](patterns-and-conventions.md), which explains how the code is written.
+This lens covers the contribution path for the Gantry: how to pick up work, the branch and pull-request cycle, the checks that exist today, where to debug, and the tooling behind the build. It is the counterpart to the [Overview](../overview/index.md), which explains what the application does, and to [Patterns and conventions](patterns-and-conventions.md), which explains how the code is written.
 
 ## Picking up work
 

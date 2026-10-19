@@ -8,11 +8,17 @@ export async function settleScaled(page: Page) {
   await expect.poll(() => page.evaluate(() => window.scaledRetryFixture.pending)).toBe(0);
 }
 
-export async function visitScaled(page: Page, route: string) {
+export async function visitScaled(page: Page, route: string, tab?: string) {
   await page
     .getByRole('navigation', { name: 'Primary' })
     .getByRole('button', { name: route, exact: true })
     .click();
+  // Action Center is the Settings route's second tab.
+  if (tab) {
+    const control = page.getByRole('tab', { name: tab, exact: true });
+    await control.click();
+    await expect(control).toHaveAttribute('aria-selected', 'true');
+  }
   await settleScaled(page);
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
 }
@@ -29,6 +35,8 @@ async function rowIds(rows: Locator, attribute: string) {
 
 interface ScaledFailure {
   route: string;
+  /** A Settings tab to activate after the route, for Action Center. */
+  tab?: string;
   method: keyof DataProvider;
   region: string;
   failure: string;
@@ -164,7 +172,9 @@ export const SCALED_FAILURE_ROUTES: ScaledFailure[] = [
       page.getByRole('group', { name: 'The SLA alert queue', exact: true }).innerText(),
   },
   {
-    route: 'Action Center',
+    // Action Center is the Settings route's second tab.
+    route: 'Settings',
+    tab: 'Action Center',
     method: 'getActionCenterSummary',
     region: 'Action Center summary',
     failure: 'Action Center summary unavailable:',

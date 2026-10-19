@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { navigate } from './support/accessibility-surfaces';
 
 test('VAL-ACT-003: policy applies only in Action Center, resets its cursor and reloads to defaults', async ({
   page,
@@ -11,8 +12,7 @@ test('VAL-ACT-003: policy applies only in Action Center, resets its cursor and r
   });
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
-  const nav = page.getByRole('navigation', { name: 'Primary' });
-  await nav.getByRole('button', { name: 'Action Center', exact: true }).click();
+  await navigate(page, 'Action Center');
   await expect(page.getByText('85 unique items', { exact: true })).toBeVisible();
   // The existing opaque flag-cohort id is not action state. No policy keys
   // or values may be added to either store.
@@ -38,15 +38,15 @@ test('VAL-ACT-003: policy applies only in Action Center, resets its cursor and r
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('action-item')).toHaveCount(25);
   await expect(page.getByText('85 unique items', { exact: true })).toHaveCount(0);
-  await nav.getByRole('button', { name: 'Forecasting', exact: true }).click();
+  await navigate(page, 'Forecasting');
   await expect(page.getByRole('heading', { name: 'Forecasting', exact: true })).toBeVisible();
-  await nav.getByRole('button', { name: 'Action Center', exact: true }).click();
+  await navigate(page, 'Action Center');
   await expect(page.getByLabel('Stale days (calendar)')).toHaveValue('1');
   expect(
     await page.evaluate(() => [Object.entries(localStorage), Object.entries(sessionStorage)]),
   ).toEqual(initialStorage);
   await page.reload();
-  await nav.getByRole('button', { name: 'Action Center', exact: true }).click();
+  await navigate(page, 'Action Center');
   for (const [label, value] of defaults) await expect(page.getByLabel(label)).toHaveValue(value);
   await expect(page.getByText('85 unique items', { exact: true })).toBeVisible();
   expect(

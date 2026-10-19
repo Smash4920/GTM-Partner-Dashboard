@@ -3,9 +3,28 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 // Retention tests do not measure cold chunks; production preview owns that boundary.
+import './views/system';
 import './views/ActionCenterView';
 import { MockDataProvider } from './data/mock/MockDataProvider';
 import { makeOpportunity, makePartner, makeProviderBook } from './test/fixtures';
+
+const nav = () => within(screen.getByRole('navigation', { name: 'Primary' }));
+
+/**
+ * Opens Action Center: it is the Settings route's second tab, so the journey
+ * is the sidebar's Settings entry and then the tab — and a preloaded module
+ * still has a pending React.lazy import promise on first use.
+ */
+async function openActionCenter() {
+  fireEvent.click(nav().getByRole('button', { name: 'Settings' }));
+  await act(async () => {
+    await vi.dynamicImportSettled();
+  });
+  fireEvent.click(screen.getByRole('tab', { name: 'Action Center' }));
+  await act(async () => {
+    await vi.dynamicImportSettled();
+  });
+}
 
 describe('Action Center contextual navigation', () => {
   it('VAL-CROSS-003 retains edited forecast pages and Action Center filters, pages and return focus', async () => {
@@ -28,8 +47,7 @@ describe('Action Center contextual navigation', () => {
       }),
     );
     render(<App providerFactory={() => provider} />);
-    const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
-    fireEvent.click(nav.getByRole('button', { name: 'Forecasting' }));
+    fireEvent.click(nav().getByRole('button', { name: 'Forecasting' }));
     const forecastPagination = (await screen.findByText('Showing 25 of 30')).closest<HTMLElement>(
       '[role="group"]',
     )!;
@@ -48,11 +66,7 @@ describe('Action Center contextual navigation', () => {
         rowQueries.getByRole('button', { name: 'Edit revenue forecast for Context 0' }),
       ).toHaveFocus(),
     );
-    fireEvent.click(nav.getByRole('button', { name: 'Action Center' }));
-    // A preloaded module still has a pending React.lazy import promise on first use.
-    await act(async () => {
-      await vi.dynamicImportSettled();
-    });
+    await openActionCenter();
     await screen.findByText('30 unique items');
     const filters = within(screen.getByText('Filters').closest('section')!);
     fireEvent.click(filters.getByRole('checkbox', { name: 'Missing next step' }));
@@ -79,7 +93,7 @@ describe('Action Center contextual navigation', () => {
     expect(link).toHaveFocus();
   });
 
-  it('returns focus to the Action Center heading if an edited next step resolves the selected action', async () => {
+  it('returns focus to the Settings heading if an edited next step resolves the selected action', async () => {
     const user = userEvent.setup();
     const provider = new MockDataProvider(
       makeProviderBook({
@@ -90,11 +104,7 @@ describe('Action Center contextual navigation', () => {
       }),
     );
     render(<App providerFactory={() => provider} />);
-    const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
-    fireEvent.click(nav.getByRole('button', { name: 'Action Center' }));
-    await act(async () => {
-      await vi.dynamicImportSettled();
-    });
+    await openActionCenter();
     await screen.findByText('1 unique items');
     const action = screen.getByRole('link', { name: 'Open Forecasting context' });
     action.focus();
@@ -112,7 +122,9 @@ describe('Action Center contextual navigation', () => {
       }),
     );
     await screen.findByText('0 unique items');
-    expect(screen.getByRole('heading', { name: 'Action Center', level: 1 })).toHaveFocus();
+    // The action row is gone with the resolved action, so focus falls back to
+    // the route heading: Settings owns the page h1, Action Center its tab.
+    expect(screen.getByRole('heading', { name: 'Settings', level: 1 })).toHaveFocus();
   });
 
   it.each([
@@ -123,11 +135,7 @@ describe('Action Center contextual navigation', () => {
     'opens %s on the same origin with the selected entity and resets on primary navigation',
     async (category, link, heading) => {
       render(<App providerFactory={() => new MockDataProvider()} />);
-      const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
-      fireEvent.click(nav.getByRole('button', { name: 'Action Center' }));
-      await act(async () => {
-        await vi.dynamicImportSettled();
-      });
+      await openActionCenter();
       await screen.findByText('85 unique items');
       const filters = within(screen.getByText('Filters').closest('section')!);
       fireEvent.click(filters.getByRole('checkbox', { name: category }));
@@ -149,7 +157,7 @@ describe('Action Center contextual navigation', () => {
       expect(filters.getByRole('checkbox', { name: category })).toBeChecked();
       expect(action).toHaveFocus();
       expect(screen.queryByRole('region', { name: 'Action context' })).not.toBeInTheDocument();
-      fireEvent.click(nav.getByRole('button', { name: 'Home' }));
+      fireEvent.click(nav().getByRole('button', { name: 'Home' }));
       expect(screen.queryByRole('region', { name: 'Action context' })).not.toBeInTheDocument();
     },
   );

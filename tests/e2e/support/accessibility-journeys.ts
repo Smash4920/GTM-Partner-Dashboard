@@ -124,13 +124,36 @@ export function keyboardJourney(page: Page) {
     const nav = page.getByRole('navigation', { name: 'Primary' });
     if (!(await nav.isVisible()))
       await activate(page.getByRole('button', { name: 'Open navigation menu', exact: true }));
-    const button = nav.getByRole('button', { name: label, exact: true });
+    // Action Center is the Settings route's second tab: the destination is
+    // the Settings entry, and the tab is one more activation.
+    const actionCenter = label === 'Action Center';
+    const button = nav.getByRole('button', {
+      name: actionCenter ? 'Settings' : label,
+      exact: true,
+    });
     const current = (await button.getAttribute('aria-current')) === 'page';
     await activate(button);
-    if (!current) await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
+    if (!current && !actionCenter)
+      await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
+    if (actionCenter) {
+      // A tablist keeps one stop in the Tab order and moves the selection
+      // with the arrow keys, so the tab is reached from its selected
+      // sibling, not by tabbing on to it. A session that re-enters the tab
+      // (after "Back to Action Center") keeps the selection, and the tab is
+      // then a stop of its own.
+      const selected = page.getByRole('tab', { name: 'General Settings', exact: true });
+      const tab = page.getByRole('tab', { name: 'Action Center', exact: true });
+      if ((await tab.getAttribute('aria-selected')) !== 'true') {
+        await reach(selected);
+        await press('ArrowRight');
+      }
+      await reach(tab);
+      await expect(tab).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('heading', { name: 'Action Center', level: 2 })).toBeVisible();
+    }
     await settled(page);
     await landing(`route: ${label}`);
-    await expect(page).toHaveTitle(`${label} | GTM Partner Dashboard`);
+    await expect(page).toHaveTitle(`${actionCenter ? 'Settings' : label} | Gantry`);
   }
   async function checkpoint(name: string, surface: Locator = page.getByRole('main')) {
     await landing(`checkpoint: ${name}`);

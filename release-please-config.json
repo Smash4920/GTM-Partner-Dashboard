@@ -3,7 +3,7 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "package-name": "gtm-partner-dashboard",
+      "package-name": "gantry",
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false,
       "bootstrap-sha": "3cebcdea7d336bc3bf4082d76fc926c6e86fe040"

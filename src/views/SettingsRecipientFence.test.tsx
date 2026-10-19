@@ -58,6 +58,8 @@ function fixture(mode: 'digest-only' | 'both' | 'pending') {
   const send = vi.fn();
   const view = (overrides: Record<string, Partial<TeamUser>>) => (
     <SettingsView
+      tab="general"
+      onTabChange={() => {}}
       provider={provider}
       teamUserOverrides={overrides}
       addedTeamUsers={[]}

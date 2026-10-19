@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { useState, type ComponentProps } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SettingsView from './SettingsView';
+import type { SettingsTab } from '../data/settingsTabs';
 import { REGISTRATION_SLA_BUSINESS_DAYS, SNAPSHOT_DATE } from '../data/constants';
 import type { DataProvider } from '../data/DataProvider';
 import { MockDataProvider } from '../data/mock/MockDataProvider';
@@ -140,6 +142,15 @@ interface SetupOptions {
   latencyMs?: number;
 }
 
+/**
+ * The tab props every render site shares: these sections are the general
+ * tab's, so the landing tab is what they render.
+ */
+const GENERAL_TAB: Pick<ComponentProps<typeof SettingsView>, 'tab' | 'onTabChange'> = {
+  tab: 'general',
+  onTabChange: () => {},
+};
+
 function setup(options: SetupOptions = {}) {
   const user = userEvent.setup({ delay: null });
   const onSendNotification = vi.fn();
@@ -158,6 +169,7 @@ function setup(options: SetupOptions = {}) {
   }
   render(
     <SettingsView
+      {...GENERAL_TAB}
       provider={provider}
       teamUserOverrides={{}}
       addedTeamUsers={[]}
@@ -266,6 +278,7 @@ describe('SettingsView', () => {
     const alertsSpy = vi.spyOn(inner, 'getRegistrationSlaAlerts');
     render(
       <SettingsView
+        {...GENERAL_TAB}
         provider={createSimulatedRemoteProvider(inner, {
           latencyMs: 0,
           failMethods: { getTeamRoster: 1 },
@@ -365,6 +378,7 @@ describe('SettingsView', () => {
 
     const view = (overrides: Record<string, Partial<TeamUser>>) => (
       <SettingsView
+        {...GENERAL_TAB}
         provider={provider}
         teamUserOverrides={overrides}
         addedTeamUsers={[]}
@@ -935,5 +949,97 @@ describe('SettingsView', () => {
       within(membership).getByRole('button', { name: 'Retry The membership roster' }),
     ).toBeInTheDocument();
     expect(screen.queryByRole('table', { name: 'Administrators' })).toBeNull();
+  });
+});
+
+/**
+ * The tab contract this view owns: General Settings is the landing tab, the
+ * tablist keeps one stop in the tab order, and the general panel follows the
+ * selection. The Action Center panel belongs to the shell — it outlives this
+ * route, so App-level suites own its mounting and retention.
+ */
+function renderTabbedSettings() {
+  const user = userEvent.setup({ delay: null });
+  const onTabChange = vi.fn();
+  const provider = new MockDataProvider(
+    makeProviderBook({ partners: PARTNERS, registrations: REGISTRATIONS, teamUsers: TEAM_USERS }),
+  );
+  function Harness() {
+    const [tab, setTab] = useState<SettingsTab>('general');
+    return (
+      <SettingsView
+        provider={provider}
+        tab={tab}
+        onTabChange={(next) => {
+          onTabChange(next);
+          setTab(next);
+        }}
+        teamUserOverrides={{}}
+        addedTeamUsers={[]}
+        notifications={[]}
+        onAddTeamUser={vi.fn()}
+        onSetTeamUserStatus={vi.fn()}
+        onRemoveTeamUser={vi.fn()}
+        onSendNotification={vi.fn()}
+      />
+    );
+  }
+  render(<Harness />);
+  return { user, onTabChange };
+}
+
+describe('SettingsView tabs', () => {
+  it('opens on General Settings and follows the selection with the general panel', async () => {
+    const { user } = renderTabbedSettings();
+
+    const general = screen.getByRole('tab', { name: 'General Settings' });
+    const actionCenter = screen.getByRole('tab', { name: 'Action Center' });
+    const generalPanel = document.getElementById('settings-panel-general');
+    expect(general).toHaveAttribute('aria-selected', 'true');
+    expect(actionCenter).toHaveAttribute('aria-selected', 'false');
+    // Only the selected tab is in the tab order.
+    expect(general).toHaveAttribute('tabindex', '0');
+    expect(actionCenter).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByRole('tabpanel', { name: 'General Settings' })).toBeVisible();
+    // The tablist points at the shell's panel, which this view never renders.
+    expect(actionCenter).toHaveAttribute('aria-controls', 'settings-panel-action-center');
+    expect(document.getElementById('settings-panel-action-center')).toBeNull();
+
+    await user.click(actionCenter);
+    expect(actionCenter).toHaveAttribute('aria-selected', 'true');
+    expect(general).toHaveAttribute('tabindex', '-1');
+    expect(actionCenter).toHaveAttribute('tabindex', '0');
+    // A hidden panel leaves the accessibility tree — its accessible name with
+    // it — so the hidden panel's state is read from the DOM.
+    expect(generalPanel).toHaveAttribute('hidden');
+
+    await user.click(general);
+    expect(general).toHaveAttribute('aria-selected', 'true');
+    expect(generalPanel).not.toHaveAttribute('hidden');
+    expect(screen.getByRole('tabpanel', { name: 'General Settings' })).toBeVisible();
+  });
+
+  it('moves the selection with the arrow, Home and End keys', async () => {
+    const { user, onTabChange } = renderTabbedSettings();
+
+    const general = screen.getByRole('tab', { name: 'General Settings' });
+    const actionCenter = screen.getByRole('tab', { name: 'Action Center' });
+    general.focus();
+    await user.keyboard('{ArrowRight}');
+    expect(onTabChange).toHaveBeenLastCalledWith('action-center');
+    expect(actionCenter).toHaveFocus();
+
+    // The two-tab list wraps rather than dead-ending.
+    await user.keyboard('{ArrowRight}');
+    expect(onTabChange).toHaveBeenLastCalledWith('general');
+    expect(general).toHaveFocus();
+
+    await user.keyboard('{End}');
+    expect(onTabChange).toHaveBeenLastCalledWith('action-center');
+    expect(actionCenter).toHaveFocus();
+
+    await user.keyboard('{Home}');
+    expect(onTabChange).toHaveBeenLastCalledWith('general');
+    expect(general).toHaveFocus();
   });
 });

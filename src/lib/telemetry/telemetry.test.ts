@@ -53,7 +53,7 @@ function harness(
 
 const healthyArtifact: HealthArtifact = {
   status: 'ok',
-  service: 'gtm-partner-dashboard',
+  service: 'gantry',
   release: 'test-release',
   environment: 'test',
   sessionId: TRACE_ID,

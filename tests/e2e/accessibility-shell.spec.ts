@@ -9,11 +9,31 @@ async function settle(page: Page) {
   await expect(page.getByText(/^Loading /)).toHaveCount(0);
 }
 
+/**
+ * The sidebar's destinations. Action Center is the Settings route's second
+ * tab, so reaching it is the Settings entry and then one tab activation.
+ */
 async function navigate(page: Page, name: string) {
-  const destination = nav(page).getByRole('button', { name, exact: true });
+  const actionCenter = name === 'Action Center';
+  const destination = nav(page).getByRole('button', {
+    name: actionCenter ? 'Settings' : name,
+    exact: true,
+  });
   await destination.focus();
   await page.keyboard.press('Enter');
-  await expect(heading(page)).toBeFocused();
+  if (actionCenter) {
+    // A tablist keeps one stop in the Tab order and moves the selection with
+    // the arrow keys: reach the selected tab, then arrow onto Action Center.
+    const selected = page.getByRole('tab', { name: 'General Settings', exact: true });
+    const tab = page.getByRole('tab', { name: 'Action Center', exact: true });
+    await selected.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(tab).toBeFocused();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('heading', { name: 'Action Center', level: 2 })).toBeVisible();
+  } else {
+    await expect(heading(page)).toBeFocused();
+  }
   await settle(page);
 }
 
@@ -76,9 +96,10 @@ test('VAL-A11Y-001: resize, collapse, mobile opening and route selection preserv
   await navigate(page, 'Action Center');
   await expect(nav(page)).toBeHidden();
   await open.click();
-  await expect(
-    nav(page).getByRole('button', { name: 'Action Center', exact: true }),
-  ).toHaveAttribute('aria-current', 'page');
+  await expect(nav(page).getByRole('button', { name: 'Settings', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
   await page.getByRole('button', { name: 'Close navigation menu' }).click();
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(expand).toBeVisible();
@@ -113,7 +134,7 @@ test('VAL-A11Y-002 VAL-CROSS-001: first Tab, skip, and keyboard navigation provi
   await recordAnnouncements(page);
   for (const { label } of ROUTES) {
     await navigate(page, label);
-    await expect(page).toHaveTitle(`${label} | GTM Partner Dashboard`);
+    await expect(page).toHaveTitle(`${label} | Gantry`);
     await expect(heading(page)).toHaveCount(1);
     await expect(heading(page)).toBeVisible();
     await expect(nav(page).getByRole('button', { name: label, exact: true })).toHaveAttribute(
@@ -128,6 +149,9 @@ test('VAL-A11Y-002 VAL-CROSS-001: first Tab, skip, and keyboard navigation provi
   expect(await page.evaluate(() => Reflect.get(window, 'routeAnnouncements'))).toEqual(
     ROUTES.map(({ label }) => `${label} page`),
   );
+  // The Action Center tab is one activation past Settings, not a route of its
+  // own: the announcement stays with the route, the heading with the route's
+  // h1, and the page keeps its own working surface.
   await navigate(page, 'Action Center');
   const more = page.getByRole('button', { name: 'Load 25 more', exact: true });
   await more.focus();
@@ -135,12 +159,11 @@ test('VAL-A11Y-002 VAL-CROSS-001: first Tab, skip, and keyboard navigation provi
   await expect(page.getByTestId('action-item')).toHaveCount(50);
   await expect(more).toBeFocused();
   await expect(page.getByRole('status', { name: 'Route announcement' })).toHaveText(
-    'Action Center page',
+    'Settings page',
   );
-  expect(await page.evaluate(() => Reflect.get(window, 'routeAnnouncements'))).toEqual([
-    ...ROUTES.map(({ label }) => `${label} page`),
-    'Action Center page',
-  ]);
+  expect(await page.evaluate(() => Reflect.get(window, 'routeAnnouncements'))).toEqual(
+    ROUTES.map(({ label }) => `${label} page`),
+  );
   check();
 });
 
@@ -198,7 +221,7 @@ test('VAL-A11Y-002: query refresh, edits, metadata and focused retry never repea
   ).toBeFocused();
   await expect(heading(page)).not.toBeFocused();
   expect(await page.evaluate(() => Reflect.get(window, 'routeAnnouncements'))).toEqual([]);
-  await expect(page).toHaveTitle('Action Center | GTM Partner Dashboard');
+  await expect(page).toHaveTitle('Settings | Gantry');
   expect(errors).toHaveLength(1);
   expect(errors[0]).toMatch(/component: DataProvider, operation: getActionCenterSummary/);
   expect(requests.every((url) => new URL(url).origin === new URL(page.url()).origin)).toBe(true);
@@ -214,7 +237,7 @@ test('VAL-CROSS-001: static route headings and catalog remain keyboard reachable
   await expect(page.getByRole('alert')).toContainText('Still using Local mock');
   for (const label of ['Production Requirements', 'Data Connections']) {
     await navigate(page, label);
-    await expect(page).toHaveTitle(`${label} | GTM Partner Dashboard`);
+    await expect(page).toHaveTitle(`${label} | Gantry`);
     await expect(heading(page)).toHaveText(label);
   }
   await expect(
@@ -223,7 +246,14 @@ test('VAL-CROSS-001: static route headings and catalog remain keyboard reachable
   expect(pageErrors).toEqual([]);
 });
 
-for (const { id, label } of ROUTES) {
+// The Action Center tab is a keyboard surface too: it is the Settings route's
+// second tab, so it is swept alongside the routes with its own control.
+const FOCUS_DESTINATIONS = [
+  ...ROUTES.map(({ id, label }) => ({ id, label, tab: false })),
+  { id: 'action-center', label: 'Action Center', tab: true },
+];
+
+for (const { id, label, tab } of FOCUS_DESTINATIONS) {
   test(`VAL-A11Y-003: ${label} controls have ordered, unclipped keyboard focus`, async ({
     page,
   }) => {
@@ -290,7 +320,9 @@ for (const { id, label } of ROUTES) {
         clippedBy: [],
       });
     }
-    const pointer = nav(page).getByRole('button', { name: label, exact: true });
+    const pointer = tab
+      ? page.getByRole('tab', { name: label, exact: true })
+      : nav(page).getByRole('button', { name: label, exact: true });
     await pointer.click();
     expect(await pointer.evaluate((element) => element.matches(':focus-visible'))).toBe(false);
     await pointer.focus();

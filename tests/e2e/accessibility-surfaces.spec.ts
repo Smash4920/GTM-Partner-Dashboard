@@ -21,6 +21,7 @@ import { NOTIFICATION_TEMPLATES } from '../../src/lib/notifications';
 import { formatDate, formatUsd, formatUsdCompact } from '../../src/lib/format';
 import { conversionRows, funnelRows, stageRows } from '../../src/views/performanceRows';
 import {
+  ACTION_CENTER,
   MANAGERS,
   activate,
   activity,
@@ -807,7 +808,9 @@ function actionCoverage(items: readonly ActionItem[]) {
 
 async function actionPopulation(page: Page) {
   await page.goto('/');
-  await navigate(page, 'Action Center');
+  // Action Center is the Settings route's second tab, so the shared helper
+  // opens Settings and activates that tab before its queue is asserted.
+  await navigate(page, ACTION_CENTER);
   const fixture: ActionItem[] = [];
   let cursor: string | undefined;
   do {

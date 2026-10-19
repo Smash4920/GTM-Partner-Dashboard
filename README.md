@@ -1,7 +1,7 @@
-# GTM Partner Dashboard
+# Gantry
 
 A client-only mockup of a partner revenue pipeline dashboard for the GTM team.
-Ten views over one deterministic mock data model, reached through a
+Nine views over one deterministic mock data model, reached through a
 collapsible left sidebar: **Home** (ecosystem
 summary), **Partner Performance** (per-manager / per-partner drill-down),
 **Forecasting** (the VP's in-quarter view with a weighted forecast),
@@ -9,8 +9,9 @@ summary), **Partner Performance** (per-manager / per-partner drill-down),
 conflicts), **Activity Tracking** (weekly meeting goals and calendar logging),
 **Partner View** (the partner-facing sharing surface), **Production
 Requirements** (the architecture + utility roadmap), **Data Connections**
-(the integration map), **Settings** (the membership roster and notifications),
-and **Action Center** (bounded action summaries, filters, and session-only demo policy).
+(the integration map), and **Settings**, which carries two tabs — **General
+Settings** (the membership roster and notifications) and **Action Center**
+(bounded action summaries, filters, and session-only demo policy).
 
 ![Home view](docs/screenshots/home.png)
 ![Forecasting view](docs/screenshots/forecasting.png)
@@ -23,7 +24,7 @@ metric green for positive data.
 
 ## Navigation
 
-A collapsible sidebar on the left carries the ten pages; the icon in the upper
+A collapsible sidebar on the left carries the nine pages; the icon in the upper
 left expands and collapses it to an icon rail. The header also carries a
 **provider selector** — local mock, simulated remote, or a 100× book — which is
 the demo of the integration seam described under Data contract below.
@@ -31,9 +32,12 @@ the demo of the integration seam described under Data contract below.
 The mobile menu starts closed and does not change the desktop collapse
 preference. First Tab reveals **Skip to main content**. Route changes update
 the document title, announce the destination, and focus its heading; ordinary
-widget updates do not move route focus. Keyboard controls share a visible
-outline, and rejected form submissions link specific errors and focus the
-first invalid field.
+widget updates do not move route focus. Settings carries two tabs, **General
+Settings** and **Action Center**: entering the route opens the first, the
+arrow keys move between them, and the tabs are a keyboard list rather than a
+second navigation rail. Keyboard controls share a visible outline, and
+rejected form submissions link specific errors and focus the first invalid
+field.
 
 ## Pages
 
@@ -165,66 +169,6 @@ The VP of Partnerships' in-quarter read on FY27-Q3.
   agree, the category adds no information, so these disagreements are the
   forecast conversation. Individual rows are tagged "off stage". Forecast
   accuracy by partner, manager, motion, and quarter remains on the roadmap
-
-### Action Center
-
-Action Center queries derive five alert categories behind the provider seam,
-merge reasons by entity, and count unique items separately from category reasons.
-The categories are **Stale high-value deal**, **Missing next step**,
-**Slipping close date**, **Registration SLA**, and **Partner-health deterioration**.
-Rows use stable severity/due-date/exposure/ID ordering, category-OR plus
-owner/severity-AND filters, and opaque cursor pages of 25. Local defaults produce
-85 unique items; 100× produces 8,500 without enlarging summary or page bounds.
-Metadata identifies the provider and deterministic reporting as-of date.
-
-**Demo policy** defaults are $400,000 high value, 14 stale calendar days,
-60-day missing-step horizon, seven close-slip calendar days, adjacent 28-day
-health windows, and at least two deteriorating drivers. Controls reject invalid
-values before querying. Applying policy resets only Action Center paging.
-Policy is session-only, survives route navigation, and resets on reload or a
-committed provider change. It is never stored in browser storage.
-Opportunity/health owners use the first active aligned manager by ID, then an
-active partnership lead; registrations fall back to active deal-desk ops.
-Missing recipients remain Unowned. Each category prefills minimum evidence,
-recommendation, and entity reference in the shared notification composer.
-Only selected configured channels are recorded, with runtime action time and
-`simulated-local` status. Confirmation says **Simulated / local only**.
-Batch and individual saves recheck scoped recipient evidence against the current
-session roster before recording anything. Paused or invited recipients, removed
-session additions, obsolete provider evidence, blank copy, and empty channel
-selections cannot save, even when a refresh fails or remains pending. Retained
-evidence and independent retries remain visible; stale owners are never rerouted
-silently at save time.
-Refresh clears all records; no transport executes. Each row exposes its merged
-evidence, per-reason recommendation, due date, exposure, routed owner or Unowned,
-and provider lineage/as-of through a keyboard/touch disclosure. Internal links
-open an explicit entity context in Forecasting, Deal Reg Ops, or the selected
-partner's Partner Performance view. The destination retains its reporting window,
-so an out-of-window entity may not be in its table.
-
-Once visited, Forecasting and Action Center retain their loaded pages and
-filters during the current provider session. Returning from an internal
-context restores focus to its exact action link, or the heading if the action
-was resolved. Editors restore focus to the
-row control after Save or Escape. Revenue and category edits refresh only their
-dependent forecast queries; notes and next steps refresh Action Center without
-refetching forecast aggregates. Revenue, next-step and note edits refresh the
-existing Action Center depth under the new eligibility and ordering, capped by
-the new total. Refresh starts without a cursor and obtains a fresh continuation;
-a failed refresh retains stale rows but cannot append until retry succeeds.
-Provider, access, policy, filter, routing, classification and prospect scope
-changes reset paging. Forecast-category changes do not refetch Action Center.
-Overlays replace source values once, and customer prose never enters logs or
-telemetry. A committed provider change clears these retained views and edits.
-
-Registration decisions are available from registration actions and Deal Reg Ops.
-Conflict dispositions name all competing registration IDs. Revenue/category
-edits create current-session change IDs for forecast reviews. Each workflow
-requires an active selected demo actor (not authenticated), outcome, and trimmed
-reason, and records runtime time. The session projection is simulated/local-only:
-source queues and metrics stay unchanged, no approver enforcement or write-back
-occurs, and refresh or provider commit clears every workflow record and change.
-Reviews are not source history or the deferred Forecast Quality trend.
 
 ### Deal Reg Ops
 
@@ -360,8 +304,13 @@ catalog alone and makes no provider calls.
 
 ### Settings
 
-Who is on the partner team and how the dashboard notifies them, in two
-discrete sections.
+Two tabs over the internal surfaces. **General Settings** is who is on the
+partner team and how the dashboard notifies them. **Action Center** is the
+bounded action queue and its session-only reporting policy. Entering the route
+opens General Settings; the Action Center tab mounts on first activation and
+then keeps the pages and filters it loaded while the other tab is showing.
+
+#### General Settings
 
 - **Membership roster** — every internal user, split into **Administrators**
   (Partnership Lead and Deal Desk Ops, the whole-book roles) and **Users**
@@ -391,6 +340,68 @@ discrete sections.
     "Simulated / local only" — nothing is delivered or persisted. Sends are
     timestamped off the session clock, not the fixed snapshot: the demo data is
     frozen at Sep 18, but an action taken now happened now
+
+#### Action Center
+
+Action Center queries derive five alert categories behind the provider seam,
+merge reasons by entity, and count unique items separately from category reasons.
+The categories are **Stale high-value deal**, **Missing next step**,
+**Slipping close date**, **Registration SLA**, and **Partner-health deterioration**.
+Rows use stable severity/due-date/exposure/ID ordering, category-OR plus
+owner/severity-AND filters, and opaque cursor pages of 25. Local defaults produce
+85 unique items; 100× produces 8,500 without enlarging summary or page bounds.
+Metadata identifies the provider and deterministic reporting as-of date.
+
+**Demo policy** defaults are $400,000 high value, 14 stale calendar days,
+60-day missing-step horizon, seven close-slip calendar days, adjacent 28-day
+health windows, and at least two deteriorating drivers. Controls reject invalid
+values before querying. Applying policy resets only Action Center paging.
+Policy is session-only, survives route navigation, and resets on reload or a
+committed provider change. It is never stored in browser storage.
+Opportunity/health owners use the first active aligned manager by ID, then an
+active partnership lead; registrations fall back to active deal-desk ops.
+Missing recipients remain Unowned. Each category prefills minimum evidence,
+recommendation, and entity reference in the shared notification composer.
+Only selected configured channels are recorded, with runtime action time and
+`simulated-local` status. Confirmation says **Simulated / local only**.
+Batch and individual saves recheck scoped recipient evidence against the current
+session roster before recording anything. Paused or invited recipients, removed
+session additions, obsolete provider evidence, blank copy, and empty channel
+selections cannot save, even when a refresh fails or remains pending. Retained
+evidence and independent retries remain visible; stale owners are never rerouted
+silently at save time.
+Refresh clears all records; no transport executes. Each row exposes its merged
+evidence, per-reason recommendation, due date, exposure, routed owner or Unowned,
+and provider lineage/as-of through a keyboard/touch disclosure. Internal links
+open an explicit entity context in Forecasting, Deal Reg Ops, or the selected
+partner's Partner Performance view. The destination retains its reporting window,
+so an out-of-window entity may not be in its table.
+
+Once visited, Forecasting and Settings retain their loaded pages and filters
+during the current provider session, the Action Center tab included: leaving
+Settings for an internal context keeps the tab mounted underneath, and
+**Back to Action Center** returns to it with its filters, its loaded pages,
+and focus on the exact action link — or on the route heading when the edited
+action resolved and its row is gone. Editors restore focus to the
+row control after Save or Escape. Revenue and category edits refresh only their
+dependent forecast queries; notes and next steps refresh Action Center without
+refetching forecast aggregates. Revenue, next-step and note edits refresh the
+existing Action Center depth under the new eligibility and ordering, capped by
+the new total. Refresh starts without a cursor and obtains a fresh continuation;
+a failed refresh retains stale rows but cannot append until retry succeeds.
+Provider, access, policy, filter, routing, classification and prospect scope
+changes reset paging. Forecast-category changes do not refetch Action Center.
+Overlays replace source values once, and customer prose never enters logs or
+telemetry. A committed provider change clears these retained views and edits.
+
+Registration decisions are available from registration actions and Deal Reg Ops.
+Conflict dispositions name all competing registration IDs. Revenue/category
+edits create current-session change IDs for forecast reviews. Each workflow
+requires an active selected demo actor (not authenticated), outcome, and trimmed
+reason, and records runtime time. The session projection is simulated/local-only:
+source queues and metrics stay unchanged, no approver enforcement or write-back
+occurs, and refresh or provider commit clears every workflow record and change.
+Reviews are not source history or the deferred Forecast Quality trend.
 
 ## Running locally
 

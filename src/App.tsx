@@ -53,6 +53,7 @@ import ForecastingView from './views/ForecastingView';
 import HomeView from './views/HomeView';
 import PartnerPerformanceView from './views/PartnerPerformanceView';
 import PartnerView from './views/PartnerView';
+import { SETTINGS_TAB_IDS, type SettingsTab } from './data/settingsTabs';
 const DataConnectionsView = lazy(() =>
   import('./views/system').then((module) => ({ default: module.DataConnectionsView })),
 );
@@ -62,6 +63,9 @@ const ProductionRequirementsView = lazy(() =>
 const SettingsView = lazy(() =>
   import('./views/system').then((module) => ({ default: module.SettingsView })),
 );
+// Action Center is the Settings route's second tab, but it stays its own lazy
+// chunk: the general settings panel must not pay for the action queries and
+// their rules until a session opens the tab.
 const ActionCenterView = lazy(() => import('./views/ActionCenterView'));
 const WorkflowPanel = lazy(() => import('./components/WorkflowPanel'));
 
@@ -115,6 +119,11 @@ export default function App({
   }, [actionContext]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Which Settings tab is showing. The shell owns the selection because a
+  // resolved action context returns the session to the Action Center tab
+  // (see the action-context banner). It survives a provider commit the way
+  // the route does: the tab is a place, not a record keyed by provider ids.
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
   const [desktop, setDesktop] = useState(
     () => window.matchMedia?.('(min-width: 640px)').matches ?? true,
   );
@@ -575,7 +584,7 @@ export default function App({
           <div className="flex min-w-0 items-center gap-3">
             <span className="hidden h-2 w-2 shrink-0 rounded-full bg-signal sm:inline-block" />
             <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-bone sm:text-xs">
-              GTM Partner Dashboard
+              Gantry
             </span>
           </div>
           <p className="ml-auto hidden font-mono text-[10px] uppercase tracking-[0.06em] text-granite md:block">
@@ -611,6 +620,9 @@ export default function App({
             if (nextRoute === route && mobileNavOpen) main.current?.focus();
             contextInvoker.current = null;
             setActionContext(null);
+            // Entering Settings from somewhere else opens its first tab: the
+            // sidebar names the route, not the tab the last visit left behind.
+            if (nextRoute !== route) setSettingsTab('general');
             setRoute(nextRoute);
             setMobileNavOpen(false);
           }}
@@ -661,7 +673,9 @@ export default function App({
                 className="rounded border border-ash px-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-bone"
                 onClick={() => {
                   setActionContext(null);
-                  setRoute('action-center');
+                  // Action Center lives on the Settings route's second tab.
+                  setSettingsTab('action-center');
+                  setRoute('settings');
                 }}
               >
                 Back to Action Center
@@ -699,8 +713,14 @@ export default function App({
             }}
             contextPartnerId={actionContext?.partnerId}
             onWorkflow={setWorkflowTarget}
+            settingsTab={settingsTab}
+            onSettingsTabChange={setSettingsTab}
           />
-          {(['action-center', 'forecasting', 'registration-ops'] as Route[]).includes(route) && (
+          {(route === 'forecasting' ||
+            route === 'registration-ops' ||
+            // Session workflows hang off the Action Center tab the way they
+            // used to hang off its route.
+            (route === 'settings' && settingsTab === 'action-center')) && (
             <Suspense fallback={<QueryLoading label="Session workflows" />}>
               <div className="mt-6">
                 <WorkflowPanel
@@ -757,6 +777,9 @@ interface RouteContentProps {
   onOpenActionContext: (item: ActionItem) => void;
   contextPartnerId?: string;
   onWorkflow: (target: WorkflowTarget) => void;
+  /** The Settings route's selected tab, owned by the shell (see App). */
+  settingsTab: SettingsTab;
+  onSettingsTabChange: (tab: SettingsTab) => void;
 }
 
 /**
@@ -793,15 +816,29 @@ function RouteContent({
   onOpenActionContext,
   contextPartnerId,
   onWorkflow,
+  settingsTab,
+  onSettingsTabChange,
 }: RouteContentProps) {
-  // Keep only the two edit/action surfaces once visited. Hidden routes retain
-  // loaded windows and filters; provider commits remount this coordinator.
+  // Keep the edit/action surfaces once visited. Hidden routes retain loaded
+  // windows and filters; provider commits remount this coordinator.
   const [retained, setRetained] = useState<Route[]>([]);
   useEffect(() => {
-    if (route === 'forecasting' || route === 'action-center') {
+    if (route === 'forecasting') {
       setRetained((previous) => (previous.includes(route) ? previous : [...previous, route]));
     }
   }, [route]);
+  // The Action Center panel mounts when its tab is first activated and then
+  // stays mounted while hidden, because it outlives its route: a session that
+  // follows an action link into Forecasting or Deal Reg Ops comes back to the
+  // tab with the pages and filters it had, and the action link it followed is
+  // still there to take focus back. The Settings route itself is not retained
+  // — the general tab is an ordinary route surface, so leaving and returning
+  // remounts it and re-runs its queries, exactly as it did before the tab
+  // existed.
+  const [actionCenterOpened, setActionCenterOpened] = useState(false);
+  useEffect(() => {
+    if (route === 'settings' && settingsTab === 'action-center') setActionCenterOpened(true);
+  }, [route, settingsTab]);
   // The key is the selection-reconciliation rule: a new committed provider
   // generation remounts the route, so view-local selections — a manager
   // filter, an expanded group, a picked partner — reset to their defaults
@@ -815,25 +852,6 @@ function RouteContent({
   // provider transition notice stay put while the chunk downloads.
   return (
     <Suspense fallback={<QueryLoading label={routeLabel(route)} />}>
-      {(route === 'action-center' || retained.includes('action-center')) && (
-        <div hidden={route !== 'action-center'}>
-          <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:action-center`}>
-            <ActionCenterView
-              provider={provider}
-              policy={actionPolicy}
-              onPolicyChange={onPolicyChange}
-              edits={forecastEdits}
-              classifications={classifications}
-              prospects={prospects}
-              roster={roster}
-              onSendNotification={onSendNotification}
-              notifications={notifications}
-              onOpenContext={onOpenActionContext}
-              onWorkflow={onWorkflow}
-            />
-          </ErrorBoundary>
-        </div>
-      )}
       {route === 'production-requirements' && (
         <FlaggedContent enabled={productionRequirementsEnabled}>
           <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:production-requirements`}>
@@ -850,6 +868,8 @@ function RouteContent({
         <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:settings`}>
           <SettingsView
             provider={provider}
+            tab={settingsTab}
+            onTabChange={onSettingsTabChange}
             teamUserOverrides={roster.overrides}
             addedTeamUsers={roster.added}
             notifications={notifications}
@@ -860,6 +880,41 @@ function RouteContent({
           />
         </ErrorBoundary>
       )}
+      {/* The Action Center panel is the Settings route's second tabpanel, but
+          the shell renders it so it survives the route. The element is always
+          present, so the tablist's aria-controls always resolves; only its
+          content waits for the first activation. It follows the SettingsView
+          block in the DOM, so the tablist — and the hidden general panel —
+          come before the panel's controls in the tab order, exactly as they
+          did when the view owned both panels. Its own error boundary keeps a
+          failure inside the tab from taking the general panel with it. */}
+      <div
+        role="tabpanel"
+        id={SETTINGS_TAB_IDS['action-center'].panel}
+        aria-labelledby={SETTINGS_TAB_IDS['action-center'].tab}
+        hidden={route !== 'settings' || settingsTab !== 'action-center'}
+        className="space-y-6"
+      >
+        {actionCenterOpened && (
+          <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:action-center`}>
+            <Suspense fallback={<QueryLoading label="Action Center" />}>
+              <ActionCenterView
+                provider={provider}
+                policy={actionPolicy}
+                onPolicyChange={onPolicyChange}
+                edits={forecastEdits}
+                classifications={classifications}
+                prospects={prospects}
+                roster={roster}
+                onSendNotification={onSendNotification}
+                notifications={notifications}
+                onOpenContext={onOpenActionContext}
+                onWorkflow={onWorkflow}
+              />
+            </Suspense>
+          </ErrorBoundary>
+        )}
+      </div>
       {(route === 'forecasting' || retained.includes('forecasting')) && (
         <div hidden={route !== 'forecasting'}>
           <ErrorBoundary key={boundaryKey} resetKey={`${boundaryKey}:forecasting`}>

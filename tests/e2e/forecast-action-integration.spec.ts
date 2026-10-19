@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { ACTION_CENTER, navigate as navigateRoute } from './support/accessibility-surfaces';
 
 const PROSE = 'PRIVATE-forecast-prose-VAL-CROSS-003';
 const FORECAST_AGGREGATES = [
@@ -50,6 +51,13 @@ test('VAL-CROSS-003: forecast overlays apply once with narrow calls, retained pa
     await Promise.all(pending);
   };
   const navigate = async (name: string) => {
+    // Action Center is the Settings route's second tab, so reaching it is the
+    // Settings destination followed by the tab; the shared helper owns both
+    // steps. Every other destination is still one sidebar button.
+    if (name === ACTION_CENTER) {
+      await navigateRoute(page, ACTION_CENTER);
+      return;
+    }
     await page
       .getByRole('navigation', { name: 'Primary' })
       .getByRole('button', { name, exact: true })
@@ -196,7 +204,9 @@ test('VAL-CROSS-003: forecast overlays apply once with narrow calls, retained pa
   await editText('next step', PROSE);
   await page.getByRole('button', { name: 'Back to Action Center' }).click();
   await expect(action).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Action Center', level: 1 })).toBeFocused();
+  // The followed action link is gone from the reloaded queue, so focus falls
+  // back to the Settings route's h1 — Action Center is a level-2 section of it.
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeFocused();
   await settle();
   expect(errors).toEqual([]);
   expect(JSON.stringify(logs)).not.toContain(PROSE);

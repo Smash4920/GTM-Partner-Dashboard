@@ -323,8 +323,9 @@ The weekly snapshot job must be **idempotent**: a unique key on
   than a clamp. Table virtualization remains not started — comfort, not
   survival, now that the contract bounds what reaches the client.
 - Route-level `React.lazy`. _Partially implemented:_ Data Connections,
-  Production Requirements, and Settings share a lazy operational chunk; Action Center and
-  the workflow panel are lazy too. Daily chart routes still load eagerly, so
+  Production Requirements, and Settings share a lazy operational chunk; Action
+  Center (the Settings route's second tab) and the workflow panel are lazy too.
+  Daily chart routes still load eagerly, so
   avoiding Recharts on first visit is not complete. Current compressed
   measurements come from `npm run bundle:check`, not the original Phase 1
   raw-size checkpoint.
@@ -448,7 +449,7 @@ Three things came out of building it that the plan did not predict:
 
 - Pagination forced a real decision about where a manager's book lives.
   Current hooks preserve loaded manager pages across collapse/reopen and
-  retained Forecasting/Action Center navigation in the provider session.
+  retained Forecasting/Settings navigation in the provider session.
   One manager's failed page cannot take the others down.
 - `ForecastTable` was taking the entire `Partner[]` collection to render one
   column. It now takes a `Record<id, name>` from `getPartnerDirectory()` — a

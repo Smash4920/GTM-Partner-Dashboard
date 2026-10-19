@@ -359,7 +359,7 @@ describe('assessHealth', () => {
     const artifact = await assessHealth({ provider: new MockDataProvider() });
 
     expect(artifact.status).toBe('ok');
-    expect(artifact.service).toBe('gtm-partner-dashboard');
+    expect(artifact.service).toBe('gantry');
     expect(artifact.environment).toBe(import.meta.env.MODE);
     expect(artifact.sessionId).toMatch(/^[0-9a-f]{32}$/);
     expect(artifact.checks).toHaveLength(6);
@@ -404,7 +404,7 @@ describe('shellHealthArtifact and the unavailable seam (VAL-RES-008)', () => {
     // never will: the shell reports itself, and the seam is marked as not
     // yet assessed rather than silently absent or optimistically ok.
     expect(artifact.status).toBe('degraded');
-    expect(artifact.service).toBe('gtm-partner-dashboard');
+    expect(artifact.service).toBe('gantry');
     expect(artifact.checks.map((check) => check.name)).toEqual(['appShell', 'dataSeam']);
     expect(artifact.checks[1]?.detail).toBe('readiness checks still running');
   });

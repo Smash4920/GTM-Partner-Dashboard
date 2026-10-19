@@ -3,7 +3,14 @@ import { resolve, sep } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { WORKFLOW_OUTCOMES } from '../../src/lib/workflows';
-import { activate, card, navigate, noOverflow, settle } from './support/accessibility-surfaces';
+import {
+  ACTION_CENTER,
+  activate,
+  card,
+  navigate,
+  noOverflow,
+  settle,
+} from './support/accessibility-surfaces';
 
 // Closed inventory in library/accessibility-modal-inventory.md, excluding
 // INLINE-NOTIFY-* (covered exhaustively by accessibility-inline-notifications).
@@ -58,6 +65,7 @@ const IDS = 'VAL-A11Y-007 VAL-A11Y-008 VAL-A11Y-009';
 type FixtureMethod = Parameters<Window['modalFixture']['arm']>[0];
 type Host = {
   id: string;
+  /** A sidebar destination, or ACTION_CENTER for the Settings route's tab. */
   route: string;
   kind: keyof typeof WORKFLOW_OUTCOMES;
   title: string;
@@ -71,7 +79,7 @@ const HOSTS: readonly Host[] = [
   },
   {
     id: 'MOD-REG-ACTION',
-    route: 'Action Center',
+    route: ACTION_CENTER,
     kind: 'registration',
     title: 'Registration decision',
   },
@@ -89,7 +97,7 @@ const HOSTS: readonly Host[] = [
   },
   {
     id: 'MOD-FORECAST-ACTION',
-    route: 'Action Center',
+    route: ACTION_CENTER,
     kind: 'forecast',
     title: 'Forecast-change review',
   },
@@ -432,6 +440,8 @@ async function forecastEdit(page: Page) {
 
 async function hostInvoker(page: Page, host: Host) {
   if (host.kind === 'forecast') await forecastEdit(page);
+  // Action Center is not a sidebar destination: the shared helper opens
+  // Settings and activates its second tab, leaving focus on that tab.
   await navigate(page, host.route);
   if (host.id === 'MOD-REG-QUEUE')
     return card(page, 'Registrations awaiting review')
@@ -710,6 +720,8 @@ for (const viewport of VIEWPORTS) {
       await opener.evaluate((element) => element.remove());
       await page.keyboard.press('Escape');
       await expect(page.getByRole('dialog')).toHaveCount(0);
+      // With the invoker gone, focus falls back to the route's h1 — the
+      // Settings h1 when the action was opened from the Action Center tab.
       await expect.soft(page.getByRole('heading', { level: 1 })).toBeFocused();
       await checkpoint(page, info, host.id, 'removed-invoker-nearest-route-heading');
       await check(info);

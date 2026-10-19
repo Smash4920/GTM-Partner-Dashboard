@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { DATA_PROVIDER_METHODS } from '../../src/data/DataProvider';
+import { openActionCenterTab } from './support/accessibility-surfaces';
 import { SCALED_FAILURE_ROUTES, settleScaled, visitScaled } from './support/scaled-retry';
 import { startTargetPreview, type TargetState } from './support/target-preview';
 
@@ -59,7 +60,7 @@ test('VAL-RES-011: built Scaled 100× isolates failure and exact one-query retry
         }),
         spec.method,
       );
-      await visitScaled(page, spec.route);
+      await visitScaled(page, spec.route, spec.tab);
       const region = page.getByRole('group', { name: spec.region, exact: true });
       await expect(region.getByText(spec.failure, { exact: true })).toBeVisible();
       expect(
@@ -86,7 +87,10 @@ test('VAL-RES-011: built Scaled 100× isolates failure and exact one-query retry
         calls: { ...window.scaledRetryFixture.calls },
         delegated: { ...window.scaledRetryFixture.delegated },
       }));
-      const slug = spec.route.toLowerCase().replaceAll(' ', '-');
+      // Two specs share the Settings route; the tab keeps evidence names distinct.
+      const slug = `${spec.route}${spec.tab ? ` ${spec.tab}` : ''}`
+        .toLowerCase()
+        .replaceAll(' ', '-');
       await region.scrollIntoViewIfNeeded();
       await page.screenshot({ path: testInfo.outputPath(`${slug}-unavailable.png`) });
       await region.getByRole('button', { name: `Retry ${spec.region}`, exact: true }).click();
@@ -112,6 +116,7 @@ test('VAL-RES-011: built Scaled 100× isolates failure and exact one-query retry
       await page.screenshot({ path: testInfo.outputPath(`${slug}-recovered.png`) });
       observations.push({
         route: spec.route,
+        tab: spec.tab,
         method: spec.method,
         failure: spec.failure,
         retry: `Retry ${spec.region}`,
@@ -212,7 +217,11 @@ test('VAL-CROSS-006: isolated built startup failure, partial actions, summary fa
     await nav.getByRole('button', { name: 'Data Connections', exact: true }).click();
     await page.getByRole('button', { name: /^Salesforce/ }).click();
     await expect(page.getByRole('heading', { name: 'Salesforce', level: 3 })).toBeVisible();
-    await nav.getByRole('button', { name: 'Action Center', exact: true }).click();
+    // Action Center is the Settings route's second tab: entering Settings
+    // opens General Settings, and the tab's first activation starts the two
+    // action queries the fixture arms its failures against.
+    await nav.getByRole('button', { name: 'Settings', exact: true }).click();
+    await openActionCenterTab(page);
     const summary = page.getByRole('group', { name: 'Action Center summary', exact: true });
     const items = page.getByRole('group', { name: 'action items', exact: true });
     const rows = page.getByTestId('action-item');

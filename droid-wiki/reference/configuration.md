@@ -1,6 +1,6 @@
 # Configuration
 
-This page is the look-up list for the GTM Partner Dashboard's configuration surface: the files that shape the build, the environment and build variables the build reads, the npm commands, and the fixed data constants. The app is a static client with no runtime secrets or runtime configuration — everything below is build-time or render-time only.
+This page is the look-up list for the Gantry's configuration surface: the files that shape the build, the environment and build variables the build reads, the npm commands, and the fixed data constants. The app is a static client with no runtime secrets or runtime configuration — everything below is build-time or render-time only.
 
 ## Config files
 

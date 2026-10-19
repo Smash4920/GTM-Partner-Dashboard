@@ -10,7 +10,14 @@ import type { ActionItem } from '../../src/data/types';
 import { DEFAULT_ACTION_POLICY } from '../../src/lib/actionPolicy';
 import { actionEvidence } from '../../src/lib/actionEvidence';
 import { NOTIFICATION_TEMPLATES } from '../../src/lib/notifications';
-import { activate, noOverflow, reachable, settle } from './support/accessibility-surfaces';
+import {
+  activate,
+  navigate,
+  noOverflow,
+  openActionCenterTab,
+  reachable,
+  settle,
+} from './support/accessibility-surfaces';
 
 // Closed inventory: INLINE-NOTIFY-ACTION / INLINE-NOTIFY-CONNECTIONS in
 // library/accessibility-modal-inventory.md. These are route/form/feedback
@@ -91,8 +98,32 @@ async function route(page: Page, name: 'Action Center' | 'Settings') {
       'Enter',
     );
   }
-  await activate(nav.getByRole('button', { name, exact: true }), 'Enter');
-  await expect(page.getByRole('heading', { name, level: 1, exact: true })).toBeFocused();
+  // The sidebar names the route, never the tab: Action Center is the Settings
+  // route's second tab, so reaching it is the Settings entry plus a tab
+  // activation. The Settings entry itself means the tab the route lands on,
+  // General Settings; a session already on Settings keeps the tab its last
+  // visit left behind, so that entry selects the landing tab instead of
+  // re-entering the route, and there is no route-heading focus to assert.
+  const settings = nav.getByRole('button', { name: 'Settings', exact: true });
+  const alreadyCurrent = (await settings.getAttribute('aria-current')) === 'page';
+  await activate(settings, 'Enter');
+  if (!alreadyCurrent && name === 'Settings') {
+    await expect(
+      page.getByRole('heading', { name: 'Settings', level: 1, exact: true }),
+    ).toBeFocused();
+  }
+  if (name === 'Action Center') {
+    await openActionCenterTab(page);
+    return;
+  }
+  if (alreadyCurrent) {
+    const general = page.getByRole('tab', { name: 'General Settings', exact: true });
+    if ((await general.getAttribute('aria-selected')) !== 'true') {
+      await activate(general, 'Enter');
+    }
+    await expect(general).toHaveAttribute('aria-selected', 'true');
+  }
+  await expect(page.getByRole('tabpanel', { name: 'General Settings', exact: true })).toBeVisible();
 }
 
 async function fixture(page: Page, scenario = '') {
@@ -824,8 +855,12 @@ for (const viewport of VIEWPORTS) {
       // Multi-query route regions render usable partial envelopes without
       // their own metadata caption. Pin the injected envelope technically,
       // and audit the resulting real route/form rather than fake its UI.
-      await route(page, 'Action Center');
-      await settle(page);
+      // The general tab's queries run when the Settings route is entered, so
+      // the session leaves the route first — a tab switch would not re-run
+      // them, because the panel stays mounted behind the other tab — and the
+      // envelope is armed after the hop, so only Settings' own queries can
+      // spend it.
+      await navigate(page, 'Home');
       await page.evaluate(
         (method) => window.inlineNotificationFixture.arm(method, 'partial'),
         dependency.method,

@@ -59,7 +59,6 @@ const nav = () => within(screen.getByRole('navigation', { name: 'Primary' }));
 const ROUTES: [label: string, heading: string | null][] = [
   ['Partner Performance', 'Partner Performance'],
   ['Forecasting', 'Forecasting'],
-  ['Action Center', 'Action Center'],
   ['Deal Reg Ops', 'Deal Registration Operations'],
   ['Activity Tracking', 'Activity Tracking'],
   ['Partner View', null],
@@ -80,9 +79,7 @@ describe('App', () => {
 
     for (const [label, heading] of ROUTES) {
       await user.click(nav().getByRole('button', { name: label }));
-      if (
-        ['Action Center', 'Production Requirements', 'Data Connections', 'Settings'].includes(label)
-      ) {
+      if (['Production Requirements', 'Data Connections', 'Settings'].includes(label)) {
         // Static preloads do not settle React.lazy's first-use import promises.
         await act(async () => {
           await vi.dynamicImportSettled();
@@ -97,6 +94,17 @@ describe('App', () => {
       // The boundary renders this in place of a view that threw.
       expect(screen.queryByText('Something went wrong here')).not.toBeInTheDocument();
     }
+
+    // Action Center is Settings' second tab: it mounts the same way, one
+    // activation after the route, and renders as a section of that page.
+    await user.click(screen.getByRole('tab', { name: 'Action Center' }));
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
+    expect(
+      await screen.findByRole('heading', { name: 'Action Center', level: 2 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Something went wrong here')).not.toBeInTheDocument();
   }, 60_000);
 
   it('marks the active route for assistive tech', async () => {
@@ -647,7 +655,7 @@ describe('App under total provider failure (VAL-RES-008)', () => {
     // Before any readiness check resolves, the endpoint already exists and
     // says only what the shell knows about itself.
     expect(window.GTM_HEALTH).toBeDefined();
-    expect(window.GTM_HEALTH?.artifact.service).toBe('gtm-partner-dashboard');
+    expect(window.GTM_HEALTH?.artifact.service).toBe('gantry');
     expect(typeof window.GTM_HEALTH?.refresh).toBe('function');
 
     // Once the assessment lands, the seam is named unavailable — the
