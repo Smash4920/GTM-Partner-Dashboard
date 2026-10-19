@@ -204,7 +204,7 @@ describe('allowlistEnvelope', () => {
   it('ships health checks without their free-text detail lines', () => {
     const filtered = allowlistEnvelope('health', {
       status: 'degraded',
-      service: 'gtm-partner-dashboard',
+      service: 'gantry',
       release: '9f2c1ab',
       environment: 'production',
       sessionId: '0af7651916cd43dd8448eb211c80319c',
@@ -221,7 +221,7 @@ describe('allowlistEnvelope', () => {
 
     expect(filtered).toEqual({
       status: 'degraded',
-      service: 'gtm-partner-dashboard',
+      service: 'gantry',
       release: '9f2c1ab',
       environment: 'production',
       sessionId: '0af7651916cd43dd8448eb211c80319c',

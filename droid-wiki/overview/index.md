@@ -1,6 +1,6 @@
-# GTM Partner Dashboard overview
+# Gantry overview
 
-The GTM Partner Dashboard is a React mockup for tracking partner-sourced revenue. It gives GTM leadership an aggregate view and gives an individual partner a scoped portal view, both backed by the same dashboard data model.
+The Gantry is a React mockup for tracking partner-sourced revenue. It gives GTM leadership an aggregate view and gives an individual partner a scoped portal view, both backed by the same dashboard data model.
 
 ## What the project does
 

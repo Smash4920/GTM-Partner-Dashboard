@@ -1,6 +1,6 @@
 # Systems
 
-The Systems lens documents the data layer of the GTM Partner Dashboard: the `DataProvider` contract in `src/data/DataProvider.ts`, the deterministic mock that implements it in `src/data/mock/`, and how `src/data/useDashboardData.ts` turns the four provider methods into the `DashboardData` object the views render.
+The Systems lens documents the data layer of the Gantry: the `DataProvider` contract in `src/data/DataProvider.ts`, the deterministic mock that implements it in `src/data/mock/`, and how `src/data/useDashboardData.ts` turns the four provider methods into the `DashboardData` object the views render.
 
 ## Purpose of this lens
 

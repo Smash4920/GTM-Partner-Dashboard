@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 // This policy test does not measure the lazy chunk's cold transformation.
+import './views/system';
 import './views/ActionCenterView';
 import { MockDataProvider } from './data/mock/MockDataProvider';
 import { DATA_PROVIDER_METHODS } from './data/DataProvider';
@@ -33,7 +34,18 @@ describe('Action Center session policy in the shell', () => {
     await screen.findByRole('heading', { name: 'Partner Performance Overview' });
     const initialStorage = [Object.entries(localStorage), Object.entries(sessionStorage)];
     const nav = within(screen.getByRole('navigation', { name: 'Primary' }));
-    fireEvent.click(nav.getByRole('button', { name: 'Action Center' }));
+    // Action Center is the Settings route's second tab.
+    const openActionCenter = async () => {
+      fireEvent.click(nav.getByRole('button', { name: 'Settings' }));
+      await act(async () => {
+        await vi.dynamicImportSettled();
+      });
+      fireEvent.click(screen.getByRole('tab', { name: 'Action Center' }));
+      await act(async () => {
+        await vi.dynamicImportSettled();
+      });
+    };
+    await openActionCenter();
     await screen.findByText('85 unique items');
     calls.length = 0;
     const staleDays = screen.getByLabelText('Stale days (calendar)');
@@ -46,7 +58,7 @@ describe('Action Center session policy in the shell', () => {
     );
     fireEvent.click(nav.getByRole('button', { name: 'Home' }));
     await screen.findByRole('heading', { name: 'Partner Performance Overview' });
-    fireEvent.click(nav.getByRole('button', { name: 'Action Center' }));
+    await openActionCenter();
     expect(await screen.findByLabelText('Stale days (calendar)')).toHaveValue('1');
     fireEvent.change(screen.getByLabelText('Data provider'), { target: { value: 'remote' } });
     await waitFor(() => expect(screen.getByLabelText('Stale days (calendar)')).toHaveValue('14'));

@@ -1,6 +1,6 @@
 # Fun facts
 
-Short facts about the GTM Partner Dashboard that can be verified directly in the repository as of 2026-09-19. No origin stories here — each claim names the file it comes from.
+Short facts about the Gantry that can be verified directly in the repository as of 2026-09-19. No origin stories here — each claim names the file it comes from.
 
 ## The mock data is a fixed snapshot that never drifts
 

@@ -1,5 +1,5 @@
 /**
- * Canonical data model for the GTM Partner Dashboard.
+ * Canonical data model for Gantry.
  *
  * Everything the UI renders flows through these shapes via the DataProvider
  * interface (src/data/DataProvider.ts). A seeded mock generator fills them

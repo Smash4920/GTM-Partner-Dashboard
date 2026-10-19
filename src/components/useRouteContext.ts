@@ -4,7 +4,7 @@ import { routeLabel, type Route } from '../data/routes';
 export function useRouteContext(route: Route, main: RefObject<HTMLElement | null>) {
   const previous = useRef(route);
   useEffect(() => {
-    document.title = `${routeLabel(route)} | GTM Partner Dashboard`;
+    document.title = `${routeLabel(route)} | Gantry`;
     // Leave the fresh visit at the document start so first Tab reaches Skip.
     if (previous.current === route) return;
     previous.current = route;

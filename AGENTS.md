@@ -5,7 +5,7 @@ the project-specific context needed to make safe, reviewable changes.
 
 ## Project overview
 
-GTM Partner Dashboard is a client-only React and TypeScript dashboard built
+Gantry is a client-only React and TypeScript dashboard built
 with Vite and Tailwind CSS. It currently uses deterministic mock data. There is
 no backend, database, authentication layer, or required local environment file.
 Read `README.md` for the product behavior and data contract before changing
@@ -94,8 +94,10 @@ survivable.
 
 ## Repository map
 
-- `src/App.tsx`: application shell, route selection, provider wiring, and
-  session-only edits that are layered over provider data.
+- `src/App.tsx`: application shell, route selection, the Settings tab
+  selection (Action Center is that route's second tab, and the shell owns which
+  tab is showing so a closed action context can return to it), provider wiring,
+  and session-only edits that are layered over provider data.
 - `src/views/`: page-level dashboard views. Keep cross-view business rules out
   of these files when they can be expressed as reusable helpers.
 - `src/components/`: reusable UI and domain components.

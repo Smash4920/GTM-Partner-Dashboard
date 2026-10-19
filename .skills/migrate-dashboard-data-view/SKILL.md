@@ -1,6 +1,6 @@
 ---
 name: migrate-dashboard-data-view
-description: Extend the GTM Partner Dashboard data layer with scoped aggregates and paginated DataProvider queries. Use for DataProvider contract changes, view data work, provider implementations, or removal of list methods. (The load-everything DashboardData flow this skill originally migrated views away from is deleted; every route already reads the scoped contract.)
+description: Extend the Gantry data layer with scoped aggregates and paginated DataProvider queries. Use for DataProvider contract changes, view data work, provider implementations, or removal of list methods. (The load-everything DashboardData flow this skill originally migrated views away from is deleted; every route already reads the scoped contract.)
 ---
 
 # Migrate a dashboard view to scoped data

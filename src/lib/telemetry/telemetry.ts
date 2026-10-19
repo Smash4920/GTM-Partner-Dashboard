@@ -48,7 +48,7 @@ import {
  * defaults off pending privacy approval.
  */
 
-const SERVICE_NAME = 'gtm-partner-dashboard';
+const SERVICE_NAME = 'gantry';
 const GA_SEND_PAGE_VIEW_OPTION = 'send_page_view';
 
 interface TelemetryContextSnapshot {

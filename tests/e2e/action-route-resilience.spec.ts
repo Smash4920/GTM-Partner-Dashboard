@@ -85,8 +85,15 @@ function expectSafePreview(page: Page, observations: Observations, failures: str
   ).toEqual([]);
 }
 
-async function visit(page: Page, route: string, heading = route) {
+async function visit(page: Page, route: string, tab?: string, heading = route) {
   await navigation(page).getByRole('button', { name: route, exact: true }).click();
+  // Action Center is the Settings route's second tab: its two queries start
+  // on the tab's first activation, not on arriving at the route.
+  if (tab) {
+    const control = page.getByRole('tab', { name: tab, exact: true });
+    await control.click();
+    await expect(control).toHaveAttribute('aria-selected', 'true');
+  }
   if (route === 'Partner View') {
     await expect(page.getByLabel('Viewing as')).toBeEnabled();
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
@@ -149,6 +156,8 @@ async function expectOnlyCalls(observations: Observations, before: number, metho
 
 interface FailureRoute {
   route: string;
+  /** A Settings tab to activate after arriving, for Action Center. */
+  tab?: string;
   heading?: string;
   method: string;
   region: string;
@@ -268,7 +277,10 @@ const FAILURE_ROUTES: FailureRoute[] = [
     },
   },
   {
-    route: 'Action Center',
+    // Action Center is the Settings route's second tab, and its two queries
+    // are consumed by the tab's first activation.
+    route: 'Settings',
+    tab: 'Action Center',
     method: 'getActionCenterSummary',
     region: 'Action Center summary',
     failure: 'Action Center summary unavailable:',
@@ -342,7 +354,7 @@ test('VAL-DATA-001 VAL-RES-002 VAL-RES-006: Forecast manager change never relabe
 });
 
 for (const spec of FAILURE_ROUTES) {
-  test(`VAL-RES-009: ${spec.route} names its controlled failure, keeps siblings interactive and retries only that query with focus`, async ({
+  test(`VAL-RES-009: ${spec.tab ?? spec.route} names its controlled failure, keeps siblings interactive and retries only that query with focus`, async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -351,7 +363,7 @@ for (const spec of FAILURE_ROUTES) {
     // shared method's failure before the route under test mounts.
     await bootOnStaticRoute(page, observations, `${spec.method}:1`);
     await remote(page);
-    await visit(page, spec.route, spec.heading);
+    await visit(page, spec.route, spec.tab, spec.heading);
     const region = page.getByRole('group', { name: spec.region, exact: true });
     await expect(region.getByText(spec.failure, { exact: true })).toBeVisible();
     await settle(page, observations);
@@ -424,7 +436,9 @@ test('VAL-RES-011: Scaled 100× settles all nine routes, filters and appends uni
 
   for (const spec of [...FAILURE_ROUTES, { route: 'Production Requirements' }]) {
     const before = observations.started.length;
-    await visit(page, spec.route, 'heading' in spec ? spec.heading : undefined);
+    // Action Center settles as the Settings route's second tab.
+    const tab = 'tab' in spec ? spec.tab : undefined;
+    await visit(page, spec.route, tab, 'heading' in spec ? spec.heading : undefined);
     await settle(page, observations);
     await expect(
       page.getByText(/unavailable:|refresh failed:|Something went wrong here/),
@@ -438,7 +452,7 @@ test('VAL-RES-011: Scaled 100× settles all nine routes, filters and appends uni
       ).toBeGreaterThan(0);
     }
 
-    if (spec.route === 'Action Center') {
+    if (tab === 'Action Center') {
       await expect(actionRows(page)).toHaveCount(25);
       const first = await ids(actionRows(page), 'data-action-id');
       const beforePage = observations.started.length;
@@ -580,7 +594,9 @@ test('VAL-CROSS-006: remote startup ping, Action Center summary and second-page 
     page.getByRole('heading', { name: 'Production Requirements', level: 1 }),
   ).toBeVisible();
 
-  await visit(page, 'Action Center');
+  // The Action Center tab's first activation, not the arrival at Settings,
+  // consumes the armed summary and second-page failures.
+  await visit(page, 'Settings', 'Action Center');
   const summary = page.getByRole('group', { name: 'Action Center summary', exact: true });
   const items = page.getByRole('group', { name: 'action items', exact: true });
   await expect(

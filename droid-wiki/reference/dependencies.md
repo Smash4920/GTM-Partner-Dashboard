@@ -1,6 +1,6 @@
 # Dependencies
 
-The GTM Partner Dashboard declares 16 direct dependencies in `package.json`: 5 runtime packages and 11 development packages. All versions below are copied verbatim from `package.json` at the current `HEAD`; nothing here is inferred. There is no test framework, no backend runtime, and no database client — the app has no server side, and neither list contains a server, API, or storage package.
+The Gantry declares 16 direct dependencies in `package.json`: 5 runtime packages and 11 development packages. All versions below are copied verbatim from `package.json` at the current `HEAD`; nothing here is inferred. There is no test framework, no backend runtime, and no database client — the app has no server side, and neither list contains a server, API, or storage package.
 
 ## Runtime dependencies
 

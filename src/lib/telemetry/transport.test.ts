@@ -3,7 +3,7 @@ import { createTransport, type TelemetryBatch } from './transport';
 
 const ENDPOINT = 'https://collector.test/ingest';
 const META = {
-  service: 'gtm-partner-dashboard',
+  service: 'gantry',
   release: 'test-release',
   environment: 'test',
   sessionId: '0af7651916cd43dd8448eb211c80319c',

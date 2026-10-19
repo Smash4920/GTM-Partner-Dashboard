@@ -1,6 +1,6 @@
 # Runbooks
 
-Operational procedures for the GTM Partner Dashboard. Every runbook names the
+Operational procedures for Gantry. Every runbook names the
 signal to watch, the first diagnostic step, the mitigation, and how to confirm
 recovery. Keep them short enough to follow under pressure and specific enough
 that a new on-call engineer can execute them without reading the source first.

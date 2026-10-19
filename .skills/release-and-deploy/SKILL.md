@@ -1,6 +1,6 @@
 ---
 name: release-and-deploy
-description: Cut and deploy a GTM Partner Dashboard release. Use when merging to main, preparing release notes, deploying to Vercel, publishing GitHub Pages, or rolling back a bad deploy.
+description: Cut and deploy a Gantry release. Use when merging to main, preparing release notes, deploying to Vercel, publishing GitHub Pages, or rolling back a bad deploy.
 ---
 
 # Release and deploy the dashboard

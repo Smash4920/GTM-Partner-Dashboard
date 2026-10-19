@@ -17,6 +17,7 @@ import { DEFAULT_ACTION_POLICY } from '../../src/lib/actionPolicy';
 import { formatDate, formatTime } from '../../src/lib/format';
 import type { DuplicateRegistrationGroup } from '../../src/lib/metrics';
 import {
+  ACTION_CENTER,
   MANAGERS,
   card,
   evidence,
@@ -604,7 +605,9 @@ for (const [index, manager] of MANAGERS.entries()) {
     await disclosure.click();
     await assertRows(collection, rows.length);
     expect(await observations.count(collection.method)).toBe(calls);
-    await navigate(page, 'Action Center');
+    // Leave for the Action Center tab — Settings' second tab, reached by the
+    // shared helper — and return: no page refetch, no lost rows.
+    await navigate(page, ACTION_CENTER);
     await navigate(page, 'Forecasting');
     await assertRows(collection, rows.length);
     expect(await observations.count(collection.method)).toBe(calls);
@@ -919,7 +922,7 @@ test('VAL-A11Y-010 PG-014: Action Center appends exactly one unique page per act
   );
   expect(rows.length).toBeGreaterThan(25);
   await boot(page, observations, 'listActionItems:1:1');
-  await navigate(page, 'Action Center');
+  await navigate(page, ACTION_CENTER);
   const root = card(page, 'Action items');
   const collection: Collection = {
     id: 'PG-014',
@@ -963,7 +966,7 @@ test('VAL-A11Y-010 PG-014: a retained Action Center window reports refresh failu
     provider.listActionItems(access, { policy: DEFAULT_ACTION_POLICY }, request),
   );
   await boot(page, observations, 'listActionItems:2:1');
-  await navigate(page, 'Action Center');
+  await navigate(page, ACTION_CENTER);
   const root = card(page, 'Action items');
   const collection: Collection = {
     id: 'PG-014',
@@ -989,7 +992,9 @@ test('VAL-A11Y-010 PG-014: a retained Action Center window reports refresh failu
     .getByRole('textbox', { name: /^Note for / })
     .fill('Pagination refresh evidence');
   await forecastRow.getByRole('button', { name: 'Save note', exact: true }).click();
-  await navigate(page, 'Action Center');
+  // Back to the retained Action Center tab: the helper reopens Settings and
+  // re-activates the tab, and the loaded window keeps its exact control.
+  await navigate(page, ACTION_CENTER);
   await assertRows(collection, loaded);
   const group = footer(collection);
   const button = group.getByRole('button');

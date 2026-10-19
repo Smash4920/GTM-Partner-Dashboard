@@ -2,7 +2,7 @@
 
 Active contributors: Smash4920
 
-The data provider is the single seam between the GTM Partner Dashboard UI and its data source. Every record the views render arrives through the `DataProvider` interface in `src/data/DataProvider.ts`, and today that interface is implemented by the deterministic mock in `src/data/mock/MockDataProvider.ts`. Because the views only ever see canonical data shapes, a real CRM or warehouse adapter can replace the mock without touching any view code.
+The data provider is the single seam between the Gantry UI and its data source. Every record the views render arrives through the `DataProvider` interface in `src/data/DataProvider.ts`, and today that interface is implemented by the deterministic mock in `src/data/mock/MockDataProvider.ts`. Because the views only ever see canonical data shapes, a real CRM or warehouse adapter can replace the mock without touching any view code.
 
 ## Purpose
 

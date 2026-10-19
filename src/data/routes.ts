@@ -3,7 +3,6 @@ export const ROUTES = [
   { id: 'home', label: 'Home' },
   { id: 'partners', label: 'Partner Performance' },
   { id: 'forecasting', label: 'Forecasting' },
-  { id: 'action-center', label: 'Action Center' },
   { id: 'registration-ops', label: 'Deal Reg Ops' },
   { id: 'activity', label: 'Activity Tracking' },
   { id: 'partner-view', label: 'Partner View' },

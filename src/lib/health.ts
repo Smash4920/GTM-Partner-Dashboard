@@ -115,7 +115,7 @@ const DEFAULT_HEALTHY_PING_MS = 2_000;
 const DEFAULT_RECENT_ERROR_WINDOW_MS = 5 * 60_000;
 const DEFAULT_RECENT_ERROR_BUDGET = 5;
 
-const HEALTH_SERVICE = 'gtm-partner-dashboard';
+const HEALTH_SERVICE = 'gantry';
 
 /** Worst result wins: one unavailable check makes the artifact unavailable. */
 export function rollupStatus(checks: readonly HealthCheck[]): HealthStatus {

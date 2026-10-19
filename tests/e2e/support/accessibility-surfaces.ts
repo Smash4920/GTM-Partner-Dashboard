@@ -26,17 +26,65 @@ export async function settle(page: Page) {
   await expect(page.getByText(/^Refreshing/)).toHaveCount(0);
 }
 
+/**
+ * The sidebar's destinations. Action Center is not one of them: it is the
+ * Settings route's second tab, so reaching it is the Settings entry and then
+ * the tab.
+ */
+export const ACTION_CENTER = 'Action Center';
+const ACTION_CENTER_ROUTE = 'Settings';
+
 export async function navigate(page: Page, label: string) {
   const nav = page.getByRole('navigation', { name: 'Primary' });
   if (!(await nav.isVisible())) {
     await page.getByRole('button', { name: 'Open navigation menu', exact: true }).click();
   }
-  const button = nav.getByRole('button', { name: label, exact: true });
+  const destination = label === ACTION_CENTER ? ACTION_CENTER_ROUTE : label;
+  const button = nav.getByRole('button', { name: destination, exact: true });
   const alreadyCurrent = (await button.getAttribute('aria-current')) === 'page';
   await button.focus();
   await page.keyboard.press('Enter');
-  if (!alreadyCurrent) await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
+  // The route heading takes focus on arrival; the Action Center tab does not
+  // replace it, because activating a tab moves focus to the tab itself.
+  if (!alreadyCurrent && label !== ACTION_CENTER) {
+    await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
+  }
+  if (label === ACTION_CENTER) await openActionCenterTab(page);
+  // Settings names the route, not the tab: landing on it always means its
+  // first tab, whether the session arrived or was already there. A session
+  // that left the Action Center tab selected would otherwise assert against
+  // a hidden panel.
+  else if (destination === ACTION_CENTER_ROUTE) await selectSettingsTab(page, 'General Settings');
   await settle(page);
+}
+
+/** Selects a Settings tab that the route's arrival would not have chosen. */
+async function selectSettingsTab(page: Page, name: string) {
+  const tab = page.getByRole('tab', { name, exact: true });
+  if ((await tab.getAttribute('aria-selected')) === 'true') return;
+  await tab.focus();
+  await page.keyboard.press('Enter');
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+/** Activates the Action Center tab from wherever the session already is. */
+export async function openActionCenterTab(page: Page) {
+  const selected = page.getByRole('tab', { name: 'General Settings', exact: true });
+  const tab = page.getByRole('tab', { name: ACTION_CENTER, exact: true });
+  // A tablist keeps one stop in the Tab order and moves the selection with
+  // the arrow keys, so an unselected tab is reached from its selected
+  // sibling; an already-selected one is a stop of its own. Either way the
+  // tab ends up focused, because a session that re-enters the tab after
+  // "Back to Action Center" keeps the selection and only the focus moves.
+  if ((await tab.getAttribute('aria-selected')) !== 'true') {
+    await selected.focus();
+    await page.keyboard.press('ArrowRight');
+  } else {
+    await tab.focus();
+  }
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await expect(tab).toBeFocused();
+  await expect(page.getByRole('heading', { name: ACTION_CENTER, level: 2 })).toBeVisible();
 }
 
 export function observe(page: Page) {

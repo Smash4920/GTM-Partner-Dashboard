@@ -1,6 +1,6 @@
 # Deployment
 
-The GTM Partner Dashboard is a single static Vite build: there is no server, API, or database to operate, so deployment is a question of running `npm run build` and serving the resulting `dist/` directory. Today the current path is Vercel, which hosts the app and gives every pull request its own preview. A GitHub Pages workflow is kept as a retained fallback, but it is manual only because the repository is private on a GitHub Free plan. Nothing in the repository automates a "live" production deployment, and no deployment URL is claimed here.
+The Gantry is a single static Vite build: there is no server, API, or database to operate, so deployment is a question of running `npm run build` and serving the resulting `dist/` directory. Today the current path is Vercel, which hosts the app and gives every pull request its own preview. A GitHub Pages workflow is kept as a retained fallback, but it is manual only because the repository is private on a GitHub Free plan. Nothing in the repository automates a "live" production deployment, and no deployment URL is claimed here.
 
 ## Current path: Vercel
 

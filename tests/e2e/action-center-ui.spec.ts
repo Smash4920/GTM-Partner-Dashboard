@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { navigate } from './support/accessibility-surfaces';
 
 test.use({ hasTouch: true });
 
@@ -10,16 +11,13 @@ const CATEGORIES = [
   ['Partner-health deterioration', 5],
 ] as const;
 
-test('VAL-ACT-001: primary navigation exposes the five-category session-only Action Center contract and bounded pages', async ({
+test('VAL-ACT-001: Settings exposes the five-category session-only Action Center contract and bounded pages', async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
-  await page
-    .getByRole('navigation', { name: 'Primary' })
-    .getByRole('button', { name: 'Action Center', exact: true })
-    .click();
+  await navigate(page, 'Action Center');
   await expect(page.getByRole('heading', { name: 'Demo policy', exact: true })).toBeVisible();
   await expect(page.getByText('85 unique items', { exact: true })).toBeVisible();
   await expect(page.getByText(/session-only.*Refresh loses this state/)).toBeVisible();
@@ -54,7 +52,6 @@ test('VAL-ACT-012: all five evidence disclosures support keyboard and touch with
   });
   page.on('request', (request) => requests.push(request.url()));
   await page.goto('/');
-  const nav = page.getByRole('navigation', { name: 'Primary' });
   const expectedEvidence = [
     /calendar days since (lastActivityAt|createdAt) baseline/,
     /Next step is blank; qualifying causes:/,
@@ -70,7 +67,7 @@ test('VAL-ACT-012: all five evidence disclosures support keyboard and touch with
     'Partner Performance',
   ];
   for (const [index, [category]] of CATEGORIES.entries()) {
-    await nav.getByRole('button', { name: 'Action Center', exact: true }).click();
+    await navigate(page, 'Action Center');
     await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
     await page.getByRole('checkbox', { name: category, exact: true }).check();
     const row = page.getByTestId('action-item').first();
@@ -110,6 +107,7 @@ test('VAL-ACT-012: all five evidence disclosures support keyboard and touch with
         id!.split(':')[1],
       );
     await context.getByRole('button', { name: 'Back to Action Center', exact: true }).click();
+    await expect(link).toBeFocused();
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Clear filters', exact: true }).click();

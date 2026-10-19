@@ -4,7 +4,7 @@ import { resolveEndpoint } from './telemetry/config';
 import { isFlagEnabled } from './telemetry/flags';
 
 const log = logger.child({ component: 'performanceTelemetry' });
-const APPLICATION = 'gtm-partner-dashboard';
+const APPLICATION = 'gantry';
 const SCHEMA_VERSION = 1;
 
 type MetricSubscriber = (callback: (metric: MetricType) => void) => void;

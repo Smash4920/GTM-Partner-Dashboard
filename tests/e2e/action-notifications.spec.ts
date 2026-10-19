@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { navigate } from './support/accessibility-surfaces';
 
 test('VAL-ACT-016: all five categories create selected-channel simulated local records without delivery', async ({
   page,
@@ -14,10 +15,7 @@ test('VAL-ACT-016: all five categories create selected-channel simulated local r
   // journey across a minute boundary. Native timers continue normally.
   await page.clock.setFixedTime(new Date('2026-10-01T12:34:56.000Z'));
   await page.goto('/');
-  await page
-    .getByRole('navigation', { name: 'Primary' })
-    .getByRole('button', { name: 'Action Center', exact: true })
-    .click();
+  await navigate(page, 'Action Center');
   await expect(page.getByText('85 unique items', { exact: true })).toBeVisible();
   const before = await page.evaluate(() => [
     Object.entries(localStorage),
@@ -59,8 +57,7 @@ test('VAL-ACT-016: all five categories create selected-channel simulated local r
     await page.getByRole('checkbox', { name: label, exact: true }).uncheck();
     await expect(page.getByText('85 unique items', { exact: true })).toBeVisible();
   }
-  const nav = page.getByRole('navigation', { name: 'Primary' });
-  await nav.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('tab', { name: 'General Settings', exact: true }).click();
   await expect(page.getByText('Sent this session · 5')).toBeVisible();
   const notificationLog = page
     .getByRole('heading', { name: 'Deal-registration SLA alerts' })
@@ -71,7 +68,7 @@ test('VAL-ACT-016: all five categories create selected-channel simulated local r
     await page.evaluate(() => [Object.entries(localStorage), Object.entries(sessionStorage)]),
   ).toEqual(before);
   await page.reload();
-  await nav.getByRole('button', { name: 'Settings', exact: true }).click();
+  await navigate(page, 'Settings');
   await expect(page.getByText('Sent this session · 0')).toBeVisible();
   expect(errors).toEqual([]);
   expect(
@@ -87,9 +84,12 @@ test('VAL-ACT-016: an unavailable recipient roster blocks composition and its fo
 }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/?remoteFailMethods=getTeamRoster:1');
-  const nav = page.getByRole('navigation', { name: 'Primary' });
-  await nav.getByRole('button', { name: 'Action Center', exact: true }).click();
+  // The plan aims past the first roster call: entering the Settings route
+  // runs the general tab's roster query, and the action notification panel's
+  // own on-demand roster query is the next one. That second call is the one
+  // this test breaks.
+  await page.goto('/?remoteFailMethods=getTeamRoster:1:1');
+  await navigate(page, 'Action Center');
   await expect(page.getByText('85 unique items', { exact: true })).toBeVisible();
   await page.getByLabel('Data provider').selectOption('remote');
   await expect(page.getByText(/round trips with a 15% simulated failure rate/)).toBeVisible();
@@ -98,7 +98,9 @@ test('VAL-ACT-016: an unavailable recipient roster blocks composition and its fo
   await row.getByRole('button', { name: 'Notify owner' }).click();
   const roster = page.getByRole('group', { name: 'action notification roster' });
   await expect(roster.getByText('Failed to load the notification roster')).toBeVisible();
-  await expect(page.getByLabel('Subject')).toHaveCount(0);
+  // Scoped to the panel: the Settings route's general tab carries its own
+  // composer and Subject field, hidden behind the Action Center tab.
+  await expect(roster.getByLabel('Subject')).toHaveCount(0);
   await expect(page.getByTestId('action-item')).toHaveCount(25);
   await roster.getByRole('button', { name: 'Retry action notification roster' }).click();
   await expect(roster.getByLabel('Subject')).toBeVisible();

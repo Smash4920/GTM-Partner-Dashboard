@@ -17,7 +17,6 @@ const ROUTE_ICONS: Record<Route, (props: { className?: string }) => ReactNode> =
   home: HomeIcon,
   partners: PartnersIcon,
   forecasting: ForecastIcon,
-  'action-center': RegistrationIcon,
   'registration-ops': RegistrationIcon,
   activity: ActivityIcon,
   'partner-view': PortalIcon,
